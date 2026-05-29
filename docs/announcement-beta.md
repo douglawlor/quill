@@ -4,6 +4,8 @@
 
 Quill Beta is here.
 
+This release is Quill 0.1 Beta from Blind Information Technology Solutions (BITS) and Community Access.
+
 Quill is a writing, reading, review, and document-intelligence environment for Windows built around a simple idea: powerful tools should feel calm, predictable, and welcoming from the keyboard. The editor is local-first, screen-reader-first, and designed to make serious text work feel steady instead of fragile.
 
 Quill is not only a place to type notes. It is a place to open and write plain text, Markdown, and HTML; inspect structure; compare revisions; navigate EPUB content; review extraction quality; run accessibility checks; work with spelling and thesaurus tools; use golden keyboard packs; and move through real documents with confidence.
@@ -37,7 +39,7 @@ This first slice focuses on plain text, Markdown, and HTML. It already helps wit
 
 Quill also now has the start of a broader format-bridge story. With Pandoc available, users can bring in supported text-centric source formats through a guided wizard instead of a command line, then continue the work inside Quill with structure-aware editing, compare, spell, and GLOW flows. That matters because accessible document work often begins in an awkward format and only becomes productive after it is translated into a surface that is stable, readable, and reviewable.
 
-That same spirit applies to the learning surface. Quill now has a cleaner documentation ladder: the welcome guide for a first orientation, the keyboard reference for exact current bindings, the full user guide for day-to-day depth, the beta announcement for the big-picture feature story, and the beta feedback plan for support expectations. The goal is not to bury users in docs. The goal is to make sure there is always one clear next document when a user asks, "What do I do now?"
+That same spirit applies to the learning surface. Quill now has a cleaner documentation ladder: the welcome guide for a first orientation, the keyboard reference for exact current bindings, the full user guide for day-to-day depth, this beta announcement for the big-picture feature story, and the PRD for the broader 1.0 direction. The goal is not to bury users in docs. The goal is to make sure there is always one clear next document when a user asks, "What do I do now?"
 
 ## Why this beta matters
 
@@ -62,7 +64,7 @@ That means:
 
 - bugs may be found
 - some features are deeper than others
-- some workflows are still maturing toward the full v1.1 vision
+- some workflows are still maturing toward the full 1.0 vision
 - parts of the support and feedback experience still need polishing before the broadest public rollout
 
 If something feels rough, that feedback is valuable. If something delights you, that is valuable too. Both help shape what Quill becomes next.
@@ -71,11 +73,13 @@ If something feels rough, that feedback is valuable. If something delights you, 
 
 We want the beta feedback path to be inclusive and low-friction.
 
+Inside Quill 0.1 Beta, that process now starts in the Help menu. `Save Diagnostics...` opens an in-app review screen before writing the zip, and `Report a Bug...` opens an in-app review screen before launching the Community Access support form. That gives users one last chance to confirm what is being shared instead of treating support like a blind jump into the browser.
+
 GitHub issues are useful for testers who already use GitHub, but they should not be the only way people can report problems. Before the broadest public beta push, Quill should have a secure no-login feedback route with optional diagnostics upload.
 
 In the meantime, Quill is moving toward a more humane support story: diagnostics can be packaged locally, support information can be reviewed before it leaves the machine, and the broader Community Access support-hub model can give the project a better route than forcing every tester into a raw GitHub issue workflow.
 
-Even before the final support route lands, Quill now ships a stronger intermediate experience: local diagnostics packaging, a support-oriented bug-report launch point, and clearer documentation about what each feedback path is for.
+Even before the final support route lands, Quill 0.1 Beta now ships a stronger intermediate experience: local diagnostics packaging, an in-app bug-report review step, a support-oriented launch point, and clearer documentation about what each feedback path is for.
 
 Until that path is fully published, treat GitHub as the optional technical route rather than the only official route.
 

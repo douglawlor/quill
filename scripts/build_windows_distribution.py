@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import tomllib
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -38,14 +39,9 @@ EMBEDDED_PYTHON_URL = (
 )
 # SHA-256 of the official embeddable zip. If python.org rotates the file
 # the build will fail loudly rather than ship an unverified runtime.
-EMBEDDED_PYTHON_SHA256 = "a18e6444efaad4e0c5edf8edb3a23a31f6f7d8a7a2b394d2c1a8c40e2cf7d39e"
+EMBEDDED_PYTHON_SHA256 = "a86a2e28870967745d255cc597d1e4d19ae79e65e927cdc324baa0256202231c"
 
-# Wheels we pre-install into the bundled Python so users get the full UI
-# out of the box. Versions are floors; pip will pick the latest compatible.
-RUNTIME_DEPENDENCIES = [
-    "wxPython>=4.2.2",
-    "pyttsx3>=2.99",
-]
+DEFAULT_BUNDLED_DEPENDENCY_GROUPS = ("ui", "spellcheck")
 
 
 def main() -> int:
@@ -80,6 +76,17 @@ def main() -> int:
         default=None,
         help="Optional local Tesseract directory to bundle under portable\\tools\\tesseract.",
     )
+    parser.add_argument(
+        "--compile-installer",
+        action="store_true",
+        help="Compile the generated Inno Setup script into an installer executable.",
+    )
+    parser.add_argument(
+        "--iscc-path",
+        type=Path,
+        default=None,
+        help="Optional explicit path to ISCC.exe for installer compilation.",
+    )
     args = parser.parse_args()
 
     bundle = build_windows_distribution(
@@ -95,11 +102,15 @@ def main() -> int:
             }.items()
             if path is not None
         },
+        compile_installer=args.compile_installer,
+        iscc_path=args.iscc_path,
     )
     print(f"Wrote portable bundle to {bundle['portable_dir']}")
     print(f"Wrote installer template to {bundle['installer_script']}")
     if bundle.get("python_runtime"):
         print(f"Bundled embedded Python to {bundle['python_runtime']}")
+    if bundle.get("installer_exe"):
+        print(f"Built installer executable at {bundle['installer_exe']}")
     return 0
 
 
@@ -109,6 +120,8 @@ def build_windows_distribution(
     bundle_python: bool = False,
     source_root: Path | None = None,
     bundled_tool_dirs: dict[str, Path] | None = None,
+    compile_installer: bool = False,
+    iscc_path: Path | None = None,
 ) -> dict[str, str]:
     version = _project_version(pyproject)
     resolved_source_root = source_root or Path(".")
@@ -138,7 +151,7 @@ def build_windows_distribution(
     manifest = {
         "project": "quill",
         "version": version,
-        "publisher": "Blind Information Technology Solutions (BITS)",
+        "publisher": "Blind Information Technology Solutions (BITS) and Community Access",
         "portableLauncher": str(launcher),
         "installerScript": str(installer_dir / "quill.iss"),
         "bundledPython": bool(bundle_python),
@@ -159,6 +172,7 @@ def build_windows_distribution(
         python_runtime_dir = bundle_embedded_python(
             portable_dir / "python",
             source_root=resolved_source_root,
+            pyproject=pyproject,
         )
 
     result = {
@@ -167,6 +181,13 @@ def build_windows_distribution(
     }
     if python_runtime_dir is not None:
         result["python_runtime"] = str(python_runtime_dir)
+    if compile_installer:
+        installer_exe = compile_inno_setup_installer(
+            installer_script,
+            version=version,
+            iscc_path=iscc_path,
+        )
+        result["installer_exe"] = str(installer_exe)
     return result
 
 
@@ -242,7 +263,7 @@ def _render_readme(
             "\nIncluded guides:\n"
             "- docs\\userguide.md - the full guided user manual\n"
             "- docs\\announcement-beta.md - deep feature announcement\n"
-            "- docs\\beta-feedback-plan.md - support and diagnostics plan\n"
+            "- docs\\QUILL-PRD.md - the product requirements document and roadmap\n"
         )
     bundled_tools_paragraph = ""
     if bundled_tools:
@@ -259,7 +280,7 @@ def _render_readme(
         textwrap.dedent(
             f"""
             Quill Portable {version}
-            Publisher: Blind Information Technology Solutions (BITS)
+            Publisher: Blind Information Technology Solutions (BITS) and Community Access
 
             {runtime_paragraph}
 
@@ -301,8 +322,8 @@ def build_inno_setup_script(version: str) -> str:
         "",
         '#define AppName "Quill"',
         f'#define AppVersion "{version}"',
-        '#define AppPublisher "Blind Information Technology Solutions (BITS)"',
-        '#define AppURL "https://github.com/bits-org/quill"',
+        '#define AppPublisher "Blind Information Technology Solutions (BITS) and Community Access"',
+        '#define AppURL "https://github.com/Community-Access/quill"',
         '#define AppExeName "run-quill.cmd"',
         "",
         "[Setup]",
@@ -361,6 +382,10 @@ def build_inno_setup_script(version: str) -> str:
             'Name: "{group}\\{#AppName} Beta Announcement"; '
             'Filename: "{app}\\docs\\announcement-beta.md"'
         ),
+        (
+            'Name: "{group}\\{#AppName} Product Requirements"; '
+            'Filename: "{app}\\docs\\QUILL-PRD.md"'
+        ),
         'Name: "{group}\\Uninstall {#AppName}"; Filename: "{uninstallexe}"',
         'Name: "{autodesktop}\\{#AppName}"; Filename: "{app}\\{#AppExeName}";'
         ' WorkingDir: "{app}"; Tasks: desktopicon',
@@ -401,9 +426,50 @@ def build_inno_setup_script(version: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def compile_inno_setup_installer(
+    installer_script: Path,
+    *,
+    version: str,
+    iscc_path: Path | None = None,
+) -> Path:
+    compiler = iscc_path or find_inno_setup_compiler()
+    if compiler is None:
+        raise RuntimeError(
+            "Inno Setup compiler not found. Install Inno Setup 6 or pass --iscc-path."
+        )
+    subprocess.run([str(compiler), str(installer_script)], check=True)
+    expected_name = f"Quill-Setup-{version}.exe"
+    for installer_exe in (
+        installer_script.parent / expected_name,
+        installer_script.parent / "Output" / expected_name,
+    ):
+        if installer_exe.exists():
+            return installer_exe
+    raise RuntimeError(
+        "Expected installer executable at "
+        f"{installer_script.parent / expected_name} or "
+        f"{installer_script.parent / 'Output' / expected_name}"
+    )
+
+
+def find_inno_setup_compiler() -> Path | None:
+    for candidate_name in ("ISCC.exe", "iscc"):
+        discovered = shutil.which(candidate_name)
+        if discovered:
+            return Path(discovered)
+    for candidate in (
+        Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+        Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def bundle_embedded_python(
     target_dir: Path,
     source_root: Path,
+    pyproject: Path,
     download_url: str = EMBEDDED_PYTHON_URL,
     expected_sha256: str | None = EMBEDDED_PYTHON_SHA256,
 ) -> Path:
@@ -462,7 +528,8 @@ def bundle_embedded_python(
     subprocess.run([str(python_exe), str(get_pip), "--no-warn-script-location"], check=True)
     get_pip.unlink(missing_ok=True)
 
-    print("Installing runtime dependencies (wxPython, pyttsx3)...")
+    runtime_dependencies = bundled_runtime_dependencies(pyproject)
+    print(f"Installing runtime dependencies ({', '.join(runtime_dependencies)})...")
     subprocess.run(
         [
             str(python_exe),
@@ -471,7 +538,7 @@ def bundle_embedded_python(
             "install",
             "--no-warn-script-location",
             "--no-compile",
-            *RUNTIME_DEPENDENCIES,
+            *runtime_dependencies,
         ],
         check=True,
     )
@@ -490,6 +557,29 @@ def bundle_embedded_python(
     return target_dir
 
 
+def bundled_runtime_dependencies(pyproject: Path) -> list[str]:
+    with pyproject.open("rb") as handle:
+        data = tomllib.load(handle)
+    project = data.get("project", {})
+    if not isinstance(project, dict):
+        return ["wxPython>=4.2.2", "pyttsx3>=2.99"]
+    dependencies: list[str] = []
+    raw_dependencies = project.get("dependencies", [])
+    if isinstance(raw_dependencies, list):
+        dependencies.extend(item for item in raw_dependencies if isinstance(item, str))
+    optional = project.get("optional-dependencies", {})
+    if isinstance(optional, dict):
+        for group in DEFAULT_BUNDLED_DEPENDENCY_GROUPS:
+            values = optional.get(group, [])
+            if isinstance(values, list):
+                dependencies.extend(item for item in values if isinstance(item, str))
+    unique: list[str] = []
+    for dependency in dependencies:
+        if dependency not in unique:
+            unique.append(dependency)
+    return unique or ["wxPython>=4.2.2", "pyttsx3>=2.99"]
+
+
 def _stage_distribution_docs(portable_dir: Path, source_root: Path) -> list[Path]:
     docs_dir = portable_dir / "docs"
     docs_dir.mkdir(parents=True, exist_ok=True)
@@ -497,7 +587,7 @@ def _stage_distribution_docs(portable_dir: Path, source_root: Path) -> list[Path
     for relative in (
         Path("docs") / "userguide.md",
         Path("docs") / "announcement-beta.md",
-        Path("docs") / "beta-feedback-plan.md",
+        Path("docs") / "QUILL-PRD.md",
     ):
         source = source_root / relative
         if not source.exists():
@@ -541,8 +631,6 @@ def _download_with_verification(
 
 
 def _project_version(pyproject: Path) -> str:
-    import tomllib
-
     with pyproject.open("rb") as handle:
         data = tomllib.load(handle)
     project = data.get("project", {})

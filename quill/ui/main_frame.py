@@ -5586,9 +5586,19 @@ class MainFrame:
         info = wx.adv.AboutDialogInfo()
         info.SetName("Quill")
         info.SetVersion(__version__)
-        info.SetDescription("Screen-reader-first writing and document environment for Windows.")
-        info.SetCopyright("Copyright (c) Blind Information Technology Solutions (BITS)")
-        info.SetDevelopers(["Blind Information Technology Solutions (BITS)"])
+        info.SetDescription(
+            "Quill 0.1 Beta is a screen-reader-first writing and document environment "
+            "for Windows from Blind Information Technology Solutions (BITS) and Community Access."
+        )
+        info.SetCopyright(
+            "Copyright (c) Blind Information Technology Solutions (BITS) and Community Access"
+        )
+        info.SetDevelopers(
+            [
+                "Blind Information Technology Solutions (BITS)",
+                "Community Access",
+            ]
+        )
         wx.adv.AboutBox(info)
         self._set_status("Opened About Quill")
 

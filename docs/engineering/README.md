@@ -1,6 +1,6 @@
 # Engineering documentation
 
-This folder is the implementation-facing engineering baseline extracted from `QUILL-PRD.md` sections 10 and 11 and adapted to the current codebase state.
+This folder is the implementation-facing engineering baseline extracted from `docs/QUILL-PRD.md` sections 10 and 11 and adapted to the current codebase state.
 
 ## Current docs
 

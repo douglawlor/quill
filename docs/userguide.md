@@ -2,6 +2,8 @@
 
 Quill is a screen-reader-first writing and reading environment for Windows. It is designed to feel calm, predictable, deeply keyboard-friendly, and respectful of your focus. It is also ambitious. Quill is not only a place to write plain text. It is a place to open difficult documents, inspect structure, navigate long material, compare revisions, prepare content for Markdown or HTML, and work with accessibility and extraction issues without leaving the editor.
 
+This guide is aligned to Quill 0.1 Beta, built by Blind Information Technology Solutions (BITS) together with Community Access.
+
 This guide is written as a companion, not a reference wall. Read it from the beginning if you are new to Quill. Dip into the sections that matter most if you already know what kind of work you want to do.
 
 Quill is also in beta. Expect polish, depth, and real daily utility. Also expect rough edges, unfinished flows, and the occasional surprise. If you find something confusing or broken, that is useful information. Quill is becoming stronger because real people are trying it on real work.
@@ -410,7 +412,7 @@ The **Help** menu is where Quill becomes a guide.
 - **Open Welcome Guide** opens a lighter, profile-aware getting-started document.
 - **Open Keyboard Reference** generates the current live shortcut reference from the active command registry.
 - **Save Diagnostics...** writes a local diagnostics bundle you can review before sharing.
-- **Report a Bug...** opens the Community Access support-hub issue form and copies an environment summary to the clipboard.
+- **Report a Bug...** opens an in-app review screen, copies the environment summary to the clipboard, and then opens the Community Access support-hub issue form.
 - **What Can I Do Here?** gives context-aware assistance.
 - **Why Don't I See a Feature?** explains profile-driven feature visibility.
 - **Feature Profiles** commands let you switch profile, run health checks, undo the last profile change, reset to Essential, and run onboarding.
@@ -543,7 +545,7 @@ The first native slice is strongest with:
 - heading spacing and heading-level sanity
 - lightweight readability guidance
 
-The v1.1 roadmap expands this into findings navigation, export-readiness workflows, and richer extraction-aware review for PDF and EPUB.
+The 1.0 roadmap expands this into findings navigation, export-readiness workflows, and richer extraction-aware review for PDF and EPUB.
 
 ## Accessibility and Low-Vision Features
 
@@ -694,7 +696,7 @@ That last command matters more than it first appears. It turns feature visibilit
 
 ## Beta Feedback and Bug Reporting
 
-Quill is ready for serious beta use, but one public-beta readiness item still deserves honest attention: a secure, low-friction, no-login feedback path.
+Quill is ready for serious beta use, and Quill 0.1 Beta now ships a real in-app support starting point.
 
 ### What exists today
 
@@ -705,23 +707,23 @@ Today, Quill already has the foundations for careful support work:
 - extraction review
 - bad-extraction package export for extraction-related issues
 - a general-purpose **Save Diagnostics...** command that writes a local bundle
-- a **Report a Bug...** command that opens the Community Access support-hub form with environment context
-- a diagnostics runbook and beta feedback plan in the documentation set
+- a **Report a Bug...** command that lets you review the report in-app and then opens the Community Access support-hub form with environment context
+- a diagnostics runbook and PRD-backed support model in the documentation set
 
 ### What still needs to improve
 
-Today, Quill still does **not** yet ship a polished no-login secure upload path directly from the desktop app, and it still needs a more public, more discoverable beta support route than a GitHub-backed form alone.
+Today, Quill still does **not** yet ship a polished no-login secure upload path directly from the desktop app, and it still needs a more public, more discoverable support route than a GitHub-backed form alone.
 
 ### Best beta-launch recommendation
 
-Before the broadest public beta push, publish one secure feedback route that does not require GitHub login. The best release-quality path is still:
+Before the broadest public rollout, publish one secure feedback route that does not require GitHub login. The best release-quality path is still:
 
 1. a BITS-controlled HTTPS feedback form
 2. optional upload of a user-reviewed diagnostics bundle
 3. a plain-language bug template with environment summary and reproduction steps
 4. GitHub issues as a secondary path for testers who already use GitHub
 
-Until that exists, use the current support-hub issue form as a practical bridge rather than the final answer. The important improvement is that Quill now helps users gather diagnostics locally, review what is being shared, and start a structured support report without throwing them into an empty issue box.
+Until that exists, use the current support-hub issue form as a practical bridge rather than the final answer. The important improvement in Quill 0.1 Beta is that Quill now helps users gather diagnostics locally, review what is being shared, and start a structured support report without throwing them into an empty issue box.
 
 ## A Fast Shortcut Tour
 

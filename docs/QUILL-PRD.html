@@ -734,9 +734,10 @@ Document</h1>
 id="a-magical-screen-reader-first-writing-and-document-environment-built-in-wxpython.">A
 magical, screen-reader-first writing and document environment, built in
 wxPython.</h2>
-<p>Status: Draft v0.2 Owner: Blind Information Technology Solutions
-(BITS) Target platform: Windows 10 and Windows 11 Target screen readers:
-NVDA (primary), JAWS, Narrator UI framework: wxPython (wxWidgets 3.2 or
+<p>Status: Quill 1.0 PRD aligned with Quill 0.1 Beta Owner: Blind
+Information Technology Solutions (BITS) and Community Access Target
+platform: Windows 10 and Windows 11 Target screen readers: NVDA
+(primary), JAWS, Narrator UI framework: wxPython (wxWidgets 3.2 or
 newer) Language: Python 3.11 or newer</p>
 <hr />
 <h2 id="vision">1. Vision</h2>
@@ -943,9 +944,10 @@ a new tab), Keyboard Reference (auto-generated from the current keymap,
 opens in the editor as a searchable, printable document that updates
 whenever the keymap changes), Tip of the Day… (off by default; drawn
 from real actions in the palette), Command Palette… (Ctrl+Shift+P),
-Documentation Online…, Release Notes, Report a Bug… (opens a pre-filled
-GitHub issue template with redacted environment info; never auto-sends),
-Save Diagnostics… (5.33), Check for Updates…, About Quill.</li>
+Documentation Online…, Release Notes, Report a Bug… (opens an in-app
+review screen, then a pre-filled Community Access support-hub issue form
+with redacted environment info; never auto-sends), Save Diagnostics…
+(5.33), Check for Updates…, About Quill.</li>
 </ul>
 <p>All menu strings are translatable. Every menu item has a unique
 mnemonic. The menu bar may be hidden via View; when hidden, pressing
@@ -2588,9 +2590,11 @@ locale).</li>
 </ul></li>
 <li>Nothing leaves the machine. The user chooses where to save the zip
 and what to do with it.</li>
-<li><code>Help → Report a Bug…</code> opens a pre-filled Community
-Access support-hub issue form in the default browser with a copy of the
-environment info (no logs); the user reviews and submits manually.</li>
+<li><code>Help → Report a Bug…</code> first opens an in-app review
+screen with the report summary and destination URL, copies the
+environment summary to the clipboard, and then opens a pre-filled
+Community Access support-hub issue form in the default browser with no
+logs; the user reviews and submits manually.</li>
 </ul>
 <h3 id="welcome-and-keyboard-reference">5.34 Welcome and Keyboard
 Reference</h3>

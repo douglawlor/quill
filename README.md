@@ -2,6 +2,8 @@
 
 Quill is a screen-reader-first writing, reading, review, and document-intelligence environment for Windows.
 
+Quill 0.1 Beta is being built by Blind Information Technology Solutions (BITS) together with Community Access.
+
 It is being built for people who want an editor that feels calm, native, and deeply trustworthy from the keyboard. Quill is not only a place to type plain text. It is a place to open difficult documents, navigate structure, compare revisions, inspect extraction quality, run deterministic GLOW review, work with golden keyboard packs, and grow into richer workflows through optional external tools such as Pandoc and Tesseract.
 
 ## What Quill Already Does
@@ -36,14 +38,14 @@ User-facing and release-facing documentation lives in `docs/`:
 
 - `docs/userguide.md` - the full guided user manual
 - `docs/announcement-beta.md` - the beta announcement and feature story
-- `docs/beta-feedback-plan.md` - the beta support and diagnostics direction
+- `docs/QUILL-PRD.md` - the product requirements document and current 1.0 roadmap
 
 These documents are meant to work together:
 
 - the README gives the product snapshot and packaging overview
 - the user guide teaches daily use inside the app
 - the announcement tells the feature story for evaluators and new testers
-- the beta feedback plan explains how support, diagnostics, and bug reporting are supposed to feel
+- the PRD records the broader 1.0 product intent, support model, and roadmap commitments
 
 Engineering baseline docs are under `docs/engineering/`:
 
@@ -64,9 +66,9 @@ Quill includes a Windows distribution builder that can generate a portable bundl
 
 - bundle embedded Python for a no-Python-required install
 - stage the user guide and beta announcement into the portable bundle
-- stage the beta feedback plan into the portable bundle
+- stage the PRD into the portable bundle
 - optionally stage external tool directories such as Pandoc or Tesseract into `portable\tools\...`
-- generate installer shortcuts for the README, user guide, and announcement
+- generate installer shortcuts for the README, user guide, announcement, and PRD
 
 Example:
 

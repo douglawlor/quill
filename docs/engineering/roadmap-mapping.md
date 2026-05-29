@@ -99,5 +99,5 @@ This maps implemented work to PRD release slices.
 - SBOM + signed build/release provenance pipeline
 - Deferred to v1.1: AI provider abstraction, consent-gated network actions, reading-order repair, task progress/cancellation
 - Deferred to v1.1: GLOW expansion beyond the first native audit/fix slice, including findings navigation, export-readiness workflows, and extraction-aware review for PDF and EPUB.
-- Deferred to v1.1: multi-format documentation release pipeline for the full user guide, including maintained Markdown, HTML, and EPUB artifacts.
-- Deferred to v1.1: secure beta feedback intake, in-app diagnostics export, and a no-login report-a-bug path suitable for broad public testing.
+- Delivered in Quill 0.1 Beta: multi-format documentation release pipeline for the user guide and announcement, including maintained Markdown, HTML, and EPUB artifacts.
+- Delivered in Quill 0.1 Beta: in-app diagnostics export, in-app bug-report review, and a Community Access support-hub report-a-bug path suitable for broad testing.
