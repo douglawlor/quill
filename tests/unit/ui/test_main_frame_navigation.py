@@ -464,6 +464,83 @@ def test_ctrl_shift_o_opens_outline_navigator_from_editor() -> None:
     assert called["outline"] is True
 
 
+def test_enter_continues_markdown_list_item() -> None:
+    frame = _build_frame("- item", insertion_point=6)
+    frame._wx = type(
+        "WX",
+        (),
+        {
+            "WXK_INSERT": 45,
+            "WXK_F8": 119,
+            "WXK_RETURN": 13,
+            "WXK_NUMPAD_ENTER": 370,
+            "WXK_TAB": 9,
+        },
+    )()
+    event = _KeyEvent(13)
+
+    frame._on_editor_key_down(event)
+
+    assert frame.editor.GetValue() == "- item\n- "
+    assert frame._status_message == "Continued list item"
+
+
+def test_enter_on_empty_list_item_exits_list() -> None:
+    frame = _build_frame("- ", insertion_point=2)
+    frame._wx = type(
+        "WX",
+        (),
+        {
+            "WXK_INSERT": 45,
+            "WXK_F8": 119,
+            "WXK_RETURN": 13,
+            "WXK_NUMPAD_ENTER": 370,
+            "WXK_TAB": 9,
+        },
+    )()
+    event = _KeyEvent(13)
+
+    frame._on_editor_key_down(event)
+
+    assert frame.editor.GetValue() == ""
+    assert frame._status_message == "Exited list"
+
+
+def test_tab_and_shift_tab_adjust_list_nesting() -> None:
+    frame = _build_frame("- one\n- two", insertion_point=8)
+    frame._wx = type(
+        "WX",
+        (),
+        {
+            "WXK_INSERT": 45,
+            "WXK_F8": 119,
+            "WXK_RETURN": 13,
+            "WXK_NUMPAD_ENTER": 370,
+            "WXK_TAB": 9,
+        },
+    )()
+    event = _KeyEvent(9)
+    frame._on_editor_key_down(event)
+    assert frame.editor.GetValue() == "- one\n    - two"
+    assert frame._status_message == "Nested list item"
+
+    shift_event = _KeyEvent(9)
+    shift_event._shift = True
+    frame._on_editor_key_down(shift_event)
+    assert frame.editor.GetValue() == "- one\n- two"
+    assert frame._status_message == "Promoted list item"
+
+
+def test_extract_list_manager_state_tracks_nested_items() -> None:
+    frame = _build_frame("- Parent\n    - [x] Child\n1. Ordered", insertion_point=14)
+
+    state = frame._extract_list_manager_state()
+
+    assert state is not None
+    assert [item.kind for item in state.items] == ["bullet", "task", "ordered"]
+    assert [item.level for item in state.items] == [0, 1, 0]
+
+
 def test_open_outline_navigator_routes_epub_to_epub_navigator() -> None:
     frame = _build_frame("# EPUB: Book", insertion_point=0)
     frame.document.path = Path("book.epub")

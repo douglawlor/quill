@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from quill.core.format_ops import (
+    continue_markdown_list,
     convert_indentation_to_spaces,
     convert_indentation_to_tabs,
     indent_lines,
@@ -77,3 +78,36 @@ def test_text_cleanup_helpers() -> None:
     assert remove_duplicate_lines("one\ntwo\none\nONE\n") == "one\ntwo\nONE\n"
     assert convert_indentation_to_spaces("\talpha\n  beta", 4) == "    alpha\n  beta"
     assert convert_indentation_to_tabs("        alpha\n  beta", 4) == "\t\talpha\n  beta"
+
+
+def test_continue_markdown_list_for_bullets() -> None:
+    source = "- item"
+    result = continue_markdown_list(source, len(source))
+    assert result is not None
+    assert result.text == "- item\n- "
+    assert result.exited_list is False
+
+
+def test_continue_markdown_list_for_numbered_items() -> None:
+    source = "2. next"
+    result = continue_markdown_list(source, len(source))
+    assert result is not None
+    assert result.text == "2. next\n3. "
+    assert result.exited_list is False
+
+
+def test_continue_markdown_list_for_task_items() -> None:
+    source = "- [x] done"
+    result = continue_markdown_list(source, len(source))
+    assert result is not None
+    assert result.text == "- [x] done\n- [ ] "
+    assert result.exited_list is False
+
+
+def test_continue_markdown_list_exits_empty_item() -> None:
+    source = "- "
+    result = continue_markdown_list(source, len(source))
+    assert result is not None
+    assert result.text == ""
+    assert result.caret == 0
+    assert result.exited_list is True

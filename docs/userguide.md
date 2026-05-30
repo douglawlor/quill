@@ -548,6 +548,8 @@ Quill detects whether the current surface looks like Markdown, HTML, or plain te
 
 The heading tools do more than insert decoration. They help you maintain usable structure. The list tools speed up common authoring patterns without forcing you into a separate composer.
 
+Markdown list editing now follows editor-standard behavior: `Enter` continues the current bullet/numbered/task item, and `Enter` on an empty list marker exits the list. When the caret is on a list item, `Tab` nests it and `Shift+Tab` promotes it. For larger reorganizations, use **Format -> List -> List Manager...** (`Ctrl+Alt+L`) to move, promote/demote, add, edit, and delete list items from a tree view.
+
 ### Tables, code blocks, and tags
 
 Quill includes guided insertion for tables, code blocks, HTML tags, and Markdown snippets. This is especially useful for users who want structure but do not want to hand-type every opening and closing marker correctly every time.
@@ -822,6 +824,7 @@ If you want a compact set of shortcuts to remember first, start here:
 - `Ctrl+F`, `F3`, `Shift+F3`, `Alt+F3`
 - `Ctrl+G` and `Ctrl+Shift+G`
 - `Ctrl+K` and `Ctrl+Enter`
+- `Ctrl+Alt+L` for List Manager
 - `F7`, `Alt+F7`, `Shift+F7`
 - `Ctrl+Shift+W` for Word Count
 - `Ctrl+Tab` and `Ctrl+Shift+Tab`

@@ -1696,6 +1696,8 @@ A dedicated menu surfacing transforms that are otherwise reachable via Tools or 
 - Lines: Move Line Up/Down, Duplicate Line, Delete Line, Join Lines, Toggle Line Comment, Toggle Block Comment.
 - Indent: Indent, Outdent, Convert to Tabs, Convert to Spaces, Set Indent Width….
 - Markdown helpers: Insert Heading (levels 1–6), Insert Bullet List, Insert Numbered List, Insert Task List, Insert Table…, Insert Link…, Insert Code Block, Insert Footnote.
+- Markdown list editing behavior: `Enter` continues bullet/numbered/task items, `Enter` on an empty marker exits the list, and `Tab`/`Shift+Tab` nest or promote list items when the caret is on a list line.
+- List Manager: `Format -> List -> List Manager...` (`Ctrl+Alt+L`) opens a keyboard-first tree editor for moving, promoting/demoting, adding, editing, and deleting list items.
 - Magical tag helpers: Insert HTML Tag… (with attribute picker) and Insert Markdown Tag… (semantic snippet picker).
 - Snippet helpers: Insert Snippet… (`Ctrl+Alt+Space`) and Manage Snippets… (`Ctrl+Alt+Shift+Space`) with searchable filtering, placeholder prompts, and starter-pack onboarding.
 - Prediction helpers: Word Prediction… (`Ctrl+Space`) with words, HTML tags, and Markdown tag completions.

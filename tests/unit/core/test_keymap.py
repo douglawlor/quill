@@ -103,6 +103,7 @@ def test_sticky_note_shortcut_is_available() -> None:
 def test_indent_shortcuts_are_available() -> None:
     assert DEFAULT_KEYMAP["format.indent"] == "Ctrl+]"
     assert DEFAULT_KEYMAP["format.outdent"] == "Ctrl+["
+    assert DEFAULT_KEYMAP["format.list_manager"] == "Ctrl+Alt+L"
 
 
 def test_browser_preview_shortcut_is_available() -> None:
