@@ -1,12 +1,16 @@
 """The "Ask Quill" AI chat dialog.
 
 A conversation with Quill's on-device assistant (Apple Foundation Models on
-macOS). Each turn the assistant decides whether to answer in chat, insert or
-replace text in the document, or run a Quill command — and acts on the editor
-live via callbacks. The conversation is shown as a scrollable list of message
-rows (each "You" / "Quill" message is its own element, which is also better for
-screen-reader navigation); the message field is labeled; generation runs off
-the UI thread.
+macOS, llama.cpp on Windows/Linux). Each turn the assistant decides whether to
+answer in chat, insert or replace text in the document, or run a Quill command —
+and acts on the editor live via callbacks, but only after the user approves.
+
+The whole conversation — transcript, suggestions, and the message edit field —
+renders inside an accessible WebView (Edge WebView2 on Windows): Markdown is
+formatted, new messages land in an ARIA live region, and the edit field is part
+of the page so the user stays in the web view to type. A plain wx ListBox +
+text field is the fallback when no WebView backend is available. Generation runs
+off the UI thread.
 """
 from __future__ import annotations
 
@@ -49,6 +53,7 @@ class AskQuillChatDialog:
         self._tool_ids = tuple(tid for tid, _ in tool_catalog)
         self._announce = announce or (lambda _m: None)
         self._last_response = ""
+        self._first_done = False
 
         self.dialog = wx.Dialog(
             parent, title="Ask Quill", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
@@ -56,13 +61,15 @@ class AskQuillChatDialog:
         self.dialog.SetSize((760, 760))
         outer = wx.BoxSizer(wx.VERTICAL)
 
-        outer.Add(wx.StaticText(self.dialog, label="Conversation"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
         self._full_messages: list[str] = []
-        # Render the conversation as markdown in a WebView (formatted, with an
-        # ARIA live region + per-message headings). Fall back to a list box if
-        # the WebView backend (Edge WebView2 / WebKit) isn't available.
+        # Render the whole chat (transcript + suggestions + edit field) as
+        # markdown in a WebView. Fall back to a list box + wx text field if the
+        # WebView backend (Edge WebView2 / WebKit) isn't available.
         self._webview = None
         self.messages = None
+        self.input = None
+        self.send_button = None
+        self._suggestion_buttons: list = []
         try:
             from quill.ui.accessible_webview import AccessibleWebView
 
@@ -70,35 +77,13 @@ class AskQuillChatDialog:
                 self.dialog,
                 title="Conversation",
                 intro=("Quill", "Hi! Ask me to write, edit, or run something in your document."),
+                suggestions=SUGGESTED_PROMPTS,
+                on_send=self._submit,
             )
-            transcript = self._webview.control
+            outer.Add(self._webview.control, 1, wx.EXPAND | wx.ALL, 0)
         except Exception:  # noqa: BLE001
             self._webview = None
-            self.messages = wx.ListBox(self.dialog, style=wx.LB_SINGLE | wx.LB_NEEDED_SB)
-            self.messages.SetName("Conversation")
-            transcript = self.messages
-        outer.Add(transcript, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
-
-        outer.Add(wx.StaticText(self.dialog, label="Suggestions"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
-        suggestions = wx.WrapSizer(wx.HORIZONTAL)
-        self._suggestion_buttons = []
-        for text in SUGGESTED_PROMPTS:
-            button = wx.Button(self.dialog, label=text)
-            button.Bind(wx.EVT_BUTTON, lambda _e, t=text: self._submit(t))
-            suggestions.Add(button, 0, wx.RIGHT | wx.BOTTOM, 6)
-            self._suggestion_buttons.append(button)
-        outer.Add(suggestions, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
-
-        outer.Add(wx.StaticText(self.dialog, label="Your message"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
-        input_row = wx.BoxSizer(wx.HORIZONTAL)
-        self.input = wx.TextCtrl(self.dialog, style=wx.TE_PROCESS_ENTER)
-        self.input.SetName("Your message to Quill")
-        self.input.SetHint("Ask Quill to write, edit, or run something…")
-        input_row.Add(self.input, 1, wx.EXPAND | wx.RIGHT, 8)
-        self.send_button = wx.Button(self.dialog, label="Send")
-        self.send_button.SetDefault()
-        input_row.Add(self.send_button, 0)
-        outer.Add(input_row, 0, wx.EXPAND | wx.ALL, 14)
+            self._build_fallback_input(outer)
 
         # Approval bar — nothing is applied to the document until you approve.
         self._pending = None
@@ -121,8 +106,6 @@ class AskQuillChatDialog:
         outer.Add(footer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 14)
         self.dialog.SetSizer(outer)
 
-        self.input.Bind(wx.EVT_TEXT_ENTER, lambda _e: self._submit(self.input.GetValue()))
-        self.send_button.Bind(wx.EVT_BUTTON, lambda _e: self._submit(self.input.GetValue()))
         self.approve_button.Bind(wx.EVT_BUTTON, self._on_approve)
         self.discard_button.Bind(wx.EVT_BUTTON, self._on_discard)
         self.copy_button.Bind(wx.EVT_BUTTON, self._on_copy)
@@ -135,6 +118,37 @@ class AskQuillChatDialog:
         elif self._webview is None:
             # WebView bakes the greeting into the page (no flash); list box needs it added.
             self._append("Quill", "Hi! Ask me to write, edit, or run something in your document.")
+
+    def _build_fallback_input(self, outer) -> None:
+        """List box transcript + wx text field, for when no WebView backend exists."""
+        wx = self._wx
+        outer.Add(wx.StaticText(self.dialog, label="Conversation"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        self.messages = wx.ListBox(self.dialog, style=wx.LB_SINGLE | wx.LB_NEEDED_SB)
+        self.messages.SetName("Conversation")
+        outer.Add(self.messages, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        outer.Add(wx.StaticText(self.dialog, label="Suggestions"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        suggestions = wx.WrapSizer(wx.HORIZONTAL)
+        for text in SUGGESTED_PROMPTS:
+            button = wx.Button(self.dialog, label=text)
+            button.Bind(wx.EVT_BUTTON, lambda _e, t=text: self._submit(t))
+            suggestions.Add(button, 0, wx.RIGHT | wx.BOTTOM, 6)
+            self._suggestion_buttons.append(button)
+        outer.Add(suggestions, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        outer.Add(wx.StaticText(self.dialog, label="Your message"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        input_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.input = wx.TextCtrl(self.dialog, style=wx.TE_PROCESS_ENTER)
+        self.input.SetName("Your message to Quill")
+        self.input.SetHint("Ask Quill to write, edit, or run something…")
+        input_row.Add(self.input, 1, wx.EXPAND | wx.RIGHT, 8)
+        self.send_button = wx.Button(self.dialog, label="Send")
+        self.send_button.SetDefault()
+        input_row.Add(self.send_button, 0)
+        outer.Add(input_row, 0, wx.EXPAND | wx.ALL, 14)
+
+        self.input.Bind(wx.EVT_TEXT_ENTER, lambda _e: self._submit(self.input.GetValue()))
+        self.send_button.Bind(wx.EVT_BUTTON, lambda _e: self._submit(self.input.GetValue()))
 
     def _on_char_hook(self, event: object) -> None:
         wx = self._wx
@@ -158,24 +172,38 @@ class AskQuillChatDialog:
             self.messages.EnsureVisible(index)
 
     def _set_busy(self, busy: bool) -> None:
+        if self._webview is not None:
+            self._webview.set_input_enabled(not busy)
+            return
         self.send_button.Enable(not busy)
         self.input.Enable(not busy)
         for button in self._suggestion_buttons:
             button.Enable(not busy)
 
+    def _focus_composer(self) -> None:
+        if self._webview is not None:
+            self._webview.focus()
+        elif self.input is not None:
+            self.input.SetFocus()
+
     def _submit(self, message: str) -> None:
         message = (message or "").strip()
         if not message:
-            self.input.SetFocus()
+            self._focus_composer()
             return
         self._append("You", message)
-        self.input.SetValue("")
+        if self.input is not None:
+            self.input.SetValue("")
+        # Suggestions fall away once the conversation starts (like Apple Intelligence).
+        if not self._first_done:
+            self._first_done = True
+            if self._webview is not None:
+                self._webview.hide_suggestions()
         self._set_busy(True)
         if self._webview is not None:
             self._webview.set_status("Quill is responding")
         self._announce("Working")
         document = self._get_document()
-
         selection = self._get_selection()
 
         def worker() -> None:
@@ -236,8 +264,9 @@ class AskQuillChatDialog:
             self._announce("Quill is proposing a change. Approve or discard.")
             self.approve_button.SetFocus()
         else:
+            # The live region already announced the reply; don't steal focus
+            # from the in-page edit field the user is sitting in.
             self._announce("Response ready")
-            self.input.SetFocus()
 
     def _on_approve(self, _event: object) -> None:
         if not self._pending:
@@ -263,14 +292,14 @@ class AskQuillChatDialog:
         except Exception as exc:  # noqa: BLE001
             self._append("Quill", f"Couldn't apply that: {exc}")
         self._announce("Applied")
-        self.input.SetFocus()
+        self._focus_composer()
 
     def _on_discard(self, _event: object) -> None:
         self._pending = None
         self._show_approval(False)
         self._append("Quill", "Discarded — nothing was changed.")
         self._announce("Discarded")
-        self.input.SetFocus()
+        self._focus_composer()
 
     def _on_copy(self, _event: object) -> None:
         wx = self._wx
@@ -286,11 +315,8 @@ class AskQuillChatDialog:
     def show(self) -> None:
         self.dialog.CentreOnParent()
         try:
-            # Land directly in the web view conversation (not the list/buttons).
-            if self._webview is not None:
-                self._wx.CallAfter(self._webview.focus)
-            else:
-                self.input.SetFocus()
+            # Land in the web view's edit field (or the wx field in fallback).
+            self._wx.CallAfter(self._focus_composer)
             self.dialog.ShowModal()
         finally:
             self.dialog.Destroy()
