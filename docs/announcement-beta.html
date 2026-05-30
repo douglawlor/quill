@@ -188,8 +188,7 @@ environment for Windows built around a simple idea: powerful tools
 should feel calm, predictable, and welcoming from the keyboard. The
 editor is local-first, screen-reader-first, and designed to make serious
 text work feel steady instead of fragile.</p>
-<p>The name is intentional. Quill reflects both writing craft and a love
-of magical storytelling (yes, Harry Potter), but grounded in dependable
+<p>The name is intentional. Quill reflects writing craft and dependable
 engineering. This work is built by us, for us, and for the wider
 world.</p>
 <p>Quill is not only a place to type notes. It is a place to open and
@@ -215,12 +214,27 @@ now include Restore Defaults.</p>
 <p>Quill 0.1.2 extends that foundation with editor-quality workflow
 upgrades: word prediction and tag IntelliSense
 (<code>Ctrl+Space</code>), dedicated snippet hotkeys
-(<code>Ctrl+Alt+Space</code> and
-<code>Ctrl+Alt+Shift+Space</code>), browser preview
-(<code>Ctrl+Shift+V</code>), a local Writing Assistant surface with
+(<code>Ctrl+Alt+Space</code> and <code>Ctrl+Alt+Shift+Space</code>),
+browser preview (<code>Ctrl+Shift+V</code>), Markdown list
+continuation/nesting plus a List Manager tree (<code>Ctrl+Alt+L</code>),
+heading style controls for live font/size/alignment updates, a
+keyboard-first Heading Organizer (<code>Ctrl+Alt+Shift+H</code>) for
+level/reorder/validation, a local Writing Assistant surface with
 rewrite/summarize/continue/grammar quick actions, and AI connection
 preferences for local Ollama or custom endpoints with DPAPI-protected
 optional keys.</p>
+<p>This cycle also strengthens customization with custom profiles
+(including opt-in inheritance or bare-bones starts), a quick profile
+picker on <code>Alt+Shift+P</code>, and cleaner status/title behavior by
+suppressing duplicate file-path reporting when full-path title mode is
+enabled.</p>
+<p>This cycle also expands document-intake depth. CSV and TSV files now
+prompt for open mode (special grid or normal text) with a remembered
+default and a quick in-tab way back to normal editing. Word documents
+now offer a structured Word view and normal text editing mode, both with
+remembered defaults, and table-heavy Word content is rendered into
+explicit screen-reader-friendly table narration in the structured
+view.</p>
 <h2 id="what-makes-quill-special">What makes Quill special</h2>
 <p>Quill Beta already includes a broad set of everyday and specialist
 features:</p>
@@ -233,12 +247,16 @@ structured</li>
 copy</li>
 <li>heading, list, table, code block, and markup insertion tools</li>
 <li>a new snippet system with searchable insertion
-(<code>Ctrl+Space</code>), management (<code>Ctrl+Alt+Space</code>), and
-starter packs</li>
+(<code>Ctrl+Alt+Space</code>), management
+(<code>Ctrl+Alt+Shift+Space</code>), and starter packs</li>
 <li>compare workflows for file-to-file and document-to-document
 review</li>
 <li>EPUB navigation, OCR image intake, and extraction-quality
 review</li>
+<li>expanded structured intake for <code>.doc</code>/<code>.docx</code>,
+<code>.ppt</code>/<code>.pptx</code>,
+<code>.xlsx</code>/<code>.xls</code>, <code>.pages</code>, and
+low-confidence PDF fallback via MarkItDown when available</li>
 <li>feature profiles that keep the interface calm without taking power
 away</li>
 <li>golden keyboard packs inspired by Windows Notepad, Notepad++, VS

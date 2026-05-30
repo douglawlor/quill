@@ -294,11 +294,11 @@ expect:</p>
 <ul>
 <li>File</li>
 <li>Edit</li>
-<li>Search</li>
+<li>Insert</li>
 <li>View</li>
+<li>Search</li>
 <li>Navigate</li>
 <li>Format</li>
-<li>Insert</li>
 <li>Tools</li>
 <li>Window</li>
 <li>Help</li>
@@ -365,7 +365,8 @@ Customize → Status Bar Settings...</strong>. Right-click a focused
 status cell to <strong>Activate</strong>, <strong>Hide this
 item</strong>, or open <strong>Status bar settings...</strong>. Use
 <strong>Restore Defaults</strong> in status bar settings to reset
-visibility and order.</p>
+visibility and order. When title mode is set to full path, Quill
+automatically hides the duplicate file-path status cell.</p>
 <h3 id="region-cycling">Region cycling</h3>
 <p>Use <code>F6</code> and <code>Shift+F6</code> to move between major
 regions. Quill treats region movement as a first-class accessibility
@@ -522,6 +523,10 @@ markup-aware editing.</p>
 <li>Italic</li>
 <li>Insert Heading levels 1 through 6</li>
 <li>Increase or decrease heading level</li>
+<li>Style headings (font, size, alignment) for the current level or all
+levels</li>
+<li>Open Heading Organizer (<code>Ctrl+Alt+Shift+H</code>) for
+heading-level edits, section reorder, and heading validation</li>
 <li>Insert bullet, numbered, and task lists</li>
 <li>Insert code block</li>
 <li>Insert footnote</li>
@@ -595,33 +600,33 @@ naturally.</p>
 <li><strong>Run Python...</strong></li>
 <li><strong>Browser Preview...</strong> (<code>Ctrl+Shift+V</code>)</li>
 </ul>
+<p>Browser Preview opens the current document in your chosen browser,
+defaulting to the system browser. It refreshes as you type so Markdown
+and HTML changes stay visible without leaving Quill.</p>
+<p>The Writing Assistant shell ranks Quill commands from your prompt,
+offers preset prompts for rewrite/summarize/continue/grammar flows, and
+Run Python executes a sandboxed transform against the current document
+text and selection.</p>
+<p>Use <strong>Preferences -&gt; AI Connection</strong> to set provider,
+host, and model. Local Ollama use usually needs no key; if you add one
+for an authenticated endpoint, Quill stores it with Windows DPAPI.</p>
 <p>These help you stay inside the editor instead of breaking flow for
 small writing chores.</p>
-<p>Browser Preview opens the current document in your chosen browser,
-defaulting to the system browser. It refreshes as you type so Markdown and
-HTML changes stay visible without leaving Quill.</p>
-<p>The Writing Assistant shell ranks Quill commands from your prompt,
-offers preset prompts for rewrite/summarize/continue/grammar flows, and Run
-Python executes a sandboxed transform against the current document text and
-selection.</p>
-<p>Use <strong>Preferences -&gt; AI Connection</strong> to set provider,
-host, and model. Local Ollama use usually needs no key; if you add one for
-an authenticated endpoint, Quill stores it with Windows DPAPI.</p>
 <h4 id="read-aloud-and-integrations">Read aloud and integrations</h4>
 <ul>
 <li><strong>Read Aloud</strong> submenu for start or pause, stop, and
 voice selection</li>
-<li><strong>Dictation</strong> submenu for Windows dictation, plus an opt-in
-<strong>Hey QUILL Commands</strong> toggle that lets dictation phrases trigger
-Quill commands instead of inserting text.</li>
+<li><strong>Dictation</strong> submenu for Windows dictation, plus an
+opt-in <strong>Hey QUILL Commands</strong> toggle that lets dictation
+phrases trigger Quill commands instead of inserting text.</li>
 <li><strong>Integrations</strong> submenu with <strong>OCR
 Image...</strong> and shell integration commands.</li>
 </ul>
 <p>Read Aloud is particularly useful for proofreading by ear. OCR Image
-handles image-to-text work with an explicit consent and progress
-flow. Dictation uses Windows&#39; own speech input. When Hey QUILL Commands is
-enabled, Quill stays silent and only listens while dictation is active, then
-runs the matching action after the wake phrase.</p>
+handles image-to-text work with an explicit consent and progress flow.
+Dictation uses Windows' own speech input. When Hey QUILL Commands is
+enabled, Quill stays silent and only listens while dictation is active,
+then runs the matching action after the wake phrase.</p>
 <h4 id="document-intake-and-extraction-review">Document intake and
 extraction review</h4>
 <ul>
@@ -853,6 +858,25 @@ commands that make sense in context.</p>
 <p>The heading tools do more than insert decoration. They help you
 maintain usable structure. The list tools speed up common authoring
 patterns without forcing you into a separate composer.</p>
+<p>Markdown list editing now follows editor-standard behavior:
+<code>Enter</code> continues the current bullet/numbered/task item, and
+<code>Enter</code> on an empty list marker exits the list. When the
+caret is on a list item, <code>Tab</code> nests it and
+<code>Shift+Tab</code> promotes it. For larger reorganizations, use
+<strong>Format -&gt; List -&gt; List Manager...</strong>
+(<code>Ctrl+Alt+L</code>) to move, promote/demote, add, edit, and delete
+list items from a tree view.</p>
+<p>For heading presentation control, open <strong>Insert -&gt; Heading
+-&gt; Style Headings...</strong>. You can style either all heading
+levels or the current heading level, then set font family, point size,
+and alignment. In Markdown documents, styled headings are written as
+HTML heading tags so the formatting is preserved.</p>
+<p>For structure editing, open <strong>Navigate -&gt; Heading
+Organizer...</strong> (<code>Ctrl+Alt+Shift+H</code>). The organizer
+lists each heading as level + title, supports keyboard
+promotion/demotion (<code>Tab</code> and <code>Shift+Tab</code>), lets
+you move sections up/down, rename headings, and validates heading order
+(start level, skipped levels, empty headings) before apply.</p>
 <h3 id="tables-code-blocks-and-tags">Tables, code blocks, and tags</h3>
 <p>Quill includes guided insertion for tables, code blocks, HTML tags,
 and Markdown snippets. This is especially useful for users who want
@@ -949,10 +973,23 @@ advanced users.</p>
 <p>Use <strong>Profiles and Features...</strong> to:</p>
 <ul>
 <li>switch profiles</li>
+<li>quick-switch profiles from anywhere with
+<code>Alt+Shift+P</code></li>
 <li>compare profiles</li>
 <li>undo the last profile change</li>
 <li>reset to Essential</li>
 <li>import and export profile data</li>
+<li>create custom profiles</li>
+<li>update a custom profile from your current feature/settings/keymap
+state</li>
+<li>delete custom profiles</li>
+</ul>
+<p>Custom profiles support an explicit inheritance choice:</p>
+<ul>
+<li><strong>Inherit parent profile</strong> keeps the selected built-in
+profile as the starting point.</li>
+<li><strong>Bare-bones start</strong> opts out of inherited features and
+starts with only locked core safety features enabled.</li>
 </ul>
 <h3 id="keyboard-packs">Keyboard packs</h3>
 <p>Quill now supports golden keyboard packs so the editor can feel
@@ -1057,7 +1094,8 @@ download.</p>
 Document Types</h2>
 <p>Quill is strongest today with plain text, Markdown, HTML, RTF, EPUB,
 and extracted text workflows. It also has intake and extraction review
-features for imported material such as PDF and OCR sources.</p>
+features for imported material such as PDF/OCR sources and structured
+import support for Office-style formats.</p>
 <h3 id="plain-text">Plain text</h3>
 <p>Plain text stays plain. Quill does not force hidden formatting into
 it.</p>
@@ -1073,8 +1111,33 @@ order, and table headers.</p>
 formatting fidelity matters. Commands such as bold, italic, and
 underline are exposed contextually in this mode while preserving Quill's
 keyboard-first, screen-reader-first behavior.</p>
+<h3 id="csv-and-tsv">CSV and TSV</h3>
+<p>CSV and TSV files open through a choice flow: special CSV grid mode
+or normal text editor mode. You can remember your preferred default and
+still switch modes from inside the tab at any time. Grid mode is
+keyboard-friendly and designed for screen-reader users who need
+cell-level table editing without leaving Quill.</p>
+<h3 id="word-docx-and-doc">Word (.docx and .doc)</h3>
+<p>Word documents open through a choice flow: structured Word view or
+normal text editor mode. You can remember your preferred default and
+still switch modes inside the tab.</p>
+<p>Structured Word view is optimized for accessibility: it prioritizes
+readable structure and linearized table narration (headers and rows) for
+screen readers. Normal text mode keeps full Quill editing behavior for
+direct edits.</p>
 <h3 id="epub">EPUB</h3>
 <p>EPUB gets navigator support and chapter-oriented reading.</p>
+<h3 id="powerpoint-pptx-and-ppt">PowerPoint (.pptx and .ppt)</h3>
+<p>PowerPoint imports are structure-aware: slide titles become headings,
+slide bullets become nested list items, tables are rendered into
+tab-friendly text tables, and speaker notes are included when
+present.</p>
+<h3 id="excel-style-spreadsheets-xlsx-and-xls">Excel-style spreadsheets
+(.xlsx and .xls)</h3>
+<p>Spreadsheet intake is text-first and structure-aware. Quill extracts
+sheets into readable table-oriented text so you can inspect and review
+content quickly. If optional converters are installed, extraction
+quality improves for legacy and mixed-format files.</p>
 <h3 id="pdf-and-ocr-derived-text">PDF and OCR-derived text</h3>
 <p>PDF and OCR work are where Quill's extraction review commands matter
 most. Treat those commands as quality checks, not optional extras.</p>
@@ -1149,6 +1212,7 @@ here:</p>
 <code>Alt+F3</code></li>
 <li><code>Ctrl+G</code> and <code>Ctrl+Shift+G</code></li>
 <li><code>Ctrl+K</code> and <code>Ctrl+Enter</code></li>
+<li><code>Ctrl+Alt+L</code> for List Manager</li>
 <li><code>F7</code>, <code>Alt+F7</code>, <code>Shift+F7</code></li>
 <li><code>Ctrl+Shift+W</code> for Word Count</li>
 <li><code>Ctrl+Tab</code> and <code>Ctrl+Shift+Tab</code></li>

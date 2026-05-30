@@ -12,7 +12,7 @@ This release is Quill 0.1.2 Beta from Blind Information Technology Solutions (BI
 
 Quill is a writing, reading, review, and document-intelligence environment for Windows built around a simple idea: powerful tools should feel calm, predictable, and welcoming from the keyboard. The editor is local-first, screen-reader-first, and designed to make serious text work feel steady instead of fragile.
 
-The name is intentional. Quill reflects both writing craft and a love of magical storytelling (yes, Harry Potter), but grounded in dependable engineering. This work is built by us, for us, and for the wider world.
+The name is intentional. Quill reflects writing craft and dependable engineering. This work is built by us, for us, and for the wider world.
 
 Quill is not only a place to type notes. It is a place to open and write plain text, Markdown, HTML, and RTF; inspect structure; compare revisions; navigate EPUB content; review extraction quality; run accessibility checks; work with spelling and thesaurus tools; use golden keyboard packs; and move through real documents with confidence.
 
@@ -24,6 +24,8 @@ Quill 0.1.2 extends that foundation with editor-quality workflow upgrades: word 
 
 This cycle also strengthens customization with custom profiles (including opt-in inheritance or bare-bones starts), a quick profile picker on `Alt+Shift+P`, and cleaner status/title behavior by suppressing duplicate file-path reporting when full-path title mode is enabled.
 
+This cycle also expands document-intake depth. CSV and TSV files now prompt for open mode (special grid or normal text) with a remembered default and a quick in-tab way back to normal editing. Word documents now offer a structured Word view and normal text editing mode, both with remembered defaults, and table-heavy Word content is rendered into explicit screen-reader-friendly table narration in the structured view.
+
 ## What makes Quill special
 
 Quill Beta already includes a broad set of everyday and specialist features:
@@ -32,9 +34,10 @@ Quill Beta already includes a broad set of everyday and specialist features:
 - plain text, Markdown, HTML, and RTF workflows that stay readable and structured
 - spell check, thesaurus, word count, link insertion, and source-aware copy
 - heading, list, table, code block, and markup insertion tools
-- a new snippet system with searchable insertion (`Ctrl+Space`), management (`Ctrl+Alt+Space`), and starter packs
+- a new snippet system with searchable insertion (`Ctrl+Alt+Space`), management (`Ctrl+Alt+Shift+Space`), and starter packs
 - compare workflows for file-to-file and document-to-document review
 - EPUB navigation, OCR image intake, and extraction-quality review
+- expanded structured intake for `.doc`/`.docx`, `.ppt`/`.pptx`, `.xlsx`/`.xls`, `.pages`, and low-confidence PDF fallback via MarkItDown when available
 - feature profiles that keep the interface calm without taking power away
 - golden keyboard packs inspired by Windows Notepad, Notepad++, VS Code, Microsoft Word, and Quill-native workflows
 - the first native GLOW workflows for deterministic audit and fix work inside the editor itself

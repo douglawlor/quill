@@ -84,11 +84,11 @@ The menu bar follows the Windows and Office order you likely expect:
 
 - File
 - Edit
-- Search
+- Insert
 - View
+- Search
 - Navigate
 - Format
-- Insert
 - Tools
 - Window
 - Help
@@ -754,7 +754,7 @@ Quill keeps an internal notification center for update and workflow events. Upda
 
 ## Working with Different Document Types
 
-Quill is strongest today with plain text, Markdown, HTML, RTF, EPUB, and extracted text workflows. It also has intake and extraction review features for imported material such as PDF/OCR sources and structured import support for PowerPoint slides.
+Quill is strongest today with plain text, Markdown, HTML, RTF, EPUB, and extracted text workflows. It also has intake and extraction review features for imported material such as PDF/OCR sources and structured import support for Office-style formats.
 
 ### Plain text
 
@@ -772,13 +772,27 @@ HTML gets tag insertion, structure-aware editing help, link handling, and GLOW r
 
 RTF documents can use Quill's rich-text-capable editing surface when formatting fidelity matters. Commands such as bold, italic, and underline are exposed contextually in this mode while preserving Quill's keyboard-first, screen-reader-first behavior.
 
+### CSV and TSV
+
+CSV and TSV files open through a choice flow: special CSV grid mode or normal text editor mode. You can remember your preferred default and still switch modes from inside the tab at any time. Grid mode is keyboard-friendly and designed for screen-reader users who need cell-level table editing without leaving Quill.
+
+### Word (.docx and .doc)
+
+Word documents open through a choice flow: structured Word view or normal text editor mode. You can remember your preferred default and still switch modes inside the tab.
+
+Structured Word view is optimized for accessibility: it prioritizes readable structure and linearized table narration (headers and rows) for screen readers. Normal text mode keeps full Quill editing behavior for direct edits.
+
 ### EPUB
 
 EPUB gets navigator support and chapter-oriented reading.
 
-### PowerPoint (.pptx)
+### PowerPoint (.pptx and .ppt)
 
 PowerPoint imports are structure-aware: slide titles become headings, slide bullets become nested list items, tables are rendered into tab-friendly text tables, and speaker notes are included when present.
+
+### Excel-style spreadsheets (.xlsx and .xls)
+
+Spreadsheet intake is text-first and structure-aware. Quill extracts sheets into readable table-oriented text so you can inspect and review content quickly. If optional converters are installed, extraction quality improves for legacy and mixed-format files.
 
 ### PDF and OCR-derived text
 

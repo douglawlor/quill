@@ -25,13 +25,16 @@ Highlights in 0.1.2 include:
 - Insert menu with searchable Markdown/HTML insertion.
 - Word Prediction with `Ctrl+Space` plus HTML/Markdown tag IntelliSense.
 - New snippet system with `Ctrl+Alt+Space` insertion, trigger expansion, and starter packs.
+- CSV open-mode choice with remembered default and an accessible grid surface that can switch back to normal text editing.
+- Word open-mode choice with remembered default, including a structured Word view and normal text editing mode.
+- Expanded structured intake for `.doc`/`.docx`, `.ppt`/`.pptx`, `.xlsx`/`.xls`, `.pages`, and low-confidence PDF fallback via MarkItDown when available.
 - Writing Assistant shell with prompt presets, generated tool suggestions, and a sandboxed Python runner.
 - Browser Preview with `Ctrl+Shift+V` and a selectable preview browser.
 - Heading styling tools to apply font family, size, and alignment to current-level or all headings in Markdown/HTML.
 - Heading Organizer (`Ctrl+Alt+Shift+H`) with keyboard-driven heading level changes, section reordering, and accessibility validation.
 - Search menu simplification with replace-all inside the Replace dialog.
 - Unified diagnostics-backed support flow under **Help -> Report a Bug**.
-- Menu IA refinement, including **Search** after **View**.
+- Menu IA refinement, including **Insert** before **View** and **Search** after **View**.
 - Documentation refresh with regenerated Markdown/HTML/EPUB artifacts.
 
 Snippet workflow quick start:
