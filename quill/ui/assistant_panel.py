@@ -57,12 +57,23 @@ class AskQuillChatDialog:
         outer = wx.BoxSizer(wx.VERTICAL)
 
         outer.Add(wx.StaticText(self.dialog, label="Conversation"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
-        # Message list — one item per message; a real list box so screen readers
-        # announce it as a list and arrow through each message cleanly.
-        self.messages = wx.ListBox(self.dialog, style=wx.LB_SINGLE | wx.LB_NEEDED_SB)
-        self.messages.SetName("Conversation")
         self._full_messages: list[str] = []
-        outer.Add(self.messages, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        # Render the conversation as markdown in a WebView (formatted, with an
+        # ARIA live region + per-message headings). Fall back to a list box if
+        # the WebView backend (Edge WebView2 / WebKit) isn't available.
+        self._webview = None
+        self.messages = None
+        try:
+            from quill.ui.accessible_webview import AccessibleWebView
+
+            self._webview = AccessibleWebView(self.dialog, title="Conversation")
+            transcript = self._webview.control
+        except Exception:  # noqa: BLE001
+            self._webview = None
+            self.messages = wx.ListBox(self.dialog, style=wx.LB_SINGLE | wx.LB_NEEDED_SB)
+            self.messages.SetName("Conversation")
+            transcript = self.messages
+        outer.Add(transcript, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
 
         outer.Add(wx.StaticText(self.dialog, label="Suggestions"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
         suggestions = wx.WrapSizer(wx.HORIZONTAL)
@@ -128,10 +139,12 @@ class AskQuillChatDialog:
         event.Skip()
 
     def _append(self, speaker: str, text: str) -> None:
-        # Each message is one list-box item ("You: ..." / "Quill: ..."). Newlines
-        # are flattened so it stays one item; the screen reader reads the whole
-        # item, and Copy Last Response copies the full text.
         self._full_messages.append(text)
+        if self._webview is not None:
+            # Rendered markdown in the WebView's ARIA live-region log.
+            self._webview.append_message(speaker, text)
+            return
+        # List-box fallback: one item per message (newlines flattened).
         display = f"{speaker}: {' '.join(text.splitlines())}"
         index = self.messages.GetCount()
         self.messages.Append(display)
