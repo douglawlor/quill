@@ -3175,6 +3175,9 @@ class MainFrame:
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_preferences(), id=self._id_preferences)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.exit_app(), id=self._id_exit)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=self._id_about_quill)
+        # macOS routes the application-menu "About" to wx.ID_ABOUT — wire it to
+        # the same custom dialog so the Apple-menu About shows the links too.
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=wx.ID_ABOUT)
         self.frame.Bind(
             wx.EVT_MENU,
             lambda _e: self.show_context_help(),
