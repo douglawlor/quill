@@ -3260,6 +3260,7 @@ class MainFrame:
 
         self.frame.SetMenuBar(menu_bar)
         self._refresh_contextual_menu_items()
+        self._apply_ai_menu_enabled()
 
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.new_file(), id=self._id_new)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_file(), id=self._id_open)
@@ -14001,7 +14002,32 @@ class MainFrame:
 
         enabled = bool(event.IsChecked())
         save_ai_enabled(enabled)
+        self._apply_ai_menu_enabled()
         self._set_status("AI enabled" if enabled else "AI disabled")
+
+    def _apply_ai_menu_enabled(self) -> None:
+        """Enable/disable the AI menu items behind the 'Use Artificial Intelligence'
+        toggle. The toggle and the status lines stay available so AI can be turned
+        back on."""
+        from quill.core.ai.model_manager import load_ai_enabled
+
+        bar = self.frame.GetMenuBar()
+        if bar is None:
+            return
+        enabled = load_ai_enabled()
+        ai_item_ids = (
+            self._id_ask_quill_chat,
+            self._id_ai_model,
+            self._id_ai_assistant,
+            self._id_ai_rewrite_selection,
+            self._id_ai_summarize_selection,
+            self._id_ai_continue_writing,
+            self._id_ai_fix_grammar,
+            self._id_train_style,
+        )
+        for item_id in ai_item_ids:
+            if bar.FindItemById(item_id) is not None:
+                bar.Enable(item_id, enabled)
 
     def open_ask_quill_chat(self) -> None:
         from quill.core.ai.model_manager import load_ai_enabled
