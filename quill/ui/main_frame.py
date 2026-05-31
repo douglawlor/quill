@@ -348,6 +348,7 @@ from quill.ui.assistant_tools import (
 )
 from quill.ui.csv_grid import CsvGridSurface
 from quill.ui.palette import CommandPaletteDialog
+from quill.ui.style_panel import TrainStyleDialog
 from quill.ui.sticky_notes import StickyNoteEditorDialog, StickyNotesVaultDialog
 from quill.ui.word_view import WordDocumentSurface
 
@@ -1039,9 +1040,9 @@ class MainFrame:
             None,
         )
         self.commands.register(
-            "tools.run_python",
-            "Run Python",
-            self.run_python_tool,
+            "tools.train_writing_style",
+            "Train Writing Style",
+            self.open_train_writing_style,
             None,
         )
         self.commands.register(
@@ -2756,7 +2757,7 @@ class MainFrame:
         self._id_ai_speech_voice = wx.NewIdRef()
         self._id_ai_speech_settings = wx.NewIdRef()
         self._id_ai_speech_generate_audio = wx.NewIdRef()
-        self._id_run_python = wx.NewIdRef()
+        self._id_train_style = wx.NewIdRef()
         self._id_compare_with_file = wx.NewIdRef()
         self._id_compare_open_documents = wx.NewIdRef()
         self._id_compare_next_difference = wx.NewIdRef()
@@ -3017,8 +3018,8 @@ class MainFrame:
             self._menu_label("Fix &Grammar", "tools.ai_fix_grammar"),
         )
         ai_menu.Append(
-            self._id_run_python,
-            self._menu_label("&Run Python...", "tools.run_python"),
+            self._id_train_style,
+            self._menu_label("&Train Writing Style...", "tools.train_writing_style"),
         )
         speech_menu = wx.Menu()
         speech_menu.Append(
@@ -3492,8 +3493,8 @@ class MainFrame:
         )
         self.frame.Bind(
             wx.EVT_MENU,
-            lambda _e: self.run_python_tool(),
-            id=self._id_run_python,
+            lambda _e: self.open_train_writing_style(),
+            id=self._id_train_style,
         )
         self.frame.Bind(
             wx.EVT_MENU,
@@ -4233,7 +4234,7 @@ class MainFrame:
             "tools.ai_summarize_selection": self._id_ai_summarize_selection,
             "tools.ai_continue_writing": self._id_ai_continue_writing,
             "tools.ai_fix_grammar": self._id_ai_fix_grammar,
-            "tools.run_python": self._id_run_python,
+            "tools.train_writing_style": self._id_train_style,
             "app.exit": self._id_exit,
             "app.command_palette": self._id_palette,
             "app.preferences": self._id_preferences,
@@ -11100,10 +11101,14 @@ class MainFrame:
                     melotts_voice=voice_id if engine == "melotts" else s.read_aloud_melotts_voice,
                     melotts_rate=s.read_aloud_melotts_rate,
                     chatterbox_executable=s.read_aloud_chatterbox_executable,
-                    chatterbox_voice=voice_id if engine == "chatterbox" else s.read_aloud_chatterbox_voice,
+                    chatterbox_voice=voice_id
+                    if engine == "chatterbox"
+                    else s.read_aloud_chatterbox_voice,
                     chatterbox_rate=s.read_aloud_chatterbox_rate,
                     openvoice_executable=s.read_aloud_openvoice_executable,
-                    openvoice_voice=voice_id if engine == "openvoice" else s.read_aloud_openvoice_voice,
+                    openvoice_voice=voice_id
+                    if engine == "openvoice"
+                    else s.read_aloud_openvoice_voice,
                     openvoice_rate=s.read_aloud_openvoice_rate,
                     openvoice_consent=s.read_aloud_openvoice_consent,
                     on_state_change=lambda st: done.set() if st in ("idle", "error") else None,
@@ -11397,7 +11402,9 @@ class MainFrame:
             self.settings.read_aloud_espeak_rate = v
 
         elif selected_engine == "rhvoice":
-            exe = _ask_text("Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable)
+            exe = _ask_text(
+                "Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable
+            )
             if exe is None:
                 self._set_status("Read aloud settings cancelled")
                 return
@@ -11409,7 +11416,9 @@ class MainFrame:
             self.settings.read_aloud_rhvoice_rate = v
 
         elif selected_engine == "melotts":
-            exe = _ask_text("Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable)
+            exe = _ask_text(
+                "Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable
+            )
             if exe is None:
                 self._set_status("Read aloud settings cancelled")
                 return
@@ -11435,7 +11444,9 @@ class MainFrame:
             self.settings.read_aloud_chatterbox_rate = v
 
         elif selected_engine == "openvoice":
-            exe = _ask_text("Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable)
+            exe = _ask_text(
+                "Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable
+            )
             if exe is None:
                 self._set_status("Read aloud settings cancelled")
                 return
@@ -12401,7 +12412,10 @@ class MainFrame:
             ("RHVoice voice", settings.read_aloud_rhvoice_voice),
             ("MeloTTS executable", settings.read_aloud_melotts_executable or "Not configured"),
             ("MeloTTS voice", settings.read_aloud_melotts_voice),
-            ("Chatterbox executable", settings.read_aloud_chatterbox_executable or "Not configured"),
+            (
+                "Chatterbox executable",
+                settings.read_aloud_chatterbox_executable or "Not configured",
+            ),
             ("Chatterbox voice", settings.read_aloud_chatterbox_voice),
             ("OpenVoice executable", settings.read_aloud_openvoice_executable or "Not configured"),
             ("OpenVoice voice", settings.read_aloud_openvoice_voice),
@@ -12507,10 +12521,7 @@ class MainFrame:
                 )
                 return
             download_now = self._show_message_box(
-                (
-                    f"Update {manifest.version} is available.\n\n"
-                    "Open the update download now?"
-                ),
+                (f"Update {manifest.version} is available.\n\nOpen the update download now?"),
                 "Check for Updates",
                 wx.ICON_INFORMATION | wx.YES_NO,
             )
@@ -13967,6 +13978,23 @@ class MainFrame:
         assistant = getattr(self, "_assistant", None)
         if assistant is not None:
             assistant.set_style_preamble(style_preamble(load_style()))
+
+    def open_train_writing_style(self) -> None:
+        from quill.core.ai.model_manager import load_ai_enabled
+
+        if not load_ai_enabled():
+            self._set_status(
+                "AI is turned off. Enable 'Use Artificial Intelligence' in the AI menu."
+            )
+            return
+        TrainStyleDialog(
+            self.frame,
+            self._get_assistant(),
+            get_document=lambda: self.editor.GetValue(),
+            announce=self._set_status,
+        ).show()
+        # Apply the (possibly updated) style to the assistant immediately.
+        self._apply_style_to_assistant()
 
     def _on_toggle_ai_enabled(self, event: object) -> None:
         from quill.core.ai.model_manager import save_ai_enabled
@@ -17012,7 +17040,9 @@ class MainFrame:
                 self.settings.read_aloud_vibevoice_voice = default_voice
 
         if 5 in selected:
-            exe = _ask_text("Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable)
+            exe = _ask_text(
+                "Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable
+            )
             if exe is not None:
                 self.settings.read_aloud_rhvoice_executable = exe
             voices = list_rhvoice_english_voices()
@@ -17029,7 +17059,9 @@ class MainFrame:
                             self.settings.read_aloud_rhvoice_voice = voices[idx].id
 
         if 6 in selected:
-            exe = _ask_text("Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable)
+            exe = _ask_text(
+                "Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable
+            )
             if exe is not None:
                 self.settings.read_aloud_melotts_executable = exe
             voices = list_melotts_english_voices()
@@ -17065,7 +17097,9 @@ class MainFrame:
                             self.settings.read_aloud_chatterbox_voice = voices[idx].id
 
         if 8 in selected:
-            exe = _ask_text("Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable)
+            exe = _ask_text(
+                "Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable
+            )
             if exe is not None:
                 self.settings.read_aloud_openvoice_executable = exe
             voices = list_openvoice_english_voices()
