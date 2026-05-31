@@ -8101,31 +8101,105 @@ class MainFrame:
         self._refresh_title()
         self._set_status("Opened user guide")
 
+    # Org links shown in the About dialog.
+    _ABOUT_LINKS: tuple[tuple[str, str], ...] = (
+        ("Techopolis", "https://techopolis.app"),
+        ("Blind Information Technology Solutions (BITS)", "https://bits-acb.org"),
+        ("Community Access", "https://letitglow.app"),
+    )
+
+    # Open-source projects Quill is built with (credited in About).
+    _ABOUT_ACKNOWLEDGMENTS: str = (
+        "Quill is built with these open-source projects, with gratitude:\n\n"
+        "• wxPython / wxWidgets — application UI toolkit\n"
+        "• Prism (prismatoid) — screen-reader speech bridge (Windows)\n"
+        "• pyttsx3 — system text-to-speech\n"
+        "• llama.cpp / llama-cpp-python — on-device AI (Windows and Linux)\n"
+        "• pyenchant / Hunspell — spell checking\n"
+        "• SpeechRecognition — dictation\n"
+        "• keynote-parser and MarkItDown — document import\n"
+        "• pyobjc and py2app — macOS integration and packaging\n"
+        "• WordNet (Princeton University) — thesaurus data\n"
+        "• words_alpha — English word list\n"
+        "• DECtalk, Piper, Kokoro, and VibeVoice — speech voices\n\n"
+        "On macOS, on-device AI uses Apple Foundation Models.\n"
+        "Each project is owned by its respective authors and used under its own license."
+    )
+
     def show_about_quill(self) -> None:
+        # Custom accessible dialog (the native AboutBox can't host multiple
+        # clickable links or an acknowledgments section).
         wx = self._wx
-        info = wx.adv.AboutDialogInfo()
-        info.SetName("Quill")
-        info.SetVersion(__version__)
-        info.SetDescription(
+        dialog = wx.Dialog(
+            self.frame, title="About Quill",
+            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
+        )
+        dialog.SetName("About Quill")
+        wrap = 540
+        outer = wx.BoxSizer(wx.VERTICAL)
+
+        def add_text(text: str, *, bold: bool = False) -> None:
+            label = wx.StaticText(dialog, label=text)
+            if bold:
+                font = label.GetFont()
+                font.MakeBold()
+                label.SetFont(font)
+            label.Wrap(wrap)
+            outer.Add(label, 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        add_text(f"Quill 0.1 Beta (version {__version__})", bold=True)
+        add_text(
             "Quill 0.1 Beta is a screen-reader-first writing and document environment "
-            "for Windows from Blind Information Technology Solutions (BITS) "
-            "and Community Access.\n\n"
-            "With sincere thanks to our contributors and beta testers:\n"
+            "for Windows and Mac from Blind Information Technology Solutions (BITS) "
+            "and Community Access."
+        )
+        add_text(
+            "With sincere thanks to our contributors and beta testers: "
             "Techopolis, Taylor Arndt, Michael Doise, Kayla Bentas, "
             "Shane Popplestone, and Becky Knobb."
         )
-        info.SetCopyright(
+
+        add_text("Links", bold=True)
+        for name, url in self._ABOUT_LINKS:
+            link = wx.adv.HyperlinkCtrl(dialog, label=name, url=url)
+            link.SetName(name)
+            outer.Add(link, 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        add_text("Open-source acknowledgments", bold=True)
+        acks = wx.TextCtrl(
+            dialog,
+            value=self._ABOUT_ACKNOWLEDGMENTS,
+            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_DONTWRAP,
+        )
+        acks.SetName("Open-source acknowledgments")
+        acks.SetMinSize((wrap, 180))
+        outer.Add(acks, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        add_text(
             "Copyright (c) Blind Information Technology Solutions (BITS) and Community Access"
         )
-        info.SetDevelopers(
-            [
-                "Blind Information Technology Solutions (BITS)",
-                "Community Access",
-                "Contributors and beta testers: Techopolis, Taylor Arndt, Michael Doise, "
-                "Kayla Bentas, Shane Popplestone, Becky Knobb",
-            ]
+
+        buttons = wx.BoxSizer(wx.HORIZONTAL)
+        buttons.AddStretchSpacer()
+        close = wx.Button(dialog, wx.ID_CLOSE, label="Close")
+        close.SetDefault()
+        buttons.Add(close, 0)
+        outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 14)
+
+        dialog.SetSizerAndFit(outer)
+        close.Bind(wx.EVT_BUTTON, lambda _e: dialog.EndModal(wx.ID_CLOSE))
+        dialog.Bind(
+            wx.EVT_CHAR_HOOK,
+            lambda e: dialog.EndModal(wx.ID_CLOSE)
+            if e.GetKeyCode() == wx.WXK_ESCAPE
+            else e.Skip(),
         )
-        wx.adv.AboutBox(info)
+        dialog.CentreOnParent()
+        self._wx.CallAfter(close.SetFocus)
+        try:
+            dialog.ShowModal()
+        finally:
+            dialog.Destroy()
         self._set_status("Opened About Quill")
 
     def show_external_tools_dialog(self) -> None:
