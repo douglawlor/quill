@@ -405,6 +405,8 @@ from quill.ui.palette import CommandPaletteDialog
 from quill.ui.sticky_notes import StickyNoteEditorDialog, StickyNotesVaultDialog
 from quill.ui.style_panel import TrainStyleDialog
 from quill.ui.word_view import WordDocumentSurface
+
+
 def _word_feature_enabled() -> bool:
     """Structured Word (.docx) view is NOT enabled on this branch.
 
@@ -6850,66 +6852,21 @@ class MainFrame:
         negative_label: str,
     ) -> int:
         wx = self._wx
-        dialog = wx.Dialog(self.frame, title=title)
-        panel = wx.Panel(dialog)
-        root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(wx.StaticText(panel, label=message), 0, wx.ALL | wx.EXPAND, 8)
-
-        buttons = wx.BoxSizer(wx.HORIZONTAL)
-        save_button = wx.Button(panel, id=wx.ID_YES, label=affirmative_label)
-        save_button.SetDefault()
-        discard_button = wx.Button(panel, id=wx.ID_NO, label=negative_label)
-        cancel_button = wx.Button(panel, id=wx.ID_CANCEL, label="Cancel")
-        button_results = (
-            (save_button, wx.ID_YES),
-            (discard_button, wx.ID_NO),
-            (cancel_button, wx.ID_CANCEL),
+        # Use the native message dialog rather than a hand-rolled wx.Dialog.
+        # The custom version wired each button to EndModal() by hand and layered
+        # a CHAR_HOOK on top; on macOS that machinery could swallow the Save /
+        # Don't Save activations so every button behaved like Cancel. The native
+        # dialog has rock-solid button handling and is read directly by VoiceOver
+        # / NVDA, and ShowModal() returns exactly wx.ID_YES / wx.ID_NO /
+        # wx.ID_CANCEL — the contract both callers depend on.
+        dialog = wx.MessageDialog(
+            self.frame,
+            message,
+            title,
+            wx.YES_NO | wx.CANCEL | wx.ICON_WARNING,
         )
-        for button, result_id in button_results:
-            button.Bind(wx.EVT_BUTTON, lambda _e, modal_id=result_id: dialog.EndModal(modal_id))
-        buttons.AddStretchSpacer(1)
-        buttons.Add(save_button, 0, wx.RIGHT, 6)
-        buttons.Add(discard_button, 0, wx.RIGHT, 6)
-        buttons.Add(cancel_button, 0)
-        root.Add(buttons, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 8)
-        panel.SetSizer(root)
-        outer = wx.BoxSizer(wx.VERTICAL)
-        outer.Add(panel, 1, wx.EXPAND)
-        dialog.SetSizerAndFit(outer)
-        if hasattr(dialog, "SetAffirmativeId"):
-            dialog.SetAffirmativeId(wx.ID_YES)
-        if hasattr(dialog, "SetEscapeId"):
-            dialog.SetEscapeId(wx.ID_CANCEL)
-
-        def _focused_button_result() -> int | None:
-            focused = None
-            if hasattr(dialog, "FindFocus"):
-                focused = dialog.FindFocus()
-            elif hasattr(wx, "Window") and hasattr(wx.Window, "FindFocus"):
-                focused = wx.Window.FindFocus()
-            for button, result_id in button_results:
-                if focused is button:
-                    return result_id
-            return None
-
-        def _on_char_hook(event: object) -> None:
-            key_code = event.GetKeyCode()
-            if key_code == wx.WXK_ESCAPE:
-                dialog.EndModal(wx.ID_CANCEL)
-                return
-            if key_code in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
-                dialog.EndModal(_focused_button_result() or wx.ID_YES)
-                return
-            if key_code == getattr(wx, "WXK_SPACE", 32):
-                focused_result = _focused_button_result()
-                if focused_result is not None:
-                    dialog.EndModal(focused_result)
-                    return
-                event.Skip()
-                return
-            event.Skip()
-
-        dialog.Bind(wx.EVT_CHAR_HOOK, _on_char_hook)
+        if hasattr(dialog, "SetYesNoCancelLabels"):
+            dialog.SetYesNoCancelLabels(affirmative_label, negative_label, "Cancel")
         try:
             return self._show_modal_dialog(dialog, title)
         finally:
@@ -9010,7 +8967,10 @@ class MainFrame:
         ("Michael Doise on GitHub", "https://github.com/mikedoise"),
         ("Becky K on GitHub", "https://github.com/BeckyK102125"),
         ("Doug Langley on GitHub", "https://github.com/douglangley"),
-        ("wx-accessible-webview on GitHub", "https://github.com/Community-Access/wx-accessible-webview"),
+        (
+            "wx-accessible-webview on GitHub",
+            "https://github.com/Community-Access/wx-accessible-webview",
+        ),
     )
 
     def _project_root_path(self) -> Path:
@@ -9042,12 +9002,8 @@ class MainFrame:
             "## Dependencies and attributions\n\n"
             "The tables below are generated from declared project metadata and installed package metadata. "
             "They include dependency versions, licenses, and upstream links.\n\n"
-            "### Declared dependencies\n\n"
-            + dependency_table
-            + "\n\n"
-            "### Bundled components and data sources\n\n"
-            + bundled_table
-            + "\n\n"
+            "### Declared dependencies\n\n" + dependency_table + "\n\n"
+            "### Bundled components and data sources\n\n" + bundled_table + "\n\n"
             "For full license texts and expanded notices, open "
             "**Help -> Open Third-Party Notices**.\n\n"
             "Copyright (c) Blind Information Technology Solutions (BITS) and Community Access"
