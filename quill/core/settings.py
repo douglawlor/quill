@@ -102,7 +102,15 @@ class Settings:
     title_bar_path_mode: str = "name"
     dirty_title_style: str = "text"
     start_with_no_document_open: bool = False
+    read_aloud_engine: str = "pyttsx3"
     read_aloud_voice: str = ""
+    read_aloud_rate: int = 200
+    read_aloud_volume: int = 100
+    read_aloud_pitch: int = 50
+    read_aloud_dectalk_executable: str = ""
+    read_aloud_dectalk_voice: str = "paul"
+    read_aloud_dectalk_rate: int = 180
+    read_aloud_dectalk_dictionary: str = ""
     announcement_backend: str = "auto"
     announcement_trace_enabled: bool = False
     assistant_enabled: bool = False
@@ -146,7 +154,37 @@ class Settings:
         if dirty_title_style not in {"text", "asterisk", "asterisk_text"}:
             dirty_title_style = "text"
         start_with_no_document_open = bool(data.get("start_with_no_document_open", False))
+        read_aloud_engine = str(data.get("read_aloud_engine", "pyttsx3")).strip().lower()
+        if read_aloud_engine not in {"pyttsx3", "dectalk"}:
+            read_aloud_engine = "pyttsx3"
         read_aloud_voice = str(data.get("read_aloud_voice", ""))
+        read_aloud_rate = int(data.get("read_aloud_rate", 200))
+        if read_aloud_rate < 80:
+            read_aloud_rate = 80
+        if read_aloud_rate > 450:
+            read_aloud_rate = 450
+        read_aloud_volume = int(data.get("read_aloud_volume", 100))
+        if read_aloud_volume < 0:
+            read_aloud_volume = 0
+        if read_aloud_volume > 100:
+            read_aloud_volume = 100
+        read_aloud_pitch = int(data.get("read_aloud_pitch", 50))
+        if read_aloud_pitch < 0:
+            read_aloud_pitch = 0
+        if read_aloud_pitch > 100:
+            read_aloud_pitch = 100
+        read_aloud_dectalk_executable = str(data.get("read_aloud_dectalk_executable", "")).strip()
+        read_aloud_dectalk_voice = str(data.get("read_aloud_dectalk_voice", "paul")).strip().lower()
+        if not read_aloud_dectalk_voice:
+            read_aloud_dectalk_voice = "paul"
+        read_aloud_dectalk_rate = int(data.get("read_aloud_dectalk_rate", 180))
+        if read_aloud_dectalk_rate < 75:
+            read_aloud_dectalk_rate = 75
+        if read_aloud_dectalk_rate > 650:
+            read_aloud_dectalk_rate = 650
+        read_aloud_dectalk_dictionary = str(
+            data.get("read_aloud_dectalk_dictionary", "")
+        ).strip()
         announcement_backend = str(data.get("announcement_backend", "auto")).strip().lower()
         if announcement_backend not in {"auto", "prism", "status_only"}:
             announcement_backend = "auto"
@@ -198,7 +236,15 @@ class Settings:
             title_bar_path_mode=title_bar_path_mode,
             dirty_title_style=dirty_title_style,
             start_with_no_document_open=start_with_no_document_open,
+            read_aloud_engine=read_aloud_engine,
             read_aloud_voice=read_aloud_voice,
+            read_aloud_rate=read_aloud_rate,
+            read_aloud_volume=read_aloud_volume,
+            read_aloud_pitch=read_aloud_pitch,
+            read_aloud_dectalk_executable=read_aloud_dectalk_executable,
+            read_aloud_dectalk_voice=read_aloud_dectalk_voice,
+            read_aloud_dectalk_rate=read_aloud_dectalk_rate,
+            read_aloud_dectalk_dictionary=read_aloud_dectalk_dictionary,
             announcement_backend=announcement_backend,
             announcement_trace_enabled=announcement_trace_enabled,
             assistant_enabled=assistant_enabled,

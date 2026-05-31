@@ -49,10 +49,18 @@ Name: "fileassoc"; Description: "Register Quill in the Open With menu for common
 [Components]
 Name: "aiassistant"; Description: "Install the Writing Assistant setup guide and AI connection shortcut"; Types: full compact custom; Flags: checkablealone
 Name: "pandoc"; Description: "Install bundled Pandoc for document conversion"; Types: full custom; Flags: checkablealone
+Name: "speechdectalk"; Description: "Install bundled DECtalk voices and runtime"; Types: full custom; Flags: checkablealone
+Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models"; Types: full custom; Flags: checkablealone
+Name: "speechpiper"; Description: "Install bundled Piper voices/models"; Types: full custom; Flags: checkablealone
+Name: "speechvibevoice"; Description: "Install bundled VibeVoice voices/models"; Types: full custom; Flags: checkablealone
 
 [Files]
-Source: "..\portable\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "docs\announcement-beta.md,docs\QUILL-PRD.md,tools\pandoc\*"
+Source: "..\portable\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "docs\announcement-beta.md,docs\QUILL-PRD.md,tools\pandoc\*,tools\speech\dectalk\*,tools\speech\kokoro\*,tools\speech\piper\*,tools\speech\vibevoice\*"
 Source: "..\portable\tools\pandoc\*"; DestDir: "{app}\tools\pandoc"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: pandoc
+Source: "..\portable\tools\speech\dectalk\*"; DestDir: "{app}\tools\speech\dectalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk
+Source: "..\portable\tools\speech\kokoro\*"; DestDir: "{app}\tools\speech\kokoro"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechkokoro
+Source: "..\portable\tools\speech\piper\*"; DestDir: "{app}\tools\speech\piper"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechpiper
+Source: "..\portable\tools\speech\vibevoice\*"; DestDir: "{app}\tools\speech\vibevoice"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechvibevoice
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\python\pythonw.exe"; Parameters: "-m quill"; WorkingDir: "{app}"; Check: FileExists(ExpandConstant('{app}\python\pythonw.exe'))

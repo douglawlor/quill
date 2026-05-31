@@ -162,6 +162,9 @@ from quill.core.paths import app_data_dir, ensure_app_directories
 from quill.core.read_aloud import (
     ReadAloudController,
     ReadAloudUnavailableError,
+    discover_dectalk_executable,
+    download_dectalk_runtime,
+    list_dectalk_voices,
     list_voices,
 )
 from quill.core.dictation import (
@@ -1175,6 +1178,12 @@ class MainFrame:
             "tools.read_aloud_voice",
             "Read Aloud Voice...",
             self.choose_read_aloud_voice,
+            None,
+        )
+        self.commands.register(
+            "tools.read_aloud_settings",
+            "Read Aloud Settings...",
+            self.choose_read_aloud_settings,
             None,
         )
         self.commands.register(
@@ -2601,6 +2610,7 @@ class MainFrame:
         self._id_read_aloud = wx.NewIdRef()
         self._id_read_aloud_stop = wx.NewIdRef()
         self._id_read_aloud_voice = wx.NewIdRef()
+        self._id_read_aloud_settings = wx.NewIdRef()
         self._id_announcement_backend = wx.NewIdRef()
         self._id_announcement_backend_auto = wx.NewIdRef()
         self._id_announcement_backend_prism = wx.NewIdRef()
@@ -2638,6 +2648,10 @@ class MainFrame:
         self._id_ai_summarize_selection = wx.NewIdRef()
         self._id_ai_continue_writing = wx.NewIdRef()
         self._id_ai_fix_grammar = wx.NewIdRef()
+        self._id_ai_speech_start_pause = wx.NewIdRef()
+        self._id_ai_speech_stop = wx.NewIdRef()
+        self._id_ai_speech_voice = wx.NewIdRef()
+        self._id_ai_speech_settings = wx.NewIdRef()
         self._id_run_python = wx.NewIdRef()
         self._id_compare_with_file = wx.NewIdRef()
         self._id_compare_open_documents = wx.NewIdRef()
@@ -2733,6 +2747,10 @@ class MainFrame:
         read_aloud_menu.Append(
             self._id_read_aloud_voice,
             self._menu_label("&Voice...", "tools.read_aloud_voice"),
+        )
+        read_aloud_menu.Append(
+            self._id_read_aloud_settings,
+            self._menu_label("Se&ttings...", "tools.read_aloud_settings"),
         )
         read_aloud_menu.Append(
             self._id_announcement_backend,
@@ -2876,6 +2894,24 @@ class MainFrame:
             self._id_run_python,
             self._menu_label("&Run Python...", "tools.run_python"),
         )
+        speech_menu = wx.Menu()
+        speech_menu.Append(
+            self._id_ai_speech_start_pause,
+            self._menu_label("Start / &Pause", "tools.read_aloud_start_pause"),
+        )
+        speech_menu.Append(
+            self._id_ai_speech_stop,
+            self._menu_label("S&top", "tools.read_aloud_stop"),
+        )
+        speech_menu.Append(
+            self._id_ai_speech_voice,
+            self._menu_label("&Voice...", "tools.read_aloud_voice"),
+        )
+        speech_menu.Append(
+            self._id_ai_speech_settings,
+            self._menu_label("Se&ttings...", "tools.read_aloud_settings"),
+        )
+        ai_menu.AppendSubMenu(speech_menu, "&Speech")
         menu_bar.Append(ai_menu, "A&I")
         glow_menu = wx.Menu()
         glow_menu.Append(
@@ -3653,6 +3689,31 @@ class MainFrame:
             wx.EVT_MENU,
             lambda _e: self.choose_read_aloud_voice(),
             id=self._id_read_aloud_voice,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.choose_read_aloud_settings(),
+            id=self._id_read_aloud_settings,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.toggle_read_aloud(),
+            id=self._id_ai_speech_start_pause,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.stop_read_aloud(),
+            id=self._id_ai_speech_stop,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.choose_read_aloud_voice(),
+            id=self._id_ai_speech_voice,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.choose_read_aloud_settings(),
+            id=self._id_ai_speech_settings,
         )
         self.frame.Bind(
             wx.EVT_MENU,
@@ -7755,15 +7816,13 @@ class MainFrame:
             return
         conflict = find_keymap_conflict(self.keymap, command_id, new_binding)
         if conflict:
-            result = self._show_message_box(
-                f'Binding conflicts with "{conflict}". Reassign anyway?',
+            self._show_message_box(
+                f'Binding conflicts with "{conflict}". Choose a different keybinding.',
                 "Keymap Editor",
-                wx.ICON_WARNING | wx.YES_NO | wx.NO_DEFAULT,
+                wx.ICON_WARNING | wx.OK,
             )
-            if result != wx.YES:
-                self._set_status("Keymap edit cancelled")
-                return
-            self.keymap[conflict] = ""
+            self._set_status("Keymap edit cancelled")
+            return
         self.keymap[command_id] = new_binding
         save_keymap(self.keymap)
         self._mark_keyboard_pack_custom()
@@ -10361,10 +10420,19 @@ class MainFrame:
                 start = self.editor.GetInsertionPoint()
                 end = None
         try:
+            read_aloud_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
             self._read_aloud.start(
                 text,
                 start,
                 self.settings.read_aloud_voice,
+                engine_name=read_aloud_engine,
+                rate=self.settings.read_aloud_rate,
+                volume=self.settings.read_aloud_volume / 100.0,
+                pitch=self.settings.read_aloud_pitch,
+                dectalk_executable=self.settings.read_aloud_dectalk_executable,
+                dectalk_voice=self.settings.read_aloud_dectalk_voice,
+                dectalk_rate=self.settings.read_aloud_dectalk_rate,
+                dectalk_dictionary=self.settings.read_aloud_dectalk_dictionary,
                 end=end,
                 on_progress=lambda progress_start, progress_end: self._wx.CallAfter(
                     self._on_read_aloud_progress,
@@ -10375,10 +10443,11 @@ class MainFrame:
                     self._on_read_aloud_state_change,
                     next_state,
                 ),
+                on_error=lambda error: self._wx.CallAfter(self._on_read_aloud_error, error),
             )
-        except ReadAloudUnavailableError:
+        except ReadAloudUnavailableError as exc:
             self._show_message_box(
-                "Read aloud requires the pyttsx3 backend.",
+                str(exc),
                 "Read Aloud",
                 wx.ICON_INFORMATION | wx.OK,
             )
@@ -10391,7 +10460,13 @@ class MainFrame:
 
     def choose_read_aloud_voice(self) -> None:
         wx = self._wx
-        voices = list_voices()
+        read_aloud_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
+        if read_aloud_engine == "dectalk":
+            voices = list_dectalk_voices()
+            current_voice_id = self.settings.read_aloud_dectalk_voice
+        else:
+            voices = list_voices()
+            current_voice_id = self.settings.read_aloud_voice
         if not voices:
             self._show_message_box(
                 "No speech voices were found.",
@@ -10404,7 +10479,7 @@ class MainFrame:
             (
                 index
                 for index, voice in enumerate(voices)
-                if voice.id == self.settings.read_aloud_voice
+                if voice.id == current_voice_id
             ),
             0,
         )
@@ -10421,9 +10496,73 @@ class MainFrame:
             selected = dialog.GetSelection()
         if selected < 0 or selected >= len(voices):
             return
-        self.settings.read_aloud_voice = voices[selected].id
+        if read_aloud_engine == "dectalk":
+            self.settings.read_aloud_dectalk_voice = voices[selected].id
+        else:
+            self.settings.read_aloud_voice = voices[selected].id
         save_settings(self.settings)
         self._set_status(f"Selected read-aloud voice: {voices[selected].name}")
+
+    def choose_read_aloud_settings(self) -> None:
+        wx = self._wx
+        engine_choices = ["Pyttsx3 (System TTS)", "DECtalk"]
+        engine_values = ["pyttsx3", "dectalk"]
+        with wx.SingleChoiceDialog(
+            self.frame,
+            "Choose read-aloud engine:",
+            "Read Aloud Settings",
+            choices=engine_choices,
+        ) as engine_dialog:
+            current_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
+            current_index = engine_values.index(current_engine) if current_engine in engine_values else 0
+            engine_dialog.SetSelection(current_index)
+            if self._show_modal_dialog(engine_dialog, "Read Aloud Settings") != wx.ID_OK:
+                self._set_status("Read aloud settings cancelled")
+                return
+            selected_engine = engine_values[engine_dialog.GetSelection()]
+        self.settings.read_aloud_engine = selected_engine
+
+        if selected_engine == "dectalk":
+            with wx.TextEntryDialog(
+                self.frame,
+                "Path to DECtalk speak.exe:",
+                "Read Aloud Settings",
+                value=self.settings.read_aloud_dectalk_executable,
+            ) as exe_dialog:
+                if self._show_modal_dialog(exe_dialog, "Read Aloud Settings") != wx.ID_OK:
+                    self._set_status("Read aloud settings cancelled")
+                    return
+                self.settings.read_aloud_dectalk_executable = exe_dialog.GetValue().strip()
+            with wx.TextEntryDialog(
+                self.frame,
+                "Optional path to dtalk_us.dic (leave blank to auto-detect):",
+                "Read Aloud Settings",
+                value=self.settings.read_aloud_dectalk_dictionary,
+            ) as dic_dialog:
+                if self._show_modal_dialog(dic_dialog, "Read Aloud Settings") != wx.ID_OK:
+                    self._set_status("Read aloud settings cancelled")
+                    return
+                self.settings.read_aloud_dectalk_dictionary = dic_dialog.GetValue().strip()
+            with wx.TextEntryDialog(
+                self.frame,
+                "DECtalk speaking rate (75 to 650):",
+                "Read Aloud Settings",
+                value=str(self.settings.read_aloud_dectalk_rate),
+            ) as rate_dialog:
+                if self._show_modal_dialog(rate_dialog, "Read Aloud Settings") != wx.ID_OK:
+                    self._set_status("Read aloud settings cancelled")
+                    return
+                raw_rate = rate_dialog.GetValue().strip()
+            try:
+                parsed_rate = int(raw_rate)
+            except ValueError:
+                parsed_rate = 180
+            self.settings.read_aloud_dectalk_rate = max(75, min(parsed_rate, 650))
+
+        save_settings(self.settings)
+        self._set_status(
+            f"Read aloud engine set to {'DECtalk' if selected_engine == 'dectalk' else 'Pyttsx3'}"
+        )
 
     def ocr_image_file(self) -> None:
         wx = self._wx
@@ -10535,8 +10674,13 @@ class MainFrame:
     def _on_read_aloud_state_change(self, state: str) -> None:
         if state == "paused":
             self._set_status("Read aloud paused")
+        elif state == "error":
+            self._set_status("Read aloud failed")
         else:
             self._set_status("Read aloud finished")
+
+    def _on_read_aloud_error(self, error: str) -> None:
+        self._set_status(f"Read aloud error: {error}")
 
     def toggle_dictation(self) -> None:
         wx = self._wx

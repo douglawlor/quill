@@ -3,7 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from quill.core import read_aloud as read_aloud_module
-from quill.core.read_aloud import ReadAloudController, list_voices, sentence_spans
+from quill.core.read_aloud import (
+    ReadAloudController,
+    list_dectalk_voices,
+    list_voices,
+    sentence_spans,
+)
 
 
 def test_sentence_spans() -> None:
@@ -76,3 +81,18 @@ def test_read_aloud_controller_speaks_sentences(monkeypatch) -> None:
 
     assert engine.properties["voice"] == "voice-1"
     assert engine.spoken == ["One.", "Two!"]
+
+
+def test_list_dectalk_voices_has_expected_defaults() -> None:
+    voices = list_dectalk_voices()
+    assert voices
+    assert voices[0].id == "paul"
+    assert any(voice.id == "betty" for voice in voices)
+
+
+def test_build_dectalk_payload_includes_voice_and_rate() -> None:
+    controller = ReadAloudController()
+    payload = controller._build_dectalk_payload("Hello there", "paul", 200)
+    assert "[:np]" in payload
+    assert "[:ra 200]" in payload
+    assert "Hello there" in payload

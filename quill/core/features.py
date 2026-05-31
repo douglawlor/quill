@@ -462,6 +462,7 @@ def feature_for_command(command_id: str) -> str:
         "tools.read_aloud_start_pause": "core.read_aloud",
         "tools.read_aloud_stop": "core.read_aloud",
         "tools.read_aloud_voice": "core.read_aloud",
+        "tools.read_aloud_settings": "core.read_aloud",
         "tools.dictation_toggle": "core.dictation",
         "tools.dictation_voice_commands_toggle": "core.voice_commands",
         "tools.announcement_backend": "core.accessibility",
