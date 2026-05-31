@@ -80,11 +80,19 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert "DisableDirPage=no" in script
     assert "InfoAfterFile=..\\portable\\README.txt" in script
     assert "aiassistant" in script
+    assert 'Name: "pandoc"; Description: "Install bundled Pandoc for document conversion";' in script
+    assert 'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*"' in script
+    assert 'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";' in script
+    assert 'Components: pandoc' in script
     assert "Writing Assistant Setup" in script
     assert "User Guide" in script
+    assert "python\\pythonw.exe" in script
+    assert "Parameters: \"-m quill\"" in script
+    assert "Check: FileExists(ExpandConstant('{app}\\python\\pythonw.exe'))" in script
+    assert "Check: not FileExists(ExpandConstant('{app}\\python\\pythonw.exe'))" in script
     assert "Beta Announcement" not in script
     assert "Product Requirements" not in script
-    assert 'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md"' in script
+    assert 'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*"' in script
     # File-association registry entries use HKCU only (never overwrite defaults).
     assert "HKCU" in script
     assert "HKLM" not in script

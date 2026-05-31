@@ -396,14 +396,20 @@ def build_inno_setup_script(version: str) -> str:
         "[Components]",
         'Name: "aiassistant"; Description: "Install the Writing Assistant setup guide and AI connection shortcut";'
         ' Types: full compact custom; Flags: checkablealone',
+        'Name: "pandoc"; Description: "Install bundled Pandoc for document conversion";'
+        ' Types: full custom; Flags: checkablealone',
         "",
         "[Files]",
         'Source: "..\\portable\\*"; DestDir: "{app}";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs;'
-        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md"',
+        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*"',
+        'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
+        ' Components: pandoc',
         "",
         "[Icons]",
-        'Name: "{group}\\{#AppName}"; Filename: "{app}\\{#AppExeName}"; WorkingDir: "{app}"',
+        'Name: "{group}\\{#AppName}"; Filename: "{app}\\python\\pythonw.exe"; Parameters: "-m quill"; WorkingDir: "{app}"; Check: FileExists(ExpandConstant(\'{app}\\python\\pythonw.exe\'))',
+        'Name: "{group}\\{#AppName}"; Filename: "{app}\\{#AppExeName}"; WorkingDir: "{app}"; Check: not FileExists(ExpandConstant(\'{app}\\python\\pythonw.exe\'))',
         'Name: "{group}\\{#AppName} README"; Filename: "{app}\\README.txt"',
         (
             'Name: "{group}\\{#AppName} User Guide"; '
@@ -414,8 +420,10 @@ def build_inno_setup_script(version: str) -> str:
             'Filename: "{app}\\docs\\userguide.md"; Components: aiassistant'
         ),
         'Name: "{group}\\Uninstall {#AppName}"; Filename: "{uninstallexe}"',
+        'Name: "{autodesktop}\\{#AppName}"; Filename: "{app}\\python\\pythonw.exe"; Parameters: "-m quill";'
+        ' WorkingDir: "{app}"; Tasks: desktopicon; Check: FileExists(ExpandConstant(\'{app}\\python\\pythonw.exe\'))',
         'Name: "{autodesktop}\\{#AppName}"; Filename: "{app}\\{#AppExeName}";'
-        ' WorkingDir: "{app}"; Tasks: desktopicon',
+        ' WorkingDir: "{app}"; Tasks: desktopicon; Check: not FileExists(ExpandConstant(\'{app}\\python\\pythonw.exe\'))',
         "",
         "[Registry]",
         "; Register Quill in the OpenWithList for common text formats. We",
@@ -443,8 +451,10 @@ def build_inno_setup_script(version: str) -> str:
         'Filename: "{app}\\docs\\userguide.md";'
         ' Description: "View the Writing Assistant setup guide";'
         " Flags: postinstall shellexec skipifsilent unchecked; Components: aiassistant",
+        'Filename: "{app}\\python\\pythonw.exe"; Parameters: "-m quill"; Description: "Launch {#AppName}";'
+        " Flags: postinstall nowait skipifsilent unchecked; Check: FileExists(ExpandConstant('{app}\\python\\pythonw.exe'))",
         'Filename: "{app}\\{#AppExeName}"; Description: "Launch {#AppName}";'
-        " Flags: postinstall nowait skipifsilent unchecked",
+        " Flags: postinstall nowait skipifsilent unchecked; Check: not FileExists(ExpandConstant('{app}\\python\\pythonw.exe'))",
         "",
         "[UninstallDelete]",
         "; Leave user data (in %APPDATA%\\Quill) intact on uninstall so",
