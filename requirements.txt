@@ -1,5 +1,10 @@
 # Quill runtime dependencies — install with: pip install -r requirements.txt
-# (mirrors the optional-dependencies in pyproject.toml)
+# Mirrors pyproject.toml's base dependencies + all runtime optional-dependencies.
+# (Build-only tooling — py2app, setuptools<80 — and the dev tools live in the
+#  pyproject [macos] / [dev] extras, not here, so a runtime install stays clean.)
+
+# Core (always required)
+regex>=2024.0.0
 
 # UI
 wxPython>=4.2.5
