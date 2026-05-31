@@ -199,6 +199,16 @@ def _launch_configuration(
     )
 
 
+def _launch_arguments(arguments: list[str]) -> tuple[list[Path], bool, bool]:
+    """Compatibility helper retained for existing tests and integrations."""
+
+    parsed = _parse_cli_arguments(arguments)
+    requests, safe_mode, reset_profile, _diagnostics_mode, _new_window, _wait = (
+        _launch_configuration(parsed)
+    )
+    return [request.path for request in requests], safe_mode, reset_profile
+
+
 def _wait_for_primary_instance_shutdown(timeout_seconds: int = 3600) -> None:
     from quill.core.ipc import release_primary_instance, try_claim_primary_instance
 

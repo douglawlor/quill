@@ -90,6 +90,11 @@ preview = true
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+"scripts/build_windows_distribution.py" = ["E501"]
+"scripts/local_ai_editing_proof.py" = ["E501"]
+"tests/unit/core/ai/test_foundation_models.py" = ["E402", "E501"]
+
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true
