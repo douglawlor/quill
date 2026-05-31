@@ -7502,6 +7502,13 @@ class MainFrame:
             beta_updates.SetName("Get beta updates, note these may be unstable")
             panel_sizer.Add(beta_updates, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
+            def _on_beta_toggle(event: object, _cb=beta_updates) -> None:
+                # Require the HTML consent gate before turning beta on.
+                if _cb.GetValue() and not self._confirm_beta_channel():
+                    _cb.SetValue(False)
+
+            beta_updates.Bind(wx.EVT_CHECKBOX, _on_beta_toggle)
+
             persistent_undo = wx.CheckBox(panel, label="Enable persistent undo")
             persistent_undo.SetValue(self.settings.persistent_undo)
             panel_sizer.Add(persistent_undo, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
@@ -11168,13 +11175,18 @@ class MainFrame:
             if silent_no_update:
                 self._record_notification("Update check found no newer version", "update")
                 return
-            self._show_message_box(
-                f"You're up to date.\nCurrent: {current_version}\nLatest {channel}: {available}",
-                "Check for Updates",
-                wx.ICON_INFORMATION | wx.OK,
-            )
             self._set_status("No update available")
             self._record_notification("Update check found no newer version", "update")
+            if not beta:
+                # On the stable channel and up to date — offer the beta channel.
+                self._offer_beta_switch(current_version, available)
+            else:
+                self._show_message_box(
+                    "You're up to date on the beta channel.\n"
+                    f"Current: {current_version}\nLatest beta: {available}",
+                    "Check for Updates",
+                    wx.ICON_INFORMATION | wx.OK,
+                )
             return
         if silent_no_update:
             # Auto-update channel: download the new release in the background.
@@ -11183,23 +11195,84 @@ class MainFrame:
             )
             self._download_update_release(release)
             return
-        notes = release.notes or "(no release notes provided)"
-        beta_tag = "  [beta / prerelease]" if release.prerelease else ""
-        result = self._show_message_box(
-            (
-                f"Current version: {current_version}\n"
-                f"Available version: {release.version}{beta_tag}\n\n"
-                f"Release notes:\n{notes}\n\n"
-                "Download this update now?"
-            ),
-            "Check for Updates",
-            wx.ICON_INFORMATION | wx.YES_NO | wx.NO_DEFAULT,
-        )
-        if result != wx.YES:
+        # Manual check: show the release notes rendered as HTML.
+        if self._show_update_available_dialog(current_version, release):
+            self._download_update_release(release)
+        else:
             self._set_status("Update deferred")
             self._record_notification(f"Update {release.version} deferred", "update")
-            return
-        self._download_update_release(release)
+
+    def _render_html(self, markdown_text: str) -> str:
+        from quill.core.browser_preview import render_preview_body
+
+        return render_preview_body(markdown_text, "markdown")
+
+    def _show_update_available_dialog(self, current_version: str, release: GitHubRelease) -> bool:
+        from quill.ui.preview_dialog import HtmlMessageDialog
+
+        wx = self._wx
+        channel = "Beta / prerelease" if release.prerelease else "Stable"
+        notes = release.notes or "_(no release notes provided)_"
+        body = self._render_html(
+            f"# Update available: {release.version}\n\n"
+            f"**Channel:** {channel}  \n"
+            f"**Current version:** {current_version}\n\n"
+            "## Release notes\n\n" + notes
+        )
+        result = HtmlMessageDialog(
+            self.frame,
+            "Check for Updates",
+            body,
+            [("Later", wx.ID_CANCEL), ("Download update", wx.ID_OK)],
+        ).show_modal()
+        return result == wx.ID_OK
+
+    def _offer_beta_switch(self, current_version: str, available: str) -> None:
+        from quill.ui.preview_dialog import HtmlMessageDialog
+
+        wx = self._wx
+        body = self._render_html(
+            "# You're up to date\n\n"
+            f"You're on the **stable** channel (current {current_version}; "
+            f"latest stable {available}).\n\n"
+            "Want earlier features sooner? The **beta** channel delivers prerelease "
+            "builds as soon as they're published.\n"
+        )
+        result = HtmlMessageDialog(
+            self.frame,
+            "Check for Updates",
+            body,
+            [("Stay on stable", wx.ID_CANCEL), ("Switch to beta...", wx.ID_YES)],
+        ).show_modal()
+        if result == wx.ID_YES and self._confirm_beta_channel():
+            self.settings.beta_updates = True
+            save_settings(self.settings)
+            self._set_status("Switched to the beta update channel")
+            self._announce("Beta updates enabled")
+            self.check_for_updates(silent_no_update=False)
+
+    def _confirm_beta_channel(self) -> bool:
+        """HTML consent gate the user must agree to before beta updates turn on."""
+        from quill.ui.preview_dialog import HtmlMessageDialog
+
+        wx = self._wx
+        body = self._render_html(
+            "# Enable beta updates?\n\n"
+            "Beta updates are **prerelease** builds. They get new features and fixes "
+            "first, but they **may be unstable** — expect rough edges, and occasional "
+            "bugs that could affect your documents.\n\n"
+            "- Beta builds are published as GitHub prereleases.\n"
+            "- You can switch back to stable anytime in Settings.\n"
+            "- Keep backups of important documents.\n\n"
+            "Do you understand and want to receive beta updates?"
+        )
+        result = HtmlMessageDialog(
+            self.frame,
+            "Beta updates",
+            body,
+            [("Cancel", wx.ID_CANCEL), ("I understand, enable beta", wx.ID_YES)],
+        ).show_modal()
+        return result == wx.ID_YES
 
     def _download_update_release(self, release: GitHubRelease) -> None:
         """Auto-download the release asset to <app data>/updates, off-thread.
