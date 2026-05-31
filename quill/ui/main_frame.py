@@ -8106,6 +8106,15 @@ class MainFrame:
         ("Techopolis", "https://techopolis.app"),
         ("Blind Information Technology Solutions (BITS)", "https://bits-acb.org"),
         ("Community Access", "https://community-access.org"),
+        ("GLOW (Community Access)", "https://letitglow.app"),
+    )
+
+    # Contributor / project profiles on GitHub.
+    _ABOUT_GITHUB_LINKS: tuple[tuple[str, str], ...] = (
+        ("Community Access on GitHub", "https://github.com/Community-Access"),
+        ("Taylor Arndt on GitHub", "https://github.com/taylorarndt"),
+        ("Michael Doise on GitHub", "https://github.com/mikedoise"),
+        ("Becky Knobb on GitHub", "https://github.com/BeckyK102125"),
     )
 
     # Open-source projects Quill is built with (credited in About).
@@ -8159,11 +8168,15 @@ class MainFrame:
             "Shane Popplestone, and Becky Knobb."
         )
 
-        add_text("Links", bold=True)
-        for name, url in self._ABOUT_LINKS:
-            link = wx.adv.HyperlinkCtrl(dialog, label=name, url=url)
-            link.SetName(name)
-            outer.Add(link, 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+        def add_links(heading: str, links: tuple[tuple[str, str], ...]) -> None:
+            add_text(heading, bold=True)
+            for name, url in links:
+                link = wx.adv.HyperlinkCtrl(dialog, label=name, url=url)
+                link.SetName(name)
+                outer.Add(link, 0, wx.LEFT | wx.RIGHT | wx.TOP, 14)
+
+        add_links("Links", self._ABOUT_LINKS)
+        add_links("On GitHub", self._ABOUT_GITHUB_LINKS)
 
         add_text("Open-source acknowledgments", bold=True)
         acks = wx.TextCtrl(
