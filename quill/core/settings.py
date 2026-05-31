@@ -114,6 +114,14 @@ class Settings:
     read_aloud_piper_executable: str = ""
     read_aloud_piper_model: str = ""
     announcement_backend: str = "auto"
+    read_aloud_piper_model_dir: str = ""
+    read_aloud_kokoro_voice: str = "af_heart"
+    read_aloud_kokoro_speed: float = 1.0
+    read_aloud_vibevoice_executable: str = ""
+    read_aloud_vibevoice_voice: str = "default"
+    read_aloud_espeak_executable: str = ""
+    read_aloud_espeak_voice: str = "en"
+    read_aloud_espeak_rate: int = 175
     announcement_trace_enabled: bool = False
     assistant_enabled: bool = False
     assistant_prompt_style: str = "balanced"
@@ -157,7 +165,8 @@ class Settings:
             dirty_title_style = "text"
         start_with_no_document_open = bool(data.get("start_with_no_document_open", False))
         read_aloud_engine = str(data.get("read_aloud_engine", "pyttsx3")).strip().lower()
-        if read_aloud_engine not in {"pyttsx3", "dectalk"}:
+        _valid_engines = {"pyttsx3", "dectalk", "piper", "kokoro", "vibevoice", "espeak"}
+        if read_aloud_engine not in _valid_engines:
             read_aloud_engine = "pyttsx3"
         read_aloud_voice = str(data.get("read_aloud_voice", ""))
         read_aloud_rate = int(data.get("read_aloud_rate", 200))
@@ -192,6 +201,23 @@ class Settings:
         ).strip()
         read_aloud_piper_model = str(data.get("read_aloud_piper_model", "")).strip()
         announcement_backend = str(data.get("announcement_backend", "auto")).strip().lower()
+        read_aloud_piper_model_dir = str(data.get("read_aloud_piper_model_dir", "")).strip()
+        read_aloud_kokoro_voice = str(data.get("read_aloud_kokoro_voice", "af_heart")).strip() or "af_heart"
+        _kokoro_speed_raw = data.get("read_aloud_kokoro_speed", 1.0)
+        try:
+            read_aloud_kokoro_speed = float(_kokoro_speed_raw)
+        except (TypeError, ValueError):
+            read_aloud_kokoro_speed = 1.0
+        read_aloud_kokoro_speed = max(0.5, min(2.0, read_aloud_kokoro_speed))
+        read_aloud_vibevoice_executable = str(data.get("read_aloud_vibevoice_executable", "")).strip()
+        read_aloud_vibevoice_voice = str(data.get("read_aloud_vibevoice_voice", "default")).strip() or "default"
+        read_aloud_espeak_executable = str(data.get("read_aloud_espeak_executable", "")).strip()
+        read_aloud_espeak_voice = str(data.get("read_aloud_espeak_voice", "en")).strip() or "en"
+        read_aloud_espeak_rate = int(data.get("read_aloud_espeak_rate", 175))
+        if read_aloud_espeak_rate < 80:
+            read_aloud_espeak_rate = 80
+        if read_aloud_espeak_rate > 450:
+            read_aloud_espeak_rate = 450
         if announcement_backend not in {"auto", "prism", "status_only"}:
             announcement_backend = "auto"
         announcement_trace_enabled = bool(data.get("announcement_trace_enabled", False))
@@ -254,6 +280,14 @@ class Settings:
             read_aloud_piper_executable=read_aloud_piper_executable,
             read_aloud_piper_model=read_aloud_piper_model,
             announcement_backend=announcement_backend,
+            read_aloud_piper_model_dir=read_aloud_piper_model_dir,
+            read_aloud_kokoro_voice=read_aloud_kokoro_voice,
+            read_aloud_kokoro_speed=read_aloud_kokoro_speed,
+            read_aloud_vibevoice_executable=read_aloud_vibevoice_executable,
+            read_aloud_vibevoice_voice=read_aloud_vibevoice_voice,
+            read_aloud_espeak_executable=read_aloud_espeak_executable,
+            read_aloud_espeak_voice=read_aloud_espeak_voice,
+            read_aloud_espeak_rate=read_aloud_espeak_rate,
             announcement_trace_enabled=announcement_trace_enabled,
             assistant_enabled=assistant_enabled,
             assistant_prompt_style=assistant_prompt_style,

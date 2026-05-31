@@ -164,10 +164,21 @@ from quill.core.read_aloud import (
     ReadAloudUnavailableError,
     discover_dectalk_executable,
     discover_piper_executable,
+    discover_espeak_executable,
+    discover_vibevoice_executable,
     download_dectalk_runtime,
     list_dectalk_voices,
+    list_espeak_english_voices,
+    list_kokoro_voices,
+    list_piper_voices,
+    list_vibevoice_voices,
     list_voices,
+    synthesize_to_file_with_dectalk,
+    synthesize_to_file_with_pyttsx3,
+    synthesize_with_espeak,
+    synthesize_with_kokoro,
     synthesize_with_piper,
+    synthesize_with_vibevoice,
 )
 from quill.core.dictation import (
     DictationController,
@@ -10492,6 +10503,15 @@ class MainFrame:
                 dectalk_rate=self.settings.read_aloud_dectalk_rate,
                 dectalk_dictionary=self.settings.read_aloud_dectalk_dictionary,
                 end=end,
+                piper_executable=self.settings.read_aloud_piper_executable,
+                piper_model=self.settings.read_aloud_piper_model,
+                kokoro_voice=self.settings.read_aloud_kokoro_voice,
+                kokoro_speed=self.settings.read_aloud_kokoro_speed,
+                vibevoice_executable=self.settings.read_aloud_vibevoice_executable,
+                vibevoice_voice=self.settings.read_aloud_vibevoice_voice,
+                espeak_executable=self.settings.read_aloud_espeak_executable,
+                espeak_voice=self.settings.read_aloud_espeak_voice,
+                espeak_rate=self.settings.read_aloud_espeak_rate,
                 on_progress=lambda progress_start, progress_end: self._wx.CallAfter(
                     self._on_read_aloud_progress,
                     progress_start,
@@ -10516,114 +10536,402 @@ class MainFrame:
         self._read_aloud.stop()
         self._set_status("Read aloud stopped")
 
-    def choose_read_aloud_voice(self) -> None:
+    def _voice_is_english(self, engine: str, voice: VoiceOption) -> bool:
+        engine_name = (engine or "").strip().lower()
+        voice_id = (voice.id or "").strip().lower()
+        voice_name = (voice.name or "").strip().lower()
+
+        if engine_name in {"dectalk", "kokoro", "espeak"}:
+            return True
+
+        if engine_name == "pyttsx3":
+            english_markers = ("english", "en-", " en", "_en", "en_us", "en_gb", "enu")
+            return any(marker in voice_id or marker in voice_name for marker in english_markers)
+
+        if engine_name == "piper":
+            return (
+                "en" in voice_id
+                or "english" in voice_id
+                or "en" in voice_name
+                or "english" in voice_name
+            )
+
+        if engine_name == "vibevoice":
+            if voice_id == "default":
+                return True
+            return "en" in voice_id or "english" in voice_name
+
+        return True
+
+    def _english_only_voices(self, engine: str, voices: list[VoiceOption]) -> list[VoiceOption]:
+        return [voice for voice in voices if self._voice_is_english(engine, voice)]
+    # ------------------------------------------------------------------
+    # Voice preview and settings – all 6 engines
+    # ------------------------------------------------------------------
+
+    _PREVIEW_TEXT = (
+        "Hello, this is a voice preview. "
+        "The quick brown fox jumps over the lazy dog."
+    )
+
+    def _preview_voice(self, engine: str, voice_id: str) -> None:
+        """Play a short preview of *voice_id* through *engine* on a background thread."""
+        import tempfile as _tmpfile
+        from pathlib import Path as _Path
+
+        sample = self._PREVIEW_TEXT
+        s = self.settings
+
+        def _work(_progress: Callable[[str, int, int], None]) -> object:
+            with _tmpfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
+                wav = _Path(fh.name)
+            try:
+                if engine == "pyttsx3":
+                    synthesize_to_file_with_pyttsx3(
+                        sample, wav,
+                        voice=voice_id,
+                        rate=s.read_aloud_rate,
+                        volume=s.read_aloud_volume / 100.0,
+                    )
+                elif engine == "dectalk":
+                    exe = discover_dectalk_executable(s.read_aloud_dectalk_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("DECtalk executable not configured")
+                    synthesize_to_file_with_dectalk(
+                        sample, wav,
+                        executable_path=exe,
+                        voice=voice_id,
+                        rate=s.read_aloud_dectalk_rate,
+                    )
+                elif engine == "piper":
+                    exe = discover_piper_executable(s.read_aloud_piper_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("Piper executable not configured")
+                    synthesize_with_piper(
+                        sample, wav,
+                        executable_path=exe,
+                        model_path=_Path(voice_id),
+                    )
+                elif engine == "kokoro":
+                    synthesize_with_kokoro(
+                        sample, wav,
+                        voice=voice_id,
+                        speed=s.read_aloud_kokoro_speed,
+                    )
+                elif engine == "vibevoice":
+                    exe = discover_vibevoice_executable(s.read_aloud_vibevoice_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("VibeVoice executable not configured")
+                    synthesize_with_vibevoice(sample, wav, executable_path=exe, voice=voice_id)
+                elif engine == "espeak":
+                    exe = discover_espeak_executable(s.read_aloud_espeak_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("eSpeak-NG not found")
+                    synthesize_with_espeak(
+                        sample, wav,
+                        executable_path=exe,
+                        voice=voice_id,
+                        rate=s.read_aloud_espeak_rate,
+                    )
+                else:
+                    raise ReadAloudUnavailableError(f"Unknown engine: {engine}")
+                # Play via the existing read-aloud controller so pause/stop work
+                import threading as _threading
+                done = _threading.Event()
+
+                def _on_state(st: str) -> None:
+                    if st in ("idle", "error"):
+                        done.set()
+
+                self._read_aloud.start(
+                    sample,
+                    0,
+                    voice_id,
+                    engine_name=engine,
+                    dectalk_executable=s.read_aloud_dectalk_executable,
+                    dectalk_voice=voice_id if engine == "dectalk" else s.read_aloud_dectalk_voice,
+                    dectalk_rate=s.read_aloud_dectalk_rate,
+                    dectalk_dictionary=s.read_aloud_dectalk_dictionary,
+                    piper_executable=s.read_aloud_piper_executable,
+                    piper_model=voice_id if engine == "piper" else s.read_aloud_piper_model,
+                    kokoro_voice=voice_id if engine == "kokoro" else s.read_aloud_kokoro_voice,
+                    kokoro_speed=s.read_aloud_kokoro_speed,
+                    vibevoice_executable=s.read_aloud_vibevoice_executable,
+                    vibevoice_voice=voice_id if engine == "vibevoice" else s.read_aloud_vibevoice_voice,
+                    espeak_executable=s.read_aloud_espeak_executable,
+                    espeak_voice=voice_id if engine == "espeak" else s.read_aloud_espeak_voice,
+                    espeak_rate=s.read_aloud_espeak_rate,
+                    on_state_change=lambda st: done.set() if st in ("idle", "error") else None,
+                )
+                done.wait(timeout=15)
+            finally:
+                try:
+                    wav.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            return None
+
+        self._run_background_task(
+            f"Previewing {engine} voice",
+            _work,
+            lambda _r: self._set_status("Preview finished"),
+        )
+
+    def choose_read_aloud_voice(self) -> None:  # noqa: PLR0912
         wx = self._wx
-        read_aloud_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
-        if read_aloud_engine == "dectalk":
+        engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
+
+        if engine == "dectalk":
             voices = list_dectalk_voices()
             current_voice_id = self.settings.read_aloud_dectalk_voice
+        elif engine == "piper":
+            voices = list_piper_voices(self.settings.read_aloud_piper_model_dir)
+            current_voice_id = self.settings.read_aloud_piper_model
+        elif engine == "kokoro":
+            voices = list_kokoro_voices()
+            current_voice_id = self.settings.read_aloud_kokoro_voice
+        elif engine == "vibevoice":
+            voices = list_vibevoice_voices(self.settings.read_aloud_vibevoice_executable)
+            current_voice_id = self.settings.read_aloud_vibevoice_voice
+        elif engine == "espeak":
+            voices = list_espeak_english_voices()
+            current_voice_id = self.settings.read_aloud_espeak_voice
         else:
             voices = list_voices()
             current_voice_id = self.settings.read_aloud_voice
+
+        voices = self._english_only_voices(engine, voices)
+
         if not voices:
             self._show_message_box(
-                "No speech voices were found.",
+                "No English voices were found for this engine.",
                 "Read Aloud Voice",
                 wx.ICON_INFORMATION | wx.OK,
             )
             return
-        choices = [voice.name for voice in voices]
-        current_index = next(
-            (
-                index
-                for index, voice in enumerate(voices)
-                if voice.id == current_voice_id
+
+        dialog = wx.Dialog(self.frame, title="Read Aloud Voice", size=(640, 460))
+        panel = wx.Panel(dialog)
+        root = wx.BoxSizer(wx.VERTICAL)
+        root.Add(
+            wx.StaticText(
+                panel,
+                label=f"Choose an English voice for {engine}. Use Preview before confirming.",
             ),
             0,
+            wx.LEFT | wx.RIGHT | wx.TOP,
+            8,
         )
-        with wx.SingleChoiceDialog(
-            self.frame,
-            "Choose a read-aloud voice:",
-            "Read Aloud Voice",
-            choices=choices,
-        ) as dialog:
-            dialog.SetSelection(current_index)
+        choices = [v.name for v in voices]
+        list_box = wx.ListBox(panel, choices=choices, style=wx.LB_SINGLE)
+        current_index = next((i for i, v in enumerate(voices) if v.id == current_voice_id), 0)
+        if choices:
+            list_box.SetSelection(current_index)
+        root.Add(list_box, 1, wx.EXPAND | wx.ALL, 8)
+        button_row = wx.BoxSizer(wx.HORIZONTAL)
+        preview_btn = wx.Button(panel, label="&Preview")
+        ok_btn = wx.Button(panel, id=wx.ID_OK)
+        cancel_btn = wx.Button(panel, id=wx.ID_CANCEL)
+        button_row.Add(preview_btn, 0, wx.RIGHT, 8)
+        button_row.Add(ok_btn, 0, wx.RIGHT, 8)
+        button_row.Add(cancel_btn, 0)
+        root.Add(button_row, 0, wx.ALIGN_RIGHT | wx.ALL, 8)
+        panel.SetSizer(root)
+        outer = wx.BoxSizer(wx.VERTICAL)
+        outer.Add(panel, 1, wx.EXPAND)
+        dialog.SetSizerAndFit(outer)
+
+        def _selected_index() -> int:
+            return list_box.GetSelection()
+
+        def _on_preview(_evt: wx.CommandEvent) -> None:
+            idx = _selected_index()
+            if 0 <= idx < len(voices):
+                self._preview_voice(engine, voices[idx].id)
+
+        preview_btn.Bind(wx.EVT_BUTTON, _on_preview)
+        try:
             if self._show_modal_dialog(dialog, "Read Aloud Voice") != wx.ID_OK:
                 self._set_status("Read aloud voice selection cancelled")
                 return
-            selected = dialog.GetSelection()
+            selected = _selected_index()
+        finally:
+            dialog.Destroy()
+
         if selected < 0 or selected >= len(voices):
             return
-        if read_aloud_engine == "dectalk":
+        if engine == "dectalk":
             self.settings.read_aloud_dectalk_voice = voices[selected].id
+        elif engine == "piper":
+            self.settings.read_aloud_piper_model = voices[selected].id
+        elif engine == "kokoro":
+            self.settings.read_aloud_kokoro_voice = voices[selected].id
+        elif engine == "vibevoice":
+            self.settings.read_aloud_vibevoice_voice = voices[selected].id
+        elif engine == "espeak":
+            self.settings.read_aloud_espeak_voice = voices[selected].id
         else:
             self.settings.read_aloud_voice = voices[selected].id
         save_settings(self.settings)
-        self._set_status(f"Selected read-aloud voice: {voices[selected].name}")
+        self._set_status(f"Selected voice: {voices[selected].name}")
 
-    def choose_read_aloud_settings(self) -> None:
+    def choose_read_aloud_settings(self) -> None:  # noqa: PLR0912,PLR0915
         wx = self._wx
-        engine_choices = ["Pyttsx3 (System TTS)", "DECtalk"]
-        engine_values = ["pyttsx3", "dectalk"]
+        _TITLE = "Read Aloud Settings"
+        engine_choices = [
+            "Pyttsx3 (System TTS)",
+            "DECtalk",
+            "Piper (neural, offline)",
+            "Kokoro (neural, offline)",
+            "VibeVoice (neural, offline)",
+            "eSpeak-NG (English variants)",
+        ]
+        engine_values = ["pyttsx3", "dectalk", "piper", "kokoro", "vibevoice", "espeak"]
         with wx.SingleChoiceDialog(
             self.frame,
             "Choose read-aloud engine:",
-            "Read Aloud Settings",
+            _TITLE,
             choices=engine_choices,
         ) as engine_dialog:
             current_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
             current_index = engine_values.index(current_engine) if current_engine in engine_values else 0
             engine_dialog.SetSelection(current_index)
-            if self._show_modal_dialog(engine_dialog, "Read Aloud Settings") != wx.ID_OK:
+            if self._show_modal_dialog(engine_dialog, _TITLE) != wx.ID_OK:
                 self._set_status("Read aloud settings cancelled")
                 return
             selected_engine = engine_values[engine_dialog.GetSelection()]
         self.settings.read_aloud_engine = selected_engine
 
-        if selected_engine == "dectalk":
-            with wx.TextEntryDialog(
-                self.frame,
-                "Path to DECtalk speak.exe:",
-                "Read Aloud Settings",
-                value=self.settings.read_aloud_dectalk_executable,
-            ) as exe_dialog:
-                if self._show_modal_dialog(exe_dialog, "Read Aloud Settings") != wx.ID_OK:
-                    self._set_status("Read aloud settings cancelled")
-                    return
-                self.settings.read_aloud_dectalk_executable = exe_dialog.GetValue().strip()
-            with wx.TextEntryDialog(
-                self.frame,
-                "Optional path to dtalk_us.dic (leave blank to auto-detect):",
-                "Read Aloud Settings",
-                value=self.settings.read_aloud_dectalk_dictionary,
-            ) as dic_dialog:
-                if self._show_modal_dialog(dic_dialog, "Read Aloud Settings") != wx.ID_OK:
-                    self._set_status("Read aloud settings cancelled")
-                    return
-                self.settings.read_aloud_dectalk_dictionary = dic_dialog.GetValue().strip()
-            with wx.TextEntryDialog(
-                self.frame,
-                "DECtalk speaking rate (75 to 650):",
-                "Read Aloud Settings",
-                value=str(self.settings.read_aloud_dectalk_rate),
-            ) as rate_dialog:
-                if self._show_modal_dialog(rate_dialog, "Read Aloud Settings") != wx.ID_OK:
-                    self._set_status("Read aloud settings cancelled")
-                    return
-                raw_rate = rate_dialog.GetValue().strip()
+        def _ask_text(prompt: str, current: str) -> str | None:
+            with wx.TextEntryDialog(self.frame, prompt, _TITLE, value=current) as d:
+                if self._show_modal_dialog(d, _TITLE) != wx.ID_OK:
+                    return None
+                return d.GetValue().strip()
+
+        def _ask_int(prompt: str, current: int, lo: int, hi: int) -> int | None:
+            val = _ask_text(f"{prompt} ({lo}–{hi}):", str(current))
+            if val is None:
+                return None
             try:
-                parsed_rate = int(raw_rate)
+                return max(lo, min(hi, int(val)))
             except ValueError:
-                parsed_rate = 180
-            self.settings.read_aloud_dectalk_rate = max(75, min(parsed_rate, 650))
+                return current
 
-        save_settings(self.settings)
-        self._set_status(
-            f"Read aloud engine set to {'DECtalk' if selected_engine == 'dectalk' else 'Pyttsx3'}"
-        )
+        def _ask_float(prompt: str, current: float, lo: float, hi: float) -> float | None:
+            val = _ask_text(f"{prompt} ({lo:.1f}–{hi:.1f}):", f"{current:.2f}")
+            if val is None:
+                return None
+            try:
+                return max(lo, min(hi, float(val)))
+            except ValueError:
+                return current
 
-    def generate_speech_audio(self) -> None:
+        # ---- per-engine settings ----
+        if selected_engine == "pyttsx3":
+            v = _ask_int("Speaking rate (words per minute)", self.settings.read_aloud_rate, 80, 450)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_rate = v
+            v2 = _ask_int("Volume (0–100)", self.settings.read_aloud_volume, 0, 100)
+            if v2 is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_volume = v2
+            v3 = _ask_int("Pitch (0–100)", self.settings.read_aloud_pitch, 0, 100)
+            if v3 is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_pitch = v3
+
+        elif selected_engine == "dectalk":
+            exe = _ask_text("Path to DECtalk speak.exe:", self.settings.read_aloud_dectalk_executable)
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_dectalk_executable = exe
+            dic = _ask_text(
+                "Optional path to dtalk_us.dic (leave blank to auto-detect):",
+                self.settings.read_aloud_dectalk_dictionary,
+            )
+            if dic is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_dectalk_dictionary = dic
+            v = _ask_int("Speaking rate", self.settings.read_aloud_dectalk_rate, 75, 650)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_dectalk_rate = v
+
+        elif selected_engine == "piper":
+            exe = _ask_text("Path to piper.exe:", self.settings.read_aloud_piper_executable)
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_piper_executable = exe
+            model_dir = _ask_text(
+                "Directory containing Piper .onnx model files (for voice list):",
+                self.settings.read_aloud_piper_model_dir,
+            )
+            if model_dir is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_piper_model_dir = model_dir
+
+        elif selected_engine == "kokoro":
+            v = _ask_float("Speaking speed multiplier", self.settings.read_aloud_kokoro_speed, 0.5, 2.0)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_kokoro_speed = v
+
+        elif selected_engine == "vibevoice":
+            exe = _ask_text("Path to vibevoice.exe:", self.settings.read_aloud_vibevoice_executable)
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_vibevoice_executable = exe
+
+        elif selected_engine == "espeak":
+            exe = _ask_text(
+                "Path to espeak-ng.exe (leave blank to use PATH):",
+                self.settings.read_aloud_espeak_executable,
+            )
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_espeak_executable = exe
+            v = _ask_int("Speaking rate (words per minute)", self.settings.read_aloud_espeak_rate, 80, 450)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_espeak_rate = v
+
+        # Always offer a preview of the current voice with new settings
+        current_voice = {
+            "pyttsx3": self.settings.read_aloud_voice,
+            "dectalk": self.settings.read_aloud_dectalk_voice,
+            "piper": self.settings.read_aloud_piper_model,
+            "kokoro": self.settings.read_aloud_kokoro_voice,
+            "vibevoice": self.settings.read_aloud_vibevoice_voice,
+            "espeak": self.settings.read_aloud_espeak_voice,
+        }.get(selected_engine, "")
+        with wx.MessageDialog(
+            self.frame,
+            f"Settings saved for {engine_choices[engine_values.index(selected_engine)]}.\n\n"
+            "Would you like to hear a preview with the current voice?",
+            _TITLE,
+            wx.YES_NO | wx.ICON_QUESTION,
+        ) as confirm:
+            save_settings(self.settings)
+            if self._show_modal_dialog(confirm, _TITLE) == wx.ID_YES:
+                self._preview_voice(selected_engine, current_voice)
+        engine_label = engine_choices[engine_values.index(selected_engine)]
+        self._set_status(f"Read aloud engine set to {engine_label}")
+    def generate_speech_audio(self) -> None:  # noqa: PLR0912,PLR0915
         wx = self._wx
+        _TITLE = "Generate Speech Audio"
         if not self._document_tabs:
             self._set_status("No document open")
             return
@@ -10634,78 +10942,138 @@ class MainFrame:
 
         with wx.FileDialog(
             self.frame,
-            "Generate Speech Audio",
+            _TITLE,
             wildcard="Wave file (*.wav)|*.wav|All files (*.*)|*.*",
             style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
-        ) as dialog:
-            if self._show_modal_dialog(dialog, "Generate Speech Audio") != wx.ID_OK:
+        ) as dlg:
+            if self._show_modal_dialog(dlg, _TITLE) != wx.ID_OK:
                 self._set_status("Speech generation cancelled")
                 return
-            output_path = Path(dialog.GetPath())
+            output_path = Path(dlg.GetPath())
         if output_path.suffix.lower() != ".wav":
             output_path = output_path.with_suffix(".wav")
 
-        piper_executable = discover_piper_executable(self.settings.read_aloud_piper_executable)
-        if piper_executable is None:
-            with wx.TextEntryDialog(
-                self.frame,
-                "Path to Piper executable (piper.exe):",
-                "Generate Speech Audio",
-                value=self.settings.read_aloud_piper_executable,
-            ) as exe_dialog:
-                if self._show_modal_dialog(exe_dialog, "Generate Speech Audio") != wx.ID_OK:
-                    self._set_status("Speech generation cancelled")
-                    return
-                configured = exe_dialog.GetValue().strip()
-            piper_executable = discover_piper_executable(configured)
-            if piper_executable is None:
+        engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
+        s = self.settings
+
+        # Resolve / prompt for engine-specific paths before background work
+        if engine == "piper":
+            exe = discover_piper_executable(s.read_aloud_piper_executable)
+            if exe is None:
+                with wx.TextEntryDialog(
+                    self.frame, "Path to piper.exe:", _TITLE, value=s.read_aloud_piper_executable
+                ) as d:
+                    if self._show_modal_dialog(d, _TITLE) != wx.ID_OK:
+                        self._set_status("Speech generation cancelled"); return
+                    exe = discover_piper_executable(d.GetValue().strip())
+                if exe is None:
+                    self._show_message_box("Piper executable not found.", _TITLE, wx.ICON_ERROR | wx.OK)
+                    self._set_status("Speech generation cancelled"); return
+                s.read_aloud_piper_executable = str(exe)
+            model = Path(s.read_aloud_piper_model).expanduser()
+            if not s.read_aloud_piper_model or not model.exists():
+                with wx.FileDialog(
+                    self.frame, "Select Piper model (.onnx)",
+                    wildcard="Piper model (*.onnx)|*.onnx|All files (*.*)|*.*",
+                    style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+                ) as d:
+                    if self._show_modal_dialog(d, _TITLE) != wx.ID_OK:
+                        self._set_status("Speech generation cancelled"); return
+                    model = Path(d.GetPath())
+                s.read_aloud_piper_model = str(model)
+            piper_exe_snap = exe
+            piper_model_snap = model
+
+        elif engine == "dectalk":
+            exe = discover_dectalk_executable(s.read_aloud_dectalk_executable)
+            if exe is None:
                 self._show_message_box(
-                    "Piper executable was not found.",
-                    "Generate Speech Audio",
-                    wx.ICON_ERROR | wx.OK,
+                    "DECtalk executable not found. Configure it in Read Aloud Settings.",
+                    _TITLE, wx.ICON_ERROR | wx.OK,
                 )
-                self._set_status("Speech generation cancelled")
-                return
-            self.settings.read_aloud_piper_executable = str(piper_executable)
+                self._set_status("Speech generation cancelled"); return
+            dectalk_exe_snap = exe
 
-        piper_model = Path(self.settings.read_aloud_piper_model).expanduser()
-        if not self.settings.read_aloud_piper_model or not piper_model.exists():
-            with wx.FileDialog(
-                self.frame,
-                "Select Piper model (.onnx)",
-                wildcard="Piper model (*.onnx)|*.onnx|All files (*.*)|*.*",
-                style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-            ) as model_dialog:
-                if self._show_modal_dialog(model_dialog, "Generate Speech Audio") != wx.ID_OK:
-                    self._set_status("Speech generation cancelled")
-                    return
-                piper_model = Path(model_dialog.GetPath())
-            self.settings.read_aloud_piper_model = str(piper_model)
+        elif engine == "vibevoice":
+            exe = discover_vibevoice_executable(s.read_aloud_vibevoice_executable)
+            if exe is None:
+                self._show_message_box(
+                    "VibeVoice executable not found. Configure it in Read Aloud Settings.",
+                    _TITLE, wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled"); return
+            vibevoice_exe_snap = exe
 
-        save_settings(self.settings)
-        task_label = f"Generating speech audio ({output_path.name})"
+        elif engine == "espeak":
+            exe = discover_espeak_executable(s.read_aloud_espeak_executable)
+            if exe is None:
+                self._show_message_box(
+                    "eSpeak-NG not found. Install it or configure the path in Read Aloud Settings.",
+                    _TITLE, wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled"); return
+            espeak_exe_snap = exe
+
+        save_settings(s)
+        task_label = f"Generating speech audio ({output_path.name}) via {engine}"
+
+        # Capture settings snapshot for the background thread
+        _engine = engine
+        _voice = s.read_aloud_voice
+        _rate = s.read_aloud_rate
+        _vol = s.read_aloud_volume / 100.0
+        _dectalk_voice = s.read_aloud_dectalk_voice
+        _dectalk_rate = s.read_aloud_dectalk_rate
+        _kokoro_voice = s.read_aloud_kokoro_voice
+        _kokoro_speed = s.read_aloud_kokoro_speed
+        _vibevoice_voice = s.read_aloud_vibevoice_voice
+        _espeak_voice = s.read_aloud_espeak_voice
+        _espeak_rate = s.read_aloud_espeak_rate
+        _out = output_path
 
         def work(progress: Callable[[str, int, int], None]) -> object:
-            progress("Starting Piper", 0, 1)
-            synthesize_with_piper(
-                text,
-                output_path,
-                executable_path=piper_executable,
-                model_path=piper_model,
-            )
+            progress(f"Starting {_engine}", 0, 1)
+            if _engine == "pyttsx3":
+                synthesize_to_file_with_pyttsx3(_out_text, _out, voice=_voice, rate=_rate, volume=_vol)
+            elif _engine == "dectalk":
+                synthesize_to_file_with_dectalk(
+                    _out_text, _out,
+                    executable_path=dectalk_exe_snap,
+                    voice=_dectalk_voice,
+                    rate=_dectalk_rate,
+                )
+            elif _engine == "piper":
+                synthesize_with_piper(
+                    _out_text, _out,
+                    executable_path=piper_exe_snap,
+                    model_path=piper_model_snap,
+                )
+            elif _engine == "kokoro":
+                synthesize_with_kokoro(_out_text, _out, voice=_kokoro_voice, speed=_kokoro_speed)
+            elif _engine == "vibevoice":
+                synthesize_with_vibevoice(
+                    _out_text, _out,
+                    executable_path=vibevoice_exe_snap,
+                    voice=_vibevoice_voice,
+                )
+            elif _engine == "espeak":
+                synthesize_with_espeak(
+                    _out_text, _out,
+                    executable_path=espeak_exe_snap,
+                    voice=_espeak_voice,
+                    rate=_espeak_rate,
+                )
             progress("Finalizing output", 1, 1)
-            return str(output_path)
+            return str(_out)
+
+        _out_text = text
 
         def on_success(result: object) -> None:
-            generated = Path(str(result))
-            self._set_status(f"Speech generation complete: {generated.name}")
+            self._set_status(f"Speech generation complete: {Path(str(result)).name}")
 
         self._run_background_task(
-            task_label,
-            work,
-            on_success,
-            notify_on_success=True,
-            notify_on_error=True,
+            task_label, work, on_success,
+            notify_on_success=True, notify_on_error=True,
             notification_category="speech",
         )
 
