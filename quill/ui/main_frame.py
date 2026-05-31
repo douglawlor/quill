@@ -11323,19 +11323,20 @@ class MainFrame:
             "DECtalk",
             "Piper (neural, offline)",
             "Kokoro (neural, offline)",
-            "VibeVoice (neural, offline)",
             "eSpeak-NG (English variants)",
             "RHVoice (accessibility-focused, offline)",
             "MeloTTS (multilingual add-on, English mode)",
             "Chatterbox (high-fidelity read/export)",
             "OpenVoice (advanced style module)",
         ]
+        # NOTE: VibeVoice is intentionally NOT a read-aloud engine — it's an
+        # offline "generate a speech file" tool (see vibevoice-cpu), not a live
+        # voice. It's exposed as a file-export action, never in this picker.
         engine_values = [
             "pyttsx3",
             "dectalk",
             "piper",
             "kokoro",
-            "vibevoice",
             "espeak",
             "rhvoice",
             "melotts",
