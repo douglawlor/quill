@@ -2,7 +2,7 @@
 ; Edit build_inno_setup_script(), not this file, to change packaging.
 
 #define AppName "Quill"
-#define AppVersion "0.1.2"
+#define AppVersion "0.1.5"
 #define AppPublisher "Blind Information Technology Solutions (BITS) and Community Access"
 #define AppURL "https://github.com/Community-Access/quill"
 #define AppExeName "run-quill.cmd"
@@ -25,7 +25,7 @@ DisableProgramGroupPage=auto
 AllowNoIcons=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-OutputBaseFilename=Quill-Setup-0.1.2
+OutputBaseFilename=Quill-Setup-0.1.5
 Compression=lzma2/ultra
 SolidCompression=yes
 WizardStyle=modern
