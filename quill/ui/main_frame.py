@@ -163,9 +163,11 @@ from quill.core.read_aloud import (
     ReadAloudController,
     ReadAloudUnavailableError,
     discover_dectalk_executable,
+    discover_piper_executable,
     download_dectalk_runtime,
     list_dectalk_voices,
     list_voices,
+    synthesize_with_piper,
 )
 from quill.core.dictation import (
     DictationController,
@@ -1184,6 +1186,12 @@ class MainFrame:
             "tools.read_aloud_settings",
             "Read Aloud Settings...",
             self.choose_read_aloud_settings,
+            None,
+        )
+        self.commands.register(
+            "tools.read_aloud_generate_audio",
+            "Generate Speech Audio...",
+            self.generate_speech_audio,
             None,
         )
         self.commands.register(
@@ -2611,6 +2619,7 @@ class MainFrame:
         self._id_read_aloud_stop = wx.NewIdRef()
         self._id_read_aloud_voice = wx.NewIdRef()
         self._id_read_aloud_settings = wx.NewIdRef()
+        self._id_read_aloud_generate_audio = wx.NewIdRef()
         self._id_announcement_backend = wx.NewIdRef()
         self._id_announcement_backend_auto = wx.NewIdRef()
         self._id_announcement_backend_prism = wx.NewIdRef()
@@ -2652,6 +2661,7 @@ class MainFrame:
         self._id_ai_speech_stop = wx.NewIdRef()
         self._id_ai_speech_voice = wx.NewIdRef()
         self._id_ai_speech_settings = wx.NewIdRef()
+        self._id_ai_speech_generate_audio = wx.NewIdRef()
         self._id_run_python = wx.NewIdRef()
         self._id_compare_with_file = wx.NewIdRef()
         self._id_compare_open_documents = wx.NewIdRef()
@@ -2751,6 +2761,10 @@ class MainFrame:
         read_aloud_menu.Append(
             self._id_read_aloud_settings,
             self._menu_label("Se&ttings...", "tools.read_aloud_settings"),
+        )
+        read_aloud_menu.Append(
+            self._id_read_aloud_generate_audio,
+            self._menu_label("Generate &Audio...", "tools.read_aloud_generate_audio"),
         )
         read_aloud_menu.Append(
             self._id_announcement_backend,
@@ -2910,6 +2924,10 @@ class MainFrame:
         speech_menu.Append(
             self._id_ai_speech_settings,
             self._menu_label("Se&ttings...", "tools.read_aloud_settings"),
+        )
+        speech_menu.Append(
+            self._id_ai_speech_generate_audio,
+            self._menu_label("Generate &Audio...", "tools.read_aloud_generate_audio"),
         )
         ai_menu.AppendSubMenu(speech_menu, "&Speech")
         menu_bar.Append(ai_menu, "A&I")
@@ -3697,6 +3715,11 @@ class MainFrame:
         )
         self.frame.Bind(
             wx.EVT_MENU,
+            lambda _e: self.generate_speech_audio(),
+            id=self._id_read_aloud_generate_audio,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
             lambda _e: self.toggle_read_aloud(),
             id=self._id_ai_speech_start_pause,
         )
@@ -3714,6 +3737,11 @@ class MainFrame:
             wx.EVT_MENU,
             lambda _e: self.choose_read_aloud_settings(),
             id=self._id_ai_speech_settings,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.generate_speech_audio(),
+            id=self._id_ai_speech_generate_audio,
         )
         self.frame.Bind(
             wx.EVT_MENU,
@@ -4049,6 +4077,7 @@ class MainFrame:
             "view.split_preview": self._id_split_preview,
             "view.focus_preview": self._id_focus_preview,
             "view.browser_preview": self._id_browser_preview,
+            "tools.read_aloud_generate_audio": self._id_read_aloud_generate_audio,
             "tools.ai_assistant": self._id_ai_assistant,
             "tools.ask_quill_chat": self._id_ask_quill_chat,
             "tools.ai_model": self._id_ai_model,
@@ -6310,6 +6339,10 @@ class MainFrame:
         label: str,
         work: Callable[[Callable[[str, int, int], None]], object],
         on_success: Callable[[object], None],
+        *,
+        notify_on_success: bool = False,
+        notify_on_error: bool = False,
+        notification_category: str = "info",
     ) -> None:
         self._background_task_count = getattr(self, "_background_task_count", 0) + 1
         self._set_status(f"{label} started")
@@ -6321,9 +6354,27 @@ class MainFrame:
             try:
                 result = work(progress)
             except Exception as error:  # surfaced to the user on the UI thread
-                self._wx.CallAfter(self._finish_background_task, label, error, None, on_success)
+                self._wx.CallAfter(
+                    self._finish_background_task,
+                    label,
+                    error,
+                    None,
+                    on_success,
+                    notify_on_success,
+                    notify_on_error,
+                    notification_category,
+                )
                 return
-            self._wx.CallAfter(self._finish_background_task, label, None, result, on_success)
+            self._wx.CallAfter(
+                self._finish_background_task,
+                label,
+                None,
+                result,
+                on_success,
+                notify_on_success,
+                notify_on_error,
+                notification_category,
+            )
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -6333,13 +6384,20 @@ class MainFrame:
         error: Exception | None,
         result: object,
         on_success: Callable[[object], None],
+        notify_on_success: bool,
+        notify_on_error: bool,
+        notification_category: str,
     ) -> None:
         self._background_task_count = max(0, getattr(self, "_background_task_count", 1) - 1)
         if error is not None:
             self._show_message_box(str(error), label, self._wx.ICON_ERROR | self._wx.OK)
             self._set_status(f"{label} failed")
+            if notify_on_error:
+                self._record_notification(f"{label} failed: {error}", notification_category)
             return
         on_success(result)
+        if notify_on_success:
+            self._record_notification(f"{label} completed", notification_category)
 
     def _open_generated_tab(self, title: str, text: str) -> int:
         index = self._create_document_tab(
@@ -10562,6 +10620,93 @@ class MainFrame:
         save_settings(self.settings)
         self._set_status(
             f"Read aloud engine set to {'DECtalk' if selected_engine == 'dectalk' else 'Pyttsx3'}"
+        )
+
+    def generate_speech_audio(self) -> None:
+        wx = self._wx
+        if not self._document_tabs:
+            self._set_status("No document open")
+            return
+        text = self.editor.GetStringSelection().strip() or self.editor.GetValue().strip()
+        if not text:
+            self._set_status("Nothing to synthesize")
+            return
+
+        with wx.FileDialog(
+            self.frame,
+            "Generate Speech Audio",
+            wildcard="Wave file (*.wav)|*.wav|All files (*.*)|*.*",
+            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+        ) as dialog:
+            if self._show_modal_dialog(dialog, "Generate Speech Audio") != wx.ID_OK:
+                self._set_status("Speech generation cancelled")
+                return
+            output_path = Path(dialog.GetPath())
+        if output_path.suffix.lower() != ".wav":
+            output_path = output_path.with_suffix(".wav")
+
+        piper_executable = discover_piper_executable(self.settings.read_aloud_piper_executable)
+        if piper_executable is None:
+            with wx.TextEntryDialog(
+                self.frame,
+                "Path to Piper executable (piper.exe):",
+                "Generate Speech Audio",
+                value=self.settings.read_aloud_piper_executable,
+            ) as exe_dialog:
+                if self._show_modal_dialog(exe_dialog, "Generate Speech Audio") != wx.ID_OK:
+                    self._set_status("Speech generation cancelled")
+                    return
+                configured = exe_dialog.GetValue().strip()
+            piper_executable = discover_piper_executable(configured)
+            if piper_executable is None:
+                self._show_message_box(
+                    "Piper executable was not found.",
+                    "Generate Speech Audio",
+                    wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled")
+                return
+            self.settings.read_aloud_piper_executable = str(piper_executable)
+
+        piper_model = Path(self.settings.read_aloud_piper_model).expanduser()
+        if not self.settings.read_aloud_piper_model or not piper_model.exists():
+            with wx.FileDialog(
+                self.frame,
+                "Select Piper model (.onnx)",
+                wildcard="Piper model (*.onnx)|*.onnx|All files (*.*)|*.*",
+                style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+            ) as model_dialog:
+                if self._show_modal_dialog(model_dialog, "Generate Speech Audio") != wx.ID_OK:
+                    self._set_status("Speech generation cancelled")
+                    return
+                piper_model = Path(model_dialog.GetPath())
+            self.settings.read_aloud_piper_model = str(piper_model)
+
+        save_settings(self.settings)
+        task_label = f"Generating speech audio ({output_path.name})"
+
+        def work(progress: Callable[[str, int, int], None]) -> object:
+            progress("Starting Piper", 0, 1)
+            synthesize_with_piper(
+                text,
+                output_path,
+                executable_path=piper_executable,
+                model_path=piper_model,
+            )
+            progress("Finalizing output", 1, 1)
+            return str(output_path)
+
+        def on_success(result: object) -> None:
+            generated = Path(str(result))
+            self._set_status(f"Speech generation complete: {generated.name}")
+
+        self._run_background_task(
+            task_label,
+            work,
+            on_success,
+            notify_on_success=True,
+            notify_on_error=True,
+            notification_category="speech",
         )
 
     def ocr_image_file(self) -> None:

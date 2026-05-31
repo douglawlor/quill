@@ -61,6 +61,58 @@ def discover_dectalk_executable(configured_path: str = "") -> Path | None:
     return None
 
 
+def discover_piper_executable(configured_path: str = "") -> Path | None:
+    if configured_path.strip():
+        candidate = Path(configured_path).expanduser()
+        if candidate.exists():
+            return candidate.resolve()
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if app_root:
+        bundled = Path(app_root) / "tools" / "speech" / "piper"
+        for relative in ("piper.exe", "piper/piper.exe"):
+            probe = bundled / relative
+            if probe.exists():
+                return probe.resolve()
+    return None
+
+
+def synthesize_with_piper(
+    text: str,
+    output_path: Path,
+    *,
+    executable_path: Path,
+    model_path: Path,
+) -> None:
+    if not text.strip():
+        raise ReadAloudUnavailableError("Cannot generate speech from empty text")
+    if not executable_path.exists():
+        raise ReadAloudUnavailableError("Piper executable was not found")
+    if not model_path.exists():
+        raise ReadAloudUnavailableError("Piper model file was not found")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(executable_path),
+        "--model",
+        str(model_path),
+        "--output_file",
+        str(output_path),
+    ]
+    completed = subprocess.run(
+        command,
+        input=text,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        if detail:
+            raise ReadAloudUnavailableError(f"Piper failed: {detail}")
+        raise ReadAloudUnavailableError(
+            f"Piper exited with code {completed.returncode}. Check executable and model settings."
+        )
+
+
 def download_dectalk_runtime(target_dir: Path) -> Path:
     target_dir.mkdir(parents=True, exist_ok=True)
     archive = target_dir / "vs2022.zip"

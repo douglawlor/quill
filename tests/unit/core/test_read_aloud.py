@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 from quill.core import read_aloud as read_aloud_module
 from quill.core.read_aloud import (
+    ReadAloudUnavailableError,
     ReadAloudController,
+    discover_piper_executable,
     list_dectalk_voices,
     list_voices,
     sentence_spans,
+    synthesize_with_piper,
 )
 
 
@@ -96,3 +100,74 @@ def test_build_dectalk_payload_includes_voice_and_rate() -> None:
     assert "[:np]" in payload
     assert "[:ra 200]" in payload
     assert "Hello there" in payload
+
+
+def test_discover_piper_executable_uses_explicit_path(tmp_path: Path) -> None:
+    exe = tmp_path / "piper.exe"
+    exe.write_text("binary", encoding="utf-8")
+    discovered = discover_piper_executable(str(exe))
+    assert discovered == exe.resolve()
+
+
+def test_synthesize_with_piper_runs_process(monkeypatch, tmp_path: Path) -> None:
+    exe = tmp_path / "piper.exe"
+    model = tmp_path / "voice.onnx"
+    output = tmp_path / "speech.wav"
+    exe.write_text("binary", encoding="utf-8")
+    model.write_text("model", encoding="utf-8")
+
+    class Completed:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    called: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        called["kwargs"] = kwargs
+        return Completed()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
+
+    synthesize_with_piper(
+        "Hello from piper",
+        output,
+        executable_path=exe,
+        model_path=model,
+    )
+    assert called["command"] == [
+        str(exe),
+        "--model",
+        str(model),
+        "--output_file",
+        str(output),
+    ]
+    assert called["kwargs"]["input"] == "Hello from piper"
+
+
+def test_synthesize_with_piper_raises_for_failure(monkeypatch, tmp_path: Path) -> None:
+    exe = tmp_path / "piper.exe"
+    model = tmp_path / "voice.onnx"
+    output = tmp_path / "speech.wav"
+    exe.write_text("binary", encoding="utf-8")
+    model.write_text("model", encoding="utf-8")
+
+    class Completed:
+        returncode = 1
+        stdout = ""
+        stderr = "bad model"
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", lambda *_args, **_kwargs: Completed())
+
+    try:
+        synthesize_with_piper(
+            "Hello from piper",
+            output,
+            executable_path=exe,
+            model_path=model,
+        )
+    except ReadAloudUnavailableError as exc:
+        assert "Piper failed" in str(exc)
+    else:
+        raise AssertionError("Expected ReadAloudUnavailableError")
