@@ -1290,6 +1290,12 @@ class MainFrame:
             None,
         )
         self.commands.register(
+            "tools.generate_vibevoice_audio",
+            "Generate Speech with VibeVoice...",
+            self.generate_speech_with_vibevoice,
+            None,
+        )
+        self.commands.register(
             "tools.announcement_backend",
             "Announcement Backend...",
             self.choose_announcement_backend,
@@ -2801,6 +2807,7 @@ class MainFrame:
         self._id_ai_speech_settings = wx.NewIdRef()
         self._id_ai_speech_generate_audio = wx.NewIdRef()
         self._id_ai_speech_download_vibevoice = wx.NewIdRef()
+        self._id_ai_speech_vibevoice_generate = wx.NewIdRef()
         self._id_train_style = wx.NewIdRef()
         self._id_compare_with_file = wx.NewIdRef()
         self._id_compare_open_documents = wx.NewIdRef()
@@ -3099,6 +3106,10 @@ class MainFrame:
         speech_menu.Append(
             self._id_ai_speech_download_vibevoice,
             self._menu_label("&Download VibeVoice Model...", "tools.download_vibevoice"),
+        )
+        speech_menu.Append(
+            self._id_ai_speech_vibevoice_generate,
+            self._menu_label("Generate with &VibeVoice...", "tools.generate_vibevoice_audio"),
         )
         ai_menu.AppendSubMenu(speech_menu, "&Speech")
         menu_bar.Append(ai_menu, "A&I")
@@ -3957,6 +3968,11 @@ class MainFrame:
         )
         self.frame.Bind(
             wx.EVT_MENU,
+            lambda _e: self.generate_speech_with_vibevoice(),
+            id=self._id_ai_speech_vibevoice_generate,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
             lambda _e: self.choose_announcement_backend(),
             id=self._id_announcement_backend,
         )
@@ -4307,6 +4323,7 @@ class MainFrame:
             "tools.read_aloud_generate_audio": self._id_read_aloud_generate_audio,
             "tools.ai_hub": self._id_ai_hub,
             "tools.download_vibevoice": self._id_ai_speech_download_vibevoice,
+            "tools.generate_vibevoice_audio": self._id_ai_speech_vibevoice_generate,
             "tools.ai_assistant": self._id_ai_assistant,
             "tools.ai_prompt_studio": self._id_ai_prompt_studio,
             "tools.ai_agent_center": self._id_ai_agent_center,
@@ -11612,6 +11629,89 @@ class MainFrame:
 
         self._run_background_task(
             "Downloading VibeVoice speech model and voices",
+            work,
+            on_success,
+            notify_on_success=True,
+            notify_on_error=True,
+            notification_category="speech",
+        )
+
+    def generate_speech_with_vibevoice(self) -> None:
+        """Generate a speech-audio FILE from the document using VibeVoice.
+
+        VibeVoice is an offline file generator (CPU-native, GPU if available) via
+        the vibevoice-cpu library — not a live read-aloud voice. The selection
+        (or whole document) is synthesized to a WAV in the background.
+        """
+        wx = self._wx
+        _TITLE = "Generate Speech with VibeVoice"
+        if not self._document_tabs:
+            self._set_status("No document open")
+            return
+        text = self.editor.GetStringSelection().strip() or self.editor.GetValue().strip()
+        if not text:
+            self._set_status("Nothing to synthesize")
+            return
+
+        try:
+            from vibevoice_cpu.voices import list_voices
+        except ImportError:
+            self._show_message_box(
+                "VibeVoice isn't installed. Install the model stack "
+                "(vibevoice-cpu[model]) and try again, or use AI > Speech > "
+                "Download VibeVoice Model first.",
+                _TITLE,
+                wx.ICON_ERROR | wx.OK,
+            )
+            return
+
+        # Use already-downloaded voices if present; otherwise the worker resolves
+        # and downloads one. Don't hit the network on the UI thread.
+        voices = list_voices(download=False) or ["Alice"]
+        voice = voices[0]
+        if len(voices) > 1:
+            with wx.SingleChoiceDialog(
+                self.frame, "Choose a VibeVoice voice:", _TITLE, choices=voices
+            ) as voice_dialog:
+                if self._show_modal_dialog(voice_dialog, _TITLE) == wx.ID_OK:
+                    voice = voices[voice_dialog.GetSelection()]
+
+        with wx.FileDialog(
+            self.frame,
+            _TITLE,
+            wildcard="Wave file (*.wav)|*.wav|All files (*.*)|*.*",
+            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+        ) as dlg:
+            if self._show_modal_dialog(dlg, _TITLE) != wx.ID_OK:
+                self._set_status("Speech generation cancelled")
+                return
+            output_path = Path(dlg.GetPath())
+        if output_path.suffix.lower() != ".wav":
+            output_path = output_path.with_suffix(".wav")
+
+        text_snap = text
+        voice_snap = voice
+
+        def work(progress: Callable[[str, int, int], None]) -> object:
+            from vibevoice_cpu import synthesize
+            from vibevoice_cpu.download import DEFAULT_MODEL
+            from vibevoice_cpu.system import ram_warning
+
+            warning = ram_warning(DEFAULT_MODEL)
+            progress("Generating speech with VibeVoice (slow on CPU)", 0, 1)
+            synthesize(text_snap, output_path, voice=voice_snap)
+            progress("Speech file ready", 1, 1)
+            return warning
+
+        def on_success(result: object) -> None:
+            message = f"Saved speech audio to {output_path.name}"
+            if result:
+                message += f" ({result})"
+            self._set_status(message)
+            self._announce(message)
+
+        self._run_background_task(
+            "Generating speech with VibeVoice",
             work,
             on_success,
             notify_on_success=True,
