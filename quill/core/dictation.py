@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -25,6 +26,7 @@ class DictationController:
     def __init__(self) -> None:
         self._state = "idle"
         self._stopper: Callable[..., None] | None = None
+        self._segments: list[str] = []
 
     @property
     def state(self) -> str:
@@ -54,7 +56,36 @@ class DictationController:
             except OSError:
                 pass
         self._state = "idle"
+        transcript = "".join(self._segments).strip()
+        self._segments.clear()
+        if on_state_change is not None:
+            on_state_change(self._state)
+        return transcript
+
+
+def _transcribe_audio(recognizer: object, audio: object, settings: DictationSettings) -> str:
+    """Transcribe one audio chunk using the configured local recognizer engine."""
+    engine = (settings.engine or "").strip().lower()
+    if engine == "whisper":
+        return str(
+            recognizer.recognize_whisper(
+                audio,
+                model=settings.model,
+                language=settings.language,
+            )
+        )
+    if engine == "vosk":
+        payload = recognizer.recognize_vosk(audio)
+        if isinstance(payload, str):
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError:
+                return payload.strip()
+            return str(data.get("text", "")).strip()
+        if isinstance(payload, dict):
+            return str(payload.get("text", "")).strip()
         return ""
+    raise DictationUnavailableError(f"Unsupported dictation engine: {settings.engine}")
 
 
 def list_dictation_devices() -> list[str]:
