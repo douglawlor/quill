@@ -362,10 +362,13 @@ from quill.ui.word_view import WordDocumentSurface
 
 
 def _vibevoice_feature_enabled() -> bool:
-    """VibeVoice (offline speech-file generator) is an experimental feature gated
-    off by default. Set the QUILL_VIBEVOICE env var (1/true/yes/on) to surface its
-    AI > Speech menu items. The feature is developed on the feature/vibevoice branch."""
-    return os.environ.get("QUILL_VIBEVOICE", "").strip().lower() in ("1", "true", "yes", "on")
+    """VibeVoice (offline speech-file generator) is NOT enabled on this branch.
+
+    It is experimental and not ready for users, so it is hard-disabled here — its
+    AI > Speech menu items and command-palette entries never appear, and there is
+    no env-var override. The working, enabled version is developed on the
+    feature/vibevoice branch."""
+    return False
 
 
 @dataclass(slots=True)
