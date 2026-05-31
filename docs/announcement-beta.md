@@ -196,6 +196,9 @@ Voice support includes:
 - Windows dictation integration
 - dictation command toggles and control states
 - voice-command interpretation support in supported paths
+- watch-folder monitoring to auto-open newly dropped supported files
+- watch-folder settings for folder path, subfolders, startup, and polling
+- startup-wizard watch-folder onboarding for first-run automation setup
 
 ### External tools and conversion workflows
 

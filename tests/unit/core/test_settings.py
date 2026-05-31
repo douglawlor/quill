@@ -32,6 +32,12 @@ def test_settings_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
             announcement_trace_enabled=True,
             assistant_enabled=True,
             assistant_prompt_style="technical",
+            watch_folder_enabled=True,
+            watch_folder_path="C:\\incoming-audio",
+            watch_folder_include_subfolders=True,
+            watch_folder_process_existing=True,
+            watch_folder_auto_start=True,
+            watch_folder_poll_interval_seconds=12,
             status_bar_order=["line_column", "mode", "message", "file_path", "selection"],
             status_bar_hidden=["selection"],
         )
@@ -59,6 +65,12 @@ def test_settings_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     assert loaded.announcement_trace_enabled is True
     assert loaded.assistant_enabled is True
     assert loaded.assistant_prompt_style == "technical"
+    assert loaded.watch_folder_enabled is True
+    assert loaded.watch_folder_path == "C:\\incoming-audio"
+    assert loaded.watch_folder_include_subfolders is True
+    assert loaded.watch_folder_process_existing is True
+    assert loaded.watch_folder_auto_start is True
+    assert loaded.watch_folder_poll_interval_seconds == 12
     assert loaded.show_tab_control is False
     expected_order = list(
         dict.fromkeys(
@@ -200,3 +212,15 @@ def test_settings_defaults_assistant_to_disabled(
     loaded = load_settings()
     assert loaded.assistant_enabled is False
     assert loaded.assistant_prompt_style == "balanced"
+
+
+def test_settings_clamps_watch_folder_poll_interval(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text(
+        '{"watch_folder_poll_interval_seconds":0}',
+        encoding="utf-8",
+    )
+    loaded = load_settings()
+    assert loaded.watch_folder_poll_interval_seconds == 2

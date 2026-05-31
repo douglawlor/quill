@@ -104,6 +104,30 @@ def main() -> int:
         help="Optional local VibeVoice voices/models directory to bundle under portable\\tools\\speech\\vibevoice.",
     )
     parser.add_argument(
+        "--rhvoice-dir",
+        type=Path,
+        default=None,
+        help="Optional local RHVoice voices/models directory to bundle under portable\\tools\\speech\\rhvoice.",
+    )
+    parser.add_argument(
+        "--melotts-dir",
+        type=Path,
+        default=None,
+        help="Optional local MeloTTS voices/models directory to bundle under portable\\tools\\speech\\melotts.",
+    )
+    parser.add_argument(
+        "--chatterbox-dir",
+        type=Path,
+        default=None,
+        help="Optional local Chatterbox voices/models directory to bundle under portable\\tools\\speech\\chatterbox.",
+    )
+    parser.add_argument(
+        "--openvoice-dir",
+        type=Path,
+        default=None,
+        help="Optional local OpenVoice voices/models directory to bundle under portable\\tools\\speech\\openvoice.",
+    )
+    parser.add_argument(
         "--bundle-dectalk-release",
         action="store_true",
         help="Download the official dectalk/dectalk vs2022 release and bundle it under portable\\tools\\speech\\dectalk.",
@@ -136,6 +160,10 @@ def main() -> int:
                 "speech/kokoro": args.kokoro_dir,
                 "speech/piper": args.piper_dir,
                 "speech/vibevoice": args.vibevoice_dir,
+                "speech/rhvoice": args.rhvoice_dir,
+                "speech/melotts": args.melotts_dir,
+                "speech/chatterbox": args.chatterbox_dir,
+                "speech/openvoice": args.openvoice_dir,
             }.items()
             if path is not None
         },
@@ -441,25 +469,67 @@ def build_inno_setup_script(version: str) -> str:
         ' Types: full compact custom; Flags: checkablealone',
         'Name: "pandoc"; Description: "Install bundled Pandoc for document conversion";'
         ' Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk"; Description: "Install bundled DECtalk voices and runtime";'
+        'Name: "speechdectalk"; Description: "Install bundled DECtalk runtime";'
         ' Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices"; Description: "DECtalk voice selection";'
+        ' Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\all"; Description: "All DECtalk voices";'
+        ' Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\paul"; Description: "Paul voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\harry"; Description: "Harry voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\dennis"; Description: "Dennis voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\frank"; Description: "Frank voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\betty"; Description: "Betty voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\ursula"; Description: "Ursula voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\rita"; Description: "Rita voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\wendy"; Description: "Wendy voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechdectalk\\voices\\kit"; Description: "Kit voice"; Types: full custom; Flags: checkablealone',
         'Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models";'
         ' Types: full custom; Flags: checkablealone',
         'Name: "speechpiper"; Description: "Install bundled Piper voices/models";'
         ' Types: full custom; Flags: checkablealone',
         'Name: "speechvibevoice"; Description: "Install bundled VibeVoice voices/models";'
         ' Types: full custom; Flags: checkablealone',
+        'Name: "speechrhvoice"; Description: "Install bundled RHVoice voices/models";'
+        ' Types: full custom; Flags: checkablealone',
+        'Name: "speechmelotts"; Description: "Install bundled MeloTTS voices/models";'
+        ' Types: full custom; Flags: checkablealone',
+        'Name: "speechchatterbox"; Description: "Install bundled Chatterbox voices/models";'
+        ' Types: full custom; Flags: checkablealone',
+        'Name: "speechopenvoice"; Description: "Install bundled OpenVoice voices/models";'
+        ' Types: full custom; Flags: checkablealone',
         "",
         "[Files]",
         'Source: "..\\portable\\*"; DestDir: "{app}";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs;'
-        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\vibevoice\\*"',
+        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\vibevoice\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"',
         'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
         ' Components: pandoc',
         'Source: "..\\portable\\tools\\speech\\dectalk\\*"; DestDir: "{app}\\tools\\speech\\dectalk";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
-        ' Components: speechdectalk',
+        ' Excludes: "voices\\*"; Components: speechdectalk',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
+        ' Components: speechdectalk\\voices\\all',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\paul\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\paul";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\paul',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\harry\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\harry";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\harry',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\dennis\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\dennis";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\dennis',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\frank\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\frank";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\frank',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\betty\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\betty";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\betty',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\ursula\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\ursula";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\ursula',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\rita\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\rita";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\rita',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\wendy\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\wendy";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\wendy',
+        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\kit\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\kit";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\kit',
         'Source: "..\\portable\\tools\\speech\\kokoro\\*"; DestDir: "{app}\\tools\\speech\\kokoro";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
         ' Components: speechkokoro',
@@ -469,6 +539,18 @@ def build_inno_setup_script(version: str) -> str:
         'Source: "..\\portable\\tools\\speech\\vibevoice\\*"; DestDir: "{app}\\tools\\speech\\vibevoice";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
         ' Components: speechvibevoice',
+        'Source: "..\\portable\\tools\\speech\\rhvoice\\*"; DestDir: "{app}\\tools\\speech\\rhvoice";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
+        ' Components: speechrhvoice',
+        'Source: "..\\portable\\tools\\speech\\melotts\\*"; DestDir: "{app}\\tools\\speech\\melotts";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
+        ' Components: speechmelotts',
+        'Source: "..\\portable\\tools\\speech\\chatterbox\\*"; DestDir: "{app}\\tools\\speech\\chatterbox";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
+        ' Components: speechchatterbox',
+        'Source: "..\\portable\\tools\\speech\\openvoice\\*"; DestDir: "{app}\\tools\\speech\\openvoice";'
+        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
+        ' Components: speechopenvoice',
         "",
         "[Icons]",
         'Name: "{group}\\{#AppName}"; Filename: "{app}\\python\\pythonw.exe"; Parameters: "-m quill"; WorkingDir: "{app}"; Check: FileExists(ExpandConstant(\'{app}\\python\\pythonw.exe\'))',
@@ -738,7 +820,16 @@ def _download_and_stage_dectalk_release(portable_dir: Path) -> Path:
 def _speech_asset_manifest(portable_dir: Path, bundled_tools: list[str]) -> dict[str, dict[str, object]]:
     speech_root = portable_dir / "tools" / "speech"
     manifest: dict[str, dict[str, object]] = {}
-    for engine in ("dectalk", "kokoro", "piper", "vibevoice"):
+    for engine in (
+        "dectalk",
+        "kokoro",
+        "piper",
+        "vibevoice",
+        "rhvoice",
+        "melotts",
+        "chatterbox",
+        "openvoice",
+    ):
         engine_dir = speech_root / engine
         manifest[engine] = {
             "bundled": f"speech/{engine}" in bundled_tools,

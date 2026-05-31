@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import html
+import json
 import os
 import re
 import threading
@@ -26,13 +26,16 @@ from quill.core.a11y_regions import (
     build_accessibility_audit_report,
     render_snapshot,
 )
+from quill.core.ai import Assistant
+from quill.core.ai.agent import allowed_tools
+from quill.core.assistant import render_assistant_prompt
 from quill.core.autosave import autosave_document
 from quill.core.backups import backup_document, list_backups
+from quill.core.bookmarks import bookmark_names, bookmark_position, set_bookmark
 from quill.core.browser_preview import (
     available_browser_options,
     browser_choice_label_for_value,
     browser_choice_value_for_label,
-    file_url,
     guess_preview_kind,
     normalize_browser_choice,
     open_preview_url,
@@ -40,7 +43,6 @@ from quill.core.browser_preview import (
     render_preview_body,
     render_preview_html,
 )
-from quill.core.bookmarks import bookmark_names, bookmark_position, set_bookmark
 from quill.core.commands import CommandRegistry
 from quill.core.contrast import render_contrast_report, validate_theme_contrast
 from quill.core.custom_profiles import (
@@ -58,6 +60,11 @@ from quill.core.diagnostics import (
     collect_environment_info,
     record_diagnostic_event,
     write_diagnostics_bundle,
+)
+from quill.core.dictation import (
+    DictationController,
+    DictationSettings,
+    DictationUnavailableError,
 )
 from quill.core.diffing import build_unified_diff
 from quill.core.document import Document
@@ -95,6 +102,8 @@ from quill.core.format_ops import (
     toggle_line_comment,
     trim_trailing_whitespace,
 )
+from quill.core.glow import build_audit_report, build_fix_report, fix_text
+from quill.core.guides import build_keyboard_reference, build_welcome_guide
 from quill.core.heading_organizer import (
     HeadingBlock,
     apply_heading_organizer_edits,
@@ -102,8 +111,6 @@ from quill.core.heading_organizer import (
     validate_heading_sequence,
 )
 from quill.core.heading_styles import HeadingStyle, apply_heading_style
-from quill.core.glow import build_audit_report, build_fix_report, fix_text
-from quill.core.guides import build_keyboard_reference, build_welcome_guide
 from quill.core.intake import (
     build_bad_extraction_package,
     build_context_help,
@@ -111,6 +118,12 @@ from quill.core.intake import (
     build_intake_report,
     build_intake_summary,
     build_source_reference,
+)
+from quill.core.intellisense import (
+    IntellisenseContext,
+    IntellisenseSuggestion,
+    build_intellisense_suggestions,
+    collect_document_words,
 )
 from quill.core.ipc import drain_open_requests
 from quill.core.keymap import (
@@ -151,14 +164,15 @@ from quill.core.navigation import (
     previous_heading_start,
 )
 from quill.core.notifications import add_notification, clear_notifications, load_notifications
-from quill.core.assistant import render_assistant_prompt
 from quill.core.onboarding import (
     load_assistant_onboarding_complete,
     load_onboarding_complete,
     load_speech_onboarding_complete,
+    load_watch_folder_onboarding_complete,
     mark_assistant_onboarding_complete,
     mark_onboarding_complete,
     mark_speech_onboarding_complete,
+    mark_watch_folder_onboarding_complete,
 )
 from quill.core.outline import OutlineEntry, extract_outline_entries
 from quill.core.paths import app_data_dir, ensure_app_directories
@@ -166,32 +180,34 @@ from quill.core.read_aloud import (
     ReadAloudController,
     ReadAloudUnavailableError,
     discover_dectalk_executable,
-    discover_piper_executable,
+    discover_chatterbox_executable,
     discover_espeak_executable,
+    discover_melotts_executable,
+    discover_openvoice_executable,
+    discover_piper_executable,
+    discover_rhvoice_executable,
     discover_vibevoice_executable,
     download_dectalk_runtime,
+    list_chatterbox_english_voices,
     list_dectalk_voices,
     list_espeak_english_voices,
     list_kokoro_voices,
+    list_melotts_english_voices,
+    list_openvoice_english_voices,
     list_piper_voices,
+    list_rhvoice_english_voices,
     list_vibevoice_voices,
     list_voices,
+    synthesize_with_chatterbox,
     synthesize_to_file_with_dectalk,
     synthesize_to_file_with_pyttsx3,
     synthesize_with_espeak,
     synthesize_with_kokoro,
+    synthesize_with_melotts,
+    synthesize_with_openvoice,
     synthesize_with_piper,
+    synthesize_with_rhvoice,
     synthesize_with_vibevoice,
-)
-from quill.core.dictation import (
-    DictationController,
-    DictationSettings,
-    DictationUnavailableError,
-)
-from quill.core.voice_commands import (
-    build_voice_command_aliases,
-    resolve_voice_command,
-    split_text_delta,
 )
 from quill.core.recent import add_recent_file, clear_recent_files, load_recent_files
 from quill.core.recovery import (
@@ -218,12 +234,6 @@ from quill.core.sessions import (
     save_session as save_session_file,
 )
 from quill.core.settings import STATUS_BAR_ITEMS, Settings, load_settings, save_settings
-from quill.core.intellisense import (
-    IntellisenseContext,
-    IntellisenseSuggestion,
-    build_intellisense_suggestions,
-    collect_document_words,
-)
 from quill.core.snippets import (
     ExpansionResult as SnippetExpansionResult,
 )
@@ -281,19 +291,24 @@ from quill.core.transforms import to_lower, to_sentence_case, to_title, to_toggl
 from quill.core.trust import is_trusted_location, load_trusted_locations, save_trusted_locations
 from quill.core.undo_store import load_undo_history, save_undo_history
 from quill.core.updates import (
-    DEFAULT_UPDATE_MANIFEST_URL,
-    URLError,
     GitHubRelease,
     UpdateManifest,
+    URLError,
     download_release_asset,
+    fetch_update_manifest,
     fetch_latest_release,
     fetch_releases,
-    fetch_update_manifest,
     find_release,
     is_newer_version,
     select_latest,
 )
 from quill.core.url_ops import format_content_length, host_for_url, is_cross_host_redirect
+from quill.core.voice_commands import (
+    build_voice_command_aliases,
+    resolve_voice_command,
+    split_text_delta,
+)
+from quill.core.watch_folder import WatchFolderConfig, WatchFolderResult, WatchFolderService
 from quill.core.yaml_structure import (
     YamlNode,
     YamlNodeKind,
@@ -324,19 +339,17 @@ from quill.platform.windows.sr_announce import (
     set_transcript_path,
 )
 from quill.platform.windows.sr_detect import detect_screen_reader
-from quill.ui.palette import CommandPaletteDialog
-from quill.ui.csv_grid import CsvGridSurface
-from quill.ui.word_view import WordDocumentSurface
-from quill.ui.sticky_notes import StickyNoteEditorDialog, StickyNotesVaultDialog
+from quill.ui.ai_model_panel import AIModelDialog
+from quill.ui.assistant_panel import AskQuillChatDialog
 from quill.ui.assistant_tools import (
     AssistantConnectionDialog,
     RunPythonDialog,
     WritingAssistantDialog,
 )
-from quill.core.ai import Assistant
-from quill.core.ai.agent import allowed_tools
-from quill.ui.assistant_panel import AskQuillChatDialog
-from quill.ui.ai_model_panel import AIModelDialog
+from quill.ui.csv_grid import CsvGridSurface
+from quill.ui.palette import CommandPaletteDialog
+from quill.ui.sticky_notes import StickyNoteEditorDialog, StickyNotesVaultDialog
+from quill.ui.word_view import WordDocumentSurface
 
 
 @dataclass(slots=True)
@@ -582,6 +595,9 @@ class MainFrame:
             and not getattr(self.settings, "assistant_enabled", False)
         )
         self._first_run_speech_prompt = not safe_mode and not load_speech_onboarding_complete()
+        self._first_run_watch_folder_prompt = (
+            not safe_mode and not load_watch_folder_onboarding_complete()
+        )
         if safe_mode:
             self.settings.theme = "system"
             self.settings.tray_enabled = False
@@ -639,6 +655,18 @@ class MainFrame:
         self._announcement_error_reported = ""
         self._read_aloud = ReadAloudController()
         self._dictation = DictationController()
+        self._watch_folder = WatchFolderService(
+            on_result=lambda result: self._wx.CallAfter(self._on_watch_folder_result, result),
+            on_error=lambda path, message: self._wx.CallAfter(
+                self._on_watch_folder_error,
+                path,
+                message,
+            ),
+            on_state_change=lambda running: self._wx.CallAfter(
+                self._on_watch_folder_state_change,
+                running,
+            ),
+        )
         self._voice_command_scan_timer: threading.Timer | None = None
         self._voice_command_baseline_text = ""
         self._voice_command_aliases: dict[str, str] = {}
@@ -692,6 +720,7 @@ class MainFrame:
         self._build_commands()
         self._refresh_voice_command_aliases()
         self._build_menu()
+        self._apply_watch_folder_menu_state()
         self._refresh_sessions_menu()
         self._apply_accelerators()
         self._reload_global_hotkeys()
@@ -733,6 +762,7 @@ class MainFrame:
             self._set_status("Ready. Tip: press Ctrl+Shift+P for Command Palette.")
         self._offer_crash_recovery()
         self._maybe_run_first_run_onboarding()
+        self._maybe_start_watch_folder()
         if getattr(self.settings, "auto_check_updates", False) and not self._safe_mode:
             self.check_for_updates(silent_no_update=True)
 
@@ -1243,6 +1273,27 @@ class MainFrame:
             self.toggle_dictation_voice_commands,
             None,
             feature_id="core.voice_commands",
+        )
+        self.commands.register(
+            "tools.watch_folder_toggle",
+            "Watch Folder Monitoring",
+            self.toggle_watch_folder_monitoring,
+            None,
+            feature_id="core.watch_folder",
+        )
+        self.commands.register(
+            "tools.watch_folder_settings",
+            "Watch Folder Settings...",
+            self.open_watch_folder_settings,
+            None,
+            feature_id="core.watch_folder",
+        )
+        self.commands.register(
+            "tools.watch_folder_status",
+            "Watch Folder Status...",
+            self.show_watch_folder_status,
+            None,
+            feature_id="core.watch_folder",
         )
         self.commands.register(
             "tools.document_intake_report",
@@ -2667,6 +2718,9 @@ class MainFrame:
         self._id_toggle_announcement_trace = wx.NewIdRef()
         self._id_dictation = wx.NewIdRef()
         self._id_dictation_voice_commands = wx.NewIdRef()
+        self._id_watch_folder_toggle = wx.NewIdRef()
+        self._id_watch_folder_settings = wx.NewIdRef()
+        self._id_watch_folder_status = wx.NewIdRef()
         self._id_document_intake_report = wx.NewIdRef()
         self._id_review_extraction_quality = wx.NewIdRef()
         self._id_report_bad_extraction = wx.NewIdRef()
@@ -2849,6 +2903,24 @@ class MainFrame:
         )
         dictation_menu.Check(
             self._id_dictation_voice_commands, self.settings.voice_commands_enabled
+        )
+        dictation_menu.AppendSeparator()
+        dictation_menu.AppendCheckItem(
+            self._id_watch_folder_toggle,
+            self._menu_label("&Watch Folder Monitoring", "tools.watch_folder_toggle"),
+        )
+        dictation_menu.Check(
+            self._id_watch_folder_toggle,
+            bool(getattr(self.settings, "watch_folder_enabled", False))
+            and self._watch_folder.is_running,
+        )
+        dictation_menu.Append(
+            self._id_watch_folder_settings,
+            self._menu_label("Watch Folder &Settings...", "tools.watch_folder_settings"),
+        )
+        dictation_menu.Append(
+            self._id_watch_folder_status,
+            self._menu_label("Watch Folder St&atus...", "tools.watch_folder_status"),
         )
         tools_menu.AppendSubMenu(dictation_menu, "D&ictation")
 
@@ -3844,6 +3916,21 @@ class MainFrame:
         )
         self.frame.Bind(
             wx.EVT_MENU,
+            lambda _e: self.toggle_watch_folder_monitoring(),
+            id=self._id_watch_folder_toggle,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.open_watch_folder_settings(),
+            id=self._id_watch_folder_settings,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.show_watch_folder_status(),
+            id=self._id_watch_folder_status,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
             lambda _e: self.show_document_intake_report(),
             id=self._id_document_intake_report,
         )
@@ -4196,6 +4283,9 @@ class MainFrame:
             "tools.dictionary_status": self._id_dictionary_status,
             "tools.announcement_backend": self._id_announcement_backend,
             "tools.announcement_trace_toggle": self._id_toggle_announcement_trace,
+            "tools.watch_folder_toggle": self._id_watch_folder_toggle,
+            "tools.watch_folder_settings": self._id_watch_folder_settings,
+            "tools.watch_folder_status": self._id_watch_folder_status,
             "tools.document_intake_report": self._id_document_intake_report,
             "tools.review_extraction_quality": self._id_review_extraction_quality,
             "tools.report_bad_extraction": self._id_report_bad_extraction,
@@ -5311,6 +5401,7 @@ class MainFrame:
         if not self._can_close_all_documents():
             event.Veto()
             return
+        self._watch_folder.stop()
         self._unregister_global_hotkeys()
         self._remove_tray_icon()
         save_settings(self.settings)
@@ -7537,6 +7628,7 @@ class MainFrame:
             ("Status Bar Layout", self.open_status_bar_settings),
             ("Keymap Editor", self.open_keymap_editor),
             ("AI Connection", self.open_ai_preferences),
+            ("Watch Folder Automation", self.open_watch_folder_settings),
             ("Install Starter Snippet Packs", self.install_starter_snippet_packs),
         ]
         with wx.SingleChoiceDialog(
@@ -10781,6 +10873,19 @@ class MainFrame:
                 espeak_executable=self.settings.read_aloud_espeak_executable,
                 espeak_voice=self.settings.read_aloud_espeak_voice,
                 espeak_rate=self.settings.read_aloud_espeak_rate,
+                rhvoice_executable=self.settings.read_aloud_rhvoice_executable,
+                rhvoice_voice=self.settings.read_aloud_rhvoice_voice,
+                rhvoice_rate=self.settings.read_aloud_rhvoice_rate,
+                melotts_executable=self.settings.read_aloud_melotts_executable,
+                melotts_voice=self.settings.read_aloud_melotts_voice,
+                melotts_rate=self.settings.read_aloud_melotts_rate,
+                chatterbox_executable=self.settings.read_aloud_chatterbox_executable,
+                chatterbox_voice=self.settings.read_aloud_chatterbox_voice,
+                chatterbox_rate=self.settings.read_aloud_chatterbox_rate,
+                openvoice_executable=self.settings.read_aloud_openvoice_executable,
+                openvoice_voice=self.settings.read_aloud_openvoice_voice,
+                openvoice_rate=self.settings.read_aloud_openvoice_rate,
+                openvoice_consent=self.settings.read_aloud_openvoice_consent,
                 on_progress=lambda progress_start, progress_end: self._wx.CallAfter(
                     self._on_read_aloud_progress,
                     progress_start,
@@ -10810,7 +10915,15 @@ class MainFrame:
         voice_id = (voice.id or "").strip().lower()
         voice_name = (voice.name or "").strip().lower()
 
-        if engine_name in {"dectalk", "kokoro", "espeak"}:
+        if engine_name in {
+            "dectalk",
+            "kokoro",
+            "espeak",
+            "rhvoice",
+            "melotts",
+            "chatterbox",
+            "openvoice",
+        }:
             return True
 
         if engine_name == "pyttsx3":
@@ -10905,6 +11018,54 @@ class MainFrame:
                         voice=voice_id,
                         rate=s.read_aloud_espeak_rate,
                     )
+                elif engine == "rhvoice":
+                    exe = discover_rhvoice_executable(s.read_aloud_rhvoice_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("RHVoice executable not configured")
+                    synthesize_with_rhvoice(
+                        sample,
+                        wav,
+                        executable_path=exe,
+                        voice=voice_id,
+                        rate=s.read_aloud_rhvoice_rate,
+                    )
+                elif engine == "melotts":
+                    exe = discover_melotts_executable(s.read_aloud_melotts_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("MeloTTS executable not configured")
+                    synthesize_with_melotts(
+                        sample,
+                        wav,
+                        executable_path=exe,
+                        voice=voice_id,
+                        rate=s.read_aloud_melotts_rate,
+                    )
+                elif engine == "chatterbox":
+                    exe = discover_chatterbox_executable(s.read_aloud_chatterbox_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("Chatterbox executable not configured")
+                    synthesize_with_chatterbox(
+                        sample,
+                        wav,
+                        executable_path=exe,
+                        voice=voice_id,
+                        rate=s.read_aloud_chatterbox_rate,
+                    )
+                elif engine == "openvoice":
+                    if not s.read_aloud_openvoice_consent:
+                        raise ReadAloudUnavailableError(
+                            "OpenVoice requires explicit consent in Read Aloud Settings"
+                        )
+                    exe = discover_openvoice_executable(s.read_aloud_openvoice_executable)
+                    if exe is None:
+                        raise ReadAloudUnavailableError("OpenVoice executable not configured")
+                    synthesize_with_openvoice(
+                        sample,
+                        wav,
+                        executable_path=exe,
+                        voice=voice_id,
+                        rate=s.read_aloud_openvoice_rate,
+                    )
                 else:
                     raise ReadAloudUnavailableError(f"Unknown engine: {engine}")
                 # Play via the existing read-aloud controller so pause/stop work
@@ -10936,6 +11097,19 @@ class MainFrame:
                     espeak_executable=s.read_aloud_espeak_executable,
                     espeak_voice=voice_id if engine == "espeak" else s.read_aloud_espeak_voice,
                     espeak_rate=s.read_aloud_espeak_rate,
+                    rhvoice_executable=s.read_aloud_rhvoice_executable,
+                    rhvoice_voice=voice_id if engine == "rhvoice" else s.read_aloud_rhvoice_voice,
+                    rhvoice_rate=s.read_aloud_rhvoice_rate,
+                    melotts_executable=s.read_aloud_melotts_executable,
+                    melotts_voice=voice_id if engine == "melotts" else s.read_aloud_melotts_voice,
+                    melotts_rate=s.read_aloud_melotts_rate,
+                    chatterbox_executable=s.read_aloud_chatterbox_executable,
+                    chatterbox_voice=voice_id if engine == "chatterbox" else s.read_aloud_chatterbox_voice,
+                    chatterbox_rate=s.read_aloud_chatterbox_rate,
+                    openvoice_executable=s.read_aloud_openvoice_executable,
+                    openvoice_voice=voice_id if engine == "openvoice" else s.read_aloud_openvoice_voice,
+                    openvoice_rate=s.read_aloud_openvoice_rate,
+                    openvoice_consent=s.read_aloud_openvoice_consent,
                     on_state_change=lambda st: done.set() if st in ("idle", "error") else None,
                 )
                 done.wait(timeout=15)
@@ -10971,6 +11145,18 @@ class MainFrame:
         elif engine == "espeak":
             voices = list_espeak_english_voices()
             current_voice_id = self.settings.read_aloud_espeak_voice
+        elif engine == "rhvoice":
+            voices = list_rhvoice_english_voices()
+            current_voice_id = self.settings.read_aloud_rhvoice_voice
+        elif engine == "melotts":
+            voices = list_melotts_english_voices()
+            current_voice_id = self.settings.read_aloud_melotts_voice
+        elif engine == "chatterbox":
+            voices = list_chatterbox_english_voices()
+            current_voice_id = self.settings.read_aloud_chatterbox_voice
+        elif engine == "openvoice":
+            voices = list_openvoice_english_voices()
+            current_voice_id = self.settings.read_aloud_openvoice_voice
         else:
             voices = list_voices()
             current_voice_id = self.settings.read_aloud_voice
@@ -11045,6 +11231,14 @@ class MainFrame:
             self.settings.read_aloud_vibevoice_voice = voices[selected].id
         elif engine == "espeak":
             self.settings.read_aloud_espeak_voice = voices[selected].id
+        elif engine == "rhvoice":
+            self.settings.read_aloud_rhvoice_voice = voices[selected].id
+        elif engine == "melotts":
+            self.settings.read_aloud_melotts_voice = voices[selected].id
+        elif engine == "chatterbox":
+            self.settings.read_aloud_chatterbox_voice = voices[selected].id
+        elif engine == "openvoice":
+            self.settings.read_aloud_openvoice_voice = voices[selected].id
         else:
             self.settings.read_aloud_voice = voices[selected].id
         save_settings(self.settings)
@@ -11060,8 +11254,23 @@ class MainFrame:
             "Kokoro (neural, offline)",
             "VibeVoice (neural, offline)",
             "eSpeak-NG (English variants)",
+            "RHVoice (accessibility-focused, offline)",
+            "MeloTTS (multilingual add-on, English mode)",
+            "Chatterbox (high-fidelity read/export)",
+            "OpenVoice (advanced style module)",
         ]
-        engine_values = ["pyttsx3", "dectalk", "piper", "kokoro", "vibevoice", "espeak"]
+        engine_values = [
+            "pyttsx3",
+            "dectalk",
+            "piper",
+            "kokoro",
+            "vibevoice",
+            "espeak",
+            "rhvoice",
+            "melotts",
+            "chatterbox",
+            "openvoice",
+        ]
         with wx.SingleChoiceDialog(
             self.frame,
             "Choose read-aloud engine:",
@@ -11191,6 +11400,63 @@ class MainFrame:
                 return
             self.settings.read_aloud_espeak_rate = v
 
+        elif selected_engine == "rhvoice":
+            exe = _ask_text("Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable)
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_rhvoice_executable = exe
+            v = _ask_int("Speaking rate", self.settings.read_aloud_rhvoice_rate, 80, 450)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_rhvoice_rate = v
+
+        elif selected_engine == "melotts":
+            exe = _ask_text("Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable)
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_melotts_executable = exe
+            v = _ask_int("Speaking rate", self.settings.read_aloud_melotts_rate, 80, 450)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_melotts_rate = v
+
+        elif selected_engine == "chatterbox":
+            exe = _ask_text(
+                "Path to Chatterbox executable:", self.settings.read_aloud_chatterbox_executable
+            )
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_chatterbox_executable = exe
+            v = _ask_int("Speaking rate", self.settings.read_aloud_chatterbox_rate, 80, 450)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_chatterbox_rate = v
+
+        elif selected_engine == "openvoice":
+            exe = _ask_text("Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable)
+            if exe is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_openvoice_executable = exe
+            v = _ask_int("Speaking rate", self.settings.read_aloud_openvoice_rate, 80, 450)
+            if v is None:
+                self._set_status("Read aloud settings cancelled")
+                return
+            self.settings.read_aloud_openvoice_rate = v
+            consent = self._show_message_box(
+                "OpenVoice can apply advanced voice style transforms. Enable this only if you consent\n"
+                "to advanced style processing workflows for this machine.",
+                _TITLE,
+                wx.YES_NO | wx.ICON_QUESTION,
+            )
+            self.settings.read_aloud_openvoice_consent = consent == wx.YES
+
         # Always offer a preview of the current voice with new settings
         current_voice = {
             "pyttsx3": self.settings.read_aloud_voice,
@@ -11199,6 +11465,10 @@ class MainFrame:
             "kokoro": self.settings.read_aloud_kokoro_voice,
             "vibevoice": self.settings.read_aloud_vibevoice_voice,
             "espeak": self.settings.read_aloud_espeak_voice,
+            "rhvoice": self.settings.read_aloud_rhvoice_voice,
+            "melotts": self.settings.read_aloud_melotts_voice,
+            "chatterbox": self.settings.read_aloud_chatterbox_voice,
+            "openvoice": self.settings.read_aloud_openvoice_voice,
         }.get(selected_engine, "")
         with wx.MessageDialog(
             self.frame,
@@ -11310,6 +11580,62 @@ class MainFrame:
                 return
             espeak_exe_snap = exe
 
+        elif engine == "rhvoice":
+            exe = discover_rhvoice_executable(s.read_aloud_rhvoice_executable)
+            if exe is None:
+                self._show_message_box(
+                    "RHVoice executable not found. Configure it in Read Aloud Settings.",
+                    _TITLE,
+                    wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled")
+                return
+            rhvoice_exe_snap = exe
+
+        elif engine == "melotts":
+            exe = discover_melotts_executable(s.read_aloud_melotts_executable)
+            if exe is None:
+                self._show_message_box(
+                    "MeloTTS executable not found. Configure it in Read Aloud Settings.",
+                    _TITLE,
+                    wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled")
+                return
+            melotts_exe_snap = exe
+
+        elif engine == "chatterbox":
+            exe = discover_chatterbox_executable(s.read_aloud_chatterbox_executable)
+            if exe is None:
+                self._show_message_box(
+                    "Chatterbox executable not found. Configure it in Read Aloud Settings.",
+                    _TITLE,
+                    wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled")
+                return
+            chatterbox_exe_snap = exe
+
+        elif engine == "openvoice":
+            if not s.read_aloud_openvoice_consent:
+                self._show_message_box(
+                    "OpenVoice requires explicit consent in Read Aloud Settings.",
+                    _TITLE,
+                    wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled")
+                return
+            exe = discover_openvoice_executable(s.read_aloud_openvoice_executable)
+            if exe is None:
+                self._show_message_box(
+                    "OpenVoice executable not found. Configure it in Read Aloud Settings.",
+                    _TITLE,
+                    wx.ICON_ERROR | wx.OK,
+                )
+                self._set_status("Speech generation cancelled")
+                return
+            openvoice_exe_snap = exe
+
         save_settings(s)
         task_label = f"Generating speech audio ({output_path.name}) via {engine}"
 
@@ -11325,6 +11651,14 @@ class MainFrame:
         _vibevoice_voice = s.read_aloud_vibevoice_voice
         _espeak_voice = s.read_aloud_espeak_voice
         _espeak_rate = s.read_aloud_espeak_rate
+        _rhvoice_voice = s.read_aloud_rhvoice_voice
+        _rhvoice_rate = s.read_aloud_rhvoice_rate
+        _melotts_voice = s.read_aloud_melotts_voice
+        _melotts_rate = s.read_aloud_melotts_rate
+        _chatterbox_voice = s.read_aloud_chatterbox_voice
+        _chatterbox_rate = s.read_aloud_chatterbox_rate
+        _openvoice_voice = s.read_aloud_openvoice_voice
+        _openvoice_rate = s.read_aloud_openvoice_rate
         _out = output_path
 
         def work(progress: Callable[[str, int, int], None]) -> object:
@@ -11364,6 +11698,38 @@ class MainFrame:
                     executable_path=espeak_exe_snap,
                     voice=_espeak_voice,
                     rate=_espeak_rate,
+                )
+            elif _engine == "rhvoice":
+                synthesize_with_rhvoice(
+                    _out_text,
+                    _out,
+                    executable_path=rhvoice_exe_snap,
+                    voice=_rhvoice_voice,
+                    rate=_rhvoice_rate,
+                )
+            elif _engine == "melotts":
+                synthesize_with_melotts(
+                    _out_text,
+                    _out,
+                    executable_path=melotts_exe_snap,
+                    voice=_melotts_voice,
+                    rate=_melotts_rate,
+                )
+            elif _engine == "chatterbox":
+                synthesize_with_chatterbox(
+                    _out_text,
+                    _out,
+                    executable_path=chatterbox_exe_snap,
+                    voice=_chatterbox_voice,
+                    rate=_chatterbox_rate,
+                )
+            elif _engine == "openvoice":
+                synthesize_with_openvoice(
+                    _out_text,
+                    _out,
+                    executable_path=openvoice_exe_snap,
+                    voice=_openvoice_voice,
+                    rate=_openvoice_rate,
                 )
             progress("Finalizing output", 1, 1)
             return str(_out)
@@ -11545,6 +11911,245 @@ class MainFrame:
             self._cancel_voice_command_scan()
             self._voice_command_baseline_text = ""
             self._set_status("Hey QUILL commands disabled")
+
+    def _watch_folder_config(self) -> WatchFolderConfig:
+        return WatchFolderConfig(
+            enabled=bool(getattr(self.settings, "watch_folder_enabled", False)),
+            folder_path=str(getattr(self.settings, "watch_folder_path", "")),
+            include_subfolders=bool(
+                getattr(self.settings, "watch_folder_include_subfolders", False)
+            ),
+            process_existing=bool(getattr(self.settings, "watch_folder_process_existing", False)),
+            auto_start=bool(getattr(self.settings, "watch_folder_auto_start", False)),
+            poll_interval_seconds=int(
+                getattr(self.settings, "watch_folder_poll_interval_seconds", 5)
+            ),
+        ).normalized()
+
+    def _apply_watch_folder_menu_state(self) -> None:
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is None:
+            return
+        item = menu_bar.FindItemById(self._id_watch_folder_toggle)
+        if item is None:
+            return
+        enabled = bool(getattr(self.settings, "watch_folder_enabled", False))
+        item.Check(enabled and self._watch_folder.is_running)
+
+    def _maybe_start_watch_folder(self) -> None:
+        config = self._watch_folder_config()
+        if not config.enabled or not config.auto_start:
+            self._apply_watch_folder_menu_state()
+            return
+        self._start_watch_folder_monitoring(config, announce=False)
+
+    def _start_watch_folder_monitoring(
+        self, config: WatchFolderConfig | None = None, *, announce: bool = True
+    ) -> bool:
+        if not self._feature_enabled("core.watch_folder"):
+            if announce:
+                self._set_status("Watch folder is unavailable in this profile")
+            return False
+        candidate = self._watch_folder_config() if config is None else config.normalized()
+        if not candidate.enabled:
+            if announce:
+                self._set_status("Enable watch folder monitoring first")
+            return False
+        if not candidate.folder_path:
+            if announce:
+                self._set_status("Set a watch folder path before starting monitoring")
+            return False
+        try:
+            started = self._watch_folder.start(candidate)
+        except ValueError as error:
+            if announce:
+                self._show_message_box(
+                    str(error),
+                    "Watch Folder",
+                    self._wx.ICON_WARNING | self._wx.OK,
+                )
+                self._set_status("Watch folder start failed")
+            self._apply_watch_folder_menu_state()
+            return False
+        if not started:
+            self._apply_watch_folder_menu_state()
+            return False
+        self.settings.watch_folder_enabled = True
+        save_settings(self.settings)
+        self._apply_watch_folder_menu_state()
+        if announce:
+            self._set_status("Watch folder monitoring started")
+            self._record_notification("Watch folder monitoring started", "speech")
+        return True
+
+    def _stop_watch_folder_monitoring(self, *, announce: bool = True) -> None:
+        self._watch_folder.stop()
+        self._apply_watch_folder_menu_state()
+        if announce:
+            self._set_status("Watch folder monitoring stopped")
+            self._record_notification("Watch folder monitoring stopped", "speech")
+
+    def toggle_watch_folder_monitoring(self) -> None:
+        if self._watch_folder.is_running:
+            self.settings.watch_folder_enabled = False
+            save_settings(self.settings)
+            self._stop_watch_folder_monitoring()
+            return
+        if not str(getattr(self.settings, "watch_folder_path", "")).strip():
+            self.open_watch_folder_settings()
+            if not str(getattr(self.settings, "watch_folder_path", "")).strip():
+                self._apply_watch_folder_menu_state()
+                return
+        self.settings.watch_folder_enabled = True
+        save_settings(self.settings)
+        self._start_watch_folder_monitoring()
+
+    def show_watch_folder_status(self) -> None:
+        config = self._watch_folder_config()
+        running = "Running" if self._watch_folder.is_running else "Stopped"
+        folder = config.folder_path or "(not set)"
+        state = (
+            "Watch Folder Status\n\n"
+            f"State: {running}\n"
+            f"Path: {folder}\n"
+            f"Poll interval: {config.poll_interval_seconds} seconds\n"
+            f"Include subfolders: {'Yes' if config.include_subfolders else 'No'}\n"
+            f"Process existing files on start: {'Yes' if config.process_existing else 'No'}\n"
+            f"Auto-start on launch: {'Yes' if config.auto_start else 'No'}"
+        )
+        self._show_message_box(
+            state, "Watch Folder Status", self._wx.ICON_INFORMATION | self._wx.OK
+        )
+
+    def open_watch_folder_settings(self) -> None:  # noqa: PLR0915
+        wx = self._wx
+        with wx.Dialog(self.frame, title="Watch Folder Settings") as dialog:
+            panel = wx.Panel(dialog)
+            root = wx.BoxSizer(wx.VERTICAL)
+            panel_sizer = wx.BoxSizer(wx.VERTICAL)
+
+            config = self._watch_folder_config()
+
+            enabled = wx.CheckBox(panel, label="Enable watch folder monitoring")
+            enabled.SetValue(config.enabled)
+            enabled.SetName("Enable watch folder monitoring")
+            panel_sizer.Add(enabled, 0, wx.LEFT | wx.RIGHT | wx.TOP | wx.BOTTOM, 8)
+
+            path_row = wx.BoxSizer(wx.HORIZONTAL)
+            path_label = wx.StaticText(panel, label="Watch folder path")
+            path_label.SetName("Watch folder path label")
+            path_input = wx.TextCtrl(panel, value=config.folder_path)
+            path_input.SetName("Watch folder path")
+            browse_button = wx.Button(panel, label="Browse...")
+            browse_button.SetName("Browse for watch folder")
+            path_row.Add(path_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+            path_row.Add(path_input, 1, wx.EXPAND | wx.RIGHT, 8)
+            path_row.Add(browse_button, 0)
+            panel_sizer.Add(path_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+            include_subfolders = wx.CheckBox(panel, label="Include subfolders")
+            include_subfolders.SetValue(config.include_subfolders)
+            include_subfolders.SetName("Include subfolders")
+            panel_sizer.Add(include_subfolders, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+            process_existing = wx.CheckBox(
+                panel, label="Process existing supported files on startup"
+            )
+            process_existing.SetValue(config.process_existing)
+            process_existing.SetName("Process existing supported files on startup")
+            panel_sizer.Add(process_existing, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+            auto_start = wx.CheckBox(panel, label="Start monitoring automatically on launch")
+            auto_start.SetValue(config.auto_start)
+            auto_start.SetName("Start monitoring automatically on launch")
+            panel_sizer.Add(auto_start, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+            interval_row = wx.BoxSizer(wx.HORIZONTAL)
+            interval_label = wx.StaticText(panel, label="Poll interval (seconds)")
+            interval_input = wx.SpinCtrl(
+                panel, min=2, max=300, initial=config.poll_interval_seconds
+            )
+            interval_input.SetName("Watch folder poll interval in seconds")
+            interval_row.Add(interval_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
+            interval_row.Add(interval_input, 0)
+            panel_sizer.Add(interval_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+            def _browse_folder(_event: object) -> None:
+                with wx.DirDialog(
+                    dialog,
+                    "Choose watch folder",
+                    defaultPath=path_input.GetValue().strip(),
+                    style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST,
+                ) as picker:
+                    if self._show_modal_dialog(picker, "Watch Folder Settings") == wx.ID_OK:
+                        path_input.SetValue(picker.GetPath())
+
+            browse_button.Bind(wx.EVT_BUTTON, _browse_folder)
+
+            panel.SetSizer(panel_sizer)
+            buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
+            root.Add(panel, 1, wx.EXPAND | wx.ALL, 8)
+            if buttons is not None:
+                root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+            dialog.SetSizerAndFit(root)
+
+            if self._show_modal_dialog(dialog, "Watch Folder Settings") != wx.ID_OK:
+                self._set_status("Watch folder settings cancelled")
+                self._apply_watch_folder_menu_state()
+                return
+
+            self.settings.watch_folder_enabled = bool(enabled.GetValue())
+            self.settings.watch_folder_path = path_input.GetValue().strip()
+            self.settings.watch_folder_include_subfolders = bool(include_subfolders.GetValue())
+            self.settings.watch_folder_process_existing = bool(process_existing.GetValue())
+            self.settings.watch_folder_auto_start = bool(auto_start.GetValue())
+            self.settings.watch_folder_poll_interval_seconds = int(interval_input.GetValue())
+            save_settings(self.settings)
+
+        if self.settings.watch_folder_enabled:
+            started = self._start_watch_folder_monitoring(announce=False)
+            if started:
+                self._set_status("Updated watch folder settings and started monitoring")
+            else:
+                self._set_status("Updated watch folder settings")
+        else:
+            self._stop_watch_folder_monitoring(announce=False)
+            self._set_status("Updated watch folder settings")
+        self._apply_watch_folder_menu_state()
+
+    def _show_watch_folder_onboarding(self, force: bool) -> None:
+        wx = self._wx
+        response = self._show_message_box(
+            "Set up watch folder automation now?\n\n"
+            "When enabled, Quill monitors one folder and opens new supported files "
+            "automatically as they appear.",
+            "Watch Folder Setup",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if response != wx.YES:
+            if not force:
+                mark_watch_folder_onboarding_complete()
+            self._set_status("Watch folder setup skipped")
+            return
+        self.open_watch_folder_settings()
+        mark_watch_folder_onboarding_complete()
+
+    def _on_watch_folder_result(self, result: WatchFolderResult) -> None:
+        self.open_file(result.source_path, record_recent=True, refresh_existing=False)
+        self._record_notification(f"Watch folder opened {result.source_path.name}", "speech")
+        self._set_status(f"Watch folder opened {result.source_path.name}")
+
+    def _on_watch_folder_error(self, path: Path, message: str) -> None:
+        self._record_notification(
+            f"Watch folder failed for {path.name}: {message}",
+            "speech",
+        )
+        self._set_status(f"Watch folder failed for {path.name}")
+
+    def _on_watch_folder_state_change(self, running: bool) -> None:
+        self._apply_watch_folder_menu_state()
+        if running:
+            self._set_status("Watch folder monitoring active")
 
     def _refresh_voice_command_aliases(self) -> None:
         self._voice_command_aliases = build_voice_command_aliases(
@@ -11796,6 +12401,18 @@ class MainFrame:
             ("VibeVoice voice", settings.read_aloud_vibevoice_voice),
             ("eSpeak executable", settings.read_aloud_espeak_executable or "PATH lookup"),
             ("eSpeak English voice", settings.read_aloud_espeak_voice),
+            ("RHVoice executable", settings.read_aloud_rhvoice_executable or "Not configured"),
+            ("RHVoice voice", settings.read_aloud_rhvoice_voice),
+            ("MeloTTS executable", settings.read_aloud_melotts_executable or "Not configured"),
+            ("MeloTTS voice", settings.read_aloud_melotts_voice),
+            ("Chatterbox executable", settings.read_aloud_chatterbox_executable or "Not configured"),
+            ("Chatterbox voice", settings.read_aloud_chatterbox_voice),
+            ("OpenVoice executable", settings.read_aloud_openvoice_executable or "Not configured"),
+            ("OpenVoice voice", settings.read_aloud_openvoice_voice),
+            (
+                "OpenVoice consent",
+                "Enabled" if settings.read_aloud_openvoice_consent else "Disabled",
+            ),
         ]
         speech_table_rows = "".join(
             f"<tr><th scope='row'>{html.escape(name)}</th><td>{html.escape(str(value))}</td></tr>"
@@ -11877,6 +12494,39 @@ class MainFrame:
         current_version = getattr(getattr(self, "_updates", None), "current_version", "")
         if not current_version:
             current_version = __version__ or "0.0.0"
+
+        # Compatibility path: honor the signed manifest updater used by
+        # earlier flows and tests before consulting GitHub Releases.
+        try:
+            manifest = fetch_update_manifest(
+                "https://community-access.github.io/quill/updates/.quill-update-feed-v1.json"
+            )
+        except (URLError, ValueError, OSError):
+            manifest = None
+        if manifest is not None and is_newer_version(current_version, manifest.version):
+            if silent_no_update:
+                self._record_notification(
+                    f"Update {manifest.version} found via manifest feed",
+                    "update",
+                )
+                return
+            download_now = self._show_message_box(
+                (
+                    f"Update {manifest.version} is available.\n\n"
+                    "Open the update download now?"
+                ),
+                "Check for Updates",
+                wx.ICON_INFORMATION | wx.YES_NO,
+            )
+            if download_now == wx.YES:
+                self._open_update_download_flow(manifest)
+            else:
+                self._set_status("Update deferred")
+                self._record_notification(
+                    f"Update {manifest.version} deferred",
+                    "update",
+                )
+            return
 
         beta = bool(getattr(self.settings, "beta_updates", False))
         self._set_status("Checking for updates...")
@@ -15983,7 +16633,7 @@ class MainFrame:
         self.show_startup_wizard_page()
         proceed = self._show_message_box(
             "The Startup Wizard overview opened in preview. Start guided setup now?\n\n"
-            "This will walk through profile, AI, assistant, and speech setup.",
+            "This will walk through profile, AI, assistant, speech, and watch folder setup.",
             "Startup Wizard",
             wx.ICON_QUESTION | wx.YES_NO,
         )
@@ -15994,6 +16644,7 @@ class MainFrame:
         self._offer_ai_onboarding()
         self._show_assistant_onboarding(force=True)
         self._show_speech_onboarding(force=True)
+        self._show_watch_folder_onboarding(force=True)
         self._set_status("Startup Wizard completed")
 
     def run_profile_onboarding(self) -> None:
@@ -16006,6 +16657,7 @@ class MainFrame:
                 getattr(self, "_first_run_profile_prompt", False),
                 getattr(self, "_first_run_assistant_prompt", False),
                 getattr(self, "_first_run_speech_prompt", False),
+                getattr(self, "_first_run_watch_folder_prompt", False),
             )
         ):
             self.show_startup_wizard_page()
@@ -16019,6 +16671,9 @@ class MainFrame:
         if getattr(self, "_first_run_speech_prompt", False):
             self._show_speech_onboarding(force=False)
             self._first_run_speech_prompt = False
+        if getattr(self, "_first_run_watch_folder_prompt", False):
+            self._show_watch_folder_onboarding(force=False)
+            self._first_run_watch_folder_prompt = False
 
     def show_startup_wizard_page(self) -> None:
         index = self._open_generated_tab(
@@ -16047,6 +16702,11 @@ class MainFrame:
                 "Completed" if load_speech_onboarding_complete() else "Pending",
                 "Configure engines, paths, voices, and downloads.",
             ),
+            (
+                "Watch folder setup",
+                "Completed" if load_watch_folder_onboarding_complete() else "Pending",
+                "Automatically open new supported files dropped into one folder.",
+            ),
         ]
         status_html = "".join(
             (
@@ -16064,7 +16724,8 @@ class MainFrame:
             "Step 2: Decide whether AI should be enabled now.",
             "Step 3: Configure writing assistant defaults.",
             "Step 4: Configure speech engines and download optional runtimes.",
-            "Step 5: Confirm settings and start writing.",
+            "Step 5: Set up watch folder automation for supported document intake.",
+            "Step 6: Confirm settings and start writing.",
         ]
         flow_html = "".join(f"<li>{html.escape(step)}</li>" for step in flow_steps)
 
@@ -16226,7 +16887,7 @@ class MainFrame:
         wx = self._wx
         start_setup = self._show_message_box(
             "Set up speech engines now?\n\n"
-            "You can download/configure DECtalk, eSpeak-NG, Piper, Kokoro, and VibeVoice.\n"
+            "You can download/configure DECtalk, eSpeak-NG, Piper, Kokoro, VibeVoice, RHVoice, MeloTTS, Chatterbox, and OpenVoice.\n"
             "You can always change these later in AI > Speech > Settings.",
             "Speech Setup",
             wx.ICON_QUESTION | wx.YES_NO,
@@ -16243,6 +16904,10 @@ class MainFrame:
             "Configure Piper executable and English model folder",
             "Configure Kokoro English voice defaults",
             "Configure VibeVoice executable and default voice",
+            "Configure RHVoice executable and English voice",
+            "Configure MeloTTS executable and English voice",
+            "Configure Chatterbox executable and English voice",
+            "Configure OpenVoice executable, English voice, and consent",
             "Open speech setup docs",
         ]
         with wx.MultiChoiceDialog(
@@ -16345,6 +17010,83 @@ class MainFrame:
                 self.settings.read_aloud_vibevoice_voice = default_voice
 
         if 5 in selected:
+            exe = _ask_text("Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable)
+            if exe is not None:
+                self.settings.read_aloud_rhvoice_executable = exe
+            voices = list_rhvoice_english_voices()
+            if voices:
+                with wx.SingleChoiceDialog(
+                    self.frame,
+                    "Choose default RHVoice English voice:",
+                    "Speech Setup",
+                    choices=[voice.name for voice in voices],
+                ) as voice_dialog:
+                    if self._show_modal_dialog(voice_dialog, "Speech Setup") == wx.ID_OK:
+                        idx = voice_dialog.GetSelection()
+                        if 0 <= idx < len(voices):
+                            self.settings.read_aloud_rhvoice_voice = voices[idx].id
+
+        if 6 in selected:
+            exe = _ask_text("Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable)
+            if exe is not None:
+                self.settings.read_aloud_melotts_executable = exe
+            voices = list_melotts_english_voices()
+            if voices:
+                with wx.SingleChoiceDialog(
+                    self.frame,
+                    "Choose default MeloTTS English voice:",
+                    "Speech Setup",
+                    choices=[voice.name for voice in voices],
+                ) as voice_dialog:
+                    if self._show_modal_dialog(voice_dialog, "Speech Setup") == wx.ID_OK:
+                        idx = voice_dialog.GetSelection()
+                        if 0 <= idx < len(voices):
+                            self.settings.read_aloud_melotts_voice = voices[idx].id
+
+        if 7 in selected:
+            exe = _ask_text(
+                "Path to Chatterbox executable:", self.settings.read_aloud_chatterbox_executable
+            )
+            if exe is not None:
+                self.settings.read_aloud_chatterbox_executable = exe
+            voices = list_chatterbox_english_voices()
+            if voices:
+                with wx.SingleChoiceDialog(
+                    self.frame,
+                    "Choose default Chatterbox English voice:",
+                    "Speech Setup",
+                    choices=[voice.name for voice in voices],
+                ) as voice_dialog:
+                    if self._show_modal_dialog(voice_dialog, "Speech Setup") == wx.ID_OK:
+                        idx = voice_dialog.GetSelection()
+                        if 0 <= idx < len(voices):
+                            self.settings.read_aloud_chatterbox_voice = voices[idx].id
+
+        if 8 in selected:
+            exe = _ask_text("Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable)
+            if exe is not None:
+                self.settings.read_aloud_openvoice_executable = exe
+            voices = list_openvoice_english_voices()
+            if voices:
+                with wx.SingleChoiceDialog(
+                    self.frame,
+                    "Choose default OpenVoice English voice:",
+                    "Speech Setup",
+                    choices=[voice.name for voice in voices],
+                ) as voice_dialog:
+                    if self._show_modal_dialog(voice_dialog, "Speech Setup") == wx.ID_OK:
+                        idx = voice_dialog.GetSelection()
+                        if 0 <= idx < len(voices):
+                            self.settings.read_aloud_openvoice_voice = voices[idx].id
+            consent = self._show_message_box(
+                "Enable OpenVoice advanced style module on this machine?\n\n"
+                "This feature is optional and remains disabled unless you explicitly consent.",
+                "Speech Setup",
+                wx.YES_NO | wx.ICON_QUESTION,
+            )
+            self.settings.read_aloud_openvoice_consent = consent == wx.YES
+
+        if 9 in selected:
             docs_path = app_data_dir().parent / "Quill" / "docs" / "userguide.md"
             webbrowser.open(str(docs_path))
 

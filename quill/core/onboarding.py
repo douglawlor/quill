@@ -8,6 +8,7 @@ from quill.core.storage import read_json, write_json_atomic
 _ONBOARDING_STATE_FILE = "onboarding-complete.json"
 _ASSISTANT_ONBOARDING_STATE_FILE = "assistant-onboarding-complete.json"
 _SPEECH_ONBOARDING_STATE_FILE = "speech-onboarding-complete.json"
+_WATCH_FOLDER_ONBOARDING_STATE_FILE = "watch-folder-onboarding-complete.json"
 
 
 def onboarding_complete_path() -> Path:
@@ -20,6 +21,10 @@ def assistant_onboarding_complete_path() -> Path:
 
 def speech_onboarding_complete_path() -> Path:
     return app_data_dir() / _SPEECH_ONBOARDING_STATE_FILE
+
+
+def watch_folder_onboarding_complete_path() -> Path:
+    return app_data_dir() / _WATCH_FOLDER_ONBOARDING_STATE_FILE
 
 
 def load_onboarding_complete() -> bool:
@@ -53,3 +58,14 @@ def load_speech_onboarding_complete() -> bool:
 
 def mark_speech_onboarding_complete() -> None:
     write_json_atomic(speech_onboarding_complete_path(), {"completed": True})
+
+
+def load_watch_folder_onboarding_complete() -> bool:
+    raw = read_json(watch_folder_onboarding_complete_path(), default={})
+    if not isinstance(raw, dict):
+        return False
+    return bool(raw.get("completed", False))
+
+
+def mark_watch_folder_onboarding_complete() -> None:
+    write_json_atomic(watch_folder_onboarding_complete_path(), {"completed": True})

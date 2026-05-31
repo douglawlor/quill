@@ -404,10 +404,15 @@ After save, Quill announces plain-language verification feedback (for example, r
 
 - **Read Aloud** submenu for start or pause, stop, and voice selection
 - **Dictation** submenu for Windows dictation, plus an opt-in **Hey QUILL Commands** toggle that lets dictation phrases trigger Quill commands instead of inserting text.
+- **Dictation -> Watch Folder Monitoring** to automatically open new supported files dropped into a configured folder.
+- **Dictation -> Watch Folder Settings...** for folder path, subfolders, startup behavior, and polling behavior.
+- **Dictation -> Watch Folder Status...** for current runtime state and active configuration.
 - **Integrations** submenu with **OCR Image...** and shell integration commands.
 
 Read Aloud is particularly useful for proofreading by ear. OCR Image handles image-to-text work with an explicit consent and progress flow.
 Dictation uses Windows' own speech input. When Hey QUILL Commands is enabled, Quill stays silent and only listens while dictation is active, then runs the matching action after the wake phrase.
+Watch Folder automation is best for "drop and open" workflows: copy supported files into one
+folder and let Quill open them in the background.
 
 #### Document intake and extraction review
 
@@ -518,6 +523,7 @@ The **Help** menu is where Quill becomes a guide.
 - **What Can I Do Here?** gives context-aware assistance.
 - **Why Don't I See a Feature?** explains profile-driven feature visibility.
 - **Feature Profiles** commands let you switch profile, run health checks, undo the last profile change, reset to Essential, and run onboarding.
+- **Startup Wizard...** can be rerun at any time and now includes watch-folder setup.
 - **Check for Updates...** verifies the signed update manifest, opens the installer download page, and can close Quill so setup can run immediately.
 - **About Quill** shows version and publisher details.
 

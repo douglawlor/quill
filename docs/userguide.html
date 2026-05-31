@@ -685,6 +685,13 @@ voice selection</li>
 <li><strong>Dictation</strong> submenu for Windows dictation, plus an
 opt-in <strong>Hey QUILL Commands</strong> toggle that lets dictation
 phrases trigger Quill commands instead of inserting text.</li>
+<li><strong>Dictation -&gt; Watch Folder Monitoring</strong> to
+automatically open new supported files dropped into a configured
+folder.</li>
+<li><strong>Dictation -&gt; Watch Folder Settings...</strong> for folder
+path, subfolders, startup behavior, and polling behavior.</li>
+<li><strong>Dictation -&gt; Watch Folder Status...</strong> for current
+runtime state and active configuration.</li>
 <li><strong>Integrations</strong> submenu with <strong>OCR
 Image...</strong> and shell integration commands.</li>
 </ul>
@@ -692,7 +699,9 @@ Image...</strong> and shell integration commands.</li>
 handles image-to-text work with an explicit consent and progress flow.
 Dictation uses Windows' own speech input. When Hey QUILL Commands is
 enabled, Quill stays silent and only listens while dictation is active,
-then runs the matching action after the wake phrase.</p>
+then runs the matching action after the wake phrase. Watch Folder
+automation is best for "drop and open" workflows: copy supported files
+into one folder and let Quill open them in the background.</p>
 <h4 id="document-intake-and-extraction-review">Document intake and
 extraction review</h4>
 <ul>
@@ -831,6 +840,8 @@ feature visibility.</li>
 <li><strong>Feature Profiles</strong> commands let you switch profile,
 run health checks, undo the last profile change, reset to Essential, and
 run onboarding.</li>
+<li><strong>Startup Wizard...</strong> can be rerun at any time and now
+includes watch-folder setup.</li>
 <li><strong>Check for Updates...</strong> verifies the signed update
 manifest, opens the installer download page, and can close Quill so
 setup can run immediately.</li>

@@ -36,6 +36,8 @@ Highlights in 0.1.2 include:
 - In-App Preview and Side-by-Side Preview with a dedicated Focus Preview command.
 - Heading styling tools to apply font family, size, and alignment to current-level or all headings in Markdown/HTML.
 - Heading Organizer (`Ctrl+Alt+Shift+H`) with keyboard-driven heading level changes, section reordering, and accessibility validation.
+- Watch Folder automation under **Tools -> Dictation** to auto-open newly dropped supported files.
+- Startup Wizard now includes a Watch Folder setup step so automation can be configured on first run.
 - Search menu simplification with replace-all inside the Replace dialog.
 - Unified diagnostics-backed support flow under **Help -> Report a Bug**.
 - Menu IA refinement, including **Insert** before **View** and **Search** after **View**.
@@ -62,6 +64,14 @@ Related commands:
 - `Ctrl+Space`: Word Prediction (words, HTML tags, Markdown tags).
 - `Ctrl+Alt+Shift+Space`: Manage snippets (create, edit, delete, import/export, starter packs).
 - `Preferences -> Install Starter Snippet Packs`: install sample packs for writing, developer flow, and accessibility/support notes.
+
+Watch Folder quick start:
+
+1. Open `Help -> Startup Wizard...` and run the Watch Folder setup step, or open `Preferences -> Watch Folder Automation`.
+2. Choose a folder where you will drop supported Quill files.
+3. Enable watch folder monitoring.
+4. Turn on auto-start if you want it running every launch.
+5. Drop supported files into the folder; Quill opens them automatically.
 
 ## Project layout
 

@@ -89,6 +89,30 @@ ESPEAK_ENGLISH_VOICES: list[tuple[str, str]] = [
     ("en-gb-x-rp", "English (RP variant)"),
 ]
 
+RHVOICE_ENGLISH_VOICES: list[tuple[str, str]] = [
+    ("alan", "Alan (English)"),
+    ("slt", "SLT (English)"),
+    ("bdl", "BDL (English)"),
+]
+
+MELOTTS_ENGLISH_VOICES: list[tuple[str, str]] = [
+    ("en-us", "MeloTTS English (US)"),
+    ("en-br", "MeloTTS English (British)"),
+    ("en-india", "MeloTTS English (India)"),
+]
+
+CHATTERBOX_ENGLISH_VOICES: list[tuple[str, str]] = [
+    ("english_narrator", "Narrator (English)"),
+    ("english_warm", "Warm (English)"),
+    ("english_clear", "Clear (English)"),
+]
+
+OPENVOICE_ENGLISH_VOICES: list[tuple[str, str]] = [
+    ("en-base", "OpenVoice Base (English)"),
+    ("en-bright", "OpenVoice Bright (English)"),
+    ("en-calm", "OpenVoice Calm (English)"),
+]
+
 
 def discover_dectalk_executable(configured_path: str = "") -> Path | None:
     if configured_path.strip():
@@ -191,6 +215,78 @@ def discover_espeak_executable(configured_path: str = "") -> Path | None:
     return None
 
 
+def discover_rhvoice_executable(configured_path: str = "") -> Path | None:
+    if configured_path.strip():
+        candidate = Path(configured_path).expanduser()
+        if candidate.exists():
+            return candidate.resolve()
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if app_root:
+        bundled = Path(app_root) / "tools" / "speech" / "rhvoice"
+        for relative in ("rhvoice.exe", "RHVoice-test.exe", "bin/rhvoice.exe"):
+            probe = bundled / relative
+            if probe.exists():
+                return probe.resolve()
+    found = shutil.which("rhvoice") or shutil.which("rhvoice.exe")
+    if found:
+        return Path(found).resolve()
+    return None
+
+
+def discover_melotts_executable(configured_path: str = "") -> Path | None:
+    if configured_path.strip():
+        candidate = Path(configured_path).expanduser()
+        if candidate.exists():
+            return candidate.resolve()
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if app_root:
+        bundled = Path(app_root) / "tools" / "speech" / "melotts"
+        for relative in ("melotts.exe", "melo-tts.exe", "bin/melotts.exe"):
+            probe = bundled / relative
+            if probe.exists():
+                return probe.resolve()
+    found = shutil.which("melotts") or shutil.which("melotts.exe")
+    if found:
+        return Path(found).resolve()
+    return None
+
+
+def discover_chatterbox_executable(configured_path: str = "") -> Path | None:
+    if configured_path.strip():
+        candidate = Path(configured_path).expanduser()
+        if candidate.exists():
+            return candidate.resolve()
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if app_root:
+        bundled = Path(app_root) / "tools" / "speech" / "chatterbox"
+        for relative in ("chatterbox.exe", "bin/chatterbox.exe"):
+            probe = bundled / relative
+            if probe.exists():
+                return probe.resolve()
+    found = shutil.which("chatterbox") or shutil.which("chatterbox.exe")
+    if found:
+        return Path(found).resolve()
+    return None
+
+
+def discover_openvoice_executable(configured_path: str = "") -> Path | None:
+    if configured_path.strip():
+        candidate = Path(configured_path).expanduser()
+        if candidate.exists():
+            return candidate.resolve()
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if app_root:
+        bundled = Path(app_root) / "tools" / "speech" / "openvoice"
+        for relative in ("openvoice.exe", "bin/openvoice.exe"):
+            probe = bundled / relative
+            if probe.exists():
+                return probe.resolve()
+    found = shutil.which("openvoice") or shutil.which("openvoice.exe")
+    if found:
+        return Path(found).resolve()
+    return None
+
+
 def list_kokoro_voices() -> list[VoiceOption]:
     return [VoiceOption(id=vid, name=name) for vid, name in KOKORO_VOICES]
 
@@ -229,6 +325,22 @@ def list_vibevoice_voices(executable_path: str = "") -> list[VoiceOption]:
 
 def list_espeak_english_voices() -> list[VoiceOption]:
     return [VoiceOption(id=vid, name=name) for vid, name in ESPEAK_ENGLISH_VOICES]
+
+
+def list_rhvoice_english_voices() -> list[VoiceOption]:
+    return [VoiceOption(id=vid, name=name) for vid, name in RHVOICE_ENGLISH_VOICES]
+
+
+def list_melotts_english_voices() -> list[VoiceOption]:
+    return [VoiceOption(id=vid, name=name) for vid, name in MELOTTS_ENGLISH_VOICES]
+
+
+def list_chatterbox_english_voices() -> list[VoiceOption]:
+    return [VoiceOption(id=vid, name=name) for vid, name in CHATTERBOX_ENGLISH_VOICES]
+
+
+def list_openvoice_english_voices() -> list[VoiceOption]:
+    return [VoiceOption(id=vid, name=name) for vid, name in OPENVOICE_ENGLISH_VOICES]
 
 
 def synthesize_with_kokoro(
@@ -321,6 +433,112 @@ def synthesize_with_espeak(
             f"eSpeak-NG failed: {detail}" if detail
             else f"eSpeak-NG exited with code {completed.returncode}."
         )
+
+
+def _synthesize_with_cli_engine(
+    text: str,
+    output_path: Path,
+    *,
+    executable_path: Path,
+    voice: str,
+    rate: int,
+    engine_label: str,
+) -> None:
+    if not text.strip():
+        raise ReadAloudUnavailableError("Cannot generate speech from empty text")
+    if not executable_path.exists():
+        raise ReadAloudUnavailableError(f"{engine_label} executable was not found")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(executable_path),
+        "--text",
+        text,
+        "--output",
+        str(output_path),
+        "--voice",
+        voice,
+        "--rate",
+        str(max(80, min(450, int(rate)))),
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        raise ReadAloudUnavailableError(
+            f"{engine_label} failed: {detail}" if detail
+            else f"{engine_label} exited with code {completed.returncode}."
+        )
+
+
+def synthesize_with_rhvoice(
+    text: str,
+    output_path: Path,
+    *,
+    executable_path: Path,
+    voice: str = "alan",
+    rate: int = 180,
+) -> None:
+    _synthesize_with_cli_engine(
+        text,
+        output_path,
+        executable_path=executable_path,
+        voice=voice,
+        rate=rate,
+        engine_label="RHVoice",
+    )
+
+
+def synthesize_with_melotts(
+    text: str,
+    output_path: Path,
+    *,
+    executable_path: Path,
+    voice: str = "en-us",
+    rate: int = 180,
+) -> None:
+    _synthesize_with_cli_engine(
+        text,
+        output_path,
+        executable_path=executable_path,
+        voice=voice,
+        rate=rate,
+        engine_label="MeloTTS",
+    )
+
+
+def synthesize_with_chatterbox(
+    text: str,
+    output_path: Path,
+    *,
+    executable_path: Path,
+    voice: str = "english_narrator",
+    rate: int = 180,
+) -> None:
+    _synthesize_with_cli_engine(
+        text,
+        output_path,
+        executable_path=executable_path,
+        voice=voice,
+        rate=rate,
+        engine_label="Chatterbox",
+    )
+
+
+def synthesize_with_openvoice(
+    text: str,
+    output_path: Path,
+    *,
+    executable_path: Path,
+    voice: str = "en-base",
+    rate: int = 180,
+) -> None:
+    _synthesize_with_cli_engine(
+        text,
+        output_path,
+        executable_path=executable_path,
+        voice=voice,
+        rate=rate,
+        engine_label="OpenVoice",
+    )
 
 
 def synthesize_to_file_with_pyttsx3(
@@ -499,13 +717,37 @@ class ReadAloudController:
         espeak_executable: str = "",
         espeak_voice: str = "en",
         espeak_rate: int = 175,
+        rhvoice_executable: str = "",
+        rhvoice_voice: str = "alan",
+        rhvoice_rate: int = 180,
+        melotts_executable: str = "",
+        melotts_voice: str = "en-us",
+        melotts_rate: int = 180,
+        chatterbox_executable: str = "",
+        chatterbox_voice: str = "english_narrator",
+        chatterbox_rate: int = 180,
+        openvoice_executable: str = "",
+        openvoice_voice: str = "en-base",
+        openvoice_rate: int = 180,
+        openvoice_consent: bool = False,
         end: int | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         on_state_change: Callable[[str], None] | None = None,
         on_error: Callable[[str], None] | None = None,
     ) -> None:
         normalized_engine = engine_name.strip().lower() or "pyttsx3"
-        _valid_engines = {"pyttsx3", "dectalk", "piper", "kokoro", "vibevoice", "espeak"}
+        _valid_engines = {
+            "pyttsx3",
+            "dectalk",
+            "piper",
+            "kokoro",
+            "vibevoice",
+            "espeak",
+            "rhvoice",
+            "melotts",
+            "chatterbox",
+            "openvoice",
+        }
         if normalized_engine == "pyttsx3" and pyttsx3 is None:
             raise ReadAloudUnavailableError("pyttsx3 is not available")
         if normalized_engine == "dectalk":
@@ -524,6 +766,19 @@ class ReadAloudController:
                 "eSpeak-NG executable was not found. "
                 "Install eSpeak-NG or configure the path in Read Aloud Settings."
             )
+        if normalized_engine == "rhvoice" and discover_rhvoice_executable(rhvoice_executable) is None:
+            raise ReadAloudUnavailableError("RHVoice executable was not found")
+        if normalized_engine == "melotts" and discover_melotts_executable(melotts_executable) is None:
+            raise ReadAloudUnavailableError("MeloTTS executable was not found")
+        if normalized_engine == "chatterbox" and discover_chatterbox_executable(chatterbox_executable) is None:
+            raise ReadAloudUnavailableError("Chatterbox executable was not found")
+        if normalized_engine == "openvoice":
+            if not openvoice_consent:
+                raise ReadAloudUnavailableError(
+                    "OpenVoice requires explicit consent before use. Enable consent in Speech settings."
+                )
+            if discover_openvoice_executable(openvoice_executable) is None:
+                raise ReadAloudUnavailableError("OpenVoice executable was not found")
         if normalized_engine not in _valid_engines:
             raise ReadAloudUnavailableError(f"Unsupported read-aloud engine: {normalized_engine}")
         self.stop()
@@ -581,6 +836,46 @@ class ReadAloudController:
                         spans, text,
                         executable=discover_espeak_executable(espeak_executable) or Path(espeak_executable).expanduser(),
                         voice=espeak_voice, rate=espeak_rate,
+                        on_progress=on_progress,
+                    )
+                elif normalized_engine == "rhvoice":
+                    self._run_rhvoice_live(
+                        spans,
+                        text,
+                        executable=discover_rhvoice_executable(rhvoice_executable)
+                        or Path(rhvoice_executable).expanduser(),
+                        voice=rhvoice_voice,
+                        rate=rhvoice_rate,
+                        on_progress=on_progress,
+                    )
+                elif normalized_engine == "melotts":
+                    self._run_melotts_live(
+                        spans,
+                        text,
+                        executable=discover_melotts_executable(melotts_executable)
+                        or Path(melotts_executable).expanduser(),
+                        voice=melotts_voice,
+                        rate=melotts_rate,
+                        on_progress=on_progress,
+                    )
+                elif normalized_engine == "chatterbox":
+                    self._run_chatterbox_live(
+                        spans,
+                        text,
+                        executable=discover_chatterbox_executable(chatterbox_executable)
+                        or Path(chatterbox_executable).expanduser(),
+                        voice=chatterbox_voice,
+                        rate=chatterbox_rate,
+                        on_progress=on_progress,
+                    )
+                elif normalized_engine == "openvoice":
+                    self._run_openvoice_live(
+                        spans,
+                        text,
+                        executable=discover_openvoice_executable(openvoice_executable)
+                        or Path(openvoice_executable).expanduser(),
+                        voice=openvoice_voice,
+                        rate=openvoice_rate,
                         on_progress=on_progress,
                     )
             except Exception as exc:  # noqa: BLE001
@@ -887,6 +1182,90 @@ class ReadAloudController:
                 raise ReadAloudUnavailableError(f"eSpeak-NG exited with code {exit_code}.")
             with self._lock:
                 self._cursor = span.end
+
+    def _run_rhvoice_live(
+        self,
+        spans: list[SentenceSpan],
+        text: str,
+        *,
+        executable: Path,
+        voice: str,
+        rate: int,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> None:
+        def gen(sentence: str, out: Path) -> None:
+            synthesize_with_rhvoice(
+                sentence,
+                out,
+                executable_path=executable,
+                voice=voice,
+                rate=rate,
+            )
+
+        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
+
+    def _run_melotts_live(
+        self,
+        spans: list[SentenceSpan],
+        text: str,
+        *,
+        executable: Path,
+        voice: str,
+        rate: int,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> None:
+        def gen(sentence: str, out: Path) -> None:
+            synthesize_with_melotts(
+                sentence,
+                out,
+                executable_path=executable,
+                voice=voice,
+                rate=rate,
+            )
+
+        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
+
+    def _run_chatterbox_live(
+        self,
+        spans: list[SentenceSpan],
+        text: str,
+        *,
+        executable: Path,
+        voice: str,
+        rate: int,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> None:
+        def gen(sentence: str, out: Path) -> None:
+            synthesize_with_chatterbox(
+                sentence,
+                out,
+                executable_path=executable,
+                voice=voice,
+                rate=rate,
+            )
+
+        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
+
+    def _run_openvoice_live(
+        self,
+        spans: list[SentenceSpan],
+        text: str,
+        *,
+        executable: Path,
+        voice: str,
+        rate: int,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> None:
+        def gen(sentence: str, out: Path) -> None:
+            synthesize_with_openvoice(
+                sentence,
+                out,
+                executable_path=executable,
+                voice=voice,
+                rate=rate,
+            )
+
+        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
 
     def pause(self) -> None:
         with self._lock:

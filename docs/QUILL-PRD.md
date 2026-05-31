@@ -111,6 +111,7 @@ Menu structure:
 - **Tools**: regrouped into discoverable submenus:
   - Writing and Language
   - Read Aloud
+  - Dictation and Watch Folder Automation
   - Integrations
   - Document Intake
   - Authoring and Automation
@@ -1662,6 +1663,19 @@ Quill ships a read-aloud feature that uses a **secondary** voice the user picks 
 - Selection-only mode: when invoked with a selection, read-aloud reads only the selection and stops at the end.
 - Voice, speed, pitch, volume all configurable. Three named profiles (Reading, Proofreading, Skim) save preferred values.
 - The read-aloud voice never overrides the screen reader's announcements; if a screen reader speaks something while read-aloud is active, read-aloud continues but is briefly ducked.
+
+### 5.25b Watch Folder automation
+
+Quill provides an optional watch-folder workflow under `Tools -> Dictation` for low-friction
+document intake. Users can point Quill at a folder, drop supported files into it, and have Quill
+open those files automatically without leaving the editor.
+
+- Supported drop formats follow Quill's core supported file-extension set.
+- Polling and subfolder behavior are configurable from Watch Folder Settings.
+- Startup Wizard includes watch-folder onboarding so first-run users can configure automation
+  immediately.
+- Status and failures surface through Quill's existing status/notification channel; no silent
+  failures.
 
 ### 5.25a Speech Experience Platform (planned before implementation)
 
