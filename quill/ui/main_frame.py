@@ -2231,9 +2231,7 @@ class MainFrame:
             self._menu_label("Toggle Soft &Wrap", "view.toggle_soft_wrap"),
         )
         view_menu.Check(self._id_toggle_soft_wrap, self.settings.soft_wrap)
-        view_menu.AppendCheckItem(
-            self._id_toggle_auto_side_preview, "&Auto Side-by-Side Preview"
-        )
+        view_menu.AppendCheckItem(self._id_toggle_auto_side_preview, "&Auto Side-by-Side Preview")
         view_menu.Check(self._id_toggle_auto_side_preview, self.settings.auto_side_preview)
         view_menu.AppendCheckItem(self._id_toggle_tab_control, "Show &Tab Control")
         view_menu.Check(self._id_toggle_tab_control, self.settings.show_tab_control)
@@ -2870,7 +2868,9 @@ class MainFrame:
         ai_menu.AppendSeparator()
         ai_menu.Append(self._id_ai_status_badge, "AI Status: Not checked")
         ai_menu.Enable(self._id_ai_status_badge, False)
-        ai_menu.Append(self._id_ai_status_detail, "AI Detail: Open AI Connection to verify settings")
+        ai_menu.Append(
+            self._id_ai_status_detail, "AI Detail: Open AI Connection to verify settings"
+        )
         ai_menu.Enable(self._id_ai_status_detail, False)
         ai_menu.Append(
             self._id_ask_quill_chat,
@@ -7664,9 +7664,7 @@ class MainFrame:
             if dialog.last_verification_ok:
                 self._set_status(f"Updated AI connection settings. Ready. {detail}")
             else:
-                self._set_status(
-                    f"Updated AI connection settings. Needs attention. {detail}"
-                )
+                self._set_status(f"Updated AI connection settings. Needs attention. {detail}")
         else:
             self._set_status("AI connection settings cancelled")
 
@@ -8159,7 +8157,7 @@ class MainFrame:
             "Techopolis, Taylor Arndt, Michael Doise, Kayla Bentas, "
             "Shane Popplestone, and Becky Knobb.\n\n"
             "## Links\n\n" + md_links(self._ABOUT_LINKS) + "\n\n"
-            "## On GitHub\n\n" + md_links(self._ABOUT_GITHUB_LINKS) + "\n\n"
+            "## Contributors on GitHub\n\n" + md_links(self._ABOUT_GITHUB_LINKS) + "\n\n"
             "## Open-source acknowledgments\n\n" + acks + "\n\n"
             "Copyright (c) Blind Information Technology Solutions (BITS) and Community Access"
         )
@@ -8171,9 +8169,7 @@ class MainFrame:
         from quill.ui.preview_dialog import MarkdownPreviewDialog
 
         body = render_preview_body(self._about_markdown(), "markdown")
-        MarkdownPreviewDialog(
-            self.frame, "About Quill", body, open_links_externally=True
-        ).show()
+        MarkdownPreviewDialog(self.frame, "About Quill", body, open_links_externally=True).show()
         self._set_status("Opened About Quill")
 
     def show_external_tools_dialog(self) -> None:
@@ -10582,11 +10578,7 @@ class MainFrame:
             return
         choices = [voice.name for voice in voices]
         current_index = next(
-            (
-                index
-                for index, voice in enumerate(voices)
-                if voice.id == current_voice_id
-            ),
+            (index for index, voice in enumerate(voices) if voice.id == current_voice_id),
             0,
         )
         with wx.SingleChoiceDialog(
@@ -10620,7 +10612,9 @@ class MainFrame:
             choices=engine_choices,
         ) as engine_dialog:
             current_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
-            current_index = engine_values.index(current_engine) if current_engine in engine_values else 0
+            current_index = (
+                engine_values.index(current_engine) if current_engine in engine_values else 0
+            )
             engine_dialog.SetSelection(current_index)
             if self._show_modal_dialog(engine_dialog, "Read Aloud Settings") != wx.ID_OK:
                 self._set_status("Read aloud settings cancelled")
@@ -12351,9 +12345,7 @@ class MainFrame:
         timer = getattr(self, "_side_preview_timer", None)
         if timer is not None and timer.IsRunning():
             timer.Stop()
-        self._side_preview_timer = self._wx.CallLater(
-            250, self._update_side_preview, tab
-        )
+        self._side_preview_timer = self._wx.CallLater(250, self._update_side_preview, tab)
 
     def _update_side_preview(self, tab) -> None:
         text = tab.editor.GetValue()
@@ -12394,7 +12386,9 @@ class MainFrame:
         from quill.core.ai.model_manager import load_ai_enabled
 
         if not load_ai_enabled():
-            self._set_status("AI is turned off. Enable 'Use Artificial Intelligence' in the AI menu.")
+            self._set_status(
+                "AI is turned off. Enable 'Use Artificial Intelligence' in the AI menu."
+            )
             return
         self._apply_style_to_assistant()
         tool_catalog = allowed_tools(self.commands, getattr(self, "features", None))

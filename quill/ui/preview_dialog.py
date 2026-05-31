@@ -14,6 +14,7 @@ engine's native accessibility carries the screen-reader experience. The page is
 ``scroll-margin``, focus moves into the view on open, and Escape is bridged out
 of the native control (which swallows it) to close the modal.
 """
+
 from __future__ import annotations
 
 import html
@@ -117,9 +118,7 @@ class MarkdownPreviewDialog:
             self.view.SetName(title)
             try:
                 self.view.AddScriptMessageHandler("quill")
-                self.view.Bind(
-                    webview.EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, self._on_script_message
-                )
+                self.view.Bind(webview.EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, self._on_script_message)
             except Exception:  # noqa: BLE001
                 pass
             if open_links_externally:
@@ -215,9 +214,7 @@ class SidePreview:
             self.view.SetName(title)
             try:
                 self.view.AddScriptMessageHandler("quill")
-                self.view.Bind(
-                    webview.EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, self._on_script_message
-                )
+                self.view.Bind(webview.EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, self._on_script_message)
             except Exception:  # noqa: BLE001
                 pass
             self.view.Bind(webview.EVT_WEBVIEW_LOADED, self._on_loaded)
