@@ -21,7 +21,6 @@ This file is generated from declared project metadata and installed package meta
 | regex | runtime | 2026.5.9 | Apache-2.0 AND CNRI-Python | [upstream](https://github.com/mrabarnett/mrab-regex) | regex>=2026.5.9 |
 | ruff | optional:dev | 0.15.15 | MIT | [upstream](https://docs.astral.sh/ruff) | ruff>=0.6 |
 | SpeechRecognition | optional:dictation | not-installed (>=3.16.1) | BSD-3-Clause | [upstream](https://github.com/Uberi/speech_recognition) | SpeechRecognition>=3.16.1 |
-| vibevoice-cpu | optional:vibevoice | not-installed ([model] @ https://github.com/Community-Access/vibevoice-cpu/archive/refs/heads/main.zip) | Apache-2.0 | [upstream](https://github.com/Community-Access/vibevoice-cpu) | vibevoice-cpu[model] @ https://github.com/Community-Access/vibevoice-cpu/archive/refs/heads/main.zip |
 | wx-accessible-webview | optional:ui | not-installed (>=0.2.0) | MIT | [upstream](https://github.com/Community-Access/wx-accessible-webview) | wx-accessible-webview>=0.2.0 |
 | wxPython | optional:ui | 4.2.5 | wxWindows Library License (https://opensource.org/licenses/wxwindows.php) | [upstream](https://wxPython.org/) | wxPython>=4.2.5 |
 
@@ -35,7 +34,6 @@ This file is generated from declared project metadata and installed package meta
 | Piper | bundled-speech | varies by release | MIT | [upstream](https://github.com/rhasspy/piper) | — |
 | eSpeak NG | bundled-speech | varies by release | GPL-3.0 | [upstream](https://github.com/espeak-ng/espeak-ng) | — |
 | Kokoro | bundled-speech | 82M | Apache-2.0 | [upstream](https://huggingface.co/hexgrad/Kokoro-82M) | — |
-| VibeVoice | bundled-speech | varies by release | Apache-2.0 | [upstream](https://github.com/Community-Access/vibevoice-cpu) | — |
 | DECtalk | bundled-speech | varies by release | Proprietary / redistributable where licensed | — | — |
 | Apple Foundation Models | platform-runtime | OS-provided | Apple platform terms | [upstream](https://developer.apple.com/documentation/foundationmodels) | — |
 

@@ -98,12 +98,6 @@ def main() -> int:
         help="Optional local Piper voices/models directory to bundle under portable\\tools\\speech\\piper.",
     )
     parser.add_argument(
-        "--vibevoice-dir",
-        type=Path,
-        default=None,
-        help="Optional local VibeVoice voices/models directory to bundle under portable\\tools\\speech\\vibevoice.",
-    )
-    parser.add_argument(
         "--rhvoice-dir",
         type=Path,
         default=None,
@@ -159,7 +153,6 @@ def main() -> int:
                 "speech/dectalk": args.dectalk_dir,
                 "speech/kokoro": args.kokoro_dir,
                 "speech/piper": args.piper_dir,
-                "speech/vibevoice": args.vibevoice_dir,
                 "speech/rhvoice": args.rhvoice_dir,
                 "speech/melotts": args.melotts_dir,
                 "speech/chatterbox": args.chatterbox_dir,
@@ -488,8 +481,6 @@ def build_inno_setup_script(version: str) -> str:
         ' Types: full custom; Flags: checkablealone',
         'Name: "speechpiper"; Description: "Install bundled Piper voices/models";'
         ' Types: full custom; Flags: checkablealone',
-        'Name: "speechvibevoice"; Description: "Install bundled VibeVoice voices/models";'
-        ' Types: full custom; Flags: checkablealone',
         'Name: "speechrhvoice"; Description: "Install bundled RHVoice voices/models";'
         ' Types: full custom; Flags: checkablealone',
         'Name: "speechmelotts"; Description: "Install bundled MeloTTS voices/models";'
@@ -502,7 +493,7 @@ def build_inno_setup_script(version: str) -> str:
         "[Files]",
         'Source: "..\\portable\\*"; DestDir: "{app}";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs;'
-        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\vibevoice\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"',
+        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"',
         'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
         ' Components: pandoc',
@@ -535,9 +526,6 @@ def build_inno_setup_script(version: str) -> str:
         'Source: "..\\portable\\tools\\speech\\piper\\*"; DestDir: "{app}\\tools\\speech\\piper";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
         ' Components: speechpiper',
-        'Source: "..\\portable\\tools\\speech\\vibevoice\\*"; DestDir: "{app}\\tools\\speech\\vibevoice";'
-        ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
-        ' Components: speechvibevoice',
         'Source: "..\\portable\\tools\\speech\\rhvoice\\*"; DestDir: "{app}\\tools\\speech\\rhvoice";'
         ' Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;'
         ' Components: speechrhvoice',
@@ -823,7 +811,6 @@ def _speech_asset_manifest(portable_dir: Path, bundled_tools: list[str]) -> dict
         "dectalk",
         "kokoro",
         "piper",
-        "vibevoice",
         "rhvoice",
         "melotts",
         "chatterbox",

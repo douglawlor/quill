@@ -27,7 +27,6 @@ _DEPENDENCY_METADATA_OVERRIDES: dict[str, tuple[str, str]] = {
     "regex": ("Apache-2.0 AND CNRI-Python", "https://github.com/mrabarnett/mrab-regex"),
     "ruff": ("MIT", "https://github.com/astral-sh/ruff"),
     "speechrecognition": ("BSD-3-Clause", "https://github.com/Uberi/speech_recognition"),
-    "vibevoice-cpu": ("Apache-2.0", "https://github.com/Community-Access/vibevoice-cpu"),
     "wx-accessible-webview": ("MIT", "https://github.com/Community-Access/wx-accessible-webview"),
     "wxpython": ("wxWindows", "https://www.wxpython.org/"),
 }
@@ -50,7 +49,6 @@ _DEPENDENCY_USAGE_NOTES: dict[str, str] = {
     "regex": "Core regular expression engine.",
     "ruff": "Linting and formatting.",
     "speechrecognition": "Speech-recognition helper components.",
-    "vibevoice-cpu": "Optional offline neural speech generation.",
     "wx-accessible-webview": "Accessible web preview and dialog surfaces.",
     "wxpython": "Desktop UI framework.",
 }
@@ -109,15 +107,6 @@ _BUNDLED_COMPONENTS: tuple[dict[str, str], ...] = (
         "homepage": "https://huggingface.co/hexgrad/Kokoro-82M",
         "source": "",
         "notes": "Optional neural speech voices.",
-    },
-    {
-        "name": "VibeVoice",
-        "scope": "bundled-speech",
-        "version": "varies by release",
-        "license": "Apache-2.0",
-        "homepage": "https://github.com/Community-Access/vibevoice-cpu",
-        "source": "",
-        "notes": "Optional bundled neural speech voices.",
     },
     {
         "name": "DECtalk",

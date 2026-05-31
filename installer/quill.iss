@@ -63,14 +63,13 @@ Name: "speechdectalk\voices\wendy"; Description: "Wendy voice"; Types: full cust
 Name: "speechdectalk\voices\kit"; Description: "Kit voice"; Types: full custom; Flags: checkablealone
 Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models"; Types: full custom; Flags: checkablealone
 Name: "speechpiper"; Description: "Install bundled Piper voices/models"; Types: full custom; Flags: checkablealone
-Name: "speechvibevoice"; Description: "Install bundled VibeVoice voices/models"; Types: full custom; Flags: checkablealone
 Name: "speechrhvoice"; Description: "Install bundled RHVoice voices/models"; Types: full custom; Flags: checkablealone
 Name: "speechmelotts"; Description: "Install bundled MeloTTS voices/models"; Types: full custom; Flags: checkablealone
 Name: "speechchatterbox"; Description: "Install bundled Chatterbox voices/models"; Types: full custom; Flags: checkablealone
 Name: "speechopenvoice"; Description: "Install bundled OpenVoice voices/models"; Types: full custom; Flags: checkablealone
 
 [Files]
-Source: "..\portable\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "docs\announcement-beta.md,docs\QUILL-PRD.md,tools\pandoc\*,tools\speech\dectalk\*,tools\speech\kokoro\*,tools\speech\piper\*,tools\speech\vibevoice\*,tools\speech\rhvoice\*,tools\speech\melotts\*,tools\speech\chatterbox\*,tools\speech\openvoice\*"
+Source: "..\portable\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "docs\announcement-beta.md,docs\QUILL-PRD.md,tools\pandoc\*,tools\speech\dectalk\*,tools\speech\kokoro\*,tools\speech\piper\*,tools\speech\rhvoice\*,tools\speech\melotts\*,tools\speech\chatterbox\*,tools\speech\openvoice\*"
 Source: "..\portable\tools\pandoc\*"; DestDir: "{app}\tools\pandoc"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: pandoc
 Source: "..\portable\tools\speech\dectalk\*"; DestDir: "{app}\tools\speech\dectalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Excludes: "voices\*"; Components: speechdectalk
 Source: "..\portable\tools\speech\dectalk\voices\*"; DestDir: "{app}\tools\speech\dectalk\voices"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\all_voices
@@ -85,7 +84,6 @@ Source: "..\portable\tools\speech\dectalk\voices\wendy\*"; DestDir: "{app}\tools
 Source: "..\portable\tools\speech\dectalk\voices\kit\*"; DestDir: "{app}\tools\speech\dectalk\voices\kit"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\kit; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
 Source: "..\portable\tools\speech\kokoro\*"; DestDir: "{app}\tools\speech\kokoro"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechkokoro
 Source: "..\portable\tools\speech\piper\*"; DestDir: "{app}\tools\speech\piper"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechpiper
-Source: "..\portable\tools\speech\vibevoice\*"; DestDir: "{app}\tools\speech\vibevoice"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechvibevoice
 Source: "..\portable\tools\speech\rhvoice\*"; DestDir: "{app}\tools\speech\rhvoice"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechrhvoice
 Source: "..\portable\tools\speech\melotts\*"; DestDir: "{app}\tools\speech\melotts"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechmelotts
 Source: "..\portable\tools\speech\chatterbox\*"; DestDir: "{app}\tools\speech\chatterbox"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechchatterbox

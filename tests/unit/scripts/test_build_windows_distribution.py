@@ -64,7 +64,6 @@ version = "2.4.6"
     assert manifest["speechAssets"]["dectalk"]["downloadable"] is True
     assert manifest["speechAssets"]["kokoro"]["downloadable"] is True
     assert manifest["speechAssets"]["piper"]["downloadable"] is True
-    assert manifest["speechAssets"]["vibevoice"]["downloadable"] is True
     assert manifest["speechAssets"]["rhvoice"]["downloadable"] is True
     assert manifest["speechAssets"]["melotts"]["downloadable"] is True
     assert manifest["speechAssets"]["chatterbox"]["downloadable"] is True
@@ -103,13 +102,12 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert 'Name: "speechdectalk\\voices\\kit"; Description: "Kit voice";' in script
     assert 'Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models";' in script
     assert 'Name: "speechpiper"; Description: "Install bundled Piper voices/models";' in script
-    assert 'Name: "speechvibevoice"; Description: "Install bundled VibeVoice voices/models";' in script
     assert 'Name: "speechrhvoice"; Description: "Install bundled RHVoice voices/models";' in script
     assert 'Name: "speechmelotts"; Description: "Install bundled MeloTTS voices/models";' in script
     assert 'Name: "speechchatterbox"; Description: "Install bundled Chatterbox voices/models";' in script
     assert 'Name: "speechopenvoice"; Description: "Install bundled OpenVoice voices/models";' in script
     assert (
-        'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\vibevoice\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"'
+        'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"'
         in script
     )
     assert 'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";' in script
@@ -130,7 +128,6 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert 'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\kit\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\kit";' in script
     assert 'Source: "..\\portable\\tools\\speech\\kokoro\\*"; DestDir: "{app}\\tools\\speech\\kokoro";' in script
     assert 'Source: "..\\portable\\tools\\speech\\piper\\*"; DestDir: "{app}\\tools\\speech\\piper";' in script
-    assert 'Source: "..\\portable\\tools\\speech\\vibevoice\\*"; DestDir: "{app}\\tools\\speech\\vibevoice";' in script
     assert 'Source: "..\\portable\\tools\\speech\\rhvoice\\*"; DestDir: "{app}\\tools\\speech\\rhvoice";' in script
     assert 'Source: "..\\portable\\tools\\speech\\melotts\\*"; DestDir: "{app}\\tools\\speech\\melotts";' in script
     assert 'Source: "..\\portable\\tools\\speech\\chatterbox\\*"; DestDir: "{app}\\tools\\speech\\chatterbox";' in script
@@ -138,7 +135,6 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert 'Components: speechdectalk' in script
     assert 'Components: speechkokoro' in script
     assert 'Components: speechpiper' in script
-    assert 'Components: speechvibevoice' in script
     assert 'Components: speechrhvoice' in script
     assert 'Components: speechmelotts' in script
     assert 'Components: speechchatterbox' in script

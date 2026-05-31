@@ -17,15 +17,12 @@ from quill.core.read_aloud import (
     ESPEAK_ENGLISH_VOICES,
     KOKORO_VOICES,
     discover_espeak_executable,
-    discover_vibevoice_executable,
     list_espeak_english_voices,
     list_kokoro_voices,
     list_piper_voices,
-    list_vibevoice_voices,
     synthesize_to_file_with_dectalk,
     synthesize_to_file_with_pyttsx3,
     synthesize_with_espeak,
-    synthesize_with_vibevoice,
 )
 
 
@@ -293,67 +290,6 @@ def test_synthesize_with_kokoro_raises_when_package_missing(monkeypatch, tmp_pat
 
 
 # ---------------------------------------------------------------------------
-# VibeVoice helpers
-# ---------------------------------------------------------------------------
-
-def test_discover_vibevoice_explicit_path(tmp_path: Path) -> None:
-    exe = tmp_path / "vibevoice.exe"
-    exe.write_text("binary", encoding="utf-8")
-    found = discover_vibevoice_executable(str(exe))
-    assert found == exe.resolve()
-
-
-def test_list_vibevoice_voices_fallback_when_no_exe() -> None:
-    voices = list_vibevoice_voices("/nonexistent/vibevoice.exe")
-    assert len(voices) == 1
-    assert voices[0].id == "default"
-
-
-def test_synthesize_with_vibevoice_calls_process(monkeypatch, tmp_path: Path) -> None:
-    exe = tmp_path / "vibevoice.exe"
-    exe.write_text("binary", encoding="utf-8")
-    output = tmp_path / "speech.wav"
-
-    class Completed:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    called: dict[str, object] = {}
-
-    def fake_run(command, **kwargs):
-        called["command"] = command
-        called["input"] = kwargs.get("input", "")
-        return Completed()
-
-    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
-    synthesize_with_vibevoice("Hello world", output, executable_path=exe, voice="alloy")
-    assert str(exe) in called["command"]
-    assert "--output" in called["command"]
-    assert "--speaker" in called["command"]
-    assert "alloy" in called["command"]
-
-
-def test_synthesize_with_vibevoice_raises_on_failure(monkeypatch, tmp_path: Path) -> None:
-    exe = tmp_path / "vibevoice.exe"
-    exe.write_text("binary", encoding="utf-8")
-    output = tmp_path / "speech.wav"
-
-    class Completed:
-        returncode = 1
-        stdout = ""
-        stderr = "failed"
-
-    monkeypatch.setattr(read_aloud_module.subprocess, "run", lambda *_a, **_kw: Completed())
-    try:
-        synthesize_with_vibevoice("Hi", output, executable_path=exe)
-    except ReadAloudUnavailableError as exc:
-        assert "VibeVoice" in str(exc)
-    else:
-        raise AssertionError("Expected ReadAloudUnavailableError")
-
-
-# ---------------------------------------------------------------------------
 # Pyttsx3 file synthesis helper
 # ---------------------------------------------------------------------------
 
@@ -441,7 +377,6 @@ def test_settings_round_trip_all_engine_fields() -> None:
         "read_aloud_espeak_rate": 160,
         "read_aloud_kokoro_voice": "am_adam",
         "read_aloud_kokoro_speed": 1.25,
-        "read_aloud_vibevoice_voice": "onyx",
         "read_aloud_piper_model_dir": "/models/piper",
     }
     s = Settings.from_dict(data)
@@ -450,7 +385,6 @@ def test_settings_round_trip_all_engine_fields() -> None:
     assert s.read_aloud_espeak_rate == 160
     assert s.read_aloud_kokoro_voice == "am_adam"
     assert abs(s.read_aloud_kokoro_speed - 1.25) < 0.001
-    assert s.read_aloud_vibevoice_voice == "onyx"
     assert s.read_aloud_piper_model_dir == "/models/piper"
 
 
@@ -491,20 +425,6 @@ def test_controller_espeak_raises_when_not_found() -> None:
         )
     except ReadAloudUnavailableError as exc:
         assert "eSpeak-NG" in str(exc)
-    else:
-        raise AssertionError("Expected ReadAloudUnavailableError")
-
-
-def test_controller_vibevoice_raises_when_not_found() -> None:
-    controller = ReadAloudController()
-    try:
-        controller.start(
-            "Hello", 0, "",
-            engine_name="vibevoice",
-            vibevoice_executable="/nonexistent/vibevoice.exe",
-        )
-    except ReadAloudUnavailableError as exc:
-        assert "VibeVoice" in str(exc)
     else:
         raise AssertionError("Expected ReadAloudUnavailableError")
 

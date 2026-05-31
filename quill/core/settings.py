@@ -118,8 +118,6 @@ class Settings:
     read_aloud_piper_model_dir: str = ""
     read_aloud_kokoro_voice: str = "af_heart"
     read_aloud_kokoro_speed: float = 1.0
-    read_aloud_vibevoice_executable: str = ""
-    read_aloud_vibevoice_voice: str = "default"
     read_aloud_espeak_executable: str = ""
     read_aloud_espeak_voice: str = "en"
     read_aloud_espeak_rate: int = 175
@@ -200,7 +198,6 @@ class Settings:
             "dectalk",
             "piper",
             "kokoro",
-            "vibevoice",
             "espeak",
             "rhvoice",
             "melotts",
@@ -248,12 +245,6 @@ class Settings:
         except (TypeError, ValueError):
             read_aloud_kokoro_speed = 1.0
         read_aloud_kokoro_speed = max(0.5, min(2.0, read_aloud_kokoro_speed))
-        read_aloud_vibevoice_executable = str(
-            data.get("read_aloud_vibevoice_executable", "")
-        ).strip()
-        read_aloud_vibevoice_voice = (
-            str(data.get("read_aloud_vibevoice_voice", "default")).strip() or "default"
-        )
         read_aloud_espeak_executable = str(data.get("read_aloud_espeak_executable", "")).strip()
         read_aloud_espeak_voice = str(data.get("read_aloud_espeak_voice", "en")).strip() or "en"
         read_aloud_espeak_rate = int(data.get("read_aloud_espeak_rate", 175))
@@ -404,8 +395,6 @@ class Settings:
             read_aloud_piper_model_dir=read_aloud_piper_model_dir,
             read_aloud_kokoro_voice=read_aloud_kokoro_voice,
             read_aloud_kokoro_speed=read_aloud_kokoro_speed,
-            read_aloud_vibevoice_executable=read_aloud_vibevoice_executable,
-            read_aloud_vibevoice_voice=read_aloud_vibevoice_voice,
             read_aloud_espeak_executable=read_aloud_espeak_executable,
             read_aloud_espeak_voice=read_aloud_espeak_voice,
             read_aloud_espeak_rate=read_aloud_espeak_rate,

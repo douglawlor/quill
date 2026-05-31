@@ -181,21 +181,6 @@ def synthesize_with_piper(
         )
 
 
-def discover_vibevoice_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
-    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
-    if app_root:
-        bundled = Path(app_root) / "tools" / "speech" / "vibevoice"
-        for relative in ("vibevoice.exe", "vibevoice/vibevoice.exe"):
-            probe = bundled / relative
-            if probe.exists():
-                return probe.resolve()
-    return None
-
-
 def discover_espeak_executable(configured_path: str = "") -> Path | None:
     if configured_path.strip():
         candidate = Path(configured_path).expanduser()
@@ -304,25 +289,6 @@ def list_piper_voices(model_search_path: str = "") -> list[VoiceOption]:
     return voices
 
 
-def list_vibevoice_voices(executable_path: str = "") -> list[VoiceOption]:
-    exe = discover_vibevoice_executable(executable_path)
-    if exe is None:
-        return [VoiceOption(id="default", name="Default")]
-    try:
-        completed = subprocess.run(
-            [str(exe), "--list-voices"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=10,
-        )
-        lines = (completed.stdout or "").strip().splitlines()
-        voices = [VoiceOption(id=ln.strip(), name=ln.strip()) for ln in lines if ln.strip()]
-        return voices if voices else [VoiceOption(id="default", name="Default")]
-    except Exception:  # noqa: BLE001
-        return [VoiceOption(id="default", name="Default")]
-
-
 def list_espeak_english_voices() -> list[VoiceOption]:
     return [VoiceOption(id=vid, name=name) for vid, name in ESPEAK_ENGLISH_VOICES]
 
@@ -378,36 +344,6 @@ def synthesize_with_kokoro(
     if not samples:
         raise ReadAloudUnavailableError("Kokoro produced no audio output")
     sf.write(str(output_path), np.concatenate(samples), 24000)
-
-
-def synthesize_with_vibevoice(
-    text: str,
-    output_path: Path,
-    *,
-    executable_path: Path,
-    voice: str = "default",
-) -> None:
-    if not text.strip():
-        raise ReadAloudUnavailableError("Cannot generate speech from empty text")
-    if not executable_path.exists():
-        raise ReadAloudUnavailableError("VibeVoice executable was not found")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    command = [str(executable_path), "--output", str(output_path)]
-    if voice and voice != "default":
-        command += ["--speaker", voice]
-    completed = subprocess.run(
-        command,
-        input=text,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip()
-        raise ReadAloudUnavailableError(
-            f"VibeVoice failed: {detail}" if detail
-            else f"VibeVoice exited with code {completed.returncode}."
-        )
 
 
 def synthesize_with_espeak(
@@ -712,8 +648,6 @@ class ReadAloudController:
         piper_model: str = "",
         kokoro_voice: str = "af_heart",
         kokoro_speed: float = 1.0,
-        vibevoice_executable: str = "",
-        vibevoice_voice: str = "default",
         espeak_executable: str = "",
         espeak_voice: str = "en",
         espeak_rate: int = 175,
@@ -741,7 +675,6 @@ class ReadAloudController:
             "dectalk",
             "piper",
             "kokoro",
-            "vibevoice",
             "espeak",
             "rhvoice",
             "melotts",
@@ -759,8 +692,6 @@ class ReadAloudController:
             _mdl = Path(piper_model).expanduser() if piper_model.strip() else None
             if _mdl is None or not _mdl.exists():
                 raise ReadAloudUnavailableError("Piper model (.onnx) file was not found")
-        if normalized_engine == "vibevoice" and discover_vibevoice_executable(vibevoice_executable) is None:
-            raise ReadAloudUnavailableError("VibeVoice executable was not found")
         if normalized_engine == "espeak" and discover_espeak_executable(espeak_executable) is None:
             raise ReadAloudUnavailableError(
                 "eSpeak-NG executable was not found. "
@@ -822,13 +753,6 @@ class ReadAloudController:
                     self._run_kokoro_live(
                         spans, text,
                         voice=kokoro_voice, speed=kokoro_speed,
-                        on_progress=on_progress,
-                    )
-                elif normalized_engine == "vibevoice":
-                    self._run_vibevoice_live(
-                        spans, text,
-                        executable=discover_vibevoice_executable(vibevoice_executable) or Path(vibevoice_executable).expanduser(),
-                        voice=vibevoice_voice,
                         on_progress=on_progress,
                     )
                 elif normalized_engine == "espeak":
@@ -1052,7 +976,7 @@ class ReadAloudController:
         on_progress: Callable[[int, int], None] | None,
         generate_sentence_wav: Callable[[str, Path], None],
     ) -> None:
-        """Generate per-sentence WAV then play via winsound. Works for Piper/Kokoro/VibeVoice."""
+        """Generate per-sentence WAV then play via winsound."""
         for span in spans:
             if self._stop_event.is_set() or self._pause_event.is_set():
                 break
@@ -1126,20 +1050,6 @@ class ReadAloudController:
     ) -> None:
         def gen(sentence: str, out: Path) -> None:
             synthesize_with_kokoro(sentence, out, voice=voice, speed=speed)
-
-        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
-
-    def _run_vibevoice_live(
-        self,
-        spans: list[SentenceSpan],
-        text: str,
-        *,
-        executable: Path,
-        voice: str,
-        on_progress: Callable[[int, int], None] | None,
-    ) -> None:
-        def gen(sentence: str, out: Path) -> None:
-            synthesize_with_vibevoice(sentence, out, executable_path=executable, voice=voice)
 
         self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
 

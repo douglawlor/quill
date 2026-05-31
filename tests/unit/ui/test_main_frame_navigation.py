@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -392,12 +394,53 @@ def test_prompt_to_save_active_document_cancels_when_requested() -> None:
     assert frame._prompt_to_save_active_document("closing") is False
 
 
+def test_prompt_to_save_active_document_discards_when_requested() -> None:
+    frame = _build_frame("one", insertion_point=0)
+    frame.document.modified = True
+    frame._wx = type("WX", (), {"ID_YES": 1, "ID_CANCEL": 0, "ID_NO": 2})()
+    frame._prompt_unsaved_changes_action = lambda *_args: 2  # type: ignore[method-assign]
+
+    assert frame._prompt_to_save_active_document("closing") is True
+
+
 def test_confirm_discard_changes_accepts_reload_only() -> None:
     frame = _build_frame("one", insertion_point=0)
     frame._wx = type("WX", (), {"ID_YES": 1, "ID_CANCEL": 0})()
     frame._prompt_unsaved_changes_action = lambda *_args: 1  # type: ignore[method-assign]
 
     assert frame._confirm_discard_changes() is True
+
+
+def test_show_startup_wizard_page_uses_rendered_html_preview(monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = MainFrame.__new__(MainFrame)
+    frame.frame = _Frame()
+    frame.settings = type("Settings", (), {"bw_provider_id": "", "bw_speech_model_id": ""})()
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    captured: dict[str, object] = {}
+
+    class _PreviewDialog:
+        def __init__(self, parent: object, title: str, body_html: str) -> None:
+            captured["parent"] = parent
+            captured["title"] = title
+            captured["body_html"] = body_html
+
+        def show(self) -> None:
+            captured["shown"] = True
+
+    preview_module = types.ModuleType("quill.ui.preview_dialog")
+    preview_module.MarkdownPreviewDialog = _PreviewDialog
+    monkeypatch.setitem(sys.modules, "quill.ui.preview_dialog", preview_module)
+
+    frame.show_startup_wizard_page()
+
+    assert captured["parent"] is frame.frame
+    assert captured["title"] == "Startup Wizard"
+    assert "<!doctype html>" not in str(captured["body_html"])
+    assert "<h1 id='startup-wizard'>Startup Wizard</h1>" in str(captured["body_html"])
+    assert captured["shown"] is True
+    assert statuses == ["Opened Startup Wizard overview"]
 
 
 def test_compare_group_builder_classifies_case_only_changes() -> None:

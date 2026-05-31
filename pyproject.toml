@@ -34,12 +34,6 @@ ui = [
     "prismatoid>=0.16.5; sys_platform == 'win32'",
 ]
 spellcheck = ["pyenchant>=3.3.0"]
-# Offline VibeVoice speech-FILE generator (AI > Speech > Download VibeVoice Model).
-# Heavy + optional, so it's its own extra; the GUI degrades gracefully without it.
-# Installed from a zip archive so no `git` is required on the target machine.
-vibevoice = [
-    "vibevoice-cpu[model] @ https://github.com/Community-Access/vibevoice-cpu/archive/refs/heads/main.zip",
-]
 # On-device AI for the Ask Quill chat. Windows/Linux use llama.cpp (CPU, GGUF);
 # a GGUF model (e.g. Phi-4-mini Q4) goes in <app data>/models or QUILL_LLAMA_MODEL.
 ai = ["llama-cpp-python>=0.3.23"]
@@ -67,8 +61,7 @@ dev = [
 quill = "quill.__main__:main"
 
 [tool.hatch.metadata]
-# Allow direct URL references in optional-dependencies (e.g. the `vibevoice`
-# extra installs vibevoice-cpu from a GitHub archive). Quill is an app, not a
+# Allow direct URL references in optional-dependencies. Quill is an app, not a
 # PyPI-published library, so direct references are fine — and hatchling refuses
 # to build metadata without this, which broke `pip install -e .` in CI.
 allow-direct-references = true

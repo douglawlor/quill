@@ -237,7 +237,6 @@ from quill.core.read_aloud import (
     discover_openvoice_executable,
     discover_piper_executable,
     discover_rhvoice_executable,
-    discover_vibevoice_executable,
     download_dectalk_runtime,
     list_chatterbox_english_voices,
     list_dectalk_voices,
@@ -247,7 +246,6 @@ from quill.core.read_aloud import (
     list_openvoice_english_voices,
     list_piper_voices,
     list_rhvoice_english_voices,
-    list_vibevoice_voices,
     list_voices,
     synthesize_to_file_with_dectalk,
     synthesize_to_file_with_pyttsx3,
@@ -258,7 +256,6 @@ from quill.core.read_aloud import (
     synthesize_with_openvoice,
     synthesize_with_piper,
     synthesize_with_rhvoice,
-    synthesize_with_vibevoice,
 )
 from quill.core.recent import add_recent_file, clear_recent_files, load_recent_files
 from quill.core.recovery import (
@@ -408,22 +405,10 @@ from quill.ui.palette import CommandPaletteDialog
 from quill.ui.sticky_notes import StickyNoteEditorDialog, StickyNotesVaultDialog
 from quill.ui.style_panel import TrainStyleDialog
 from quill.ui.word_view import WordDocumentSurface
-
-
-def _vibevoice_feature_enabled() -> bool:
-    """VibeVoice (offline speech-file generator) is NOT enabled on this branch.
-
-    It is experimental and not ready for users, so it is hard-disabled here — its
-    AI > Speech menu items and command-palette entries never appear, and there is
-    no env-var override. The working, enabled version is developed on the
-    feature/vibevoice branch."""
-    return False
-
-
 def _word_feature_enabled() -> bool:
     """Structured Word (.docx) view is NOT enabled on this branch.
 
-    Experimental and not ready for users (same policy as VibeVoice): hard-disabled,
+    Experimental and not ready for users: hard-disabled,
     so Word files always open in the normal text editor and there is no env-var
     override. Developed on the feature/structured-surfaces branch."""
     return False
@@ -432,7 +417,7 @@ def _word_feature_enabled() -> bool:
 def _csv_feature_enabled() -> bool:
     """CSV grid view is NOT enabled on this branch.
 
-    Experimental and not ready for users (same policy as VibeVoice): hard-disabled,
+    Experimental and not ready for users: hard-disabled,
     so CSV files always open in the normal text editor and there is no env-var
     override. Developed on the feature/structured-surfaces branch."""
     return False
@@ -1364,22 +1349,6 @@ class MainFrame:
             self.generate_speech_audio,
             None,
         )
-        # VibeVoice is experimental and hidden behind a feature gate (set the
-        # QUILL_VIBEVOICE env var to enable). Lives on the feature/vibevoice
-        # branch; off by default so it doesn't show up.
-        if _vibevoice_feature_enabled():
-            self.commands.register(
-                "tools.download_vibevoice",
-                "Download VibeVoice Speech Model...",
-                self.download_vibevoice_model,
-                None,
-            )
-            self.commands.register(
-                "tools.generate_vibevoice_audio",
-                "Generate Speech with VibeVoice...",
-                self.generate_speech_with_vibevoice,
-                None,
-            )
         self.commands.register(
             "tools.announcement_backend",
             "Announcement Backend...",
@@ -2993,8 +2962,6 @@ class MainFrame:
         self._id_ai_speech_voice = wx.NewIdRef()
         self._id_ai_speech_settings = wx.NewIdRef()
         self._id_ai_speech_generate_audio = wx.NewIdRef()
-        self._id_ai_speech_download_vibevoice = wx.NewIdRef()
-        self._id_ai_speech_vibevoice_generate = wx.NewIdRef()
         self._id_train_style = wx.NewIdRef()
         self._id_compare_with_file = wx.NewIdRef()
         self._id_compare_open_documents = wx.NewIdRef()
@@ -3288,15 +3255,6 @@ class MainFrame:
             self._id_ai_speech_generate_audio,
             self._menu_label("Generate &Audio...", "tools.read_aloud_generate_audio"),
         )
-        if _vibevoice_feature_enabled():
-            speech_menu.Append(
-                self._id_ai_speech_download_vibevoice,
-                self._menu_label("&Download VibeVoice Model...", "tools.download_vibevoice"),
-            )
-            speech_menu.Append(
-                self._id_ai_speech_vibevoice_generate,
-                self._menu_label("Generate with &VibeVoice...", "tools.generate_vibevoice_audio"),
-            )
         ai_menu.AppendSubMenu(speech_menu, "&Speech")
         menu_bar.Append(ai_menu, "A&I")
         whisperer_menu = wx.Menu()
@@ -4251,16 +4209,6 @@ class MainFrame:
         )
         self.frame.Bind(
             wx.EVT_MENU,
-            lambda _e: self.download_vibevoice_model(),
-            id=self._id_ai_speech_download_vibevoice,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.generate_speech_with_vibevoice(),
-            id=self._id_ai_speech_vibevoice_generate,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
             lambda _e: self.choose_announcement_backend(),
             id=self._id_announcement_backend,
         )
@@ -4675,8 +4623,6 @@ class MainFrame:
             "view.browser_preview": self._id_browser_preview,
             "tools.read_aloud_generate_audio": self._id_read_aloud_generate_audio,
             "tools.ai_hub": self._id_ai_hub,
-            "tools.download_vibevoice": self._id_ai_speech_download_vibevoice,
-            "tools.generate_vibevoice_audio": self._id_ai_speech_vibevoice_generate,
             "tools.ai_assistant": self._id_ai_assistant,
             "tools.ai_prompt_studio": self._id_ai_prompt_studio,
             "tools.ai_agent_center": self._id_ai_agent_center,
@@ -7254,6 +7200,8 @@ class MainFrame:
         if result == wx.ID_YES:
             self.save_file()
             return not self.document.modified
+        if result == wx.ID_NO:
+            return True
         return True
 
     def _can_close_all_documents(self) -> bool:
@@ -11561,8 +11509,6 @@ class MainFrame:
                 piper_model=self.settings.read_aloud_piper_model,
                 kokoro_voice=self.settings.read_aloud_kokoro_voice,
                 kokoro_speed=self.settings.read_aloud_kokoro_speed,
-                vibevoice_executable=self.settings.read_aloud_vibevoice_executable,
-                vibevoice_voice=self.settings.read_aloud_vibevoice_voice,
                 espeak_executable=self.settings.read_aloud_espeak_executable,
                 espeak_voice=self.settings.read_aloud_espeak_voice,
                 espeak_rate=self.settings.read_aloud_espeak_rate,
@@ -11631,18 +11577,13 @@ class MainFrame:
                 or "english" in voice_name
             )
 
-        if engine_name == "vibevoice":
-            if voice_id == "default":
-                return True
-            return "en" in voice_id or "english" in voice_name
-
         return True
 
     def _english_only_voices(self, engine: str, voices: list[VoiceOption]) -> list[VoiceOption]:
         return [voice for voice in voices if self._voice_is_english(engine, voice)]
 
     # ------------------------------------------------------------------
-    # Voice preview and settings – all 6 engines
+    # Voice preview and settings for the supported read-aloud engines
     # ------------------------------------------------------------------
 
     _PREVIEW_TEXT = "Hello, this is a voice preview. The quick brown fox jumps over the lazy dog."
@@ -11695,11 +11636,6 @@ class MainFrame:
                         voice=voice_id,
                         speed=s.read_aloud_kokoro_speed,
                     )
-                elif engine == "vibevoice":
-                    exe = discover_vibevoice_executable(s.read_aloud_vibevoice_executable)
-                    if exe is None:
-                        raise ReadAloudUnavailableError("VibeVoice executable not configured")
-                    synthesize_with_vibevoice(sample, wav, executable_path=exe, voice=voice_id)
                 elif engine == "espeak":
                     exe = discover_espeak_executable(s.read_aloud_espeak_executable)
                     if exe is None:
@@ -11783,10 +11719,6 @@ class MainFrame:
                     piper_model=voice_id if engine == "piper" else s.read_aloud_piper_model,
                     kokoro_voice=voice_id if engine == "kokoro" else s.read_aloud_kokoro_voice,
                     kokoro_speed=s.read_aloud_kokoro_speed,
-                    vibevoice_executable=s.read_aloud_vibevoice_executable,
-                    vibevoice_voice=voice_id
-                    if engine == "vibevoice"
-                    else s.read_aloud_vibevoice_voice,
                     espeak_executable=s.read_aloud_espeak_executable,
                     espeak_voice=voice_id if engine == "espeak" else s.read_aloud_espeak_voice,
                     espeak_rate=s.read_aloud_espeak_rate,
@@ -11836,9 +11768,6 @@ class MainFrame:
         elif engine == "kokoro":
             voices = list_kokoro_voices()
             current_voice_id = self.settings.read_aloud_kokoro_voice
-        elif engine == "vibevoice":
-            voices = list_vibevoice_voices(self.settings.read_aloud_vibevoice_executable)
-            current_voice_id = self.settings.read_aloud_vibevoice_voice
         elif engine == "espeak":
             voices = list_espeak_english_voices()
             current_voice_id = self.settings.read_aloud_espeak_voice
@@ -11924,8 +11853,6 @@ class MainFrame:
             self.settings.read_aloud_piper_model = voices[selected].id
         elif engine == "kokoro":
             self.settings.read_aloud_kokoro_voice = voices[selected].id
-        elif engine == "vibevoice":
-            self.settings.read_aloud_vibevoice_voice = voices[selected].id
         elif engine == "espeak":
             self.settings.read_aloud_espeak_voice = voices[selected].id
         elif engine == "rhvoice":
@@ -11955,9 +11882,6 @@ class MainFrame:
             "Chatterbox (high-fidelity read/export)",
             "OpenVoice (advanced style module)",
         ]
-        # NOTE: VibeVoice is intentionally NOT a read-aloud engine — it's an
-        # offline "generate a speech file" tool (see vibevoice-cpu), not a live
-        # voice. It's exposed as a file-export action, never in this picker.
         engine_values = [
             "pyttsx3",
             "dectalk",
@@ -12074,13 +11998,6 @@ class MainFrame:
                 return
             self.settings.read_aloud_kokoro_speed = v
 
-        elif selected_engine == "vibevoice":
-            exe = _ask_text("Path to vibevoice.exe:", self.settings.read_aloud_vibevoice_executable)
-            if exe is None:
-                self._set_status("Read aloud settings cancelled")
-                return
-            self.settings.read_aloud_vibevoice_executable = exe
-
         elif selected_engine == "espeak":
             exe = _ask_text(
                 "Path to espeak-ng.exe (leave blank to use PATH):",
@@ -12167,7 +12084,6 @@ class MainFrame:
             "dectalk": self.settings.read_aloud_dectalk_voice,
             "piper": self.settings.read_aloud_piper_model,
             "kokoro": self.settings.read_aloud_kokoro_voice,
-            "vibevoice": self.settings.read_aloud_vibevoice_voice,
             "espeak": self.settings.read_aloud_espeak_voice,
             "rhvoice": self.settings.read_aloud_rhvoice_voice,
             "melotts": self.settings.read_aloud_melotts_voice,
@@ -12186,130 +12102,6 @@ class MainFrame:
                 self._preview_voice(selected_engine, current_voice)
         engine_label = engine_choices[engine_values.index(selected_engine)]
         self._set_status(f"Read aloud engine set to {engine_label}")
-
-    def download_vibevoice_model(self) -> None:
-        """Download the VibeVoice speech model + reference voices from the GUI.
-
-        VibeVoice is an offline speech-FILE generator (not a live read-aloud
-        voice). This fetches the model and voices via the vibevoice-cpu library
-        in the background so the user never touches a terminal.
-        """
-        def work(progress: Callable[[str, int, int], None]) -> object:
-            try:
-                from vibevoice_cpu.download import DEFAULT_MODEL, ensure_model
-                from vibevoice_cpu.system import ram_warning
-                from vibevoice_cpu.voices import ensure_voices
-            except ImportError as exc:  # noqa: BLE001
-                raise RuntimeError(
-                    "VibeVoice support isn't installed in this build "
-                    "(the 'vibevoice-cpu' package)."
-                ) from exc
-            warning = ram_warning(DEFAULT_MODEL)
-            progress("Downloading VibeVoice model (several GB, one time)", 0, 2)
-            ensure_model(DEFAULT_MODEL)
-            progress("Downloading VibeVoice reference voices", 1, 2)
-            ensure_voices()
-            progress("VibeVoice ready", 2, 2)
-            return warning
-
-        def on_success(result: object) -> None:
-            message = "VibeVoice model and voices downloaded."
-            if result:
-                message += f" {result}"
-            self._set_status(message)
-            self._announce(message)
-
-        self._run_background_task(
-            "Downloading VibeVoice speech model and voices",
-            work,
-            on_success,
-            notify_on_success=True,
-            notify_on_error=True,
-            notification_category="speech",
-        )
-
-    def generate_speech_with_vibevoice(self) -> None:
-        """Generate a speech-audio FILE from the document using VibeVoice.
-
-        VibeVoice is an offline file generator (CPU-native, GPU if available) via
-        the vibevoice-cpu library — not a live read-aloud voice. The selection
-        (or whole document) is synthesized to a WAV in the background.
-        """
-        wx = self._wx
-        _TITLE = "Generate Speech with VibeVoice"
-        if not self._document_tabs:
-            self._set_status("No document open")
-            return
-        text = self.editor.GetStringSelection().strip() or self.editor.GetValue().strip()
-        if not text:
-            self._set_status("Nothing to synthesize")
-            return
-
-        try:
-            from vibevoice_cpu.voices import list_voices
-        except ImportError:
-            self._show_message_box(
-                "VibeVoice isn't installed. Install the model stack "
-                "(vibevoice-cpu[model]) and try again, or use AI > Speech > "
-                "Download VibeVoice Model first.",
-                _TITLE,
-                wx.ICON_ERROR | wx.OK,
-            )
-            return
-
-        # Use already-downloaded voices if present; otherwise the worker resolves
-        # and downloads one. Don't hit the network on the UI thread.
-        voices = list_voices(download=False) or ["Alice"]
-        voice = voices[0]
-        if len(voices) > 1:
-            with wx.SingleChoiceDialog(
-                self.frame, "Choose a VibeVoice voice:", _TITLE, choices=voices
-            ) as voice_dialog:
-                if self._show_modal_dialog(voice_dialog, _TITLE) == wx.ID_OK:
-                    voice = voices[voice_dialog.GetSelection()]
-
-        with wx.FileDialog(
-            self.frame,
-            _TITLE,
-            wildcard="Wave file (*.wav)|*.wav|All files (*.*)|*.*",
-            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
-        ) as dlg:
-            if self._show_modal_dialog(dlg, _TITLE) != wx.ID_OK:
-                self._set_status("Speech generation cancelled")
-                return
-            output_path = Path(dlg.GetPath())
-        if output_path.suffix.lower() != ".wav":
-            output_path = output_path.with_suffix(".wav")
-
-        text_snap = text
-        voice_snap = voice
-
-        def work(progress: Callable[[str, int, int], None]) -> object:
-            from vibevoice_cpu import synthesize
-            from vibevoice_cpu.download import DEFAULT_MODEL
-            from vibevoice_cpu.system import ram_warning
-
-            warning = ram_warning(DEFAULT_MODEL)
-            progress("Generating speech with VibeVoice (slow on CPU)", 0, 1)
-            synthesize(text_snap, output_path, voice=voice_snap)
-            progress("Speech file ready", 1, 1)
-            return warning
-
-        def on_success(result: object) -> None:
-            message = f"Saved speech audio to {output_path.name}"
-            if result:
-                message += f" ({result})"
-            self._set_status(message)
-            self._announce(message)
-
-        self._run_background_task(
-            "Generating speech with VibeVoice",
-            work,
-            on_success,
-            notify_on_success=True,
-            notify_on_error=True,
-            notification_category="speech",
-        )
 
     def generate_speech_audio(self) -> None:  # noqa: PLR0912,PLR0915
         wx = self._wx
@@ -12383,18 +12175,6 @@ class MainFrame:
                 self._set_status("Speech generation cancelled")
                 return
             dectalk_exe_snap = exe
-
-        elif engine == "vibevoice":
-            exe = discover_vibevoice_executable(s.read_aloud_vibevoice_executable)
-            if exe is None:
-                self._show_message_box(
-                    "VibeVoice executable not found. Configure it in Read Aloud Settings.",
-                    _TITLE,
-                    wx.ICON_ERROR | wx.OK,
-                )
-                self._set_status("Speech generation cancelled")
-                return
-            vibevoice_exe_snap = exe
 
         elif engine == "espeak":
             exe = discover_espeak_executable(s.read_aloud_espeak_executable)
@@ -12476,7 +12256,6 @@ class MainFrame:
         _dectalk_rate = s.read_aloud_dectalk_rate
         _kokoro_voice = s.read_aloud_kokoro_voice
         _kokoro_speed = s.read_aloud_kokoro_speed
-        _vibevoice_voice = s.read_aloud_vibevoice_voice
         _espeak_voice = s.read_aloud_espeak_voice
         _espeak_rate = s.read_aloud_espeak_rate
         _rhvoice_voice = s.read_aloud_rhvoice_voice
@@ -12512,13 +12291,6 @@ class MainFrame:
                 )
             elif _engine == "kokoro":
                 synthesize_with_kokoro(_out_text, _out, voice=_kokoro_voice, speed=_kokoro_speed)
-            elif _engine == "vibevoice":
-                synthesize_with_vibevoice(
-                    _out_text,
-                    _out,
-                    executable_path=vibevoice_exe_snap,
-                    voice=_vibevoice_voice,
-                )
             elif _engine == "espeak":
                 synthesize_with_espeak(
                     _out_text,
@@ -13874,8 +13646,6 @@ class MainFrame:
             ("Piper executable", settings.read_aloud_piper_executable or "Not configured"),
             ("Piper model", settings.read_aloud_piper_model or "Not configured"),
             ("Kokoro voice", settings.read_aloud_kokoro_voice),
-            ("VibeVoice executable", settings.read_aloud_vibevoice_executable or "Not configured"),
-            ("VibeVoice voice", settings.read_aloud_vibevoice_voice),
             ("eSpeak executable", settings.read_aloud_espeak_executable or "PATH lookup"),
             ("eSpeak English voice", settings.read_aloud_espeak_voice),
             ("RHVoice executable", settings.read_aloud_rhvoice_executable or "Not configured"),
@@ -18341,13 +18111,13 @@ class MainFrame:
             self._first_run_watch_folder_prompt = False
 
     def show_startup_wizard_page(self) -> None:
-        index = self._open_generated_tab(
+        from quill.ui.preview_dialog import MarkdownPreviewDialog
+
+        MarkdownPreviewDialog(
+            self.frame,
             "Startup Wizard",
             self._build_startup_wizard_html(),
-        )
-        self._select_tab(index)
-        if 0 <= index < len(self._document_tabs):
-            self._show_side_preview_for(self._document_tabs[index])
+        ).show()
         self._set_status("Opened Startup Wizard overview")
 
     def _show_trust_consent_onboarding(self, force: bool) -> bool:
@@ -18621,7 +18391,7 @@ class MainFrame:
         wx = self._wx
         start_setup = self._show_message_box(
             "Set up speech engines now?\n\n"
-            "You can download/configure DECtalk, eSpeak-NG, Piper, Kokoro, VibeVoice, RHVoice, MeloTTS, Chatterbox, and OpenVoice.\n"
+            "You can download/configure DECtalk, eSpeak-NG, Piper, Kokoro, RHVoice, MeloTTS, Chatterbox, and OpenVoice.\n"
             "You can always change these later in AI > Speech > Settings.",
             "Speech Setup",
             wx.ICON_QUESTION | wx.YES_NO,
@@ -18637,7 +18407,6 @@ class MainFrame:
             "Configure eSpeak-NG path and English variant",
             "Configure Piper executable and English model folder",
             "Configure Kokoro English voice defaults",
-            "Download VibeVoice model and voices (speech-file generator)",
             "Configure RHVoice executable and English voice",
             "Configure MeloTTS executable and English voice",
             "Configure Chatterbox executable and English voice",
@@ -18733,12 +18502,6 @@ class MainFrame:
                             self.settings.read_aloud_kokoro_voice = voices[idx].id
 
         if 4 in selected:
-            # VibeVoice is an offline speech-FILE generator (not a live read-aloud
-            # voice). Download its model + voices via the GUI (no terminal); the
-            # same action is available any time at AI > Speech > Download VibeVoice.
-            self.download_vibevoice_model()
-
-        if 5 in selected:
             exe = _ask_text(
                 "Path to RHVoice executable:", self.settings.read_aloud_rhvoice_executable
             )
@@ -18757,7 +18520,7 @@ class MainFrame:
                         if 0 <= idx < len(voices):
                             self.settings.read_aloud_rhvoice_voice = voices[idx].id
 
-        if 6 in selected:
+        if 5 in selected:
             exe = _ask_text(
                 "Path to MeloTTS executable:", self.settings.read_aloud_melotts_executable
             )
@@ -18776,7 +18539,7 @@ class MainFrame:
                         if 0 <= idx < len(voices):
                             self.settings.read_aloud_melotts_voice = voices[idx].id
 
-        if 7 in selected:
+        if 6 in selected:
             exe = _ask_text(
                 "Path to Chatterbox executable:", self.settings.read_aloud_chatterbox_executable
             )
@@ -18795,7 +18558,7 @@ class MainFrame:
                         if 0 <= idx < len(voices):
                             self.settings.read_aloud_chatterbox_voice = voices[idx].id
 
-        if 8 in selected:
+        if 7 in selected:
             exe = _ask_text(
                 "Path to OpenVoice executable:", self.settings.read_aloud_openvoice_executable
             )
