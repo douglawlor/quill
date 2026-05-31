@@ -6,7 +6,10 @@ name: Docs artifacts
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+    paths:
+      - "docs/**.md"
+  pull_request:
     paths:
       - "docs/**.md"
   workflow_dispatch:
@@ -14,9 +17,9 @@ on:
 permissions:
   contents: write
 
-# Only one regeneration per branch at a time; cancel stale runs.
+# Only one regeneration per ref at a time; cancel stale runs.
 concurrency:
-  group: docs-artifacts-${{ github.ref }}
+  group: docs-artifacts-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -25,7 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref_name }}
+          # On a PR, check out (and later push to) the PR's source branch;
+          # on a main push, the branch itself.
+          ref: ${{ github.head_ref || github.ref_name }}
           # default GITHUB_TOKEN is persisted so we can push the regen commit back
           persist-credentials: true
 
@@ -49,10 +54,18 @@ jobs:
             echo "Docs artifacts already up to date — nothing to commit."
             exit 0
           fi
+          # Fork PRs can't be pushed to with the read-only GITHUB_TOKEN; the docs
+          # parity guard will flag those so the contributor regenerates locally.
+          head_repo="${{ github.event.pull_request.head.repo.full_name }}"
+          if [ -n "$head_repo" ] && [ "$head_repo" != "${{ github.repository }}" ]; then
+            echo "Fork PR ($head_repo): cannot push artifacts back. Diff of what's missing:"
+            git --no-pager diff --stat -- docs
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/*.html docs/*.epub
           # [skip ci] avoids re-triggering; the commit only touches .html/.epub
           # (not .md) so the docs/**.md path filter wouldn't re-fire anyway.
           git commit -m "docs: regenerate HTML/EPUB artifacts [skip ci]"
-          git push origin "HEAD:${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.head_ref || github.ref_name }}"
