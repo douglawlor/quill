@@ -2089,6 +2089,34 @@ Quill provides two complementary comparison workflows: an accessible interactive
 - **Extracted document compare**: PDF, DOCX, EPUB, OCR, and repaired text compare against Quill’s extracted text representation, with a warning that extraction quality may affect results.
 - **Feature profiles**: interactive compare is on in Writer, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, and Full Quill; it is quiet in Essential.
 
+### 5.58 Ask Quill — on-device AI chat (WebView)
+
+Ask Quill is a conversational assistant that runs entirely on the user's machine — no cloud, no API keys. It can answer questions, write or rewrite text for the document, and run Quill commands, but it is screen-reader-first and approval-gated: nothing touches the document until the user approves it. This is the crawl-before-run 1.0 surface; a deeper native integration is future work.
+
+**On-device backends (platform-selected).** `make_default_backend()` picks the backend by platform — Apple Foundation Models on macOS, and **llama.cpp (`llama-cpp-python`, CPU, GGUF)** on Windows and Linux. There is no server and no GPU requirement. On Windows the model runs in-process on the CPU.
+
+- **Model manager (RAM-tiered, auto-download).** On first use the backend resolves a model: `QUILL_LLAMA_MODEL` (explicit `.gguf` path) → an existing `*.gguf` in `<app data>/models` → otherwise it downloads the RAM-appropriate model with progress announced. Machines under ~8 GB RAM get **Llama 3.2 1B**; otherwise **Phi-4-mini (Q4)**.
+- **Model is a setting, not a chore.** The model choice is exposed in the AI Model settings dialog (dropdown + Download Now) and during onboarding — users are never asked to "drop a GGUF." Onboarding first asks **"Do you want to use AI?"**; the model controls only appear if they say yes. Model descriptions avoid em-dashes.
+- **Graceful CPU fallback.** If the prebuilt llama.cpp hits an unsupported CPU instruction (`STATUS_ILLEGAL_INSTRUCTION 0xC000001D` — e.g. AVX2 missing under x64-on-ARM emulation such as Parallels on Apple Silicon), the backend converts the `OSError` into a plain-language message explaining that the CPU lacks AVX2 and suggesting a no-AVX / native build, instead of crashing.
+
+**The whole chat lives in a WebView (Edge WebView2 on Windows).** Transcript, suggestions, *and the message edit field* are all rendered as HTML in `wx.html2.WebView` — which is **Edge WebView2** on Windows (WKWebView on macOS, WebKitGTK on Linux). We deliberately render in the WebView rather than a plain list box + separate text field because it gives us formatted Markdown (the assistant's headings, lists, and code render properly) together with the browser engine's native, mature accessibility, and keeps the user in one place. `wx.html2.WebView` is a factory-created native control and cannot be meaningfully subclassed, so accessibility is driven by the **HTML we render**, via a thin wrapper (`AccessibleWebView`):
+
+- An **ARIA live region** (`<main role="log" aria-live="polite">`) so each new message is announced automatically by NVDA / JAWS / Narrator without the user moving focus.
+- An assertive `role="status"` region for transient state ("Quill is responding", "Quill responded").
+- Each message is an `<article>` with a heading (the speaker), so users can navigate the transcript by heading.
+- **The edit field is in the page** — a labelled `<textarea>` with a Send button. Enter sends, Shift+Enter inserts a newline. Submissions post back to Python over a **script-message bridge** (`window.quill.postMessage` ↔ `EVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED`) which drives the on-device assistant directly. The wx text field only appears in the list-box fallback when no WebView backend exists.
+- **Suggested prompts disappear after the first message** (like Apple Intelligence): they show on open so the user has a starting point, then hide themselves once the conversation begins so they never sit in the way of the chat.
+- `lang`, viewport, readable type, and high-contrast / `forced-colors` CSS.
+- The greeting is **baked into the initial page** so there is no "empty then rendered" flash on open. Messages and state changes that arrive before the page finishes loading are queued and replayed on the `LOADED` event.
+
+**Focus lands in the web view's edit field on open (screen-reader behavior).** When the chat opens, focus is moved directly into the in-page message field (`AccessibleWebView.focus()` → focuses the `<textarea>`, via `wx.CallAfter`) rather than onto surrounding chrome — so the user "jumps into the web view" ready to type, and the screen reader starts inside the live conversation. After a reply we do **not** steal focus back (the live region already announced it); after an approval we return focus to the edit field. (Implemented in `AskQuillChatDialog.show()` / `_focus_composer()`.)
+
+**Prism announcements (screen-reader-first).** In addition to the WebView's ARIA live region, Quill uses the **Prism (`prismatoid`) bridge on Windows** to send response text straight to the active screen reader, so the user hears new replies even without alt-tabbing to the chat. Prism never speaks over a running screen reader — its SAPI / pyttsx3 fallback is suppressed whenever a screen reader is detected.
+
+**Approval before anything is applied.** Each turn the assistant *decides* (`answer` / `insert` / `replace` / `run`) but never edits the document automatically. Insert/replace text and command runs are shown as a proposal with an Approve / Discard bar; focus moves to **Approve** and the screen reader is told a change is proposed. Only on Approve does Quill insert, replace the selection, or run the command. There is also Copy Last Response and labeled suggestion prompts.
+
+**Discoverability and reliability.** Ask Quill lives under a top-level **AI** menu (Alt+I) alongside the "Use Artificial Intelligence" toggle and AI Model settings. Generation runs off the UI thread. The single-instance lock self-heals (PID + creation-time identity) so a stale lock from a crash never blocks launch.
+
 ---
 
 ## 6. Spell checking deep dive

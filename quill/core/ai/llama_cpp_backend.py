@@ -20,11 +20,32 @@ from quill.core.ai.model_manager import choose_model_spec, ensure_model, existin
 _N_CTX = 4096
 _MAX_TOKENS = 1024
 
+# STATUS_ILLEGAL_INSTRUCTION — the prebuilt llama.cpp used a CPU instruction
+# (e.g. AVX2) the CPU/emulator doesn't support.
+_ILLEGAL_INSTRUCTION = -1073741795
+
+
+def _cpu_error_message(exc: OSError) -> str:
+    if getattr(exc, "winerror", None) == _ILLEGAL_INSTRUCTION:
+        return (
+            "The local AI model couldn't run on this CPU. The prebuilt llama.cpp "
+            "needs AVX2, which isn't available here (for example, x64 emulation on "
+            "Windows-on-ARM / Parallels on Apple Silicon). Run on a machine with AVX2 "
+            "support, or install a no-AVX / native build of llama-cpp-python."
+        )
+    return f"Failed to run the local AI model: {exc}"
+
 
 def _format_native_load_error(exc: OSError) -> str:
     error_code = getattr(exc, "winerror", None)
     if not isinstance(error_code, int):
         error_code = getattr(exc, "errno", None)
+    if isinstance(error_code, int) and error_code == _ILLEGAL_INSTRUCTION:
+        return (
+            "The local AI model could not run on this CPU. The llama.cpp build uses "
+            "an unsupported instruction set (for example AVX2). Use a CPU-compatible "
+            "build or disable AI on this machine."
+        )
     if isinstance(error_code, int):
         code = error_code & 0xFFFFFFFF
         return (
@@ -91,6 +112,8 @@ class LlamaCppBackend(AIBackend):
             if "context" in str(exc).lower() or "token" in str(exc).lower():
                 raise ContextWindowExceeded(str(exc)) from exc
             raise
+        except OSError as exc:
+            raise RuntimeError(_cpu_error_message(exc)) from exc
         return out["choices"][0]["message"]["content"].strip()
 
     def respond(self, prompt: str) -> str:

@@ -36,6 +36,7 @@ from quill.core.browser_preview import (
     normalize_browser_choice,
     open_preview_url,
     preview_anchor_for_text,
+    render_preview_body,
     render_preview_html,
 )
 from quill.core.bookmarks import bookmark_names, bookmark_position, set_bookmark
@@ -317,6 +318,8 @@ class _DocumentTab:
     panel: object
     editor: object
     document: Document
+    splitter: object = None
+    preview: object = None
 
 
 @dataclass(slots=True)
@@ -903,6 +906,24 @@ class MainFrame:
             "Toggle Word Prediction As You Type",
             self.toggle_intellisense_as_you_type,
             None,
+        )
+        self.commands.register(
+            "view.preview",
+            "Preview",
+            self.preview_in_app,
+            self._binding_for("view.preview"),
+        )
+        self.commands.register(
+            "view.split_preview",
+            "Preview Side by Side",
+            self.toggle_side_preview,
+            self._binding_for("view.split_preview"),
+        )
+        self.commands.register(
+            "view.focus_preview",
+            "Focus Preview",
+            self.focus_preview,
+            self._binding_for("view.focus_preview"),
         )
         self.commands.register(
             "view.browser_preview",
@@ -2176,6 +2197,10 @@ class MainFrame:
         self._id_toggle_spellcheck_as_you_type = wx.NewIdRef()
         self._id_toggle_intellisense_as_you_type = wx.NewIdRef()
         self._id_browser_preview = wx.NewIdRef()
+        self._id_preview = wx.NewIdRef()
+        self._id_split_preview = wx.NewIdRef()
+        self._id_focus_preview = wx.NewIdRef()
+        self._id_toggle_auto_side_preview = wx.NewIdRef()
         self._id_start_with_no_document_open = wx.NewIdRef()
         self._id_dirty_title_text = wx.NewIdRef()
         self._id_dirty_title_asterisk = wx.NewIdRef()
@@ -2189,6 +2214,10 @@ class MainFrame:
             self._menu_label("Toggle Soft &Wrap", "view.toggle_soft_wrap"),
         )
         view_menu.Check(self._id_toggle_soft_wrap, self.settings.soft_wrap)
+        view_menu.AppendCheckItem(
+            self._id_toggle_auto_side_preview, "&Auto Side-by-Side Preview"
+        )
+        view_menu.Check(self._id_toggle_auto_side_preview, self.settings.auto_side_preview)
         view_menu.AppendCheckItem(self._id_toggle_tab_control, "Show &Tab Control")
         view_menu.Check(self._id_toggle_tab_control, self.settings.show_tab_control)
         view_menu.AppendCheckItem(self._id_toggle_find_wrap, "Wrap &Find Searches")
@@ -2243,6 +2272,18 @@ class MainFrame:
         view_menu.Check(
             self._id_start_with_no_document_open,
             self.settings.start_with_no_document_open,
+        )
+        view_menu.Append(
+            self._id_preview,
+            self._menu_label("&Preview...", "view.preview"),
+        )
+        view_menu.Append(
+            self._id_split_preview,
+            self._menu_label("Preview &Side by Side", "view.split_preview"),
+        )
+        view_menu.Append(
+            self._id_focus_preview,
+            self._menu_label("&Focus Preview", "view.focus_preview"),
         )
         view_menu.Append(
             self._id_browser_preview,
@@ -3180,6 +3221,11 @@ class MainFrame:
         )
         self.frame.Bind(
             wx.EVT_MENU,
+            self._on_toggle_auto_side_preview,
+            id=self._id_toggle_auto_side_preview,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
             self._on_toggle_tab_control,
             id=self._id_toggle_tab_control,
         )
@@ -3232,6 +3278,21 @@ class MainFrame:
             wx.EVT_MENU,
             self._on_toggle_intellisense_as_you_type,
             id=self._id_toggle_intellisense_as_you_type,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.preview_in_app(),
+            id=self._id_preview,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.toggle_side_preview(),
+            id=self._id_split_preview,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.focus_preview(),
+            id=self._id_focus_preview,
         )
         self.frame.Bind(
             wx.EVT_MENU,
@@ -3923,6 +3984,9 @@ class MainFrame:
             "view.send_to_tray": self._id_send_to_tray,
             "view.toggle_soft_wrap": self._id_toggle_soft_wrap,
             "view.toggle_find_wrap": self._id_toggle_find_wrap,
+            "view.preview": self._id_preview,
+            "view.split_preview": self._id_split_preview,
+            "view.focus_preview": self._id_focus_preview,
             "view.browser_preview": self._id_browser_preview,
             "tools.ai_assistant": self._id_ai_assistant,
             "tools.ask_quill_chat": self._id_ask_quill_chat,
@@ -4130,17 +4194,22 @@ class MainFrame:
     def _create_document_tab(self, document: Document, select: bool = True) -> int:
         wx = self._wx
         panel = wx.Panel(self.notebook)
+        # The editor lives in a splitter so a live preview can be shown to its
+        # right (View → Preview Side by Side). It starts unsplit (editor only).
+        splitter = wx.SplitterWindow(panel, style=wx.SP_LIVE_UPDATE | wx.SP_3DSASH)
+        splitter.SetMinimumPaneSize(160)
         editor = wx.TextCtrl(
-            panel,
+            splitter,
             style=wx.TE_MULTILINE | wx.TE_RICH2 | wx.TE_NOHIDESEL,
         )
+        splitter.Initialize(editor)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(editor, 1, wx.EXPAND)
+        sizer.Add(splitter, 1, wx.EXPAND)
         panel.SetSizer(sizer)
         if document.text:
             editor.ChangeValue(document.text)
         self._bind_editor_events(editor)
-        tab = _DocumentTab(panel=panel, editor=editor, document=document)
+        tab = _DocumentTab(panel=panel, editor=editor, document=document, splitter=splitter)
         self._document_tabs.append(tab)
         index = self.notebook.GetPageCount()
         self.notebook.AddPage(panel, document.name, select=select)
@@ -4150,6 +4219,7 @@ class MainFrame:
             self.document = document
             self._apply_statusbar_layout()
             self._refresh_title()
+            self._maybe_auto_side_preview(tab)
         self._refresh_sessions_menu()
         return index
 
@@ -4242,6 +4312,34 @@ class MainFrame:
         self._refresh_title()
         self._refresh_contextual_menu_items()
         self._refresh_sessions_menu()
+        self._maybe_auto_side_preview(tab)
+
+    def _maybe_auto_side_preview(self, tab) -> None:
+        """Auto-show the side-by-side preview for previewable (Markdown/HTML)
+        documents when the setting is on, so the user doesn't have to ask each
+        time. Plain text is left alone, and an explicit toggle still wins."""
+        if not getattr(self.settings, "auto_side_preview", True):
+            return
+        splitter = getattr(tab, "splitter", None)
+        if splitter is None or splitter.IsSplit():
+            return
+        text = tab.editor.GetValue()
+        if guess_preview_kind(tab.document.path, text) == "plain":
+            return
+        # Defer so the splitter has its real size before we set the sash.
+        self._wx.CallAfter(self._show_side_preview_for, tab)
+
+    def _show_side_preview_for(self, tab) -> None:
+        splitter = getattr(tab, "splitter", None)
+        if splitter is None or splitter.IsSplit():
+            return
+        if tab.preview is None:
+            from quill.ui.preview_dialog import SidePreview
+
+            tab.preview = SidePreview(splitter, on_return=self._focus_editor_from_preview)
+        sash = max(splitter.GetClientSize().x // 2, 200)
+        splitter.SplitVertically(tab.editor, tab.preview.control, sash)
+        self._update_side_preview(tab)
 
     def _start_ipc_poll(self) -> None:
         wx = self._wx
@@ -4283,11 +4381,14 @@ class MainFrame:
         if self._dictation.state == "listening" and self.settings.voice_commands_enabled:
             self._schedule_voice_command_scan()
         self._refresh_intellisense_popup()
+        self._refresh_side_preview()
         self._refresh_browser_preview()
         self._maybe_autosave()
         self._refresh_title()
         self._refresh_contextual_menu_items()
-        self._set_status(status)
+        # Quiet: this fires on every keystroke; speaking "Modified" each time is
+        # noise for a screen reader (it already echoes the typed character).
+        self._set_status_quiet(status)
 
     def _on_csv_surface_changed(self) -> None:
         self._sync_editor_change("Modified")
@@ -5081,6 +5182,18 @@ class MainFrame:
         enabled = bool(event.IsChecked())
         self.toggle_soft_wrap(enabled)
 
+    def _on_toggle_auto_side_preview(self, event: object) -> None:
+        enabled = bool(event.IsChecked())
+        self.settings.auto_side_preview = enabled
+        save_settings(self.settings)
+        if enabled:
+            tab = self._active_tab()
+            if tab is not None:
+                self._maybe_auto_side_preview(tab)
+            self._set_status("Auto side-by-side preview on")
+        else:
+            self._set_status("Auto side-by-side preview off")
+
     def _on_toggle_tab_control(self, event: object) -> None:
         enabled = bool(event.IsChecked())
         self.toggle_tab_control(enabled)
@@ -5609,6 +5722,13 @@ class MainFrame:
         self._status_message = message
         self._refresh_statusbar()
         announce(message)
+
+    def _set_status_quiet(self, message: str) -> None:
+        """Update the status bar text WITHOUT speaking it. Used for per-keystroke
+        states like "Modified" so the screen reader doesn't repeat it on every
+        character (it already echoes what you type)."""
+        self._status_message = message
+        self._refresh_statusbar()
 
     def _feature_enabled(self, feature_id: str) -> bool:
         feature_manager = getattr(self, "features", None)
@@ -11805,6 +11925,92 @@ class MainFrame:
             )
             return
         self._set_status("Refreshed browser preview")
+
+    def preview_in_app(self) -> None:
+        if not self._document_tabs:
+            self._set_status("No document open")
+            return
+        tab_index = (
+            self._active_tab_index if self._active_tab_index >= 0 else self._current_tab_index()
+        )
+        if tab_index < 0 or tab_index >= len(self._document_tabs):
+            self._set_status("No document open")
+            return
+        tab = self._document_tabs[tab_index]
+        text = tab.editor.GetValue()
+        kind = guess_preview_kind(tab.document.path, text)
+        anchor = preview_anchor_for_text(text, tab.editor.GetInsertionPoint(), kind)
+        title = f"{tab.document.name or 'Preview'} - Preview"
+        body = render_preview_body(text, kind)
+        from quill.ui.preview_dialog import MarkdownPreviewDialog
+
+        MarkdownPreviewDialog(self.frame, title, body, anchor).show()
+        self._set_status("Opened preview")
+
+    def _active_tab(self):
+        index = self._active_tab_index if self._active_tab_index >= 0 else self._current_tab_index()
+        if 0 <= index < len(self._document_tabs):
+            return self._document_tabs[index]
+        return None
+
+    def toggle_side_preview(self) -> None:
+        """Show / hide a live preview to the right of the editor (split view)."""
+        tab = self._active_tab()
+        if tab is None or getattr(tab, "splitter", None) is None:
+            self._set_status("No document open")
+            return
+        splitter = tab.splitter
+        if tab.preview is not None and splitter.IsSplit():
+            splitter.Unsplit(tab.preview.control)
+            self._set_status("Preview hidden")
+            self.editor.SetFocus()
+            return
+        self._show_side_preview_for(tab)
+        self._set_status("Preview shown on the right")
+
+    def focus_preview(self) -> None:
+        """Move focus into the preview pane (showing it first if needed).
+
+        The editor is an edit field, so NVDA can't use browse-mode single-letter
+        navigation there. The preview is a real web document, so once focus lands
+        in it NVDA switches to browse mode and H / heading nav work natively.
+        Press Escape or F6 in the preview to come back to the editor.
+        """
+        tab = self._active_tab()
+        if tab is None or getattr(tab, "splitter", None) is None:
+            self._set_status("No document open")
+            return
+        if tab.preview is None or not tab.splitter.IsSplit():
+            self.toggle_side_preview()
+        if tab.preview is not None and tab.splitter.IsSplit():
+            tab.preview.control.SetFocus()
+            self._set_status("Moved to preview. Press Escape or F6 to return to the editor.")
+
+    def _focus_editor_from_preview(self) -> None:
+        if self.editor is not None:
+            self.editor.SetFocus()
+            self._set_status("Back in the editor")
+
+    def _refresh_side_preview(self) -> None:
+        tab = self._active_tab()
+        if tab is None or tab.preview is None:
+            return
+        splitter = getattr(tab, "splitter", None)
+        if splitter is None or not splitter.IsSplit():
+            return
+        # Debounce: refresh shortly after typing pauses so each keystroke stays
+        # snappy (re-rendering on every character can stutter the editor).
+        timer = getattr(self, "_side_preview_timer", None)
+        if timer is not None and timer.IsRunning():
+            timer.Stop()
+        self._side_preview_timer = self._wx.CallLater(
+            250, self._update_side_preview, tab
+        )
+
+    def _update_side_preview(self, tab) -> None:
+        text = tab.editor.GetValue()
+        kind = guess_preview_kind(tab.document.path, text)
+        tab.preview.update(render_preview_body(text, kind))
 
     def _refresh_browser_preview(self) -> None:
         session = self._browser_preview_session
