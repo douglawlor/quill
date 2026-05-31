@@ -43,7 +43,8 @@ def _format_native_load_error(exc: OSError) -> str:
     if isinstance(error_code, int) and error_code == _ILLEGAL_INSTRUCTION:
         return (
             "The local AI model could not run on this CPU. The llama.cpp build uses "
-            "an unsupported instruction set (for example AVX2). Use a CPU-compatible "
+            "an unsupported instruction set (for example AVX2, Windows error 0xc000001d). "
+            "Use a CPU-compatible "
             "build or disable AI on this machine."
         )
     if isinstance(error_code, int):
