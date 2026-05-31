@@ -41,7 +41,7 @@ REM Hash requirements.txt and compare to the last installed hash; reinstall
 REM only when it changed (e.g. after a git pull). Skip with QUILL_NO_AUTO_DEPS=1.
 if not defined QUILL_NO_AUTO_DEPS if exist "%ROOT%requirements.txt" (
     set "REQ_HASH="
-    for /f "skip=1 delims=" %%H in ('certutil -hashfile "%ROOT%requirements.txt" SHA256 2^>nul') do if not defined REQ_HASH set "REQ_HASH=%%H"
+    for /f "delims=" %%H in ('""%PYTHON_EXE%" -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "%ROOT%requirements.txt"" 2^>nul') do set "REQ_HASH=%%H"
     set "OLD_HASH="
     if exist "%ROOT%.quill-reqs.sha256" set /p OLD_HASH=<"%ROOT%.quill-reqs.sha256"
     if not "!REQ_HASH!"=="!OLD_HASH!" (

@@ -43,11 +43,7 @@ fi
 REQ="$ROOT/requirements.txt"
 STAMP="$ROOT/.quill-reqs.sha256"
 if [ -z "${QUILL_NO_AUTO_DEPS:-}" ] && [ -f "$REQ" ]; then
-  if command -v shasum >/dev/null 2>&1; then
-    NEW_HASH="$(shasum -a 256 "$REQ" | awk '{print $1}')"
-  else
-    NEW_HASH="$(sha256sum "$REQ" | awk '{print $1}')"
-  fi
+  NEW_HASH="$("$PYTHON_EXE" -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$REQ" 2>/dev/null || true)"
   OLD_HASH="$(cat "$STAMP" 2>/dev/null || true)"
   if [ -n "$NEW_HASH" ] && [ "$NEW_HASH" != "$OLD_HASH" ]; then
     echo "Requirements changed — installing dependencies..."
