@@ -38,22 +38,10 @@ if [ "${1:-}" = "--print-python" ]; then
 fi
 
 # --- Auto-install dependencies when requirements.txt changes ---
-# Reinstall only when requirements.txt changed (e.g. after a git pull).
+# All the hash/compare/pip logic lives in scripts/_autodeps.py (shared with the
+# Windows .bat). Reinstalls only after a real change (e.g. a git pull).
 # Skip with QUILL_NO_AUTO_DEPS=1.
-REQ="$ROOT/requirements.txt"
-STAMP="$ROOT/.quill-reqs.sha256"
-if [ -z "${QUILL_NO_AUTO_DEPS:-}" ] && [ -f "$REQ" ]; then
-  NEW_HASH="$("$PYTHON_EXE" "$ROOT/scripts/_reqhash.py" "$REQ" 2>/dev/null || true)"
-  OLD_HASH="$(cat "$STAMP" 2>/dev/null || true)"
-  if [ -n "$NEW_HASH" ] && [ "$NEW_HASH" != "$OLD_HASH" ]; then
-    echo "Requirements changed — installing dependencies..."
-    if "$PYTHON_EXE" -m pip install -r "$REQ"; then
-      printf '%s\n' "$NEW_HASH" > "$STAMP"
-    else
-      echo "Dependency install failed; launching with the existing environment." >&2
-    fi
-  fi
-fi
+[ -f "$ROOT/scripts/_autodeps.py" ] && "$PYTHON_EXE" "$ROOT/scripts/_autodeps.py" "$ROOT" || true
 
 cd "$ROOT"
 exec "$PYTHON_EXE" -m quill "$@"
