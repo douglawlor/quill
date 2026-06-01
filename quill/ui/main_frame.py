@@ -6877,29 +6877,27 @@ class MainFrame:
         return result
 
     def _prompt_untrusted_location(self, folder: Path) -> bool | None:
+        # Native dialog (#74): the old hand-rolled wx.Dialog never set its own
+        # sizer (only the inner panel did) and its OK/Cancel did nothing.
+        # wx.RichMessageDialog gives reliable native buttons plus the "trust"
+        # checkbox, and is read directly by VoiceOver/NVDA.
+        # Returns None to cancel, or True/False = open + whether to trust.
         wx = self._wx
-        dialog = wx.Dialog(self.frame, title="Untrusted Location")
-        panel = wx.Panel(dialog)
-        root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(
-            wx.StaticText(
-                panel,
-                label=(f"{folder} is not trusted yet. Open this file anyway?"),
-            ),
-            0,
-            wx.ALL | wx.EXPAND,
-            8,
+        dialog = wx.RichMessageDialog(
+            self.frame,
+            f"{folder} is not trusted yet. Open this file anyway?",
+            "Untrusted Location",
+            wx.OK | wx.CANCEL | wx.ICON_WARNING,
         )
-        trust_folder = wx.CheckBox(panel, label="Trust this folder for future opens")
-        root.Add(trust_folder, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
-        root.Add(buttons, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.ALIGN_RIGHT, 8)
-        panel.SetSizer(root)
-        dialog.SetAffirmativeId(wx.ID_OK)
-        dialog.SetEscapeId(wx.ID_CANCEL)
-        if self._show_modal_dialog(dialog, "Untrusted Location") != wx.ID_OK:
+        if hasattr(dialog, "SetOKCancelLabels"):
+            dialog.SetOKCancelLabels("Open", "Cancel")
+        dialog.ShowCheckBox("Trust this folder for future opens")
+        result = self._show_modal_dialog(dialog, "Untrusted Location")
+        trust = bool(dialog.IsCheckBoxChecked())
+        dialog.Destroy()
+        if result != wx.ID_OK:
             return None
-        return trust_folder.GetValue()
+        return trust
 
     def _prompt_unsaved_changes_action(
         self,
