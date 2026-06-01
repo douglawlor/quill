@@ -9457,8 +9457,24 @@ class MainFrame:
         lowered = text.lower()
         if not text:
             return "AI connection has not been checked yet."
-        if "authentication failed" in lowered or "401" in lowered or "403" in lowered:
+        if "access denied" in lowered or "lacks permission" in lowered:
+            return (
+                "Connected, but this key lacks permission for the model or region. "
+                "Check the provider's model access, billing, or quota."
+            )
+        if "authentication failed" in lowered or "401" in lowered:
             return "Authentication failed. Check your API key and try again."
+        if "could not be unlocked" in lowered or "could not be read" in lowered:
+            return (
+                "Your saved API key could not be unlocked on this device. "
+                "Open AI Connection and enter the key again."
+            )
+        if "warming up" in lowered:
+            return "The AI provider is warming up. Try again in a moment."
+        if "not running" in lowered:
+            return "The local AI server is not running. Start Ollama and try again."
+        if "rate limited" in lowered:
+            return "Rate limited by the AI provider. Wait a moment and try again."
         if "timed out" in lowered:
             return "Connection timed out. Check your internet or host URL and try again."
         if "could not reach" in lowered or "failed to reach" in lowered:
@@ -16377,6 +16393,19 @@ class MainFrame:
         if not load_ai_enabled():
             self._set_ai_menu_status_badge(None, "AI is turned off.", badge="Off")
             return
+        try:
+            from quill.core.assistant_ai import assistant_secret_unlock_failed
+
+            if assistant_secret_unlock_failed():
+                self._set_ai_menu_status_badge(
+                    False,
+                    "Your saved API key could not be unlocked on this device. "
+                    "Open AI Connection and enter the key again.",
+                    badge="Needs key",
+                )
+                return
+        except Exception:  # noqa: BLE001 - never block status on this probe
+            pass
         self._set_ai_menu_status_badge(None, "Checking the AI backend...", badge="Checking...")
 
         def worker() -> None:
@@ -16514,40 +16543,104 @@ class MainFrame:
         dialog.show_modal()
 
     def open_ai_rewrite_selection(self) -> None:
+        if not self._require_ai_enabled():
+            return
+        target, scope = self._ai_target_text(fallback="paragraph")
+        if not target.strip():
+            self._set_status("Nothing to rewrite. Type or select some text first.")
+            return
+        self._announce_ai_scope("Rewriting", scope, target)
         self.open_writing_assistant(
             render_assistant_prompt(
                 "rewrite",
-                selection_text=self._selected_text(),
+                selection_text=target,
                 document_text=self.editor.GetValue(),
             )
         )
 
     def open_ai_summarize_selection(self) -> None:
+        if not self._require_ai_enabled():
+            return
+        target, scope = self._ai_target_text(fallback="document")
+        if not target.strip():
+            self._set_status("Nothing to summarize. Open or type a document first.")
+            return
+        self._announce_ai_scope("Summarizing", scope, target)
         self.open_writing_assistant(
             render_assistant_prompt(
                 "summarize",
-                selection_text=self._selected_text(),
+                selection_text=target,
                 document_text=self.editor.GetValue(),
             )
         )
 
     def open_ai_continue_writing(self) -> None:
+        if not self._require_ai_enabled():
+            return
+        target = self._selected_text() or self.editor.GetValue()
+        if not target.strip():
+            self._set_status("Nothing to continue from. Type some text first.")
+            return
         self.open_writing_assistant(
             render_assistant_prompt(
                 "continue",
-                selection_text=self._selected_text() or self.editor.GetValue(),
+                selection_text=target,
                 document_text=self.editor.GetValue(),
             )
         )
 
     def open_ai_fix_grammar(self) -> None:
+        if not self._require_ai_enabled():
+            return
+        target, scope = self._ai_target_text(fallback="paragraph")
+        if not target.strip():
+            self._set_status("Nothing to check. Type or select some text first.")
+            return
+        self._announce_ai_scope("Checking grammar in", scope, target)
         self.open_writing_assistant(
             render_assistant_prompt(
                 "grammar",
-                selection_text=self._selected_text(),
+                selection_text=target,
                 document_text=self.editor.GetValue(),
             )
         )
+
+    def _require_ai_enabled(self) -> bool:
+        """Return True when AI is on; otherwise announce how to enable it.
+
+        Menu items are greyed out while AI is off, but these actions are also
+        reachable via the command palette and keybindings, so guard here too.
+        """
+        from quill.core.ai.model_manager import load_ai_enabled
+
+        if load_ai_enabled():
+            return True
+        self._set_status(
+            "AI is turned off. Enable 'Use Artificial Intelligence' in the AI menu."
+        )
+        return False
+
+    def _ai_target_text(self, *, fallback: str) -> tuple[str, str]:
+        """Resolve the text an AI writing action should operate on.
+
+        Returns ``(text, scope_label)``. When there is a selection it wins. With
+        no selection we fall back to the current paragraph or the whole document
+        so the action still does something useful instead of sending an empty
+        prompt.
+        """
+        selected = self._selected_text()
+        if selected:
+            return selected, "selection"
+        text = self.editor.GetValue()
+        if fallback == "document":
+            return text, "document"
+        cursor = self.editor.GetInsertionPoint()
+        start, end = paragraph_span(text, cursor)
+        return text[start:end], "paragraph"
+
+    def _announce_ai_scope(self, verb: str, scope: str, target: str) -> None:
+        word_count = len(target.split())
+        self._set_status(f"{verb} {scope} ({word_count} words)")
 
     def run_python_tool(self) -> None:
         outline = [
@@ -19342,31 +19435,70 @@ class MainFrame:
         if response != wx.YES:
             if force:
                 self._set_status("BITS Whisperer setup skipped")
-            with wx.TextEntryDialog(
-                self.frame,
-                "Display text:",
-                "Insert Link",
-                value=selected_text or "",
-                style=wx.OK | wx.CANCEL,
-            ) as display_dialog:
-                apply_modal_ids(display_dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
-                if self._show_modal_dialog(display_dialog, "Insert Link") != wx.ID_OK:
-                    self._set_status("Insert link cancelled")
-                    return
-                display_text = display_dialog.GetValue()
+            return
+        self.apply_bw_recommended_provider()
+        self.apply_bw_recommended_model()
+        if not bool(getattr(self.settings, "bw_auto_open_status_page_on_download_start", False)):
+            auto_open = self._show_message_box(
+                "Auto-open Help > Status Page when BITS Whisperer model downloads start?",
+                "BITS Whisperer Setup",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            self.settings.bw_auto_open_status_page_on_download_start = auto_open == wx.YES
+            save_settings(self.settings)
+        self._set_status("BITS Whisperer rollout defaults configured")
 
-            with wx.TextEntryDialog(
-                self.frame,
-                "URL:",
-                "Insert Link",
-                value="https://",
-                style=wx.OK | wx.CANCEL,
-            ) as url_dialog:
-                apply_modal_ids(url_dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
-                if self._show_modal_dialog(url_dialog, "Insert Link") != wx.ID_OK:
-                    self._set_status("Insert link cancelled")
-                    return
-                url = url_dialog.GetValue().strip()
+    def _offer_ai_onboarding(self) -> None:
+        """First run: ask whether to use AI; if yes, set up the model."""
+        from quill.core.ai.llama_cpp_backend import LlamaCppBackend
+        from quill.core.ai.model_manager import existing_model, save_ai_enabled
+
+        wx = self._wx
+        use_ai = self._show_message_box(
+            "Do you want to use Quill's built-in artificial intelligence (Ask Quill)?\n\n"
+            "It runs entirely on your computer. You can turn it on or off later from the "
+            "AI menu.",
+            "Use Artificial Intelligence?",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        enabled = use_ai == wx.YES
+        save_ai_enabled(enabled)
+        self._sync_ai_enabled_menu(enabled)
+        if not enabled:
+            self._set_status("AI is off. You can enable it later from the AI menu.")
+            return
+        # Foundation Models (macOS) needs no download; only llama.cpp does.
+        assistant = self._get_assistant()
+        if (
+            isinstance(assistant.backend, LlamaCppBackend)
+            and assistant.is_available()[0]
+            and not existing_model()
+        ):
+            AIModelDialog(self.frame, announce=self._set_status).show()
+        else:
+            self._set_status("AI is ready.")
+
+    def _sync_ai_enabled_menu(self, enabled: bool) -> None:
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is not None and hasattr(self, "_id_ai_enabled"):
+            item = menu_bar.FindItemById(self._id_ai_enabled)
+            if item is not None:
+                item.Check(enabled)
+
+    def _show_profile_onboarding(self, force: bool) -> None:
+        wx = self._wx
+        profiles = list(PROFILE_DEFINITIONS.values())
+        with wx.SingleChoiceDialog(
+            self.frame,
+            "Choose how Quill should start:",
+            "Profile Onboarding",
+            choices=self._profile_choice_labels(profiles),
+        ) as dialog:
+            if self._show_modal_dialog(dialog, "Profile Onboarding") != wx.ID_OK:
+                if not force:
+                    mark_onboarding_complete()
+                if force:
+                    self._set_status("Profile onboarding skipped")
                 return
             selection = dialog.GetSelection()
         if selection == wx.NOT_FOUND:
