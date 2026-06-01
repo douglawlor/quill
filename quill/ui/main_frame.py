@@ -16645,8 +16645,10 @@ class MainFrame:
         return text[start:end], "paragraph"
 
     def _announce_ai_scope(self, verb: str, scope: str, target: str) -> None:
+        from quill.core.announcements import format_progress
+
         word_count = len(target.split())
-        self._set_status(f"{verb} {scope} ({word_count} words)")
+        self._set_status(format_progress(verb, scope, count=word_count))
 
     def run_python_tool(self) -> None:
         outline = [

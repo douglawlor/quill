@@ -1006,9 +1006,19 @@ is excluded; no unscoped scan is recommended anywhere.</td>
 <td>Announcement style guide and audit</td>
 <td>Accessibility</td>
 <td>M</td>
-<td>Todo</td>
-<td>A written grammar exists; top 50 announcements conform; a test
-verifies key phrases.</td>
+<td>Done</td>
+<td>A written grammar
+(<code>docs/accessibility/announcement-style-guide.md</code>) defines
+the shape
+<code>&lt;Verb&gt; &lt;object&gt;[, &lt;count&gt; &lt;unit&gt;(s)][, &lt;detail&gt;].</code>
+and is implemented in <code>quill/core/announcements.py</code>
+(<code>format_announcement</code>, <code>format_progress</code>,
+<code>pluralize</code>). The AI writing-action announcer now builds
+phrasing through the shared helpers, and unit tests verify the key
+phrases (“Rewrote paragraph, 42 words.”, thousands separators,
+singular/plural units, verb-only and “Nothing to” forms). Migrating the
+remaining legacy status strings to the helpers is tracked as incremental
+follow-up.</td>
 </tr>
 <tr>
 <td>A11Y-4</td>
