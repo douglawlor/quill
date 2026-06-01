@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from quill.core.ai.assistant import _split_into_chunks
 
 
@@ -18,3 +20,11 @@ def test_oversized_single_paragraph_is_hard_split() -> None:
     chunks = _split_into_chunks("x" * 2500, 1000)
     assert all(len(c) <= 1000 for c in chunks)
     assert "".join(chunks) == "x" * 2500
+
+
+@pytest.mark.parametrize("bad_max", [0, -1, -1000])
+def test_non_positive_max_chars_raises(bad_max: int) -> None:
+    # Regression for BUG-7: max_chars <= 0 must not loop forever or silently
+    # drop content via range(step<=0); it raises a clear ValueError instead.
+    with pytest.raises(ValueError, match="positive"):
+        _split_into_chunks("x" * 50, bad_max)

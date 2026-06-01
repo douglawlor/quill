@@ -221,6 +221,8 @@ class Assistant:
 def _split_into_chunks(text: str, max_chars: int) -> list[str]:
     """Split text into chunks no larger than max_chars, preferring paragraph
     then line then hard boundaries."""
+    if max_chars <= 0:
+        raise ValueError("max_chars must be a positive integer")
     if len(text) <= max_chars:
         return [text]
     chunks: list[str] = []
