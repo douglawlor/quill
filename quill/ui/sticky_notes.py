@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 from quill.core.sticky_notes import (
     StickyNote,
     delete_sticky_note,
@@ -7,60 +9,145 @@ from quill.core.sticky_notes import (
     save_sticky_note,
 )
 
+
 class StickyNoteEditorDialog:
+    """Title + body editor for a sticky note.
+
+    Rendered as a web form on the shared ``AccessibleWebView`` (the same
+    accessible WebView the Ask Quill chat uses), so focus lands on the Title
+    field and screen readers get real labelled fields. Falls back to native wx
+    text fields if the WebView backend is unavailable. The note model keeps
+    "first non-empty line is the title", so Title + Body are recombined into a
+    single body string on save.
+    """
+
     def __init__(self, parent: object, note: StickyNote | None = None) -> None:
         import wx
 
         self._wx = wx
         self._note = note
+        self._result: str | None = None
+        self._native_title = None
+        self._native_body = None
+
+        title_value, _, body_value = (note.body if note is not None else "").partition("\n")
+
         self.dialog = wx.Dialog(
             parent,
             title="New Sticky Note" if note is None else "Edit Sticky Note",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((720, 540))
+        self.dialog.SetSize((720, 560))
+        sizer = wx.BoxSizer(wx.VERTICAL)
 
-        root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(
-            wx.StaticText(
+        self._webview = None
+        try:
+            from wx_accessible_webview import AccessibleWebView
+
+            self._webview = AccessibleWebView(
                 self.dialog,
-                label="Type your note. Press Escape to save. The first line becomes the title.",
-            ),
+                title="Sticky Note Editor",
+                handler_name="awv",
+                on_message=self._on_message,
+                on_close=self._cancel,
+                escape_to_close=True,
+                initial_html=self._form_html(title_value, body_value),
+            )
+        except Exception:  # noqa: BLE001
+            self._webview = None
+
+        if self._webview is not None and self._webview.using_webview:
+            sizer.Add(self._webview.control, 1, wx.EXPAND)
+        else:
+            self._build_native_fallback(sizer, title_value, body_value)
+        self.dialog.SetSizer(sizer)
+
+    def show_modal_and_get_body(self) -> str | None:
+        self.dialog.CentreOnParent()
+        if self._native_title is not None:
+            self._wx.CallAfter(self._native_title.SetFocus)
+        try:
+            result = self.dialog.ShowModal()
+            if result != self._wx.ID_OK:
+                return None
+            if self._native_title is not None:
+                return self._combine(self._native_title.GetValue(), self._native_body.GetValue())
+            return self._result
+        finally:
+            self.dialog.Destroy()
+
+    # -- web form ----------------------------------------------------------
+
+    def _form_html(self, title_value: str, body_value: str) -> str:
+        title_attr = html.escape(title_value, quote=True)
+        body_text = html.escape(body_value)
+        return (
+            "<h1>Sticky note</h1>"
+            "<p><label for='note-title'>Title</label><br>"
+            f"<input id='note-title' type='text' value=\"{title_attr}\" "
+            "style='width:100%;font-size:1rem;padding:6px'></p>"
+            "<p><label for='note-body'>Note</label><br>"
+            "<textarea id='note-body' rows='14' "
+            f"style='width:100%;font-size:1rem;padding:6px'>{body_text}</textarea></p>"
+            "<p><button type='button' id='note-save'>Save</button> "
+            "<button type='button' id='note-cancel'>Cancel</button></p>"
+            "<script>(function(){"
+            "function post(o){if(window.awv&&window.awv.postMessage)"
+            "{window.awv.postMessage(JSON.stringify(o));}}"
+            "var t=document.getElementById('note-title'),"
+            "b=document.getElementById('note-body');"
+            "document.getElementById('note-save').addEventListener('click',function(){"
+            "post({type:'save',title:t.value,body:b.value});});"
+            "document.getElementById('note-cancel').addEventListener('click',function(){"
+            "post({type:'cancel'});});"
+            "setTimeout(function(){if(t){t.focus();t.select();}},60);"
+            "})();</script>"
+        )
+
+    def _on_message(self, data: object) -> None:
+        if not isinstance(data, dict):
+            return
+        kind = data.get("type")
+        if kind == "save":
+            self._result = self._combine(str(data.get("title", "")), str(data.get("body", "")))
+            self.dialog.EndModal(self._wx.ID_OK)
+        elif kind in ("cancel", "close"):
+            self.dialog.EndModal(self._wx.ID_CANCEL)
+
+    def _cancel(self) -> None:
+        self.dialog.EndModal(self._wx.ID_CANCEL)
+
+    @staticmethod
+    def _combine(title: str, body: str) -> str:
+        title = title.strip()
+        body = body.rstrip()
+        if title and body:
+            return f"{title}\n{body}"
+        return title or body
+
+    # -- native fallback ---------------------------------------------------
+
+    def _build_native_fallback(self, sizer: object, title_value: str, body_value: str) -> None:
+        wx = self._wx
+        sizer.Add(
+            wx.StaticText(self.dialog, label="Title"),
             0,
-            wx.EXPAND | wx.ALL,
+            wx.LEFT | wx.RIGHT | wx.TOP,
             8,
         )
-        self.body = wx.TextCtrl(
-            self.dialog,
-            value=note.body if note is not None else "",
-            style=wx.TE_MULTILINE | wx.TE_PROCESS_TAB,
+        self._native_title = wx.TextCtrl(self.dialog, value=title_value)
+        sizer.Add(self._native_title, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+        sizer.Add(wx.StaticText(self.dialog, label="Note"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 8)
+        self._native_body = wx.TextCtrl(
+            self.dialog, value=body_value, style=wx.TE_MULTILINE | wx.TE_PROCESS_TAB
         )
-        root.Add(self.body, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+        sizer.Add(self._native_body, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
         buttons = self.dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
         if buttons is not None:
             ok_button = buttons.FindWindowById(wx.ID_OK)
             if ok_button is not None:
                 ok_button.SetLabel("Save")
-            root.Add(buttons, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        self.dialog.SetSizer(root)
-        self.dialog.Bind(wx.EVT_CHAR_HOOK, self._on_char_hook)
-        self.body.SetFocus()
-
-    def show_modal_and_get_body(self) -> str | None:
-        self.dialog.CentreOnParent()
-        try:
-            result = self.dialog.ShowModal()
-            if result != self._wx.ID_OK:
-                return None
-            return self.body.GetValue()
-        finally:
-            self.dialog.Destroy()
-
-    def _on_char_hook(self, event: object) -> None:
-        if event.GetKeyCode() == self._wx.WXK_ESCAPE:
-            self.dialog.EndModal(self._wx.ID_OK)
-            return
-        event.Skip()
+            sizer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
 
 
 class StickyNotesVaultDialog:
@@ -80,7 +167,10 @@ class StickyNotesVaultDialog:
         root.Add(
             wx.StaticText(
                 self.dialog,
-                label="Manage global sticky notes. Delete removes the selected note. Ctrl+C copies it.",
+                label=(
+                    "Manage global sticky notes. Delete removes the selected note. "
+                    "Ctrl+C copies it."
+                ),
             ),
             0,
             wx.EXPAND | wx.ALL,
@@ -171,7 +261,8 @@ class StickyNotesVaultDialog:
             self.preview.SetValue("No sticky note selected.")
             return
         self.preview.SetValue(
-            f"Title: {note.title}\nCreated: {note.created_at}\nUpdated: {note.updated_at}\n\n{note.body}"
+            f"Title: {note.title}\nCreated: {note.created_at}\n"
+            f"Updated: {note.updated_at}\n\n{note.body}"
         )
 
     def _on_selection_changed(self, _event: object) -> None:
@@ -256,7 +347,7 @@ class StickyNotesVaultDialog:
             return
         if (
             self._wx.MessageBox(
-                f"Delete sticky note \"{note.title}\"?",
+                f'Delete sticky note "{note.title}"?',
                 "Delete Sticky Note",
                 self._wx.ICON_WARNING | self._wx.YES_NO | self._wx.NO_DEFAULT,
                 self.dialog,
