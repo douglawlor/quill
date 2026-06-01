@@ -21,10 +21,34 @@ from quill.core.storage import read_json, write_json_atomic
 
 _SECRET_PREFIX_PATTERNS = (
     re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+"),
+    re.compile(r"(?i)(authorization\s*[:=]\s*)[^\s\"',]+"),
     re.compile(r"(?i)(x-api-key\s*[:=]\s*)[^\s\"',]+"),
+    re.compile(r"(?i)(x-goog-api-key\s*[:=]\s*)[^\s\"',]+"),
     re.compile(r"(?i)(api[-_ ]?key\s*[:=]\s*)[^\s\"',]+"),
+    re.compile(r"(?i)((?:access|secret|client)[-_ ]?(?:key|token|secret)\s*[:=]\s*)[^\s\"',]+"),
+    re.compile(r"(?i)(\b(?:password|passwd|pwd|secret|token)\s*[:=]\s*)[^\s\"',]+"),
+    re.compile(r"(?i)(bearer\s+)[a-z0-9._-]{12,}"),
 )
-_SECRET_INLINE_PATTERN = re.compile(r"(?i)sk-[a-z0-9_-]{8,}")
+_SECRET_INLINE_PATTERNS = (
+    re.compile(r"(?i)sk-[a-z0-9_-]{8,}"),  # OpenAI / Anthropic style
+    re.compile(r"AIza[0-9A-Za-z_-]{35}"),  # Google API keys
+    re.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key IDs
+    re.compile(r"gh[pousr]_[0-9A-Za-z]{20,}"),  # GitHub tokens
+    re.compile(r"xox[baprs]-[0-9A-Za-z-]{10,}"),  # Slack tokens
+)
+
+# Settings field names that should never appear in diagnostics, matched by
+# substring (case-insensitive) so future secret-bearing fields are covered.
+_SECRET_FIELD_MARKERS = (
+    "api_key",
+    "apikey",
+    "secret",
+    "token",
+    "password",
+    "passwd",
+    "credential",
+    "private_key",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,7 +273,12 @@ def collect_environment_info(
 
 
 def redact_settings(settings: Settings) -> dict[str, object]:
-    return asdict(settings)
+    payload = asdict(settings)
+    for field_name in list(payload):
+        lowered = field_name.lower()
+        if any(marker in lowered for marker in _SECRET_FIELD_MARKERS):
+            payload[field_name] = "[REDACTED]"
+    return payload
 
 
 def document_snapshot(document: Document, include_file_paths: bool) -> dict[str, object]:
@@ -292,7 +321,8 @@ def _sanitize_log_text(text: str) -> str:
     sanitized = text
     for pattern in _SECRET_PREFIX_PATTERNS:
         sanitized = pattern.sub(r"\1[REDACTED]", sanitized)
-    sanitized = _SECRET_INLINE_PATTERN.sub("[REDACTED]", sanitized)
+    for pattern in _SECRET_INLINE_PATTERNS:
+        sanitized = pattern.sub("[REDACTED]", sanitized)
     return sanitized
 
 

@@ -685,7 +685,7 @@ These extend the section 14 tracker. Priorities follow the same scheme. The conf
 | SEC-10 | Harden all untrusted XML parsing | Security | M | Done | DOCX, XLSX, ODT, PPTX, and generic XML use a parser with entity expansion disabled; a billion-laughs fixture is rejected quickly; test included. |
 | SEC-11 | Decompression-bomb limits for ZIP formats | Security | S | Done | A cumulative uncompressed-size cap aborts oversized archives with a clear message; test included. |
 | SEC-12 | Document and reduce PATH-hijack exposure for tool discovery | Security | S | Todo | Bundled tool paths are preferred; the residual risk is documented. |
-| SEC-13 | Broaden diagnostics secret redaction | Security | S | Todo | Redaction covers token, password, and NAME_KEY assignment patterns; test asserts no secret leaks. |
+| SEC-13 | Broaden diagnostics secret redaction | Security | S | Done | Redaction covers token, password, and NAME_KEY assignment patterns; test asserts no secret leaks. |
 | SEC-14 | Python sandbox memory and CPU limits | Security | M | Todo | Runaway transforms are terminated by memory and wall-clock limits; payload is not exposed via the environment where avoidable; test included. (Extends SEC-9.) |
 | SEC-15 | safe_subprocess validates cwd and wraps OSError | Security | S | Todo | `cwd` and executable are validated; `OSError` and `FileNotFoundError` are caught and surfaced clearly; test included. (Extends SEC-4.) |
 | SEC-16 | Validate credential and keychain inputs | Security | S | Todo | `target_name`, account, and service match a safe pattern; macOS `set_secret` checks the return code; tests included. |

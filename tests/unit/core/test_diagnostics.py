@@ -133,3 +133,51 @@ def test_diagnostics_bundle_redacts_log_secrets(monkeypatch, tmp_path: Path) -> 
         assert "abc123" not in payload
         assert "sk-test-secret" not in payload
         assert "[REDACTED]" in payload
+
+
+def test_sanitize_log_text_redacts_broadened_secret_shapes() -> None:
+    from quill.core.diagnostics import _sanitize_log_text
+
+    raw = "\n".join(
+        [
+            "password: hunter2",
+            "client_secret=abcdEF1234567890",
+            "token = my-very-long-token-value",
+            "x-goog-api-key: GOOGSECRETVALUE123",
+            "google=AIzaSyA1234567890123456789012345678901234",
+            "aws=AKIAABCDEFGHIJKLMNOP",
+            "github=ghp_0123456789abcdefghijklmnopqrstuvwx",
+        ]
+    )
+    sanitized = _sanitize_log_text(raw)
+    for leaked in (
+        "hunter2",
+        "abcdEF1234567890",
+        "my-very-long-token-value",
+        "GOOGSECRETVALUE123",
+        "AIzaSyA1234567890123456789012345678901234",
+        "AKIAABCDEFGHIJKLMNOP",
+        "ghp_0123456789abcdefghijklmnopqrstuvwx",
+    ):
+        assert leaked not in sanitized
+    assert "[REDACTED]" in sanitized
+
+
+def test_redact_settings_masks_secret_named_fields() -> None:
+    from dataclasses import make_dataclass
+
+    from quill.core.diagnostics import redact_settings
+
+    fake_cls = make_dataclass(
+        "FakeSettings",
+        [("theme", str), ("api_key", str), ("auth_token", str), ("keyboard_pack", str)],
+    )
+    fake = fake_cls(theme="dark", api_key="secret123", auth_token="tok456", keyboard_pack="Default")
+
+    payload = redact_settings(fake)  # type: ignore[arg-type]
+
+    assert payload["api_key"] == "[REDACTED]"
+    assert payload["auth_token"] == "[REDACTED]"
+    # Benign fields must be preserved for useful diagnostics.
+    assert payload["theme"] == "dark"
+    assert payload["keyboard_pack"] == "Default"
