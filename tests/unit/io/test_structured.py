@@ -249,3 +249,40 @@ def test_read_structured_pages_gracefully_handles_missing_deps(tmp_path: Path, m
     assert "pip install markitdown" in document.text
     assert document.source_metadata["source_kind"] == "pages"
     assert document.source_metadata["quality_score"] == 0
+
+
+def test_pptx_slide_table_blocks_renders_multiple_body_rows() -> None:
+    # Regression for BUG-6: the table builder reused the `row` name as both an
+    # XML Element and a list[str]. A multi-body-row table must render every row.
+    import xml.etree.ElementTree as ET
+
+    from quill.io.structured import _PPTX_NAMESPACES, _pptx_slide_table_blocks
+
+    a = _PPTX_NAMESPACES["a"]
+
+    def _cell(text: str) -> str:
+        return f"<a:tc><a:txBody><a:p><a:r><a:t>{text}</a:t></a:r></a:p></a:txBody></a:tc>"
+
+    def _row(*cells: str) -> str:
+        return "<a:tr>" + "".join(_cell(c) for c in cells) + "</a:tr>"
+
+    xml = (
+        f'<p:root xmlns:a="{a}" '
+        f'xmlns:p="{_PPTX_NAMESPACES["p"]}">'
+        "<a:tbl>"
+        + _row("H1", "H2")
+        + _row("A", "B")
+        + _row("C", "D")
+        + "</a:tbl></p:root>"
+    )
+    root = ET.fromstring(xml)
+
+    blocks = _pptx_slide_table_blocks(root)
+
+    assert len(blocks) == 1
+    block = blocks[0]
+    assert block[0] == "| H1 | H2 |"
+    assert block[1] == "| --- | --- |"
+    assert "| A | B |" in block
+    assert "| C | D |" in block
+

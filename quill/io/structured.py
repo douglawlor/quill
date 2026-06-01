@@ -611,8 +611,8 @@ def _pptx_slide_table_blocks(root: Element) -> list[list[str]]:
             "| " + " | ".join(header) + " |",
             "| " + " | ".join("---" for _ in header) + " |",
         ]
-        for row in normalized[1:]:
-            block.append("| " + " | ".join(row) + " |")
+        for body_row in normalized[1:]:
+            block.append("| " + " | ".join(body_row) + " |")
         tables.append(block)
     return tables
 

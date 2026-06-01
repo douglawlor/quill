@@ -675,7 +675,7 @@ These extend the section 14 tracker. Priorities follow the same scheme. The conf
 | BUG-3 | Fix undefined `VoiceOption` annotations | UI correctness | S | Done | Lines 12503 and 12532 use the imported alias; ruff reports no F821 for these. |
 | BUG-4 | Resolve `URLError` redefinition | UI correctness | S | Done | A single import source for `URLError`; ruff F811 cleared. |
 | BUG-5 | Validate llama.cpp response shape | AI correctness | S | Done | Malformed responses produce a friendly error, not `KeyError` or `IndexError`; test included. |
-| BUG-6 | Fix DOCX Element handling in structured reader | IO correctness | S | Todo | Lines 614 and 615 type-check and behave correctly on a fixture DOCX; mypy clean for that path. |
+| BUG-6 | Fix DOCX Element handling in structured reader | IO correctness | S | Done | Lines 614 and 615 type-check and behave correctly on a fixture DOCX; mypy clean for that path. |
 | BUG-7 | Guard chunk splitting against non-positive size | AI correctness | S | Todo | `max_chars <= 0` cannot cause an infinite loop; test included. |
 
 #### P0 and P1 security (new and refined)
