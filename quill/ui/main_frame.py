@@ -12437,9 +12437,6 @@ class MainFrame:
                 espeak_executable=self.settings.read_aloud_espeak_executable,
                 espeak_voice=self.settings.read_aloud_espeak_voice,
                 espeak_rate=self.settings.read_aloud_espeak_rate,
-                rhvoice_executable=self.settings.read_aloud_rhvoice_executable,
-                rhvoice_voice=self.settings.read_aloud_rhvoice_voice,
-                rhvoice_rate=self.settings.read_aloud_rhvoice_rate,
                 melotts_executable=self.settings.read_aloud_melotts_executable,
                 melotts_voice=self.settings.read_aloud_melotts_voice,
                 melotts_rate=self.settings.read_aloud_melotts_rate,
@@ -12731,6 +12728,25 @@ class MainFrame:
         wx = self._wx
         engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
 
+        if engine == "dectalk" and discover_dectalk_executable(
+            self.settings.read_aloud_dectalk_executable
+        ) is None:
+            self._show_message_box(
+                "DECtalk is not installed/configured.",
+                "Read Aloud Voice",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if engine == "espeak" and discover_espeak_executable(
+            self.settings.read_aloud_espeak_executable
+        ) is None:
+            self._show_message_box(
+                "eSpeak-NG is not installed/configured.",
+                "Read Aloud Voice",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+
         if engine == "dectalk":
             voices = list_dectalk_voices()
             current_voice_id = self.settings.read_aloud_dectalk_voice
@@ -12844,26 +12860,31 @@ class MainFrame:
     def choose_read_aloud_settings(self) -> None:  # noqa: PLR0912,PLR0915
         wx = self._wx
         _TITLE = "Read Aloud Settings"
-        engine_choices = [
-            "Pyttsx3 (System TTS)",
-            "DECtalk",
-            "Piper (neural, offline)",
-            "Kokoro (neural, offline)",
-            "eSpeak-NG (English variants)",
-            "MeloTTS (multilingual add-on, English mode)",
-            "Chatterbox (high-fidelity read/export)",
-            "OpenVoice (advanced style module)",
+        dectalk_available = (
+            discover_dectalk_executable(self.settings.read_aloud_dectalk_executable) is not None
+        )
+        espeak_available = (
+            discover_espeak_executable(self.settings.read_aloud_espeak_executable) is not None
+        )
+        engine_options = [
+            ("Pyttsx3 (System TTS)", "pyttsx3"),
+            ("DECtalk", "dectalk"),
+            ("Piper (neural, offline)", "piper"),
+            ("Kokoro (neural, offline)", "kokoro"),
+            ("eSpeak-NG (English variants)", "espeak"),
+            ("MeloTTS (multilingual add-on, English mode)", "melotts"),
+            ("Chatterbox (high-fidelity read/export)", "chatterbox"),
+            ("OpenVoice (advanced style module)", "openvoice"),
         ]
-        engine_values = [
-            "pyttsx3",
-            "dectalk",
-            "piper",
-            "kokoro",
-            "espeak",
-            "melotts",
-            "chatterbox",
-            "openvoice",
+        engine_options = [
+            option
+            for option in engine_options
+            if option[1] not in {"dectalk", "espeak"}
+            or (option[1] == "dectalk" and dectalk_available)
+            or (option[1] == "espeak" and espeak_available)
         ]
+        engine_choices = [label for label, _ in engine_options]
+        engine_values = [value for _, value in engine_options]
         with wx.SingleChoiceDialog(
             self.frame,
             "Choose read-aloud engine:",
@@ -12871,6 +12892,8 @@ class MainFrame:
             choices=engine_choices,
         ) as engine_dialog:
             current_engine = self.settings.read_aloud_engine.strip().lower() or "pyttsx3"
+            if current_engine not in engine_values:
+                current_engine = "pyttsx3"
             current_index = (
                 engine_values.index(current_engine) if current_engine in engine_values else 0
             )
@@ -14606,8 +14629,6 @@ class MainFrame:
             ("Kokoro voice", settings.read_aloud_kokoro_voice),
             ("eSpeak executable", settings.read_aloud_espeak_executable or "PATH lookup"),
             ("eSpeak English voice", settings.read_aloud_espeak_voice),
-            ("RHVoice executable", settings.read_aloud_rhvoice_executable or "Not configured"),
-            ("RHVoice voice", settings.read_aloud_rhvoice_voice),
             ("MeloTTS executable", settings.read_aloud_melotts_executable or "Not configured"),
             ("MeloTTS voice", settings.read_aloud_melotts_voice),
             (

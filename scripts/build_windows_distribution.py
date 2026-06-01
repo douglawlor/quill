@@ -87,6 +87,12 @@ def main() -> int:
         help="Optional local DECtalk runtime directory to bundle under portable\\tools\\speech\\dectalk.",
     )
     parser.add_argument(
+        "--espeak-dir",
+        type=Path,
+        default=None,
+        help="Optional local eSpeak-NG runtime directory to bundle under portable\\tools\\speech\\espeak-ng.",
+    )
+    parser.add_argument(
         "--kokoro-dir",
         type=Path,
         default=None,
@@ -97,12 +103,6 @@ def main() -> int:
         type=Path,
         default=None,
         help="Optional local Piper voices/models directory to bundle under portable\\tools\\speech\\piper.",
-    )
-    parser.add_argument(
-        "--rhvoice-dir",
-        type=Path,
-        default=None,
-        help="Optional local RHVoice voices/models directory to bundle under portable\\tools\\speech\\rhvoice.",
     )
     parser.add_argument(
         "--melotts-dir",
@@ -152,9 +152,9 @@ def main() -> int:
                 "pandoc": args.pandoc_dir,
                 "tesseract": args.tesseract_dir,
                 "speech/dectalk": args.dectalk_dir,
+                "speech/espeak-ng": args.espeak_dir,
                 "speech/kokoro": args.kokoro_dir,
                 "speech/piper": args.piper_dir,
-                "speech/rhvoice": args.rhvoice_dir,
                 "speech/melotts": args.melotts_dir,
                 "speech/chatterbox": args.chatterbox_dir,
                 "speech/openvoice": args.openvoice_dir,
@@ -478,11 +478,11 @@ def build_inno_setup_script(version: str) -> str:
         'Name: "speechdectalk\\voices\\rita"; Description: "Rita voice"; Types: full custom; Flags: checkablealone',
         'Name: "speechdectalk\\voices\\wendy"; Description: "Wendy voice"; Types: full custom; Flags: checkablealone',
         'Name: "speechdectalk\\voices\\kit"; Description: "Kit voice"; Types: full custom; Flags: checkablealone',
+        'Name: "speechespeak"; Description: "Install bundled eSpeak-NG runtime";'
+        " Types: full custom; Flags: checkablealone",
         'Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models";'
         " Types: full custom; Flags: checkablealone",
         'Name: "speechpiper"; Description: "Install bundled Piper voices/models";'
-        " Types: full custom; Flags: checkablealone",
-        'Name: "speechrhvoice"; Description: "Install bundled RHVoice voices/models";'
         " Types: full custom; Flags: checkablealone",
         'Name: "speechmelotts"; Description: "Install bundled MeloTTS voices/models";'
         " Types: full custom; Flags: checkablealone",
@@ -494,7 +494,7 @@ def build_inno_setup_script(version: str) -> str:
         "[Files]",
         'Source: "..\\portable\\*"; DestDir: "{app}";'
         " Flags: ignoreversion recursesubdirs createallsubdirs;"
-        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"',
+        ' Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\espeak-ng\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"',
         'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: pandoc",
@@ -521,15 +521,15 @@ def build_inno_setup_script(version: str) -> str:
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\wendy; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
         'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\kit\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\kit";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\kit; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
+        'Source: "..\\portable\\tools\\speech\\espeak-ng\\*"; DestDir: "{app}\\tools\\speech\\espeak-ng";'
+        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
+        " Components: speechespeak",
         'Source: "..\\portable\\tools\\speech\\kokoro\\*"; DestDir: "{app}\\tools\\speech\\kokoro";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: speechkokoro",
         'Source: "..\\portable\\tools\\speech\\piper\\*"; DestDir: "{app}\\tools\\speech\\piper";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: speechpiper",
-        'Source: "..\\portable\\tools\\speech\\rhvoice\\*"; DestDir: "{app}\\tools\\speech\\rhvoice";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
-        " Components: speechrhvoice",
         'Source: "..\\portable\\tools\\speech\\melotts\\*"; DestDir: "{app}\\tools\\speech\\melotts";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: speechmelotts",
@@ -835,18 +835,19 @@ def _speech_asset_manifest(
 ) -> dict[str, dict[str, object]]:
     speech_root = portable_dir / "tools" / "speech"
     manifest: dict[str, dict[str, object]] = {}
-    for engine in (
-        "dectalk",
-        "kokoro",
-        "piper",
-        "rhvoice",
-        "melotts",
-        "chatterbox",
-        "openvoice",
-    ):
-        engine_dir = speech_root / engine
+    engine_dirs = {
+        "dectalk": "dectalk",
+        "espeak": "espeak-ng",
+        "kokoro": "kokoro",
+        "piper": "piper",
+        "melotts": "melotts",
+        "chatterbox": "chatterbox",
+        "openvoice": "openvoice",
+    }
+    for engine, dir_name in engine_dirs.items():
+        engine_dir = speech_root / dir_name
         manifest[engine] = {
-            "bundled": f"speech/{engine}" in bundled_tools,
+            "bundled": f"speech/{dir_name}" in bundled_tools,
             "path": str(engine_dir) if engine_dir.exists() else "",
             "exists": engine_dir.exists(),
             "downloadable": True,

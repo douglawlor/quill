@@ -89,12 +89,6 @@ ESPEAK_ENGLISH_VOICES: list[tuple[str, str]] = [
     ("en-gb-x-rp", "English (RP variant)"),
 ]
 
-RHVOICE_ENGLISH_VOICES: list[tuple[str, str]] = [
-    ("alan", "Alan (English)"),
-    ("slt", "SLT (English)"),
-    ("bdl", "BDL (English)"),
-]
-
 MELOTTS_ENGLISH_VOICES: list[tuple[str, str]] = [
     ("en-us", "MeloTTS English (US)"),
     ("en-br", "MeloTTS English (British)"),
@@ -189,30 +183,16 @@ def discover_espeak_executable(configured_path: str = "") -> Path | None:
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "espeak-ng"
-        for relative in ("espeak-ng.exe", "espeak-ng/espeak-ng.exe"):
+        for relative in (
+            "espeak-ng.exe",
+            "espeak-ng/espeak-ng.exe",
+            "eSpeak NG/espeak-ng.exe",
+        ):
             probe = bundled / relative
             if probe.exists():
                 return probe.resolve()
     import shutil as _shutil
     found = _shutil.which("espeak-ng")
-    if found:
-        return Path(found).resolve()
-    return None
-
-
-def discover_rhvoice_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
-    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
-    if app_root:
-        bundled = Path(app_root) / "tools" / "speech" / "rhvoice"
-        for relative in ("rhvoice.exe", "RHVoice-test.exe", "bin/rhvoice.exe"):
-            probe = bundled / relative
-            if probe.exists():
-                return probe.resolve()
-    found = shutil.which("rhvoice") or shutil.which("rhvoice.exe")
     if found:
         return Path(found).resolve()
     return None
@@ -291,10 +271,6 @@ def list_piper_voices(model_search_path: str = "") -> list[VoiceOption]:
 
 def list_espeak_english_voices() -> list[VoiceOption]:
     return [VoiceOption(id=vid, name=name) for vid, name in ESPEAK_ENGLISH_VOICES]
-
-
-def list_rhvoice_english_voices() -> list[VoiceOption]:
-    return [VoiceOption(id=vid, name=name) for vid, name in RHVOICE_ENGLISH_VOICES]
 
 
 def list_melotts_english_voices() -> list[VoiceOption]:
@@ -403,24 +379,6 @@ def _synthesize_with_cli_engine(
             f"{engine_label} failed: {detail}" if detail
             else f"{engine_label} exited with code {completed.returncode}."
         )
-
-
-def synthesize_with_rhvoice(
-    text: str,
-    output_path: Path,
-    *,
-    executable_path: Path,
-    voice: str = "alan",
-    rate: int = 180,
-) -> None:
-    _synthesize_with_cli_engine(
-        text,
-        output_path,
-        executable_path=executable_path,
-        voice=voice,
-        rate=rate,
-        engine_label="RHVoice",
-    )
 
 
 def synthesize_with_melotts(
@@ -661,9 +619,6 @@ class ReadAloudController:
         espeak_executable: str = "",
         espeak_voice: str = "en",
         espeak_rate: int = 175,
-        rhvoice_executable: str = "",
-        rhvoice_voice: str = "alan",
-        rhvoice_rate: int = 180,
         melotts_executable: str = "",
         melotts_voice: str = "en-us",
         melotts_rate: int = 180,
@@ -686,7 +641,6 @@ class ReadAloudController:
             "piper",
             "kokoro",
             "espeak",
-            "rhvoice",
             "melotts",
             "chatterbox",
             "openvoice",
@@ -707,8 +661,6 @@ class ReadAloudController:
                 "eSpeak-NG executable was not found. "
                 "Install eSpeak-NG or configure the path in Read Aloud Settings."
             )
-        if normalized_engine == "rhvoice" and discover_rhvoice_executable(rhvoice_executable) is None:
-            raise ReadAloudUnavailableError("RHVoice executable was not found")
         if normalized_engine == "melotts" and discover_melotts_executable(melotts_executable) is None:
             raise ReadAloudUnavailableError("MeloTTS executable was not found")
         if normalized_engine == "chatterbox" and discover_chatterbox_executable(chatterbox_executable) is None:
@@ -770,16 +722,6 @@ class ReadAloudController:
                         spans, text,
                         executable=discover_espeak_executable(espeak_executable) or Path(espeak_executable).expanduser(),
                         voice=espeak_voice, rate=espeak_rate,
-                        on_progress=on_progress,
-                    )
-                elif normalized_engine == "rhvoice":
-                    self._run_rhvoice_live(
-                        spans,
-                        text,
-                        executable=discover_rhvoice_executable(rhvoice_executable)
-                        or Path(rhvoice_executable).expanduser(),
-                        voice=rhvoice_voice,
-                        rate=rhvoice_rate,
                         on_progress=on_progress,
                     )
                 elif normalized_engine == "melotts":
@@ -1103,27 +1045,6 @@ class ReadAloudController:
                 raise ReadAloudUnavailableError(f"eSpeak-NG exited with code {exit_code}.")
             with self._lock:
                 self._cursor = span.end
-
-    def _run_rhvoice_live(
-        self,
-        spans: list[SentenceSpan],
-        text: str,
-        *,
-        executable: Path,
-        voice: str,
-        rate: int,
-        on_progress: Callable[[int, int], None] | None,
-    ) -> None:
-        def gen(sentence: str, out: Path) -> None:
-            synthesize_with_rhvoice(
-                sentence,
-                out,
-                executable_path=executable,
-                voice=voice,
-                rate=rate,
-            )
-
-        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
 
     def _run_melotts_live(
         self,

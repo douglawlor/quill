@@ -62,9 +62,9 @@ version = "2.4.6"
     assert manifest["bundledTools"] == []
     assert manifest["docs"] == [r"docs\userguide.md"]
     assert manifest["speechAssets"]["dectalk"]["downloadable"] is True
+    assert manifest["speechAssets"]["espeak"]["downloadable"] is True
     assert manifest["speechAssets"]["kokoro"]["downloadable"] is True
     assert manifest["speechAssets"]["piper"]["downloadable"] is True
-    assert manifest["speechAssets"]["rhvoice"]["downloadable"] is True
     assert manifest["speechAssets"]["melotts"]["downloadable"] is True
     assert manifest["speechAssets"]["chatterbox"]["downloadable"] is True
     assert manifest["speechAssets"]["openvoice"]["downloadable"] is True
@@ -100,14 +100,14 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert 'Name: "speechdectalk\\voices\\rita"; Description: "Rita voice";' in script
     assert 'Name: "speechdectalk\\voices\\wendy"; Description: "Wendy voice";' in script
     assert 'Name: "speechdectalk\\voices\\kit"; Description: "Kit voice";' in script
+    assert 'Name: "speechespeak"; Description: "Install bundled eSpeak-NG runtime";' in script
     assert 'Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models";' in script
     assert 'Name: "speechpiper"; Description: "Install bundled Piper voices/models";' in script
-    assert 'Name: "speechrhvoice"; Description: "Install bundled RHVoice voices/models";' in script
     assert 'Name: "speechmelotts"; Description: "Install bundled MeloTTS voices/models";' in script
     assert 'Name: "speechchatterbox"; Description: "Install bundled Chatterbox voices/models";' in script
     assert 'Name: "speechopenvoice"; Description: "Install bundled OpenVoice voices/models";' in script
     assert (
-        'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\rhvoice\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"'
+        'Excludes: "docs\\announcement-beta.md,docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\espeak-ng\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\speech\\melotts\\*,tools\\speech\\chatterbox\\*,tools\\speech\\openvoice\\*"'
         in script
     )
     assert 'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";' in script
@@ -126,16 +126,16 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert 'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\rita\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\rita";' in script
     assert 'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\wendy\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\wendy";' in script
     assert 'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\kit\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\kit";' in script
+    assert 'Source: "..\\portable\\tools\\speech\\espeak-ng\\*"; DestDir: "{app}\\tools\\speech\\espeak-ng";' in script
     assert 'Source: "..\\portable\\tools\\speech\\kokoro\\*"; DestDir: "{app}\\tools\\speech\\kokoro";' in script
     assert 'Source: "..\\portable\\tools\\speech\\piper\\*"; DestDir: "{app}\\tools\\speech\\piper";' in script
-    assert 'Source: "..\\portable\\tools\\speech\\rhvoice\\*"; DestDir: "{app}\\tools\\speech\\rhvoice";' in script
     assert 'Source: "..\\portable\\tools\\speech\\melotts\\*"; DestDir: "{app}\\tools\\speech\\melotts";' in script
     assert 'Source: "..\\portable\\tools\\speech\\chatterbox\\*"; DestDir: "{app}\\tools\\speech\\chatterbox";' in script
     assert 'Source: "..\\portable\\tools\\speech\\openvoice\\*"; DestDir: "{app}\\tools\\speech\\openvoice";' in script
     assert 'Components: speechdectalk' in script
+    assert 'Components: speechespeak' in script
     assert 'Components: speechkokoro' in script
     assert 'Components: speechpiper' in script
-    assert 'Components: speechrhvoice' in script
     assert 'Components: speechmelotts' in script
     assert 'Components: speechchatterbox' in script
     assert 'Components: speechopenvoice' in script

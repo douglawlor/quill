@@ -124,9 +124,6 @@ class Settings:
     read_aloud_espeak_executable: str = ""
     read_aloud_espeak_voice: str = "en"
     read_aloud_espeak_rate: int = 175
-    read_aloud_rhvoice_executable: str = ""
-    read_aloud_rhvoice_voice: str = "alan"
-    read_aloud_rhvoice_rate: int = 180
     read_aloud_melotts_executable: str = ""
     read_aloud_melotts_voice: str = "en-us"
     read_aloud_melotts_rate: int = 180
@@ -213,7 +210,6 @@ class Settings:
             "piper",
             "kokoro",
             "espeak",
-            "rhvoice",
             "melotts",
             "chatterbox",
             "openvoice",
@@ -266,15 +262,6 @@ class Settings:
             read_aloud_espeak_rate = 80
         if read_aloud_espeak_rate > 450:
             read_aloud_espeak_rate = 450
-        read_aloud_rhvoice_executable = str(data.get("read_aloud_rhvoice_executable", "")).strip()
-        read_aloud_rhvoice_voice = (
-            str(data.get("read_aloud_rhvoice_voice", "alan")).strip().lower() or "alan"
-        )
-        read_aloud_rhvoice_rate = int(data.get("read_aloud_rhvoice_rate", 180))
-        if read_aloud_rhvoice_rate < 80:
-            read_aloud_rhvoice_rate = 80
-        if read_aloud_rhvoice_rate > 450:
-            read_aloud_rhvoice_rate = 450
         read_aloud_melotts_executable = str(data.get("read_aloud_melotts_executable", "")).strip()
         read_aloud_melotts_voice = (
             str(data.get("read_aloud_melotts_voice", "en-us")).strip().lower() or "en-us"
@@ -420,9 +407,6 @@ class Settings:
             read_aloud_espeak_executable=read_aloud_espeak_executable,
             read_aloud_espeak_voice=read_aloud_espeak_voice,
             read_aloud_espeak_rate=read_aloud_espeak_rate,
-            read_aloud_rhvoice_executable=read_aloud_rhvoice_executable,
-            read_aloud_rhvoice_voice=read_aloud_rhvoice_voice,
-            read_aloud_rhvoice_rate=read_aloud_rhvoice_rate,
             read_aloud_melotts_executable=read_aloud_melotts_executable,
             read_aloud_melotts_voice=read_aloud_melotts_voice,
             read_aloud_melotts_rate=read_aloud_melotts_rate,
