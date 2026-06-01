@@ -1133,7 +1133,7 @@ representative dialogs.</td>
 <td>Green main: required CI gates must pass</td>
 <td>Foundations</td>
 <td>S</td>
-<td>In progress</td>
+<td>Done</td>
 <td>The gate ladder is only real if it is green on <code>main</code>.
 The newly added gate jobs were red because they installed only
 <code>.[dev]</code>: the UI test modules need <code>wx</code> (the
@@ -1142,10 +1142,9 @@ modules (<code>markitdown</code>, <code>certifi</code>,
 <code>pdfplumber</code>, <code>pyttsx3</code>). Fix: install
 <code>.[dev,ui]</code> in the test jobs and add the optional modules to
 the mypy <code>ignore_missing_imports</code> overrides so the typing
-gate measures first-party code regardless of optional extras.
-Acceptance: PR CI, Security CI, and Accessibility CI all conclude
-success on <code>main</code>. This is the first thing to resolve before
-any further work.</td>
+gate measures first-party code regardless of optional extras. Verified:
+PR CI, Security CI, and Accessibility CI all conclude success on
+<code>main</code> (commit d62d3bd).</td>
 </tr>
 <tr>
 <td>FLAG-1</td>
@@ -4794,9 +4793,9 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 1</td>
 <td>Protect users and unlock the team</td>
 <td>23</td>
-<td>20</td>
-<td>3</td>
-<td>OPS-1 (in progress), FLAG-1, FLAG-2</td>
+<td>21</td>
+<td>2</td>
+<td>FLAG-1, FLAG-2</td>
 </tr>
 <tr>
 <td>Tier 2</td>
@@ -4847,8 +4846,8 @@ LINUX-1, LINUX-2, ECO-1, L10N-1, COLLAB-1</td>
 <td><strong>Total</strong></td>
 <td>All tiers</td>
 <td><strong>156</strong></td>
-<td><strong>20</strong></td>
-<td><strong>136</strong></td>
+<td><strong>21</strong></td>
+<td><strong>135</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -4919,9 +4918,9 @@ green. The gate jobs were red because they installed only
 typing gate needs the optional modules ignored; the fix (install
 <code>.[dev,ui]</code> in the test jobs and add
 <code>markitdown</code>/<code>certifi</code>/<code>pdfplumber</code>/<code>pyttsx3</code>
-to the mypy overrides) is committed — confirm PR CI, Security CI, and
-Accessibility CI all conclude success on <code>main</code> before
-proceeding.</p>
+to the mypy overrides) is committed and verified — PR CI, Security CI,
+and Accessibility CI all conclude success on <code>main</code> (commit
+d62d3bd). OPS-1 is Done.</p>
 <p>The agreed next sequence (decided with the maintainer): (1) do the
 cheap Tier 4 quality cleanup first — CQ-18 (the ~43 remaining E501
 line-length wraps, after which the <code>--ignore E501</code> can be
