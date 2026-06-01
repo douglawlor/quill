@@ -285,6 +285,61 @@ def test_navigate_next_structure_moves_to_heading() -> None:
     assert frame.editor.GetInsertionPoint() == text.index("## Heading")
 
 
+def test_navigate_next_heading_announces_level_and_ordinal() -> None:
+    text = "# Top\nIntro\n## Child\nBody\n### Grandchild\nMore\n"
+    frame = _build_frame(text, insertion_point=0)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    frame.navigate_next_heading()
+
+    assert statuses == ["Moved to next heading, H2, 2 of 3: Child"]
+
+
+def test_navigate_previous_heading_announces_level_and_ordinal() -> None:
+    text = "# Top\nIntro\n## Child\nBody\n### Grandchild\nMore\n"
+    frame = _build_frame(text, insertion_point=len(text))
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    frame.navigate_previous_heading()
+
+    assert statuses == ["Moved to previous heading, H3, 3 of 3: Grandchild"]
+
+
+def test_select_line_announces_scope_and_word_count() -> None:
+    text = "one two three\nsecond line\n"
+    frame = _build_frame(text, insertion_point=0)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    frame.select_line()
+
+    assert statuses == ["Selected line, 3 words."]
+
+
+def test_select_paragraph_announces_scope_and_word_count() -> None:
+    text = "alpha beta\ngamma\n\nnext paragraph\n"
+    frame = _build_frame(text, insertion_point=0)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    frame.select_paragraph()
+
+    assert statuses == ["Selected paragraph, 3 words."]
+
+
+def test_select_line_announces_singular_word() -> None:
+    text = "solo\nmore\n"
+    frame = _build_frame(text, insertion_point=0)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    frame.select_line()
+
+    assert statuses == ["Selected line, 1 word."]
+
+
 def test_persistent_undo_steps_across_history() -> None:
     frame = _build_frame("one", insertion_point=0)
     frame.settings = type(

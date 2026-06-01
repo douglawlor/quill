@@ -161,6 +161,7 @@ from quill.core.guides import build_keyboard_reference, build_welcome_guide
 from quill.core.heading_organizer import (
     HeadingBlock,
     apply_heading_organizer_edits,
+    heading_context_at,
     parse_heading_blocks,
     validate_heading_sequence,
 )
@@ -11104,7 +11105,14 @@ class MainFrame:
         self.editor.SetSelection(target, target)
         self.editor.SetFocus()
         self._location_ring.record(target)
-        self._set_status(f"Moved to {label}")
+        context = heading_context_at(self.editor.GetValue(), target, markup_kind)
+        if context is not None:
+            title = context.title or "untitled"
+            self._set_status(
+                f"Moved to {label}, H{context.level}, {context.ordinal} of {context.total}: {title}"
+            )
+        else:
+            self._set_status(f"Moved to {label}")
 
     def navigate_next_block(self) -> None:
         self._navigate_block(reverse=False)
@@ -16883,7 +16891,7 @@ class MainFrame:
         start, end = line_span(text, cursor)
         self.editor.SetFocus()
         self.editor.SetSelection(start, end)
-        self._set_status("Selected line")
+        self._announce_selection_scope("line", text, start, end)
 
     def select_paragraph(self) -> None:
         text = self.editor.GetValue()
@@ -16891,7 +16899,7 @@ class MainFrame:
         start, end = paragraph_span(text, cursor)
         self.editor.SetFocus()
         self.editor.SetSelection(start, end)
-        self._set_status("Selected paragraph")
+        self._announce_selection_scope("paragraph", text, start, end)
 
     def select_block(self) -> None:
         text = self.editor.GetValue()
@@ -16899,7 +16907,14 @@ class MainFrame:
         start, end = block_span(text, cursor)
         self.editor.SetFocus()
         self.editor.SetSelection(start, end)
-        self._set_status("Selected block")
+        self._announce_selection_scope("block", text, start, end)
+
+    def _announce_selection_scope(self, scope: str, text: str, start: int, end: int) -> None:
+        """Announce a structural selection with its scope and word count (SEL-1)."""
+        from quill.core.announcements import format_announcement
+
+        words = len(text[start:end].split())
+        self._set_status(format_announcement("Selected", scope, count=words, unit="word"))
 
     def select_to_start_of_line(self) -> None:
         text = self.editor.GetValue()

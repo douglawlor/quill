@@ -1398,17 +1398,24 @@ plus G.</td>
 <td>Heading level and position announcements</td>
 <td>Navigation</td>
 <td>S</td>
-<td>Todo</td>
-<td>Heading navigation announces level and ordinal.</td>
+<td>Done</td>
+<td><code>heading_context_at</code> (in
+<code>heading_organizer.py</code>) reports a heading’s level, 1-based
+ordinal, total count, and title by line match;
+<code>_navigate_heading</code> announces “Moved to next/previous
+heading, H<level>, <ordinal> of <total>: </td>
 </tr>
 <tr>
 <td>SEL-1</td>
 <td>Bind and announce structural selections</td>
 <td>Selection</td>
 <td>S</td>
-<td>Todo</td>
-<td>Select line, paragraph, block have defaults and announce scope and
-word count.</td>
+<td>Done</td>
+<td><code>select_line</code>, <code>select_paragraph</code>, and
+<code>select_block</code> announce scope and word count through the
+shared announcement grammar (<code>Selected line, 3 words.</code>),
+pluralized correctly for the singular case. UI tests cover line,
+paragraph, and the singular-word path.</td>
 </tr>
 <tr>
 <td>SEL-2</td>
@@ -4873,9 +4880,9 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 2</td>
 <td>Flagship experience</td>
 <td>38</td>
-<td>0</td>
-<td>38</td>
-<td>QK-1..5, QK-9, NAV-1, NAV-4, NAV-5, SEL-1..3, AGENT-1, AI-7, AI-1,
+<td>2</td>
+<td>36</td>
+<td>QK-1..5, QK-9, NAV-1, NAV-4, SEL-2, SEL-3, AGENT-1, AI-7, AI-1,
 AI-6, AI-13, AI-15, AI-17, AI-14, AI-16, SET-1..7, FEAT-19, WATCH-1..7,
 FLAG-3, FLAG-4</td>
 </tr>

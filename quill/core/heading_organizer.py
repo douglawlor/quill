@@ -64,6 +64,37 @@ def validate_heading_sequence(
     return issues
 
 
+@dataclass(frozen=True, slots=True)
+class HeadingContext:
+    level: int
+    ordinal: int
+    total: int
+    title: str
+
+
+def heading_context_at(text: str, target: int, markup_kind: str) -> HeadingContext | None:
+    """Describe the heading whose start line contains ``target``.
+
+    Returns the heading level (1-6), its 1-based ordinal among all headings,
+    the total heading count, and the heading title. Matching is by line so it
+    is robust to leading whitespace differences. Returns ``None`` when the
+    target is not on a heading line.
+    """
+    blocks = parse_heading_blocks(text, markup_kind)
+    if not blocks:
+        return None
+    target_line = text.count("\n", 0, target)
+    for ordinal, block in enumerate(blocks, start=1):
+        if text.count("\n", 0, block.start) == target_line:
+            return HeadingContext(
+                level=block.level,
+                ordinal=ordinal,
+                total=len(blocks),
+                title=block.title.strip(),
+            )
+    return None
+
+
 def apply_heading_organizer_edits(
     text: str,
     markup_kind: str,

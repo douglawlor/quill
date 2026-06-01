@@ -5,6 +5,7 @@ from dataclasses import replace
 from quill.core.heading_organizer import (
     HeadingBlock,
     apply_heading_organizer_edits,
+    heading_context_at,
     parse_heading_blocks,
     validate_heading_sequence,
 )
@@ -41,6 +42,46 @@ def test_apply_heading_organizer_edits_rewrites_html_heading_attributes() -> Non
     rendered = apply_heading_organizer_edits(text, "html", updated)
     assert '<h1 id="a">Alpha Prime</h1>' in rendered
     assert '<h2 class="x">Beta Prime</h2>' in rendered
+
+
+def test_heading_context_at_reports_level_ordinal_and_total() -> None:
+    text = "# Top\nIntro\n## Child\nBody\n### Grandchild\nMore\n"
+    blocks = parse_heading_blocks(text, "markdown")
+
+    first = heading_context_at(text, blocks[0].start, "markdown")
+    assert first is not None
+    assert (first.level, first.ordinal, first.total, first.title) == (1, 1, 3, "Top")
+
+    second = heading_context_at(text, blocks[1].start, "markdown")
+    assert second is not None
+    assert (second.level, second.ordinal, second.total, second.title) == (2, 2, 3, "Child")
+
+    third = heading_context_at(text, blocks[2].start, "markdown")
+    assert third is not None
+    assert (third.level, third.ordinal) == (3, 3)
+
+
+def test_heading_context_at_matches_by_line_with_leading_whitespace() -> None:
+    text = "Intro paragraph\n## Spaced\nBody\n"
+    target = text.index("##")
+    context = heading_context_at(text, target, "markdown")
+    assert context is not None
+    assert context.level == 2
+    assert context.title == "Spaced"
+
+
+def test_heading_context_at_returns_none_off_heading() -> None:
+    text = "# Top\nParagraph body line\n"
+    body = text.index("Paragraph")
+    assert heading_context_at(text, body, "markdown") is None
+
+
+def test_heading_context_at_handles_html() -> None:
+    text = "<h1>Alpha</h1><p>a</p>\n<h2>Beta</h2><p>b</p>"
+    blocks = parse_heading_blocks(text, "html")
+    beta = heading_context_at(text, blocks[1].start, "html")
+    assert beta is not None
+    assert (beta.level, beta.ordinal, beta.total, beta.title) == (2, 2, 2, "Beta")
 
 
 def test_validate_heading_sequence_reports_issues() -> None:
