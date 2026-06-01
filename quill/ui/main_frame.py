@@ -18147,11 +18147,8 @@ class MainFrame:
 
     def _show_trust_consent_onboarding(self, force: bool) -> bool:
         wx = self._wx
-        from quill.ui.preview_dialog import HtmlMessageDialog
-
-        body = self._render_html(
-            "# Trust, Privacy, and Responsible AI Use\n\n"
-            "By selecting **I accept**, you confirm that:\n\n"
+        message = (
+            "By selecting I accept, you confirm that:\n\n"
             "1. You are responsible for how AI outputs are used, reviewed, and shared.\n"
             "2. Cloud AI requests are user-initiated and subject to provider terms.\n"
             "3. Quill does not persist chat session transcripts from AI interactions.\n"
@@ -18159,13 +18156,18 @@ class MainFrame:
             "with DPAPI-encrypted fallback storage.\n\n"
             "Do you accept and want to continue?"
         )
-        result = HtmlMessageDialog(
+        dialog = wx.MessageDialog(
             self.frame,
-            "Trust and Privacy Consent",
-            body,
-            [("I do not accept", wx.ID_CANCEL), ("I accept", wx.ID_YES)],
-        ).show_modal()
-        accepted = result == wx.ID_YES
+            message,
+            "Trust, Privacy, and Responsible AI Use",
+            wx.YES_NO | wx.ICON_INFORMATION,
+        )
+        if hasattr(dialog, "SetYesNoLabels"):
+            dialog.SetYesNoLabels("I accept", "I do not accept")
+        try:
+            accepted = self._show_modal_dialog(dialog, "Trust and Privacy Consent") == wx.ID_YES
+        finally:
+            dialog.Destroy()
         if accepted:
             mark_trust_consent_complete()
             return True
