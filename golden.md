@@ -387,7 +387,7 @@ This table is the execution source of truth. Update Status as work progresses. S
 
 | ID | Item | Area | Size | Status | Acceptance criteria |
 | --- | --- | --- | --- | --- | --- |
-| SEC-1 | Validate configured executable paths at load | Security | M | Todo | Tampered settings cannot launch arbitrary executables; unknown tool paths are rejected and announced; tests cover the reject path. |
+| SEC-1 | Validate configured executable paths at load | Security | M | Done | Tampered settings cannot launch arbitrary executables; unknown tool paths are rejected and announced; tests cover the reject path. |
 | SEC-2 | Path-escape guard for persistence writes | Security | S | Todo | A shared helper blocks writes outside the app data base; used in storage writers; tests prove traversal is blocked. |
 | SEC-3 | Whitelist OCR language codes | Security | S | Todo | Only known language codes reach Tesseract; invalid codes are rejected with a clear message; test included. |
 | SEC-5 | Explicit TLS verification on all network calls | Security | S | Todo | AI, update, and download requests verify certificates; a test or audit confirms no unverified context is used. |

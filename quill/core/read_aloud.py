@@ -108,11 +108,36 @@ OPENVOICE_ENGLISH_VOICES: list[tuple[str, str]] = [
 ]
 
 
+def _validate_configured_executable(
+    configured_path: str, expected_names: tuple[str, ...]
+) -> Path | None:
+    """Validate a user-configured speech-engine executable path.
+
+    A tampered settings file must not be able to launch an arbitrary program.
+    The configured value is accepted only when it points at an existing regular
+    file whose name matches one of the canonical executable names for this
+    engine; anything else (a missing file, a directory, or an unexpected
+    binary such as ``cmd.exe``) is rejected.
+    """
+    raw = configured_path.strip()
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser()
+    try:
+        if not candidate.is_file():
+            return None
+    except OSError:
+        return None
+    allowed = {name.lower() for name in expected_names}
+    if candidate.name.lower() not in allowed:
+        return None
+    return candidate.resolve()
+
+
 def discover_dectalk_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
+    validated = _validate_configured_executable(configured_path, ("speak.exe", "speak"))
+    if validated is not None:
+        return validated
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "dectalk"
@@ -124,10 +149,9 @@ def discover_dectalk_executable(configured_path: str = "") -> Path | None:
 
 
 def discover_piper_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
+    validated = _validate_configured_executable(configured_path, ("piper.exe", "piper"))
+    if validated is not None:
+        return validated
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "piper"
@@ -176,10 +200,9 @@ def synthesize_with_piper(
 
 
 def discover_espeak_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
+    validated = _validate_configured_executable(configured_path, ("espeak-ng.exe", "espeak-ng"))
+    if validated is not None:
+        return validated
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "espeak-ng"
@@ -199,10 +222,11 @@ def discover_espeak_executable(configured_path: str = "") -> Path | None:
 
 
 def discover_melotts_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
+    validated = _validate_configured_executable(
+        configured_path, ("melotts.exe", "melo-tts.exe", "melotts")
+    )
+    if validated is not None:
+        return validated
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "melotts"
@@ -217,10 +241,11 @@ def discover_melotts_executable(configured_path: str = "") -> Path | None:
 
 
 def discover_chatterbox_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
+    validated = _validate_configured_executable(
+        configured_path, ("chatterbox.exe", "chatterbox")
+    )
+    if validated is not None:
+        return validated
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "chatterbox"
@@ -235,10 +260,11 @@ def discover_chatterbox_executable(configured_path: str = "") -> Path | None:
 
 
 def discover_openvoice_executable(configured_path: str = "") -> Path | None:
-    if configured_path.strip():
-        candidate = Path(configured_path).expanduser()
-        if candidate.exists():
-            return candidate.resolve()
+    validated = _validate_configured_executable(
+        configured_path, ("openvoice.exe", "openvoice")
+    )
+    if validated is not None:
+        return validated
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         bundled = Path(app_root) / "tools" / "speech" / "openvoice"

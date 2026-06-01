@@ -120,6 +120,32 @@ def test_discover_piper_executable_uses_explicit_path(tmp_path: Path) -> None:
     assert discovered == exe.resolve()
 
 
+def test_discover_piper_executable_rejects_unexpected_binary(tmp_path: Path) -> None:
+    # SEC-1: a tampered settings value pointing at an arbitrary executable
+    # (e.g. cmd.exe) must be rejected, not launched.
+    rogue = tmp_path / "cmd.exe"
+    rogue.write_text("binary", encoding="utf-8")
+    assert discover_piper_executable(str(rogue)) is None
+
+
+def test_discover_piper_executable_rejects_directory(tmp_path: Path) -> None:
+    folder = tmp_path / "piper.exe"
+    folder.mkdir()
+    assert discover_piper_executable(str(folder)) is None
+
+
+def test_discover_espeak_executable_rejects_unexpected_binary(tmp_path: Path) -> None:
+    rogue = tmp_path / "powershell.exe"
+    rogue.write_text("binary", encoding="utf-8")
+    assert discover_espeak_executable(str(rogue)) is None
+
+
+def test_discover_dectalk_executable_rejects_unexpected_binary(tmp_path: Path) -> None:
+    rogue = tmp_path / "calc.exe"
+    rogue.write_text("binary", encoding="utf-8")
+    assert read_aloud_module.discover_dectalk_executable(str(rogue)) is None
+
+
 def test_synthesize_with_piper_runs_process(monkeypatch, tmp_path: Path) -> None:
     exe = tmp_path / "piper.exe"
     model = tmp_path / "voice.onnx"
