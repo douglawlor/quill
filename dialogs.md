@@ -51,6 +51,8 @@ or the command palette (`Ctrl+Shift+P`).
 - [ ] Reset to Factory Defaults (button within Settings)
 - [ ] Export profile to `.qpf` (button within Settings)
 - [ ] Import profile from `.qpf` (button within Settings)
+- [ ] Customize Menus (Menu Editor): Edit > Customize Menus... (`app.menu_editor`)
+- [ ] Rename Menu (text entry, nested in Customize Menus): Rename... button within Customize Menus
 - [ ] Command Palette: `Ctrl+Shift+P`
 
 ## C. Navigate

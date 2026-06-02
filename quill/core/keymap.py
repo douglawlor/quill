@@ -121,6 +121,7 @@ class KeyboardPack:
 
 _PACK_LABELS: dict[str, str] = {
     "app.command_palette": "Command Palette",
+    "app.menu_editor": "Customize Menus",
     "edit.copy_with_source": "Copy With Source",
     "edit.copy_selection_for_email": "Copy Selection For Email",
     "edit.find": "Find",

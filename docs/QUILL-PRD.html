@@ -8067,9 +8067,18 @@ in settings (documented in sections 5.74 and 10.12).</label></li>
 <h3 id="foundation-work-in-progress-post-1.0">21.20 Foundation work in
 progress (post-1.0)</h3>
 <ul class="task-list">
-<li><label><input type="checkbox" />Wire the
-<code>quill.core.menu_customization</code> model (menu and context-menu
-reordering/hiding) into an accessible Menu Editor UI.</label></li>
+<li><label><input type="checkbox" checked="" />Wire the
+<code>quill.core.menu_customization</code> model into an accessible Menu
+Editor UI for <strong>top-level</strong> menus: reorder, rename,
+show/hide, and one Reset to Factory Defaults, opened from Edit &gt;
+Customize Menus… (<code>app.menu_editor</code>). The build applies the
+saved customization through a post-build transform pass on the menu bar
+that bails out untouched if anything looks unexpected.</label></li>
+<li><label><input type="checkbox" />Extend the Menu Editor to per-item
+reordering/hiding and editor context-menu entries (the
+<code>quill.core.menu_customization</code> model already supports both;
+the remaining work is the item-level UI and a stable item-key binding in
+the menu build).</label></li>
 </ul>
 </body>
 </html>

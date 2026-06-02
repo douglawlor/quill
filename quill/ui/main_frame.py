@@ -211,6 +211,11 @@ from quill.core.links import build_link_text, find_link_at_cursor, infer_markup_
 from quill.core.locations import LocationRing
 from quill.core.macros import MacroManager
 from quill.core.marks import MarkRing, line_column_for_position
+from quill.core.menu_customization import (
+    MenuCustomization,
+    load_menu_customization,
+    save_menu_customization,
+)
 from quill.core.metrics import compute_document_stats
 from quill.core.navigation import (
     next_block_start,
@@ -469,6 +474,30 @@ def _csv_feature_enabled() -> bool:
     so CSV files always open in the normal text editor and there is no env-var
     override. Developed on the feature/structured-surfaces branch."""
     return False
+
+
+#: Stable key and factory label for each top-level menu, in default order.
+#: The Menu Editor and the menu-build transform pass share this list so a person
+#: can reorder, hide, and rename top-level menus without touching item code.
+_TOP_MENU_DEFS: tuple[tuple[str, str], ...] = (
+    ("file", "&File"),
+    ("edit", "&Edit"),
+    ("insert", "&Insert"),
+    ("view", "&View"),
+    ("search", "&Search"),
+    ("ai", "A&I"),
+    ("whisperer", "&BITS Whisperer"),
+    ("navigate", "&Navigate"),
+    ("format", "F&ormat"),
+    ("tools", "&Tools"),
+    ("window", "&Window"),
+    ("help", "&Help"),
+)
+
+
+def _normalize_menu_label(label: str) -> str:
+    """Return a menu label without mnemonics or surrounding whitespace."""
+    return label.replace("&", "").strip()
 
 
 @dataclass(slots=True)
@@ -2485,6 +2514,7 @@ class MainFrame:
         self._id_exit = wx.ID_EXIT
         self._id_palette = wx.NewIdRef()
         self._id_preferences = wx.NewIdRef()
+        self._id_menu_editor = wx.NewIdRef()
         self._id_open_url = wx.NewIdRef()
         self._id_close_document = wx.NewIdRef()
         self._id_save_all = wx.NewIdRef()
@@ -2670,6 +2700,10 @@ class MainFrame:
         edit_menu.Append(
             self._id_preferences,
             self._menu_label("Pre&ferences...", "app.preferences"),
+        )
+        edit_menu.Append(
+            self._id_menu_editor,
+            self._menu_label("Customize &Menus...", "app.menu_editor"),
         )
         menu_bar.Append(edit_menu, "&Edit")
         insert_menu = wx.Menu()
@@ -3793,6 +3827,7 @@ class MainFrame:
         menu_bar.Append(window_menu, "&Window")
         menu_bar.Append(help_menu, "&Help")
 
+        self._apply_menu_customization(menu_bar)
         self.frame.SetMenuBar(menu_bar)
         self._refresh_contextual_menu_items()
         self._apply_ai_menu_enabled()
@@ -3829,6 +3864,7 @@ class MainFrame:
         )
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_palette(), id=self._id_palette)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_preferences(), id=self._id_preferences)
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_menu_editor(), id=self._id_menu_editor)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.exit_app(), id=self._id_exit)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=self._id_about_quill)
         # macOS routes the application-menu "About" to wx.ID_ABOUT — wire it to
@@ -4863,6 +4899,7 @@ class MainFrame:
             "app.exit": self._id_exit,
             "app.command_palette": self._id_palette,
             "app.preferences": self._id_preferences,
+            "app.menu_editor": self._id_menu_editor,
             "edit.undo": self._id_undo,
             "edit.redo": self._id_redo,
             "edit.toggle_extend_selection_mode": self._id_toggle_extend_selection_mode,
@@ -7303,11 +7340,66 @@ class MainFrame:
         return cleaned
 
     def _menu_label(self, title: str, command_id: str) -> str:
+        label = self._ensure_menu_customization().item_label(command_id, title)
         binding = self.commands.keybinding_for(command_id)
-        label = title
         if binding is None:
             return label
         return f"{label}\t{binding}"
+
+    def _ensure_menu_customization(self) -> MenuCustomization:
+        """Return the loaded menu customization, loading it on first use."""
+        existing = getattr(self, "_menu_customization", None)
+        if existing is None:
+            try:
+                existing = load_menu_customization()
+            except Exception:
+                existing = MenuCustomization()
+            self._menu_customization = existing
+        return existing
+
+    def _apply_menu_customization(self, menu_bar: object) -> None:
+        """Reorder, hide, and relabel top-level menus per the saved customization.
+
+        Runs as a post-build transform pass so the imperative ``_build_menu``
+        construction stays untouched. The pass is keyed by each menu's factory
+        label, and bails out untouched if anything looks unexpected so a corrupt
+        customization can never produce a broken menu bar.
+        """
+        cust = self._ensure_menu_customization()
+        default_keys = [key for key, _ in _TOP_MENU_DEFS]
+        cust.reconcile(set(default_keys), set())
+        if not cust.is_customized():
+            return
+
+        default_by_key = dict(_TOP_MENU_DEFS)
+        label_to_key = {_normalize_menu_label(label): key for key, label in _TOP_MENU_DEFS}
+        try:
+            count = menu_bar.GetMenuCount()
+        except Exception:
+            return
+        current: list[tuple[object, str | None]] = []
+        for index in range(count):
+            menu = menu_bar.GetMenu(index)
+            label = menu_bar.GetMenuLabelText(index)
+            current.append((menu, label_to_key.get(_normalize_menu_label(label))))
+        if any(key is None for _, key in current):
+            return
+
+        menu_by_key = {key: menu for menu, key in current if key is not None}
+        desired = cust.visible_top_keys(default_keys)
+        # Detach every menu (from the end so indices stay valid), then re-append
+        # the visible ones in the desired order and destroy the hidden ones.
+        for index in range(menu_bar.GetMenuCount() - 1, -1, -1):
+            menu_bar.Remove(index)
+        for key in desired:
+            menu = menu_by_key[key]
+            menu_bar.Append(menu, cust.top_label(key, default_by_key[key]))
+        for key, menu in menu_by_key.items():
+            if key not in desired:
+                try:
+                    menu.Destroy()
+                except Exception:
+                    pass
 
     def _refresh_recent_menu(self) -> None:
         if not hasattr(self, "_recent_menu") or not hasattr(self, "_wx"):
@@ -9504,6 +9596,157 @@ class MainFrame:
         self._refresh_view_menu_checks()
         self._clear_navigation_issue_state()
         self._set_status(status)
+
+    def open_menu_editor(self) -> None:
+        """Open the accessible Menu Editor for reordering, hiding, and renaming
+        top-level menus, with one Reset to Factory Defaults (MENU-5).
+
+        Edits are made on a working copy and only persisted when the person
+        chooses Save, so Cancel always leaves the live menus untouched.
+        """
+        wx = self._wx
+        default_keys = [key for key, _ in _TOP_MENU_DEFS]
+        default_labels = dict(_TOP_MENU_DEFS)
+        current = self._ensure_menu_customization()
+        working = MenuCustomization.from_dict(current.to_dict())
+        working.reconcile(set(default_keys), set())
+
+        with wx.Dialog(self.frame, title="Customize Menus") as dialog:
+            outer = wx.BoxSizer(wx.VERTICAL)
+            outer.Add(
+                wx.StaticText(
+                    dialog,
+                    label=(
+                        "Reorder, rename, or hide the top-level menus. "
+                        "Changes apply when you choose Save."
+                    ),
+                ),
+                0,
+                wx.ALL,
+                8,
+            )
+
+            body = wx.BoxSizer(wx.HORIZONTAL)
+            menu_list = wx.ListBox(dialog, style=wx.LB_SINGLE)
+            menu_list.SetName("Top-level menus")
+            body.Add(menu_list, 1, wx.EXPAND | wx.RIGHT, 8)
+
+            button_col = wx.BoxSizer(wx.VERTICAL)
+            up_btn = wx.Button(dialog, label="Move &Up")
+            down_btn = wx.Button(dialog, label="Move &Down")
+            rename_btn = wx.Button(dialog, label="&Rename...")
+            hide_btn = wx.Button(dialog, label="&Show/Hide")
+            reset_btn = wx.Button(dialog, label="Reset to &Factory Defaults")
+            for btn in (up_btn, down_btn, rename_btn, hide_btn, reset_btn):
+                button_col.Add(btn, 0, wx.EXPAND | wx.BOTTOM, 6)
+            body.Add(button_col, 0)
+            outer.Add(body, 1, wx.EXPAND | wx.ALL, 8)
+
+            def _ordered() -> list[str]:
+                return working.ordered_top_keys(default_keys)
+
+            def _entry_label(key: str) -> str:
+                label = _normalize_menu_label(working.top_label(key, default_labels[key]))
+                if working.is_top_hidden(key):
+                    return f"{label} (hidden)"
+                return label
+
+            def _refresh(select_key: str | None = None) -> None:
+                keys = _ordered()
+                menu_list.Set([_entry_label(key) for key in keys])
+                if not keys:
+                    return
+                target = select_key if select_key in keys else keys[0]
+                menu_list.SetSelection(keys.index(target))
+
+            def _selected_key() -> str | None:
+                index = menu_list.GetSelection()
+                keys = _ordered()
+                if index is None or index < 0 or index >= len(keys):
+                    return None
+                return keys[index]
+
+            def _move(delta: int) -> None:
+                keys = _ordered()
+                key = _selected_key()
+                if key is None:
+                    return
+                index = keys.index(key)
+                new_index = index + delta
+                if new_index < 0 or new_index >= len(keys):
+                    return
+                keys.insert(new_index, keys.pop(index))
+                working.set_top_order(keys)
+                _refresh(key)
+
+            def _on_up(_event: object) -> None:
+                _move(-1)
+
+            def _on_down(_event: object) -> None:
+                _move(1)
+
+            def _on_rename(_event: object) -> None:
+                key = _selected_key()
+                if key is None:
+                    return
+                current_label = _normalize_menu_label(working.top_label(key, default_labels[key]))
+                with wx.TextEntryDialog(
+                    dialog,
+                    "Menu name (use & before a letter for the keyboard mnemonic):",
+                    "Rename Menu",
+                    current_label,
+                ) as entry:
+                    if self._show_modal_dialog(entry, "Rename Menu") != wx.ID_OK:
+                        return
+                    new_label = entry.GetValue().strip()
+                if not new_label:
+                    return
+                working.rename_top(key, new_label)
+                _refresh(key)
+
+            def _on_hide(_event: object) -> None:
+                key = _selected_key()
+                if key is None:
+                    return
+                working.set_top_hidden(key, not working.is_top_hidden(key))
+                _refresh(key)
+
+            def _on_reset(_event: object) -> None:
+                working.reset()
+                _refresh()
+
+            up_btn.Bind(wx.EVT_BUTTON, _on_up)
+            down_btn.Bind(wx.EVT_BUTTON, _on_down)
+            rename_btn.Bind(wx.EVT_BUTTON, _on_rename)
+            hide_btn.Bind(wx.EVT_BUTTON, _on_hide)
+            reset_btn.Bind(wx.EVT_BUTTON, _on_reset)
+
+            buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
+            if buttons is not None:
+                outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+            ok_button = dialog.FindWindow(wx.ID_OK)
+            if ok_button is not None:
+                ok_button.SetLabel("&Save")
+            apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+            dialog.SetSizerAndFit(outer)
+            _refresh()
+
+            if self._show_modal_dialog(dialog, "Customize Menus") != wx.ID_OK:
+                self._set_status("Menu customization cancelled")
+                return
+
+        working.reconcile(set(default_keys), set())
+        self._menu_customization = working
+        try:
+            save_menu_customization(working)
+        except Exception:
+            self._set_status("Could not save menu customization")
+            return
+        self._build_menu()
+        if working.is_customized():
+            self._set_status("Menu customization saved")
+        else:
+            self._set_status("Menus reset to factory defaults")
 
     def open_general_preferences(self) -> None:
         from quill.core import settings_registry as registry

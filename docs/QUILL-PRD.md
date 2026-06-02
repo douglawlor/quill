@@ -3799,4 +3799,5 @@ The governing rules remain the same throughout the roadmap: local-first processi
 
 ### 21.20 Foundation work in progress (post-1.0)
 
-- [ ] Wire the `quill.core.menu_customization` model (menu and context-menu reordering/hiding) into an accessible Menu Editor UI.
+- [x] Wire the `quill.core.menu_customization` model into an accessible Menu Editor UI for **top-level** menus: reorder, rename, show/hide, and one Reset to Factory Defaults, opened from Edit > Customize Menus... (`app.menu_editor`). The build applies the saved customization through a post-build transform pass on the menu bar that bails out untouched if anything looks unexpected.
+- [ ] Extend the Menu Editor to per-item reordering/hiding and editor context-menu entries (the `quill.core.menu_customization` model already supports both; the remaining work is the item-level UI and a stable item-key binding in the menu build).
