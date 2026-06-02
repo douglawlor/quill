@@ -201,6 +201,7 @@ parent first.
 - [ ] Select profile template (from Profiles and Features)
 - [ ] Export profile (from Profiles and Features)
 - [ ] Import profile (from Profiles and Features)
+- [ ] Review AI Changes (from Ask Quill Chat, when approving an AI replacement that differs from the selection)
 - [ ] Add custom prompt (from Prompt Studio)
 - [ ] Run Python (from Tools, Python sandbox)
 - [ ] Confirm download model (from AI Model Settings)

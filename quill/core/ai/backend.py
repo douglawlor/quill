@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 
 class ContextWindowExceeded(Exception):
@@ -19,3 +20,16 @@ class AIBackend(ABC):
     @abstractmethod
     def respond(self, prompt: str) -> str:
         """Return the model's text response for a single prompt (blocking)."""
+
+    def respond_stream(self, prompt: str, on_delta: Callable[[str], None]) -> str:
+        """Stream the response, calling ``on_delta`` per fragment; return the full text.
+
+        The default is a clean non-streaming fallback (AI-14): backends that
+        cannot stream produce the whole answer and emit it as a single fragment,
+        so callers can always use the streaming API and degrade gracefully.
+        Streaming backends override this to deliver real incremental tokens.
+        """
+        text = self.respond(prompt)
+        if text:
+            on_delta(text)
+        return text

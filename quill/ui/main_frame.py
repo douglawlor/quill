@@ -18713,8 +18713,11 @@ class MainFrame:
                 ok, reason = make_default_backend().is_available()
             except Exception as exc:  # noqa: BLE001
                 ok, reason = False, str(exc)
-            detail = "Ready." if ok else (reason or "Needs attention.")
-            self._wx.CallAfter(self._set_ai_menu_status_badge, bool(ok), detail)
+            from quill.core.ai.availability import describe_ai_availability
+
+            status = describe_ai_availability(enabled=True, available=bool(ok), reason=reason)
+            badge = "Needs key" if status.needs_key else None
+            self._wx.CallAfter(self._set_ai_menu_status_badge, bool(ok), status.message, badge)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -18752,9 +18755,9 @@ class MainFrame:
         from quill.core.ai.model_manager import load_ai_enabled
 
         if not load_ai_enabled():
-            self._set_status(
-                "AI is turned off. Enable 'Use Artificial Intelligence' in the AI menu."
-            )
+            from quill.core.ai.availability import AI_DISABLED_MESSAGE
+
+            self._set_status(AI_DISABLED_MESSAGE)
             return
         self._apply_style_to_assistant()
         tool_catalog = allowed_tools(self.commands, getattr(self, "features", None))
@@ -18768,11 +18771,34 @@ class MainFrame:
             run_command=self._ai_run_command,
             tool_catalog=tool_catalog,
             announce=self._set_status,
+            review_changes=self.open_ai_diff_review,
         )
         dialog.show()
 
     def _ai_insert_text(self, text: str) -> None:
         self.editor.WriteText(text)
+
+    def open_ai_diff_review(
+        self,
+        original: str,
+        revised: str,
+        on_apply: "Callable[[str], None]",
+        *,
+        title: str = "Review AI Changes",
+    ) -> None:
+        """AI-7: present a navigable added/removed/changed diff and apply the
+        accepted hunks as a single undo step via ``on_apply``."""
+        from quill.ui.assistant_tools import DiffReviewDialog
+
+        dialog = DiffReviewDialog(
+            self.frame,
+            title=title,
+            original_text=original,
+            revised_text=revised,
+            on_apply=on_apply,
+            announce=self._set_status,
+        )
+        dialog.show_modal()
 
     def _ai_replace_selection(self, text: str) -> None:
         start, end = self.editor.GetSelection()
@@ -18909,11 +18935,12 @@ class MainFrame:
         Menu items are greyed out while AI is off, but these actions are also
         reachable via the command palette and keybindings, so guard here too.
         """
+        from quill.core.ai.availability import AI_DISABLED_MESSAGE
         from quill.core.ai.model_manager import load_ai_enabled
 
         if load_ai_enabled():
             return True
-        self._set_status("AI is turned off. Enable 'Use Artificial Intelligence' in the AI menu.")
+        self._set_status(AI_DISABLED_MESSAGE)
         return False
 
     def _ai_target_text(self, *, fallback: str) -> tuple[str, str]:

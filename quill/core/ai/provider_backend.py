@@ -11,10 +11,13 @@ error taxonomy all live in one place.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from quill.core.ai.backend import AIBackend
 from quill.core.assistant_ai import (
     AssistantConnectionSettings,
     generate_assistant_response,
+    generate_assistant_response_stream,
     load_assistant_api_key,
     load_assistant_connection_settings,
     provider_requires_api_key,
@@ -53,4 +56,37 @@ class ProviderChatBackend(AIBackend):
         text, error = generate_assistant_response(self._settings, self._api_key, prompt)
         if error is not None:
             raise RuntimeError(error)
+        return text or ""
+
+    def respond_stream(self, prompt: str, on_delta: Callable[[str], None]) -> str:
+        """Stream tokens from the configured provider with accessible cadence (AI-14).
+
+        Delivers each fragment to ``on_delta`` as the model produces it. If the
+        provider request fails before any token arrives, it falls back to the
+        blocking request so a transient streaming hiccup still yields an answer.
+        """
+        available, reason = self.is_available()
+        if not available:
+            raise RuntimeError(reason or "The AI provider is not available.")
+        emitted = False
+
+        def track(fragment: str) -> None:
+            nonlocal emitted
+            emitted = True
+            on_delta(fragment)
+
+        text, error = generate_assistant_response_stream(
+            self._settings, self._api_key, prompt, track
+        )
+        if error is not None:
+            if emitted:
+                # Tokens already reached the user; surface the interruption
+                # rather than re-running and duplicating the partial reply.
+                raise RuntimeError(error)
+            # Nothing streamed yet: degrade cleanly to one blocking request.
+            text, error = generate_assistant_response(self._settings, self._api_key, prompt)
+            if error is not None:
+                raise RuntimeError(error)
+            if text:
+                on_delta(text)
         return text or ""

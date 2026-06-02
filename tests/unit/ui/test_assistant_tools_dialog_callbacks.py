@@ -6,6 +6,7 @@ from quill.core.accessibility_agent import build_plan
 from quill.ui.assistant_tools import (
     AccessibilityAgentDialog,
     AgentCenterDialog,
+    DiffReviewDialog,
     PromptStudioDialog,
 )
 
@@ -125,3 +126,55 @@ def test_accessibility_agent_apply_with_nothing_checked_makes_no_change() -> Non
     assert applied == []
     assert dialog.dialog.ended_with is None
     assert announcements and "no automatic changes" in announcements[0].lower()
+
+
+def _make_diff_dialog(
+    original: str, revised: str, checked: set[int]
+) -> tuple[DiffReviewDialog, list[str], list[str]]:
+    from quill.core.ai.diff_review import build_diff_review
+
+    dialog = DiffReviewDialog.__new__(DiffReviewDialog)
+    dialog._wx = SimpleNamespace(ID_OK=1)
+    dialog.review = build_diff_review(original, revised)
+    dialog.applied = False
+    dialog.status = _Status()
+    dialog.dialog = _Dialog()
+    dialog.hunk_list = _CheckListBox(checked)
+    applied: list[str] = []
+    announcements: list[str] = []
+    dialog._on_apply = lambda text: applied.append(text)
+    dialog._announce = lambda message: announcements.append(message)
+    return dialog, applied, announcements
+
+
+def test_diff_review_apply_all_checked_applies_revised() -> None:
+    dialog, applied, announcements = _make_diff_dialog("a\nb\nc", "a\nB\nc\nd", checked={0, 1})
+
+    dialog._on_apply_clicked(object())
+
+    assert dialog.applied is True
+    assert applied == ["a\nB\nc\nd"]
+    assert dialog.dialog.ended_with == 1
+    assert announcements and "Applied" in announcements[0]
+
+
+def test_diff_review_partial_apply_keeps_rejected_hunk() -> None:
+    # Accept only the first hunk (change b->B); reject the appended line.
+    dialog, applied, announcements = _make_diff_dialog("a\nb\nc", "a\nB\nc\nd", checked={0})
+
+    dialog._on_apply_clicked(object())
+
+    assert dialog.applied is True
+    assert applied == ["a\nB\nc"]
+    assert dialog.dialog.ended_with == 1
+
+
+def test_diff_review_reject_all_makes_no_change() -> None:
+    dialog, applied, announcements = _make_diff_dialog("a\nb\nc", "a\nB\nc\nd", checked=set())
+
+    dialog._on_apply_clicked(object())
+
+    assert dialog.applied is False
+    assert applied == []
+    assert dialog.dialog.ended_with is None
+    assert announcements and "No changes" in announcements[0]

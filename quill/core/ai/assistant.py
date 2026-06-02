@@ -233,6 +233,37 @@ class Assistant:
             lambda budget: f"{user_message}{self._document_context(document_text, budget)}"
         )
 
+    def answer_stream(
+        self,
+        user_message: str,
+        document_text: str = "",
+        on_delta: Callable[[str], None] | None = None,
+    ) -> str:
+        """Stream a chat answer, calling ``on_delta`` per fragment (AI-1, AI-14).
+
+        Returns the complete answer. Streaming backends deliver real incremental
+        tokens; backends that cannot stream emit the whole answer once via the
+        :meth:`AIBackend.respond_stream` fallback, so callers always get a clean
+        degraded experience. Document context shrinks until it fits the window,
+        exactly like :meth:`answer`.
+        """
+        emit = on_delta or (lambda _fragment: None)
+        user_message = self._clamp_message(user_message)
+
+        def build(budget: int) -> str:
+            return f"{user_message}{self._document_context(document_text, budget)}"
+
+        last_error: Exception | None = None
+        for budget in _CONTEXT_BUDGETS:
+            try:
+                return self.backend.respond_stream(self._wrap(build(budget)), emit)
+            except ContextWindowExceeded as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        return self.backend.respond_stream(self._wrap(build(0)), emit)
+
     def write_for_document(self, user_message: str, document_text: str = "") -> str:
         """Generate substantial content to insert; returns only the text."""
         user_message = self._clamp_message(user_message)
@@ -279,7 +310,10 @@ class Assistant:
         user_message = self._clamp_message(user_message)
         decide = getattr(self.backend, "decide", None)
         if decide is None:
-            return AgentDecision(action="answer", text=self.ask(user_message))
+            # No structured decider: treat as a plain chat answer. Leave the
+            # text empty so the caller generates it (streaming-friendly) instead
+            # of paying for a second, discarded blocking generation here.
+            return AgentDecision(action="answer", text="")
         decision: AgentDecision = decide(
             user_message, document_text, tuple(tool_ids), self._style_preamble
         )

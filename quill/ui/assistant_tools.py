@@ -620,6 +620,160 @@ class AccessibilityAgentDialog:
         self.dialog.EndModal(self._wx.ID_OK)
 
 
+class DiffReviewDialog:
+    """Accessible, line-by-line review of an AI edit (AI-7).
+
+    Presents the diff between the current document text and a proposed revision
+    as a navigable checklist of added / removed / changed hunks. Each hunk is
+    pre-checked; the reader can read every change line by line in the detail
+    pane, then apply all, some (partial apply), or none (reject). Applying is
+    handed back to the caller as a single replacement text so the editor records
+    it as one undo unit.
+    """
+
+    def __init__(
+        self,
+        parent: object,
+        *,
+        title: str,
+        original_text: str,
+        revised_text: str,
+        on_apply: Callable[[str], None],
+        announce: Callable[[str], None] | None = None,
+    ) -> None:
+        import wx
+
+        from quill.core.ai.diff_review import build_diff_review
+
+        self._wx = wx
+        self._on_apply = on_apply
+        self._announce = announce or (lambda _message: None)
+        self.review = build_diff_review(original_text, revised_text)
+        self.applied = False
+
+        self.dialog = wx.Dialog(
+            parent,
+            title=title,
+            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
+        )
+        self.dialog.SetSize((880, 640))
+
+        panel = wx.Panel(self.dialog)
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        root.Add(
+            wx.StaticText(
+                panel,
+                label=(
+                    "Review the proposed AI changes below. Checked hunks will be "
+                    "applied; uncheck any you want to keep as-is. Read each hunk "
+                    "line by line in the details pane. Nothing changes until you "
+                    "choose Apply."
+                ),
+            ),
+            0,
+            wx.EXPAND | wx.ALL,
+            8,
+        )
+
+        self.summary = wx.StaticText(panel, label=self.review.summary())
+        root.Add(self.summary, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+        root.Add(wx.StaticText(panel, label="Changes"), 0, wx.LEFT | wx.RIGHT, 8)
+        self.hunk_list = wx.CheckListBox(
+            panel,
+            choices=[hunk.describe() for hunk in self.review.hunks],
+        )
+        root.Add(self.hunk_list, 1, wx.EXPAND | wx.ALL, 8)
+        for index in range(len(self.review.hunks)):
+            self.hunk_list.Check(index, True)
+
+        root.Add(wx.StaticText(panel, label="Change details"), 0, wx.LEFT | wx.RIGHT, 8)
+        self.details = wx.TextCtrl(
+            panel,
+            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
+            size=(-1, 170),
+        )
+        root.Add(self.details, 0, wx.EXPAND | wx.ALL, 8)
+
+        self.status = wx.StaticText(panel, label="Ready to apply the checked changes.")
+        root.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+        buttons = wx.BoxSizer(wx.HORIZONTAL)
+        self.apply_button = wx.Button(panel, label="Apply Checked")
+        accept_all_button = wx.Button(panel, label="Accept All")
+        reject_all_button = wx.Button(panel, label="Reject All")
+        buttons.Add(self.apply_button, 0, wx.RIGHT, 8)
+        buttons.Add(accept_all_button, 0, wx.RIGHT, 8)
+        buttons.Add(reject_all_button, 0, wx.RIGHT, 8)
+        buttons.AddStretchSpacer(1)
+        close_button = wx.Button(panel, id=wx.ID_CANCEL, label="Close")
+        buttons.Add(close_button, 0)
+        root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+
+        panel.SetSizer(root)
+        outer = wx.BoxSizer(wx.VERTICAL)
+        outer.Add(panel, 1, wx.EXPAND)
+        self.dialog.SetSizer(outer)
+
+        self.hunk_list.Bind(wx.EVT_LISTBOX, self._on_hunk_selected)
+        self.apply_button.Bind(wx.EVT_BUTTON, self._on_apply_clicked)
+        accept_all_button.Bind(wx.EVT_BUTTON, lambda _e: self._check_all(True))
+        reject_all_button.Bind(wx.EVT_BUTTON, lambda _e: self._check_all(False))
+        close_button.Bind(wx.EVT_BUTTON, lambda _e: self.dialog.EndModal(wx.ID_CANCEL))
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+
+        if self.review.hunks:
+            self.hunk_list.SetSelection(0)
+            self._show_hunk_details(0)
+        else:
+            self.apply_button.Enable(False)
+            accept_all_button.Enable(False)
+            reject_all_button.Enable(False)
+            self.details.SetValue(
+                "The proposed revision is identical to the current document. "
+                "There is nothing to apply."
+            )
+
+    def show_modal(self) -> None:
+        self.dialog.CentreOnParent()
+        try:
+            show_modal_dialog(self.dialog, self.dialog.GetTitle())
+        finally:
+            self.dialog.Destroy()
+
+    def _on_hunk_selected(self, _event: object) -> None:
+        index = self.hunk_list.GetSelection()
+        if index != self._wx.NOT_FOUND and 0 <= index < len(self.review.hunks):
+            self._show_hunk_details(index)
+
+    def _show_hunk_details(self, index: int) -> None:
+        hunk = self.review.hunks[index]
+        self.details.SetValue("\n".join(hunk.detail_lines()))
+
+    def _check_all(self, checked: bool) -> None:
+        for index in range(len(self.review.hunks)):
+            self.hunk_list.Check(index, checked)
+        label = "Accepted all changes" if checked else "Rejected all changes"
+        self.status.SetLabel(f"{label}. Choose Apply to update the document.")
+        self._announce(label)
+
+    def _on_apply_clicked(self, _event: object) -> None:
+        accepted = {
+            index for index in range(len(self.review.hunks)) if self.hunk_list.IsChecked(index)
+        }
+        result_text = self.review.apply(accepted)
+        if result_text == self.review.original:
+            self.status.SetLabel("No changes were applied; the document is unchanged.")
+            self._announce("No changes were applied")
+            return
+        self.applied = True
+        self._on_apply(result_text)
+        count = len(accepted)
+        self._announce(f"Applied {count} {'change' if count == 1 else 'changes'} as one undo step")
+        self.dialog.EndModal(self._wx.ID_OK)
+
+
 class AgentCenterDialog:
     def __init__(
         self,

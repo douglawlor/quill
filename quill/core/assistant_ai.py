@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import ssl
 import time
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -815,26 +816,47 @@ def chat_endpoint(provider: str, host: str, model: str) -> str:
 
 
 def build_chat_body(
-    provider: str, model: str, prompt: str, *, max_tokens: int = _DEFAULT_MAX_TOKENS
+    provider: str,
+    model: str,
+    prompt: str,
+    *,
+    max_tokens: int = _DEFAULT_MAX_TOKENS,
+    stream: bool = False,
 ) -> dict[str, object]:
-    """Return the JSON request body for a provider's chat API (pure)."""
+    """Return the JSON request body for a provider's chat API (pure).
+
+    ``stream`` requests incremental token delivery (AI-14). Gemini carries the
+    streaming choice in its URL rather than the body, so the flag is a no-op
+    there; every other provider sets its own ``stream`` field.
+    """
     normalized = provider.strip().lower()
     user_message = {"role": "user", "content": prompt}
     if normalized == "claude":
         # Claude requires an explicit max_tokens.
-        return {
+        body: dict[str, object] = {
             "model": model,
             "max_tokens": max_tokens,
             "messages": [user_message],
         }
+        if stream:
+            body["stream"] = True
+        return body
     if normalized == "gemini":
+        # Gemini streams via the :streamGenerateContent?alt=sse endpoint, not a
+        # body flag, so the request body is identical for both modes.
         return {"contents": [{"role": "user", "parts": [{"text": prompt}]}]}
     if normalized == "ollama":
-        return {"model": model, "messages": [user_message], "stream": False}
+        return {"model": model, "messages": [user_message], "stream": stream}
     if normalized == "azure_openai":
         # The deployment is in the URL, so the body omits the model.
-        return {"messages": [user_message], "max_tokens": max_tokens}
-    return {"model": model, "messages": [user_message], "max_tokens": max_tokens}
+        body = {"messages": [user_message], "max_tokens": max_tokens}
+        if stream:
+            body["stream"] = True
+        return body
+    body = {"model": model, "messages": [user_message], "max_tokens": max_tokens}
+    if stream:
+        body["stream"] = True
+    return body
 
 
 def build_chat_headers(provider: str, host: str, api_key: str) -> dict[str, str]:
@@ -973,6 +995,231 @@ def generate_assistant_response(
             return text, None
         last_error = error
         if error.category not in _RETRYABLE_CATEGORIES:
+            break
+        if attempt + 1 < attempts:
+            backoff = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]
+            time.sleep(backoff)
+
+    if last_error is None:
+        return None, "Could not reach AI endpoint."
+    return None, last_error.message
+
+
+# --- Streaming chat generation (AI-14, AI-1) ------------------------------
+#
+# Each wired provider can stream tokens as the model produces them, so the UI
+# announces the reply incrementally instead of waiting for the whole thing. The
+# wire format differs by provider — OpenAI-compatible, Claude, and Gemini speak
+# Server-Sent Events (``data:`` lines terminated by ``[DONE]``); Ollama's local
+# ``/api/chat`` speaks newline-delimited JSON. The parsing below is pure so it
+# is tested without a network, and a clean non-streaming fallback lives on the
+# backend (``AIBackend.respond_stream``) for providers or builds that can't
+# stream.
+
+# Providers whose streaming wire format is newline-delimited JSON, not SSE.
+_NDJSON_STREAM_PROVIDERS = frozenset({"ollama"})
+
+
+def stream_chat_endpoint(provider: str, host: str, model: str) -> str:
+    """Return the streaming chat endpoint URL for a provider (pure; no network).
+
+    Identical to :func:`chat_endpoint` except for Gemini, which uses a distinct
+    ``:streamGenerateContent`` method with ``alt=sse`` so it returns Server-Sent
+    Events instead of one buffered JSON array.
+    """
+    normalized = provider.strip().lower()
+    if normalized == "gemini":
+        host = host.rstrip("/")
+        return f"{host}/v1beta/models/{quote(model)}:streamGenerateContent?alt=sse"
+    return chat_endpoint(provider, host, model)
+
+
+def parse_stream_event(provider: str, data: str) -> str | None:
+    """Extract the incremental text from one decoded stream payload (pure).
+
+    ``data`` is the JSON portion of a single Server-Sent Event (the part after
+    ``data:``) or one newline-delimited JSON line. Returns the text delta, or
+    ``None`` for control frames (role openers, ``[DONE]``, keep-alives) that
+    carry no text.
+    """
+    data = data.strip()
+    if not data or data == "[DONE]":
+        return None
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    normalized = provider.strip().lower()
+    if normalized == "claude":
+        if payload.get("type") != "content_block_delta":
+            return None
+        delta = payload.get("delta")
+        if isinstance(delta, dict):
+            text = str(delta.get("text", ""))
+            return text or None
+        return None
+    if normalized == "gemini":
+        candidates = payload.get("candidates")
+        if isinstance(candidates, list) and candidates:
+            first = candidates[0]
+            if isinstance(first, dict):
+                content = first.get("content")
+                if isinstance(content, dict):
+                    parts = content.get("parts")
+                    if isinstance(parts, list):
+                        text = "".join(
+                            str(part.get("text", "")) for part in parts if isinstance(part, dict)
+                        )
+                        return text or None
+        return None
+    if normalized == "ollama":
+        message = payload.get("message")
+        if isinstance(message, dict):
+            text = str(message.get("content", ""))
+            return text or None
+        return None
+    # OpenAI-compatible delta: openai, openrouter, custom, ollama_cloud, azure.
+    choices = payload.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, dict):
+            delta = first.get("delta")
+            if isinstance(delta, dict):
+                text = str(delta.get("content", ""))
+                return text or None
+            # Some compatible servers send full messages even when streaming.
+            message = first.get("message")
+            if isinstance(message, dict):
+                text = str(message.get("content", ""))
+                return text or None
+    return None
+
+
+def iter_stream_text(provider: str, raw_lines: Iterable[str | bytes]) -> Iterator[str]:
+    """Turn a provider's raw stream lines into text deltas (pure; no network).
+
+    Handles both wire formats: Server-Sent Events (skip ``event:``/comment lines,
+    strip the ``data:`` prefix, stop at ``[DONE]``) and newline-delimited JSON
+    (each line is a JSON object). Only non-empty text deltas are yielded.
+    """
+    ndjson = provider.strip().lower() in _NDJSON_STREAM_PROVIDERS
+    for raw in raw_lines:
+        line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+        line = line.strip()
+        if not line:
+            continue
+        if ndjson:
+            data = line
+        else:
+            if line.startswith(":"):
+                # SSE comment / keep-alive.
+                continue
+            if not line.startswith("data:"):
+                # Skip "event:" and other SSE field lines that carry no payload.
+                continue
+            data = line[len("data:") :].strip()
+            if data == "[DONE]":
+                return
+        text = parse_stream_event(provider, data)
+        if text:
+            yield text
+
+
+def _post_chat_stream(
+    endpoint: str,
+    headers: dict[str, str],
+    body: bytes,
+    provider: str,
+    on_delta: Callable[[str], None],
+    *,
+    timeout_seconds: float,
+) -> tuple[str | None, _FetchError | None, bool]:
+    """Open one streaming request, emit deltas, and return the full text.
+
+    Returns ``(text, error, emitted)``. ``emitted`` is True once any delta has
+    been delivered to ``on_delta`` — the caller uses it to avoid retrying a
+    partially streamed response (which would duplicate text).
+    """
+    request = Request(endpoint, data=body, headers=headers, method="POST")
+    chunks: list[str] = []
+    emitted = False
+    try:
+        with urlopen(
+            request, timeout=timeout_seconds, context=_context_for(endpoint)
+        ) as response:
+            for delta in iter_stream_text(provider, response):
+                chunks.append(delta)
+                emitted = True
+                on_delta(delta)
+    except HTTPError as exc:
+        category = _category_for_status(exc.code)
+        return None, _FetchError(
+            category,
+            _message_for_category(category, endpoint=endpoint, status_code=exc.code),
+            exc.code,
+        ), emitted
+    except URLError as exc:
+        category = _category_for_url_error(exc)
+        return None, _FetchError(
+            category, _message_for_category(category, endpoint=endpoint, reason=exc.reason)
+        ), emitted
+    except TimeoutError:
+        return None, _FetchError(
+            "timeout", _message_for_category("timeout", endpoint=endpoint)
+        ), emitted
+    text = "".join(chunks)
+    if not text:
+        return None, _FetchError(
+            "bad_response", _message_for_category("bad_response", endpoint=endpoint)
+        ), emitted
+    return text, None, emitted
+
+
+def generate_assistant_response_stream(
+    settings: AssistantConnectionSettings,
+    api_key: str,
+    prompt: str,
+    on_delta: Callable[[str], None],
+    *,
+    max_tokens: int = _DEFAULT_MAX_TOKENS,
+    timeout_seconds: float = 120.0,
+    max_attempts: int = 3,
+) -> tuple[str | None, str | None]:
+    """Stream a chat response from the configured provider (AI-14).
+
+    Calls ``on_delta`` with each text fragment as it arrives, and returns
+    ``(text, error)`` with the complete response on success. A request that fails
+    *before* any token streamed is retried with the same warm-up backoff as the
+    blocking path; a request that fails *mid-stream* is not retried (that would
+    duplicate already-delivered text). Callers that cannot stream should use the
+    backend's non-streaming fallback instead.
+    """
+    provider = settings.provider.strip().lower()
+    if provider == "off":
+        return None, "The AI provider is set to Off."
+    host = (settings.host or "").strip().rstrip("/") or default_host_for_provider(provider)
+    policy_error = _validate_endpoint_security(provider, host)
+    if policy_error:
+        return None, policy_error
+    model = (settings.model or "").strip() or default_model_for_provider(provider)
+    endpoint = stream_chat_endpoint(provider, host, model)
+    headers = build_chat_headers(provider, host, api_key)
+    body = json.dumps(
+        build_chat_body(provider, model, prompt, max_tokens=max_tokens, stream=True)
+    ).encode("utf-8")
+
+    last_error: _FetchError | None = None
+    attempts = max(1, max_attempts)
+    for attempt in range(attempts):
+        text, error, emitted = _post_chat_stream(
+            endpoint, headers, body, provider, on_delta, timeout_seconds=timeout_seconds
+        )
+        if error is None:
+            return text, None
+        last_error = error
+        if emitted or error.category not in _RETRYABLE_CATEGORIES:
             break
         if attempt + 1 < attempts:
             backoff = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]

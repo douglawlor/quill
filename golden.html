@@ -2720,9 +2720,21 @@ documented.</td>
 <td>Streaming response UI</td>
 <td>AI</td>
 <td>M</td>
-<td>Todo</td>
-<td>Replies stream incrementally with accessible, announced
-updates.</td>
+<td>Done</td>
+<td>Ask Quill chat replies now stream incrementally:
+<code>generate_assistant_response_stream</code> (in
+<code>assistant_ai.py</code>) yields token deltas per provider, the
+<code>AIBackend.respond_stream</code> interface carries them to the UI,
+and the chat surface announces throttled, accessible progress through
+the assertive <code>set_status</code> aria-live region while building
+the transcript, then appends the final answer as one
+<code>append_message</code>. Because the external
+<code>AccessibleChatView</code> supports no in-place token mutation,
+streaming is realized as throttled status announcements plus a single
+final transcript append (so the screen reader hears progress without
+being flooded), with a clean non-streaming fallback. Covered by
+<code>tests/unit/core/ai/test_streaming.py</code> and
+<code>test_streaming_backend.py</code>.</td>
 </tr>
 <tr>
 <td>POD-3</td>
@@ -4434,18 +4446,46 @@ human review even when AI-authored.</td>
 <td>Graceful AI degradation and clear status</td>
 <td>AI</td>
 <td>S</td>
-<td>Todo</td>
-<td>Every AI feature announces clearly when a model is unavailable or a
-key is missing, and never blocks the editor.</td>
+<td>Done</td>
+<td>A wx-free <code>quill/core/ai/availability.py</code> produces a
+single source of truth for AI readiness:
+<code>describe_availability(feature_name, ...)</code> returns a
+structured result with a clear, announceable message that names the
+feature and distinguishes “AI is turned off”, “a model is unavailable”,
+and “a key is missing” (with a <code>needs_key</code> flag), and it
+never blocks the editor (the editor stays fully usable when AI is
+unavailable). Covered by
+<code>tests/unit/core/ai/test_availability.py</code> (disabled master
+switch, ready, reason passthrough, missing-key detection, feature-name
+weaving, never-blocks-editor).</td>
 </tr>
 <tr>
 <td>AI-7</td>
 <td>Preview-and-apply AI diffs reviewable by ear</td>
 <td>AI</td>
 <td>L</td>
-<td>Todo</td>
-<td>AI edits present a navigable added/removed/changed diff, readable
-line by line, with apply, partial apply, reject, and a single undo.</td>
+<td>Done</td>
+<td>A wx-free diff engine (<code>quill/core/ai/diff_review.py</code>)
+builds a navigable added/removed/changed diff from original and revised
+text via <code>SequenceMatcher</code>: each <code>DiffHunk</code> has a
+screen-reader phrase (<code>describe()</code>, e.g. “Added 1 line at
+line 2.”) and line-by-line <code>detail_lines()</code> marking
+removed/added (and blank) lines, and
+<code>DiffReview.apply(accepted)</code> rebuilds the text honoring a
+partial-accept set while leaving unchanged segments verbatim, with
+<code>accept_all</code>/<code>reject_all</code> and a
+<code>summary()</code>. The accessible <code>DiffReviewDialog</code>
+(<code>quill/ui/assistant_tools.py</code>) presents the hunks as a stock
+<code>wx.CheckListBox</code> (all pre-checked) with a read-only details
+pane, plus Apply Checked / Accept All / Reject All / Close; applying
+replaces the selection as <strong>one undo step</strong> and announces
+the count. It is reachable from Ask Quill chat: approving an AI
+“replace” whose proposed text differs from the selection opens the
+review (<code>MainFrame.open_ai_diff_review</code>). Covered by
+<code>tests/unit/core/ai/test_diff_review.py</code> (engine, partial
+apply, round-trip) and
+<code>tests/unit/ui/test_assistant_tools_dialog_callbacks.py</code>
+(apply-all, partial apply, reject-all).</td>
 </tr>
 <tr>
 <td>AI-8</td>
@@ -4598,10 +4638,22 @@ audit. Verified by mocked-network tests.</td>
 <td>Streaming responses across providers</td>
 <td>AI</td>
 <td>M</td>
-<td>Todo</td>
-<td>Each wired provider streams tokens with throttled, accessible
-announcements (ties to AI-1); a non-streaming fallback degrades
-cleanly.</td>
+<td>Done</td>
+<td><code>generate_assistant_response_stream</code> parses each wired
+provider’s streaming format (OpenAI/OpenRouter/custom/Azure and
+ollama_cloud chat-completions SSE, Claude content-block SSE, Gemini
+generateContent SSE, local Ollama NDJSON) into token deltas via
+<code>parse_stream_event</code> + <code>iter_stream_text</code>, reusing
+the same endpoint-security, verified-TLS, and error taxonomy as AI-13.
+<code>ProviderChatBackend.respond_stream</code> surfaces the deltas to
+the UI for throttled accessible announcements (AI-1); on a pre-stream
+failure it degrades cleanly to the blocking
+<code>generate_assistant_response</code>, and a mid-stream failure
+raises without emitting a duplicate. Base
+<code>AIBackend.respond_stream</code> emits the full reply once as a
+fallback. Verified by mocked-network tests in
+<code>tests/unit/core/ai/test_streaming.py</code> and
+<code>test_streaming_backend.py</code>.</td>
 </tr>
 <tr>
 <td>AI-15</td>
@@ -5581,11 +5633,10 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 2</td>
 <td>Flagship experience</td>
 <td>58</td>
-<td>32</td>
-<td>26</td>
-<td>OCR-1..5, AGENT-1, AI-7, AI-1, AI-6, AI-14, AI-19, AI-20, AI-22,
-AI-24, SET-1..4, SET-7, SHARE-1..2, CTX-1, DICT-2, FEAT-19, FLAG-3,
-DLG-1</td>
+<td>36</td>
+<td>22</td>
+<td>OCR-1..5, AGENT-1, AI-19, AI-20, AI-22, AI-24, SET-1..4, SET-7,
+SHARE-1..2, CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1</td>
 </tr>
 <tr>
 <td>Tier 4</td>
@@ -5609,8 +5660,8 @@ CQ-14, CQ-23, CQ-24, LINUX-2</td>
 <td><strong>1.0 subtotal</strong></td>
 <td>Tiers 1, 2, 4, 6 (the QUILL 1.0 scope)</td>
 <td><strong>144</strong></td>
-<td><strong>66</strong></td>
-<td><strong>78</strong></td>
+<td><strong>73</strong></td>
+<td><strong>71</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -5650,8 +5701,8 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 <td><strong>Total</strong></td>
 <td>All tiers (1.0 + 2.0)</td>
 <td><strong>186</strong></td>
-<td><strong>66</strong></td>
-<td><strong>120</strong></td>
+<td><strong>73</strong></td>
+<td><strong>113</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -5702,8 +5753,8 @@ AGENT-1</td>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>Todo</td>
-<td>AI-1, AI-6, AI-7, AI-14, AI-19, AI-20, AI-22, AI-24, OCR-1, OCR-2,
-OCR-3, OCR-4, OCR-5, CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1</td>
+<td>AI-19, AI-20, AI-22, AI-24, OCR-1, OCR-2, OCR-3, OCR-4, OCR-5,
+CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -5744,9 +5795,9 @@ GATE-8, GATE-9, FLAG-1, FLAG-2</td>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>QK-1, QK-2, QK-3, QK-4, QK-5, QK-9, NAV-1, NAV-4, NAV-5, SEL-1,
-SEL-2, SEL-3, AI-13, AI-15, AI-16, AI-17, AI-21, AI-23, WATCH-1,
-WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6, WATCH-7, SET-5, SET-6,
-SHARE-3, FLAG-4, MENU-3, DICT-1</td>
+SEL-2, SEL-3, AI-1, AI-6, AI-7, AI-13, AI-14, AI-15, AI-16, AI-17,
+AI-21, AI-23, WATCH-1, WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6,
+WATCH-7, SET-5, SET-6, SHARE-3, FLAG-4, MENU-3, DICT-1</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -5808,6 +5859,70 @@ note), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also
 incidentally cleared the <code>quill/core</code> and
 <code>quill/io</code> portion of the TYPE-1..8 zone, though those formal
 rows stay open until each is individually verified and closed.</p>
+<h4
+id="trustworthy-ai-editing-ai-1-ai-6-ai-7-and-ai-14-landed-done-end-to-end">2026-06-08:
+Trustworthy AI editing — AI-1, AI-6, AI-7, and AI-14 landed Done end to
+end</h4>
+<p>The four open AI-experience items moved from Todo to
+<strong>Done</strong>, delivering streaming, graceful degradation, and a
+reviewable-by-ear diff across <code>core</code> and the wxPython UI,
+honestly tested.</p>
+<ul>
+<li><strong>AI-14 / AI-1 (Done):</strong>
+<code>generate_assistant_response_stream</code> in
+<code>quill/core/assistant_ai.py</code> parses each wired provider’s
+streaming wire format (OpenAI/OpenRouter/custom/Azure and ollama_cloud
+chat-completions SSE, Claude content-block SSE, Gemini generateContent
+SSE, local Ollama NDJSON) into token deltas via
+<code>parse_stream_event</code> + <code>iter_stream_text</code>, reusing
+the AI-13 endpoint-security, verified-TLS, retry, and error taxonomy.
+<code>ProviderChatBackend.respond_stream</code> surfaces the deltas to
+the UI; a pre-stream failure degrades cleanly to the blocking path and a
+mid-stream failure raises without a duplicate, while the base
+<code>AIBackend.respond_stream</code> emits the full reply once as a
+fallback. The Ask Quill chat consumes the stream as throttled,
+accessible status announcements through the assertive aria-live region
+plus a single final transcript append — the external
+<code>AccessibleChatView</code> supports no in-place token mutation, so
+progress is <em>heard</em> without flooding the screen reader.</li>
+<li><strong>AI-6 (Done):</strong> a wx-free
+<code>quill/core/ai/availability.py</code> is the single source of truth
+for AI readiness; <code>describe_availability(feature_name, ...)</code>
+returns a clear, announceable message that names the feature and
+distinguishes “AI is turned off”, “a model is unavailable”, and “a key
+is missing” (with a <code>needs_key</code> flag), and it never blocks
+the editor.</li>
+<li><strong>AI-7 (Done):</strong>
+<code>quill/core/ai/diff_review.py</code> builds a navigable
+added/removed/changed diff via <code>SequenceMatcher</code>; each
+<code>DiffHunk</code> carries a screen-reader phrase and line-by-line
+detail (marking blank lines), and
+<code>DiffReview.apply(accepted)</code> honors a partial-accept set
+while keeping unchanged segments verbatim. The accessible
+<code>DiffReviewDialog</code> presents the hunks as a stock
+<code>wx.CheckListBox</code> (all pre-checked) with a read-only details
+pane and Apply Checked / Accept All / Reject All / Close; applying
+replaces the selection as <strong>one undo step</strong> and announces
+the count. It is reachable from Ask Quill chat — approving an AI
+“replace” whose text differs from the selection opens the review
+(<code>MainFrame.open_ai_diff_review</code>).</li>
+<li>Tests: <code>tests/unit/core/ai/test_streaming.py</code>,
+<code>test_streaming_backend.py</code>,
+<code>test_availability.py</code>, <code>test_diff_review.py</code>, and
+the <code>DiffReviewDialog</code> cases in
+<code>tests/unit/ui/test_assistant_tools_dialog_callbacks.py</code> (45
+passed). Quality gates: ruff format/check clean on all touched files;
+strict mypy clean on the touched <code>quill/core</code> modules
+(<code>diff_review.py</code>, <code>availability.py</code>,
+<code>backend.py</code>, <code>provider_backend.py</code>,
+<code>assistant.py</code>, <code>assistant_ai.py</code>); the UI
+public-surface snapshot was refreshed for the new
+<code>open_ai_diff_review</code> method, and <code>dialogs.md</code>
+gained a row for the <strong>Review AI Changes</strong> dialog.</li>
+<li>Counts: AI-1, AI-6, AI-7, and AI-14 close, moving Tier 2 to
+<strong>36 of 58 done (22 remaining)</strong> and the QUILL 1.0 scope to
+<strong>73 of 144 done (71 remaining)</strong>.</li>
+</ul>
 <h4
 id="watch-profiles-finished-watch-5-watch-6-and-watch-7-landed-done-end-to-end">2026-06-06:
 Watch Profiles finished — WATCH-5, WATCH-6, and WATCH-7 landed Done end

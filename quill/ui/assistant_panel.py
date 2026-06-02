@@ -16,6 +16,7 @@ off the UI thread.
 from __future__ import annotations
 
 import threading
+import time
 
 from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
 
@@ -55,6 +56,7 @@ class AskQuillChatDialog:
         run_command,
         tool_catalog: list[tuple[str, str]],
         announce=None,
+        review_changes=None,
     ) -> None:
         import wx
 
@@ -65,11 +67,20 @@ class AskQuillChatDialog:
         self._insert_text = insert_text
         self._replace_selection = replace_selection
         self._run_command = run_command
+        # AI-7: optional callback to present a navigable diff before applying a
+        # replacement. Signature: review_changes(original, revised, on_apply).
+        self._review_changes = review_changes
         self._tool_titles = dict(tool_catalog)
         self._tool_ids = tuple(tid for tid, _ in tool_catalog)
         self._announce = announce or (lambda _m: None)
         self._last_response = ""
         self._first_done = False
+        # Streaming state (AI-1): accumulate streamed fragments on the UI thread
+        # and announce them in throttled, sentence-sized chunks.
+        self._stream_active = False
+        self._stream_buffer = ""
+        self._stream_announced = 0
+        self._stream_last = 0.0
 
         self.dialog = wx.Dialog(
             parent, title="Ask Quill", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
@@ -239,6 +250,10 @@ class AskQuillChatDialog:
         self._announce("Working")
         document = self._get_document()
         selection = self._get_selection()
+        self._stream_active = False
+        self._stream_buffer = ""
+        self._stream_announced = 0
+        self._stream_last = 0.0
 
         def worker() -> None:
             try:
@@ -256,13 +271,60 @@ class AskQuillChatDialog:
                         text = self._assistant.write_for_document(message, document)
                     result = ("replace", text, "", "")
                 else:
-                    text = self._assistant.answer(message, document)
+                    self._stream_active = True
+
+                    def on_delta(fragment: str) -> None:
+                        self._wx.CallAfter(self._on_stream_delta, fragment)
+
+                    text = self._assistant.answer_stream(message, document, on_delta)
                     result = ("answer", text, "", "")
             except Exception as exc:  # noqa: BLE001
                 result = ("error", "", "", str(exc))
             self._wx.CallAfter(self._apply, *result)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _on_stream_delta(self, fragment: str) -> None:
+        """UI thread: collect a streamed fragment and announce on a throttle (AI-1)."""
+        if not fragment:
+            return
+        self._stream_buffer += fragment
+        now = time.monotonic()
+        # Hold announcements to roughly one per 0.8s so speech stays intelligible
+        # instead of being interrupted token by token.
+        if now - self._stream_last < 0.8:
+            return
+        self._announce_stream_progress()
+
+    def _announce_stream_progress(self) -> None:
+        """Announce the next sentence-sized chunk of streamed text."""
+        pending = self._stream_buffer[self._stream_announced :]
+        if not pending.strip():
+            return
+        boundary = max(
+            pending.rfind(". "),
+            pending.rfind("! "),
+            pending.rfind("? "),
+            pending.rfind("\n"),
+        )
+        if boundary < 0:
+            # No sentence end yet; wait unless a long run has built up.
+            if len(pending) < 80:
+                return
+            consumed = len(pending)
+            chunk = pending
+        else:
+            consumed = boundary + 1
+            chunk = pending[:consumed]
+        spoken = " ".join(chunk.split())
+        self._stream_announced += consumed
+        if not spoken:
+            return
+        self._stream_last = time.monotonic()
+        if self._webview is not None:
+            self._webview.set_status(spoken)
+        else:
+            self._announce(spoken)
 
     def _show_approval(self, show: bool, label: str = "") -> None:
         self.approval_label.SetLabel(label)
@@ -306,7 +368,13 @@ class AskQuillChatDialog:
         else:
             self._last_response = text
             self._append("Quill", text or "(no response)")
-            self._announce_incoming(text or "No response")
+            if self._stream_active:
+                # The reply was already announced incrementally as it streamed
+                # in, and the full text is now in the transcript. Skip repeating
+                # the whole thing; the "Response ready" cue below closes it out.
+                self._stream_active = False
+            else:
+                self._announce_incoming(text or "No response")
         self.copy_button.Enable(bool(self._last_response))
         self._set_busy(False)
         if self._webview is not None:
@@ -335,8 +403,15 @@ class AskQuillChatDialog:
                 self._append("Quill", "Inserted into the document.")
             elif action == "replace":
                 if self._get_selection():
-                    self._replace_selection(text)
-                    self._append("Quill", "Replaced the selection.")
+                    selection = self._get_selection()
+                    if self._review_changes is not None and selection != text:
+                        # AI-7: let the reader review the change as a navigable,
+                        # line-by-line diff before it touches the document.
+                        self._review_changes(selection, text, self._apply_reviewed_replace)
+                        self._append("Quill", "Opened the change review.")
+                    else:
+                        self._replace_selection(text)
+                        self._append("Quill", "Replaced the selection.")
                 else:
                     self._insert_text(text)
                     self._append("Quill", "No selection — inserted at the cursor.")
@@ -344,6 +419,13 @@ class AskQuillChatDialog:
             self._append("Quill", f"Couldn't apply that: {exc}")
         self._announce("Applied")
         self._focus_composer()
+
+    def _apply_reviewed_replace(self, reviewed_text: str) -> None:
+        # Callback from the AI-7 diff review dialog: apply the reviewed text as a
+        # single replacement of the selection.
+        self._replace_selection(reviewed_text)
+        self._append("Quill", "Applied the reviewed changes.")
+        self._announce("Applied reviewed changes")
 
     def _on_discard(self, _event: object) -> None:
         self._pending = None

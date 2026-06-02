@@ -546,7 +546,7 @@ This table is the execution source of truth. Update Status as work progresses. S
 | FEAT-11 | Status bar label and persistence polish | Features | S | Todo | Every cell announces; layout persists and announces. |
 | SEC-4 | Document cwd safety for safe_subprocess | Security | S | Done | Callers cannot point cwd outside expected directories; documented and tested. `run_subprocess_safely` documents the contract and validates `cwd` is an existing directory (with `args`/executable checks); covered with SEC-15. |
 | SEC-7 | Forget key command and shared-account note | Security | S | Todo | A command clears both secret stores and announces; limitation documented. |
-| AI-1 | Streaming response UI | AI | M | Todo | Replies stream incrementally with accessible, announced updates. |
+| AI-1 | Streaming response UI | AI | M | Done | Ask Quill chat replies now stream incrementally: `generate_assistant_response_stream` (in `assistant_ai.py`) yields token deltas per provider, the `AIBackend.respond_stream` interface carries them to the UI, and the chat surface announces throttled, accessible progress through the assertive `set_status` aria-live region while building the transcript, then appends the final answer as one `append_message`. Because the external `AccessibleChatView` supports no in-place token mutation, streaming is realized as throttled status announcements plus a single final transcript append (so the screen reader hears progress without being flooded), with a clean non-streaming fallback. Covered by `tests/unit/core/ai/test_streaming.py` and `test_streaming_backend.py`. |
 | POD-3 | Podcast transcript: Reading and reviewing | Docs | S | Todo | Transcript passes lint; ships in all formats. |
 | POD-4 | Podcast transcript: On-device AI | Docs | S | Todo | As above. |
 | POD-5 | Podcast transcript: Make documents accessible | Docs | S | Todo | As above. |
@@ -915,8 +915,8 @@ These extend the section 14 tracker.
 
 | ID | Item | Area | Size | Status | Acceptance criteria |
 | --- | --- | --- | --- | --- | --- |
-| AI-6 | Graceful AI degradation and clear status | AI | S | Todo | Every AI feature announces clearly when a model is unavailable or a key is missing, and never blocks the editor. |
-| AI-7 | Preview-and-apply AI diffs reviewable by ear | AI | L | Todo | AI edits present a navigable added/removed/changed diff, readable line by line, with apply, partial apply, reject, and a single undo. |
+| AI-6 | Graceful AI degradation and clear status | AI | S | Done | A wx-free `quill/core/ai/availability.py` produces a single source of truth for AI readiness: `describe_availability(feature_name, ...)` returns a structured result with a clear, announceable message that names the feature and distinguishes "AI is turned off", "a model is unavailable", and "a key is missing" (with a `needs_key` flag), and it never blocks the editor (the editor stays fully usable when AI is unavailable). Covered by `tests/unit/core/ai/test_availability.py` (disabled master switch, ready, reason passthrough, missing-key detection, feature-name weaving, never-blocks-editor). |
+| AI-7 | Preview-and-apply AI diffs reviewable by ear | AI | L | Done | A wx-free diff engine (`quill/core/ai/diff_review.py`) builds a navigable added/removed/changed diff from original and revised text via `SequenceMatcher`: each `DiffHunk` has a screen-reader phrase (`describe()`, e.g. "Added 1 line at line 2.") and line-by-line `detail_lines()` marking removed/added (and blank) lines, and `DiffReview.apply(accepted)` rebuilds the text honoring a partial-accept set while leaving unchanged segments verbatim, with `accept_all`/`reject_all` and a `summary()`. The accessible `DiffReviewDialog` (`quill/ui/assistant_tools.py`) presents the hunks as a stock `wx.CheckListBox` (all pre-checked) with a read-only details pane, plus Apply Checked / Accept All / Reject All / Close; applying replaces the selection as **one undo step** and announces the count. It is reachable from Ask Quill chat: approving an AI "replace" whose proposed text differs from the selection opens the review (`MainFrame.open_ai_diff_review`). Covered by `tests/unit/core/ai/test_diff_review.py` (engine, partial apply, round-trip) and `tests/unit/ui/test_assistant_tools_dialog_callbacks.py` (apply-all, partial apply, reject-all). |
 | AI-8 | Context-aware AI actions | AI | M | Todo | Offered actions adapt to cursor or selection context and document type and are reachable from the QUILL key. |
 | AI-9 | Prompt library and recipes | AI | M | Todo | Prompts and recipes can be saved, named, organized, shared, and picked with live preview. |
 | AI-10 | Style training and explainable edits | AI | M | Todo | The assistant can match a user's voice and explain why it made each change, consistently across a document. |
@@ -932,7 +932,7 @@ These extend the section 14 tracker.
 | ID | Item | Area | Size | Status | Acceptance criteria |
 | --- | --- | --- | --- | --- | --- |
 | AI-13 | Wire configured providers to a real chat backend | AI | L | Done | `generate_assistant_response` in `assistant_ai.py` routes generation to the selected provider (OpenAI/OpenRouter/custom/Azure/ollama_cloud via chat-completions, Claude via messages, Gemini via generateContent, local Ollama via /api/chat); `ProviderChatBackend` adapts it to the `AIBackend` interface, and `make_default_backend` returns it whenever a saved connection exists and is not Off and reports available, so selecting a cloud or Ollama provider actually changes who responds. Reuses the endpoint-security check, verified TLS, retry/backoff, and error taxonomy; new egress registered in the GATE-9 audit. Verified by mocked-network tests. |
-| AI-14 | Streaming responses across providers | AI | M | Todo | Each wired provider streams tokens with throttled, accessible announcements (ties to AI-1); a non-streaming fallback degrades cleanly. |
+| AI-14 | Streaming responses across providers | AI | M | Done | `generate_assistant_response_stream` parses each wired provider's streaming format (OpenAI/OpenRouter/custom/Azure and ollama_cloud chat-completions SSE, Claude content-block SSE, Gemini generateContent SSE, local Ollama NDJSON) into token deltas via `parse_stream_event` + `iter_stream_text`, reusing the same endpoint-security, verified-TLS, and error taxonomy as AI-13. `ProviderChatBackend.respond_stream` surfaces the deltas to the UI for throttled accessible announcements (AI-1); on a pre-stream failure it degrades cleanly to the blocking `generate_assistant_response`, and a mid-stream failure raises without emitting a duplicate. Base `AIBackend.respond_stream` emits the full reply once as a fallback. Verified by mocked-network tests in `tests/unit/core/ai/test_streaming.py` and `test_streaming_backend.py`. |
 | AI-15 | Provider-specific correctness | AI | M | Done | Azure targets a deployment in the URL (`/openai/deployments/<deploy>/chat/completions?api-version=...`) and omits the model from the body; Claude sends the required max_tokens; Gemini uses its own contents/generateContent request and parser; OpenRouter sends HTTP-Referer and X-Title attribution headers; Ollama chat uses /api/chat with stream=false. Each is covered by a contract test. |
 | AI-16 | Per-provider contract tests | AI | M | Done | `test_provider_chat.py` covers each provider's request shape (endpoint, body, headers) and response parsing with mocked request/response and no live network; a provider schema change fails the build instead of silently breaking generation. |
 | AI-17 | Extend the error taxonomy to the chat path | AI | S | Done | The chat path (`_post_chat`/`generate_assistant_response`) reuses the same auth/forbidden/rate-limited/warming-up/timeout/unreachable categories and cause-specific, screen-reader-friendly messages as model listing, with the same bounded warm-up retry; verified by 401/503/URLError tests. |
@@ -1157,15 +1157,15 @@ This table tracks how many of the backlog IDs each tier names are still open. It
 | Tier | Scope | Total items | Done | Remaining | Open item IDs |
 | --- | --- | --- | --- | --- | --- |
 | Tier 1 | Protect users and unlock the team | 23 | 23 | 0 | (complete) |
-| Tier 2 | Flagship experience | 58 | 32 | 26 | OCR-1..5, AGENT-1, AI-7, AI-1, AI-6, AI-14, AI-19, AI-20, AI-22, AI-24, SET-1..4, SET-7, SHARE-1..2, CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1 |
+| Tier 2 | Flagship experience | 58 | 36 | 22 | OCR-1..5, AGENT-1, AI-19, AI-20, AI-22, AI-24, SET-1..4, SET-7, SHARE-1..2, CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1 |
 | Tier 4 | Structural health and performance | 30 | 11 | 19 | CQ-16, CQ-1, DLG-2, GATE-11, PERF-1..3, PERF-9..14, GATE-10, SEC-6, SEC-7, SEC-8, SEC-14, SEC-17 |
 | Tier 6 | Documentation and learning surface | 33 | 3 | 30 | DOC-14..17, DOC-11, DOC-12, DOC-1..8, POD-1..5, TUT-1..7, CQ-11, CQ-14, CQ-23, CQ-24, LINUX-2 |
-| **1.0 subtotal** | Tiers 1, 2, 4, 6 (the QUILL 1.0 scope) | **144** | **66** | **78** | |
+| **1.0 subtotal** | Tiers 1, 2, 4, 6 (the QUILL 1.0 scope) | **144** | **73** | **71** | |
 | Tier 3 (2.0) | GLOW accessibility engine — deferred to QUILL 2.0 | 8 | 0 | 8 | GLOW-1..7, WATCH-8 |
 | Tier 5 (2.0) | BITS Whisperer transcription — deferred to QUILL 2.0 | 28 | 0 | 28 | BW-1..10, WATCH-9, NAV-10, AI-11, AI-12, AI-18, FEAT-12..18, LINUX-1, ECO-1, L10N-1, COLLAB-1 |
 | AX (2.0) | Accessibility Agents / axe-core engine — deferred to QUILL 2.0 | 6 | 0 | 6 | AX-A..F |
 | **2.0 subtotal** | GLOW + BITS Whisperer + axe-core | **42** | **0** | **42** | |
-| **Total** | All tiers (1.0 + 2.0) | **186** | **66** | **120** | |
+| **Total** | All tiers (1.0 + 2.0) | **186** | **73** | **113** | |
 
 > Deferral note (2026-06-02): per maintainer direction, the GLOW accessibility
 > engine (Tier 3, including the WATCH-8 GLOW watch action), the BITS Whisperer
@@ -1192,7 +1192,7 @@ list.
 | Tier | Status | Feature IDs |
 | --- | --- | --- |
 | Tier 2 — Flagship | In progress | SET-1, SET-2, SET-3, SET-4, SET-7, SHARE-1, SHARE-2, MENU-1, MENU-5, AGENT-1 |
-| Tier 2 — Flagship | Todo | AI-1, AI-6, AI-7, AI-14, AI-19, AI-20, AI-22, AI-24, OCR-1, OCR-2, OCR-3, OCR-4, OCR-5, CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1 |
+| Tier 2 — Flagship | Todo | AI-19, AI-20, AI-22, AI-24, OCR-1, OCR-2, OCR-3, OCR-4, OCR-5, CTX-1, DICT-2, FEAT-19, FLAG-3, DLG-1 |
 | Tier 4 — Structural health | Todo | CQ-1, CQ-16, DLG-2, GATE-10, GATE-11, PERF-1, PERF-2, PERF-3, PERF-9, PERF-10, PERF-11, PERF-12, PERF-13, PERF-14, SEC-6, SEC-7, SEC-8, SEC-14, SEC-17 |
 | Tier 6 — Documentation | Todo | DOC-1, DOC-2, DOC-3, DOC-4, DOC-5, DOC-6, DOC-7, DOC-8, DOC-11, DOC-12, DOC-14, DOC-15, DOC-16, DOC-17, POD-1, POD-2, POD-3, POD-4, POD-5, TUT-1, TUT-2, TUT-3, TUT-4, TUT-5, TUT-6, TUT-7, CQ-11, CQ-23, CQ-24, LINUX-2 |
 
@@ -1201,7 +1201,7 @@ list.
 | Tier | Feature IDs |
 | --- | --- |
 | Tier 1 — Protect users | BUG-1, BUG-2, BUG-3, BUG-4, BUG-5, BUG-6, BUG-7, SEC-1, SEC-10, SEC-11, SEC-13, GATE-1, GATE-2, GATE-3, GATE-4, GATE-5, GATE-6, GATE-7, GATE-8, GATE-9, FLAG-1, FLAG-2 |
-| Tier 2 — Flagship | QK-1, QK-2, QK-3, QK-4, QK-5, QK-9, NAV-1, NAV-4, NAV-5, SEL-1, SEL-2, SEL-3, AI-13, AI-15, AI-16, AI-17, AI-21, AI-23, WATCH-1, WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6, WATCH-7, SET-5, SET-6, SHARE-3, FLAG-4, MENU-3, DICT-1 |
+| Tier 2 — Flagship | QK-1, QK-2, QK-3, QK-4, QK-5, QK-9, NAV-1, NAV-4, NAV-5, SEL-1, SEL-2, SEL-3, AI-1, AI-6, AI-7, AI-13, AI-14, AI-15, AI-16, AI-17, AI-21, AI-23, WATCH-1, WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6, WATCH-7, SET-5, SET-6, SHARE-3, FLAG-4, MENU-3, DICT-1 |
 | Tier 4 — Structural health | CQ-7, CQ-12, CQ-13, CQ-14, CQ-15, CQ-17, CQ-18, CQ-19, CQ-20, CQ-21, CQ-22, PERF-8, SEC-4, SEC-15, SEC-16, TYPE-1, TYPE-2, TYPE-3, TYPE-4, TYPE-5, TYPE-6, TYPE-7, TYPE-8 |
 
 **Deferred to QUILL 2.0 (not in the 1.0 lists)**
@@ -1214,6 +1214,16 @@ list.
 | Tier 5 stretch explorations | NAV-10, AI-11, AI-12, AI-18, FEAT-12, FEAT-13, FEAT-14, FEAT-15, FEAT-16, FEAT-17, FEAT-18, LINUX-1, ECO-1, L10N-1, COLLAB-1 | Post-1.0 breadth, chosen with beta feedback in 2.0. |
 
 Completed outside the formal tier lists (cross-cutting protections and quality work that the tiers reference only by theme): SEC-2 (path-escape guard for persistence writes), SEC-3 (OCR language allowlist), SEC-4 (documented and validated cwd safety for safe_subprocess), SEC-5 (verified TLS everywhere), GATE-1 (pre-commit), PERF-8 (documented scoped type-check), CQ-17 (thread-safety invariants note), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also incidentally cleared the `quill/core` and `quill/io` portion of the TYPE-1..8 zone, though those formal rows stay open until each is individually verified and closed.
+
+#### 2026-06-08: Trustworthy AI editing — AI-1, AI-6, AI-7, and AI-14 landed Done end to end
+
+The four open AI-experience items moved from Todo to **Done**, delivering streaming, graceful degradation, and a reviewable-by-ear diff across `core` and the wxPython UI, honestly tested.
+
+- **AI-14 / AI-1 (Done):** `generate_assistant_response_stream` in `quill/core/assistant_ai.py` parses each wired provider's streaming wire format (OpenAI/OpenRouter/custom/Azure and ollama_cloud chat-completions SSE, Claude content-block SSE, Gemini generateContent SSE, local Ollama NDJSON) into token deltas via `parse_stream_event` + `iter_stream_text`, reusing the AI-13 endpoint-security, verified-TLS, retry, and error taxonomy. `ProviderChatBackend.respond_stream` surfaces the deltas to the UI; a pre-stream failure degrades cleanly to the blocking path and a mid-stream failure raises without a duplicate, while the base `AIBackend.respond_stream` emits the full reply once as a fallback. The Ask Quill chat consumes the stream as throttled, accessible status announcements through the assertive aria-live region plus a single final transcript append — the external `AccessibleChatView` supports no in-place token mutation, so progress is *heard* without flooding the screen reader.
+- **AI-6 (Done):** a wx-free `quill/core/ai/availability.py` is the single source of truth for AI readiness; `describe_availability(feature_name, ...)` returns a clear, announceable message that names the feature and distinguishes "AI is turned off", "a model is unavailable", and "a key is missing" (with a `needs_key` flag), and it never blocks the editor.
+- **AI-7 (Done):** `quill/core/ai/diff_review.py` builds a navigable added/removed/changed diff via `SequenceMatcher`; each `DiffHunk` carries a screen-reader phrase and line-by-line detail (marking blank lines), and `DiffReview.apply(accepted)` honors a partial-accept set while keeping unchanged segments verbatim. The accessible `DiffReviewDialog` presents the hunks as a stock `wx.CheckListBox` (all pre-checked) with a read-only details pane and Apply Checked / Accept All / Reject All / Close; applying replaces the selection as **one undo step** and announces the count. It is reachable from Ask Quill chat — approving an AI "replace" whose text differs from the selection opens the review (`MainFrame.open_ai_diff_review`).
+- Tests: `tests/unit/core/ai/test_streaming.py`, `test_streaming_backend.py`, `test_availability.py`, `test_diff_review.py`, and the `DiffReviewDialog` cases in `tests/unit/ui/test_assistant_tools_dialog_callbacks.py` (45 passed). Quality gates: ruff format/check clean on all touched files; strict mypy clean on the touched `quill/core` modules (`diff_review.py`, `availability.py`, `backend.py`, `provider_backend.py`, `assistant.py`, `assistant_ai.py`); the UI public-surface snapshot was refreshed for the new `open_ai_diff_review` method, and `dialogs.md` gained a row for the **Review AI Changes** dialog.
+- Counts: AI-1, AI-6, AI-7, and AI-14 close, moving Tier 2 to **36 of 58 done (22 remaining)** and the QUILL 1.0 scope to **73 of 144 done (71 remaining)**.
 
 #### 2026-06-06: Watch Profiles finished — WATCH-5, WATCH-6, and WATCH-7 landed Done end to end
 
