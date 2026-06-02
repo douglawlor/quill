@@ -66,6 +66,11 @@ _REVIEWED_EGRESS: dict[str, str] = {
     "core/ai/model_manager.py::_download": (
         "User-initiated local AI model download; verified TLS for HTTPS, visible progress callback."
     ),
+    "core/lexical.py::_http_get_json": (
+        "Consented online dictionary/thesaurus lookups (DICT-1: Free Dictionary "
+        "and Datamuse). Only runs when the user enables online lexical lookups; "
+        "HTTPS with a verified TLS context, no API key, graceful offline fallback."
+    ),
 }
 
 

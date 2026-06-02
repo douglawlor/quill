@@ -1,0 +1,297 @@
+"""Pluggable dictionary and thesaurus services (DICT-1).
+
+A small, UI-agnostic lexical service layer with a common provider interface so
+definitions, synonyms, antonyms, rhymes, and related words can come from
+selectable backends. The offline provider (the bundled MyThes thesaurus data)
+is always available and is the default. Two free, key-less online providers are
+available behind an explicit per-feature consent gate that the caller controls
+by passing ``online=True``: the Free Dictionary API for definitions and Datamuse
+for synonyms, antonyms, rhymes, and related ("means-like") words.
+
+All HTTPS goes through the verified TLS context (SEC-5). Online lookups are
+cached and error-tolerant: when a provider is unavailable the result gracefully
+falls back to the offline answer. No provider requires an API key.
+"""
+
+from __future__ import annotations
+
+import json
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
+
+from quill.core import thesaurus
+from quill.core.net import verified_ssl_context
+
+FREE_DICTIONARY_HOST = "https://freedictionaryapi.com"
+DATAMUSE_HOST = "https://api.datamuse.com"
+
+_DEFAULT_TIMEOUT = 8.0
+_MAX_ITEMS = 40
+
+
+@dataclass(frozen=True, slots=True)
+class Definition:
+    """One sense of a word: its part of speech, gloss, and optional example."""
+
+    part_of_speech: str
+    text: str
+    example: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class LexicalResult:
+    """Normalized lexical data for one word, regardless of source."""
+
+    word: str
+    definitions: tuple[Definition, ...] = ()
+    synonyms: tuple[str, ...] = ()
+    antonyms: tuple[str, ...] = ()
+    rhymes: tuple[str, ...] = ()
+    related: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ()
+
+    @property
+    def is_empty(self) -> bool:
+        return not (
+            self.definitions or self.synonyms or self.antonyms or self.rhymes or self.related
+        )
+
+
+def _dedupe(values: object, *, limit: int = _MAX_ITEMS) -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        return ()
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(text)
+        if len(ordered) >= limit:
+            break
+    return tuple(ordered)
+
+
+class LexicalProvider(ABC):
+    """A source of lexical data for a word."""
+
+    name: str = "lexical"
+    online: bool = False
+
+    @abstractmethod
+    def lookup(self, word: str) -> LexicalResult | None:
+        """Return normalized data for ``word``, or ``None`` if not found."""
+
+
+class OfflineLexicalProvider(LexicalProvider):
+    """The bundled MyThes thesaurus: synonyms grouped by part of speech."""
+
+    name = "offline"
+    online = False
+
+    def lookup(self, word: str) -> LexicalResult | None:
+        entry = thesaurus.lookup(word)
+        if entry is None:
+            return None
+        return LexicalResult(
+            word=entry.word or word,
+            synonyms=_dedupe(list(entry.all_synonyms)),
+            sources=("offline",),
+        )
+
+
+def _http_get_json(url: str, *, timeout: float = _DEFAULT_TIMEOUT) -> object | None:
+    """GET a URL and return parsed JSON, or None on any network/parse failure.
+
+    Shared by the consented online lexical providers (Free Dictionary and
+    Datamuse). Only ever called when the caller has enabled online lookups, and
+    always over HTTPS with a verified TLS context.
+    """
+    request = Request(url, headers={"Accept": "application/json"}, method="GET")
+    try:
+        with urlopen(request, timeout=timeout, context=verified_ssl_context()) as response:
+            parsed: object = json.loads(response.read().decode("utf-8", errors="replace"))
+            return parsed
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return None
+
+
+class FreeDictionaryProvider(LexicalProvider):
+    """Definitions (with examples), synonyms, and antonyms from Free Dictionary."""
+
+    name = "Free Dictionary"
+    online = True
+
+    def __init__(self, host: str = FREE_DICTIONARY_HOST, *, language: str = "en") -> None:
+        self._host = host.rstrip("/")
+        self._language = language
+
+    def lookup(self, word: str) -> LexicalResult | None:
+        url = f"{self._host}/api/v1/entries/{self._language}/{quote(word)}"
+        payload = _http_get_json(url)
+        return normalize_free_dictionary(word, payload)
+
+
+def normalize_free_dictionary(word: str, payload: object) -> LexicalResult | None:
+    """Normalize a Free Dictionary response into a LexicalResult (pure)."""
+    entries = _free_dictionary_entries(payload)
+    if not entries:
+        return None
+    definitions: list[Definition] = []
+    synonyms: list[str] = []
+    antonyms: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        pos = str(entry.get("partOfSpeech", "")).strip()
+        for sense in _as_list(entry.get("senses")) + _as_list(entry.get("definitions")):
+            if not isinstance(sense, dict):
+                continue
+            gloss = str(sense.get("definition", "")).strip()
+            if not gloss:
+                continue
+            examples = _as_list(sense.get("examples"))
+            example = str(examples[0]).strip() if examples else ""
+            definitions.append(Definition(part_of_speech=pos, text=gloss, example=example))
+            synonyms.extend(str(s) for s in _as_list(sense.get("synonyms")))
+            antonyms.extend(str(a) for a in _as_list(sense.get("antonyms")))
+        synonyms.extend(str(s) for s in _as_list(entry.get("synonyms")))
+        antonyms.extend(str(a) for a in _as_list(entry.get("antonyms")))
+    if not definitions and not synonyms and not antonyms:
+        return None
+    return LexicalResult(
+        word=word,
+        definitions=tuple(definitions[:_MAX_ITEMS]),
+        synonyms=_dedupe(synonyms),
+        antonyms=_dedupe(antonyms),
+        sources=("Free Dictionary",),
+    )
+
+
+def _free_dictionary_entries(payload: object) -> list[object]:
+    if isinstance(payload, dict):
+        return _as_list(payload.get("entries"))
+    if isinstance(payload, list):
+        # Some deployments return a list of word objects.
+        entries: list[object] = []
+        for item in payload:
+            if isinstance(item, dict):
+                entries.extend(_as_list(item.get("entries")) or [item])
+        return entries
+    return []
+
+
+def _as_list(value: object) -> list[object]:
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
+class DatamuseProvider(LexicalProvider):
+    """Synonyms, antonyms, rhymes, and related words from Datamuse."""
+
+    name = "Datamuse"
+    online = True
+    # Datamuse relation codes -> LexicalResult field.
+    _RELATIONS = (
+        ("rel_syn", "synonyms"),
+        ("rel_ant", "antonyms"),
+        ("rel_rhy", "rhymes"),
+        ("ml", "related"),
+    )
+
+    def __init__(self, host: str = DATAMUSE_HOST) -> None:
+        self._host = host.rstrip("/")
+
+    def lookup(self, word: str) -> LexicalResult | None:
+        fields: dict[str, tuple[str, ...]] = {}
+        for code, field_name in self._RELATIONS:
+            query = urlencode({code: word, "max": _MAX_ITEMS})
+            payload = _http_get_json(f"{self._host}/words?{query}")
+            fields[field_name] = normalize_datamuse(payload)
+        if not any(fields.values()):
+            return None
+        return LexicalResult(
+            word=word,
+            synonyms=fields.get("synonyms", ()),
+            antonyms=fields.get("antonyms", ()),
+            rhymes=fields.get("rhymes", ()),
+            related=fields.get("related", ()),
+            sources=("Datamuse",),
+        )
+
+
+def normalize_datamuse(payload: object) -> tuple[str, ...]:
+    """Normalize a Datamuse word list into ordered, de-duplicated words (pure)."""
+    if not isinstance(payload, list):
+        return ()
+    words = [item.get("word") for item in payload if isinstance(item, dict) and item.get("word")]
+    return _dedupe(words)
+
+
+def _union_results(base: LexicalResult, other: LexicalResult) -> LexicalResult:
+    """Combine two results, preferring base order and unioning each list."""
+    return LexicalResult(
+        word=base.word or other.word,
+        definitions=tuple(list(base.definitions) + list(other.definitions))[:_MAX_ITEMS],
+        synonyms=_dedupe(list(base.synonyms) + list(other.synonyms)),
+        antonyms=_dedupe(list(base.antonyms) + list(other.antonyms)),
+        rhymes=_dedupe(list(base.rhymes) + list(other.rhymes)),
+        related=_dedupe(list(base.related) + list(other.related)),
+        sources=_dedupe(list(base.sources) + list(other.sources)),
+    )
+
+
+class LexicalService:
+    """Offline-first lexical lookups with optional consented online providers."""
+
+    def __init__(
+        self,
+        offline: LexicalProvider | None = None,
+        online: list[LexicalProvider] | None = None,
+    ) -> None:
+        self._offline = offline if offline is not None else OfflineLexicalProvider()
+        self._online = list(online) if online is not None else []
+        self._cache: dict[tuple[str, bool], LexicalResult] = {}
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
+    def lookup(self, word: str, *, online: bool = False) -> LexicalResult:
+        """Look up ``word``. Online providers are only queried when ``online``.
+
+        Always returns a result (possibly empty); never raises for a provider
+        failure. Results are cached per ``(word, online)``.
+        """
+        normalized = (word or "").strip()
+        if not normalized:
+            return LexicalResult(word="")
+        key = (normalized.lower(), online)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        result = self._offline.lookup(normalized) or LexicalResult(word=normalized)
+        if online:
+            for provider in self._online:
+                try:
+                    online_result = provider.lookup(normalized)
+                except Exception:  # noqa: BLE001 - a provider failure must not break lookup
+                    online_result = None
+                if online_result is not None:
+                    result = _union_results(result, online_result)
+        self._cache[key] = result
+        return result
+
+
+def default_service(*, include_online: bool = True) -> LexicalService:
+    """Build the default service: offline always, online providers optional."""
+    online: list[LexicalProvider] = []
+    if include_online:
+        online = [FreeDictionaryProvider(), DatamuseProvider()]
+    return LexicalService(online=online)
