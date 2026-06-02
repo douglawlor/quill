@@ -23,5 +23,5 @@ def add_search_term(term: str, limit: int = 100) -> list[str]:
         return load_search_history()
     existing = [item for item in load_search_history() if item != clean]
     updated = [clean, *existing][:limit]
-    write_json_atomic(search_history_path(), updated)
+    write_json_atomic(search_history_path(), updated, base=app_data_dir())
     return updated

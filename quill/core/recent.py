@@ -26,9 +26,9 @@ def add_recent_file(path: Path, limit: int) -> list[Path]:
     existing = [entry.resolve() for entry in load_recent_files()]
     deduped = [entry for entry in existing if entry != normalized]
     updated = [normalized, *deduped][:limit]
-    write_json_atomic(recent_path(), [str(entry) for entry in updated])
+    write_json_atomic(recent_path(), [str(entry) for entry in updated], base=app_data_dir())
     return updated
 
 
 def clear_recent_files() -> None:
-    write_json_atomic(recent_path(), [])
+    write_json_atomic(recent_path(), [], base=app_data_dir())

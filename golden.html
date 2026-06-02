@@ -1020,7 +1020,7 @@ paths are rejected and announced; tests cover the reject path.</td>
 <td>Path-escape guard for persistence writes</td>
 <td>Security</td>
 <td>S</td>
-<td>Todo</td>
+<td>Done</td>
 <td>A shared helper blocks writes outside the app data base; used in
 storage writers; tests prove traversal is blocked.</td>
 </tr>
@@ -5441,12 +5441,13 @@ CQ-23, CQ-24, LINUX-2</td>
 </tbody>
 </table>
 <p>Completed outside the formal tier lists (cross-cutting protections
-and quality work that the tiers reference only by theme): SEC-3 (OCR
-language allowlist), SEC-5 (verified TLS everywhere), GATE-1
-(pre-commit), PERF-8 (documented scoped type-check), and A11Y-1
-(announcement grammar). The GATE-3/CQ-7 cleanup also incidentally
-cleared the <code>quill/core</code> and <code>quill/io</code> portion of
-the TYPE-1..8 zone, though those formal rows stay open until each is
+and quality work that the tiers reference only by theme): SEC-2
+(path-escape guard for persistence writes), SEC-3 (OCR language
+allowlist), SEC-5 (verified TLS everywhere), GATE-1 (pre-commit), PERF-8
+(documented scoped type-check), and A11Y-1 (announcement grammar). The
+GATE-3/CQ-7 cleanup also incidentally cleared the
+<code>quill/core</code> and <code>quill/io</code> portion of the
+TYPE-1..8 zone, though those formal rows stay open until each is
 individually verified and closed.</p>
 <h4
 id="settings-became-a-single-registry-driven-tabbed-front-door">2026-06-02:
@@ -5505,6 +5506,23 @@ tests) build on the pre-existing <code>export_profile_data</code> /
 buttons now sit beside the Settings Export/Import/Reset row. Importing
 reapplies accelerators and rebuilds the menu, and the outcome is
 announced. Tier 2 drops to 36 remaining.</li>
+<li>SEC-2 closed as a low-risk, pure-core security win: a shared
+<code>resolve_within</code> helper (with a <code>PathEscapeError</code>)
+in <code>quill/core/storage.py</code> resolves a candidate path and
+refuses any target that escapes a permitted base directory (via
+<code>..</code>, an absolute path, or a symlink-resolved escape).
+<code>write_json_atomic</code> gained an opt-in <code>base</code>
+parameter that runs the guard before writing, and the pure-core app-data
+JSON writers (<code>recent</code>, <code>search-history</code>,
+<code>palette-usage</code>, <code>features</code>,
+<code>menu_customization</code>) now pass
+<code>base=app_data_dir()</code> so they can never be tricked into
+writing outside the application data area. User-driven exports
+(<code>.qsf</code> settings, <code>.qpf</code> profiles) deliberately
+stay unguarded because they target user-chosen locations. Four new unit
+tests prove traversal is blocked and in-base writes still succeed. Being
+a cross-cutting protection rather than a tier-listed ID, it does not
+move the tier counts.</li>
 </ul>
 <h4
 id="planning-watch-profiles-scoped-and-feature-flag-respect-made-fundamental">2026-06-01

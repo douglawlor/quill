@@ -771,6 +771,7 @@ class FeatureManager:
                 "overrides": self.overrides,
                 "show_quiet_features": self.show_quiet_features,
             },
+            base=app_data_dir(),
         )
 
     @property

@@ -44,7 +44,7 @@ def save_palette_usage(usage: dict[str, PaletteUsage]) -> None:
         }
         for command_id, entry in usage.items()
     }
-    write_json_atomic(palette_usage_path(), payload)
+    write_json_atomic(palette_usage_path(), payload, base=app_data_dir())
 
 
 def record_palette_usage(

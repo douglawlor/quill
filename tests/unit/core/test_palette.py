@@ -66,6 +66,7 @@ def test_record_palette_usage_increments_count() -> None:
 
 
 def test_palette_usage_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
     target = tmp_path / "palette-usage.json"
     import quill.core.palette as palette_module
 

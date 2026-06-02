@@ -279,4 +279,4 @@ def load_menu_customization() -> MenuCustomization:
 
 def save_menu_customization(customization: MenuCustomization) -> None:
     """Persist the menu customization atomically."""
-    write_json_atomic(menu_customization_path(), customization.to_dict())
+    write_json_atomic(menu_customization_path(), customization.to_dict(), base=app_data_dir())
