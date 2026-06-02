@@ -2,7 +2,7 @@
 
 ## A magical, screen-reader-first writing and document environment, built in wxPython.
 
-Status: Quill 1.0 PRD aligned with Quill 0.1.5 Beta
+Status: This document specifies Quill **1.0**. The current shipping build is **0.1.5 Beta**, which implements the v1.0 checklist (section 21.1–21.16) plus the post-1.0 foundation work in section 21.17 and later. Section 21 is the living implementation map and is kept current as features land.
 Owner: Blind Information Technology Solutions (BITS) and Community Access
 Target platform: Windows 10 and Windows 11
 Target screen readers: NVDA (primary), JAWS, Narrator
@@ -1729,15 +1729,23 @@ Quill ships a read-aloud feature that uses a **secondary** voice the user picks 
 ### 5.25b Watch Folder automation
 
 Quill provides an optional watch-folder workflow under `BITS Whisperer -> Dictation and Watch Folder` for low-friction
-document intake. Users can point Quill at a folder, drop supported files into it, and have Quill
-open those files automatically without leaving the editor.
+document intake. Users can point Quill at one or more folders, drop supported files into them, and have Quill
+process those files automatically without leaving the editor.
 
-- Supported drop formats follow Quill's core supported file-extension set.
-- Polling and subfolder behavior are configurable from Watch Folder Settings.
-- Startup Wizard includes watch-folder onboarding so first-run users can configure automation
-  immediately.
-- Status and failures surface through Quill's existing status/notification channel; no silent
-  failures.
+The original single-folder watcher has been replaced by a multi-profile **Watch Service** built on the wx-free
+`quill.core.watch_service` facade. Each watch profile is an independent rule set with its own watched folder,
+recursion and polling behaviour, file filters, and action (for example: open in editor, or run an intake
+action). Profiles are stored through `watch_profile_store` and validated against a schema, so an invalid or
+partial profile can never start a worker.
+
+- Multiple named watch profiles can be configured and enabled or disabled independently.
+- Supported drop formats follow Quill's core supported file-extension set, optionally narrowed per profile.
+- Polling, subfolder recursion, and the per-profile action are configurable from Watch Folder Settings.
+- A dedicated, fully accessible **Watch Queue Monitor** (`Watch` menu) lists queued, in-progress, completed,
+  and failed items so users can track and retry automation without a visual dashboard.
+- Watch work runs off the UI thread through `watch_worker`/`watch_queue`; results marshal back through
+  `wx.CallAfter` and surface in the status/notification channel. No silent failures.
+- The Startup Wizard includes watch onboarding so first-run users can configure automation immediately.
 
 ### 5.25c BITS Whisperer phased transcription rollout
 
@@ -3519,11 +3527,11 @@ Quill aims to feel like a very good fountain pen: simple in the hand, faithful o
 
 ## 21. Project delivery TODO (living checklist)
 
-Last updated: 2026-05-28
+Last updated: 2026-06-02
 
-Todo counts: **160 total** | **160 completed** | **0 remaining**
+Todo counts: **160 v1.0 items** | **160 completed** | **0 remaining** (v1.0 scope); post-1.0 foundation work tracked in 21.17+ below.
 
-This is the implementation checklist for v1.0.0 and immediate post-1.0 foundations. It is intentionally granular and will be updated in-place as work lands.
+This is the implementation checklist for v1.0.0 and immediate post-1.0 foundations. It is intentionally granular and is updated in-place as work lands. The current shipping build is **0.1.5 Beta**; it implements the full v1.0 checklist (21.1–21.16) plus the post-1.0 foundation work recorded in 21.17 and later. Items still in progress are listed with `- [ ]`.
 
 ### 21.1 Application shell and document lifecycle
 
@@ -3766,3 +3774,29 @@ The governing rules remain the same throughout the roadmap: local-first processi
 - [x] Add optional tracemalloc support and diagnostic bundle support for freeze reports.
 - [x] Add a Safe Mode configuration path and startup flag handling.
 - [x] Add feature contract validation for risky features.
+
+### 21.17 Watch Profiles automation engine
+
+- [x] Replace the legacy single-folder watcher with a multi-profile `quill.core.watch_service` facade (wx-free).
+- [x] Add `watch_profiles`/`watch_profile_store` with schema-validated, independently enabled named profiles.
+- [x] Add `watch_queue`/`watch_worker` so watch processing runs off the UI thread and marshals results through `wx.CallAfter`.
+- [x] Add `watch_actions` for per-profile actions (open in editor, run intake action).
+- [x] Add the accessible Watch Queue Monitor (queued/in-progress/completed/failed, with retry) under the Watch menu.
+- [x] Surface watch status and failures through the existing status/notification channel; no silent failures.
+
+### 21.18 Settings home and feature profiles UI
+
+- [x] Add a registry-driven tabbed Settings dialog rendered from `quill.core.settings_registry`.
+- [x] Add a settings search box (SET-6) that jumps to a matching control across pages.
+- [x] Add Reset to Factory Defaults and profile Import paths that re-apply settings consistently (theme, spellcheck, wrap, tabs, menus).
+- [x] Add feature-profile export/import (`.qpf`) with schema validation and locked-safety enforcement.
+
+### 21.19 Update experience enhancements
+
+- [x] Enhance the in-app update checker with manual Check for Updates, throttled background checks, and a skip-this-version option.
+- [x] Add accessible streaming download progress announcements and a post-download Install/Open/Close dialog (reveal in folder, launch installer).
+- [x] Record `skipped_update_version` and `last_update_check` in settings (documented in sections 5.74 and 10.12).
+
+### 21.20 Foundation work in progress (post-1.0)
+
+- [ ] Wire the `quill.core.menu_customization` model (menu and context-menu reordering/hiding) into an accessible Menu Editor UI.

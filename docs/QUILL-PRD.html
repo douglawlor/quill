@@ -243,11 +243,15 @@ Document</h1>
 id="a-magical-screen-reader-first-writing-and-document-environment-built-in-wxpython.">A
 magical, screen-reader-first writing and document environment, built in
 wxPython.</h2>
-<p>Status: Quill 1.0 PRD aligned with Quill 0.1.5 Beta Owner: Blind
-Information Technology Solutions (BITS) and Community Access Target
-platform: Windows 10 and Windows 11 Target screen readers: NVDA
-(primary), JAWS, Narrator UI framework: wxPython (wxWidgets 3.2 or
-newer) Language: Python 3.12 or newer</p>
+<p>Status: This document specifies Quill <strong>1.0</strong>. The
+current shipping build is <strong>0.1.5 Beta</strong>, which implements
+the v1.0 checklist (section 21.1–21.16) plus the post-1.0 foundation
+work in section 21.17 and later. Section 21 is the living implementation
+map and is kept current as features land. Owner: Blind Information
+Technology Solutions (BITS) and Community Access Target platform:
+Windows 10 and Windows 11 Target screen readers: NVDA (primary), JAWS,
+Narrator UI framework: wxPython (wxWidgets 3.2 or newer) Language:
+Python 3.12 or newer</p>
 <hr />
 <h2 id="vision">1. Vision</h2>
 <p>Quill is a focused writing and document-reading workstation for blind
@@ -3242,18 +3246,34 @@ active, read-aloud continues but is briefly ducked.</li>
 <h3 id="b-watch-folder-automation">5.25b Watch Folder automation</h3>
 <p>Quill provides an optional watch-folder workflow under
 <code>BITS Whisperer -&gt; Dictation and Watch Folder</code> for
-low-friction document intake. Users can point Quill at a folder, drop
-supported files into it, and have Quill open those files automatically
-without leaving the editor.</p>
+low-friction document intake. Users can point Quill at one or more
+folders, drop supported files into them, and have Quill process those
+files automatically without leaving the editor.</p>
+<p>The original single-folder watcher has been replaced by a
+multi-profile <strong>Watch Service</strong> built on the wx-free
+<code>quill.core.watch_service</code> facade. Each watch profile is an
+independent rule set with its own watched folder, recursion and polling
+behaviour, file filters, and action (for example: open in editor, or run
+an intake action). Profiles are stored through
+<code>watch_profile_store</code> and validated against a schema, so an
+invalid or partial profile can never start a worker.</p>
 <ul>
+<li>Multiple named watch profiles can be configured and enabled or
+disabled independently.</li>
 <li>Supported drop formats follow Quill’s core supported file-extension
-set.</li>
-<li>Polling and subfolder behavior are configurable from Watch Folder
-Settings.</li>
-<li>Startup Wizard includes watch-folder onboarding so first-run users
-can configure automation immediately.</li>
-<li>Status and failures surface through Quill’s existing
-status/notification channel; no silent failures.</li>
+set, optionally narrowed per profile.</li>
+<li>Polling, subfolder recursion, and the per-profile action are
+configurable from Watch Folder Settings.</li>
+<li>A dedicated, fully accessible <strong>Watch Queue Monitor</strong>
+(<code>Watch</code> menu) lists queued, in-progress, completed, and
+failed items so users can track and retry automation without a visual
+dashboard.</li>
+<li>Watch work runs off the UI thread through
+<code>watch_worker</code>/<code>watch_queue</code>; results marshal back
+through <code>wx.CallAfter</code> and surface in the status/notification
+channel. No silent failures.</li>
+<li>The Startup Wizard includes watch onboarding so first-run users can
+configure automation immediately.</li>
 </ul>
 <h3 id="c-bits-whisperer-phased-transcription-rollout">5.25c BITS
 Whisperer phased transcription rollout</h3>
@@ -7522,12 +7542,16 @@ it.</p>
 <hr />
 <h2 id="project-delivery-todo-living-checklist">21. Project delivery
 TODO (living checklist)</h2>
-<p>Last updated: 2026-05-28</p>
-<p>Todo counts: <strong>160 total</strong> | <strong>160
-completed</strong> | <strong>0 remaining</strong></p>
+<p>Last updated: 2026-06-02</p>
+<p>Todo counts: <strong>160 v1.0 items</strong> | <strong>160
+completed</strong> | <strong>0 remaining</strong> (v1.0 scope); post-1.0
+foundation work tracked in 21.17+ below.</p>
 <p>This is the implementation checklist for v1.0.0 and immediate
-post-1.0 foundations. It is intentionally granular and will be updated
-in-place as work lands.</p>
+post-1.0 foundations. It is intentionally granular and is updated
+in-place as work lands. The current shipping build is <strong>0.1.5
+Beta</strong>; it implements the full v1.0 checklist (21.1–21.16) plus
+the post-1.0 foundation work recorded in 21.17 and later. Items still in
+progress are listed with <code>- [ ]</code>.</p>
 <h3 id="application-shell-and-document-lifecycle">21.1 Application shell
 and document lifecycle</h3>
 <ul class="task-list">
@@ -7988,6 +8012,64 @@ support and diagnostic bundle support for freeze reports.</label></li>
 configuration path and startup flag handling.</label></li>
 <li><label><input type="checkbox" checked="" />Add feature contract
 validation for risky features.</label></li>
+</ul>
+<h3 id="watch-profiles-automation-engine">21.17 Watch Profiles
+automation engine</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" />Replace the legacy
+single-folder watcher with a multi-profile
+<code>quill.core.watch_service</code> facade (wx-free).</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>watch_profiles</code>/<code>watch_profile_store</code> with
+schema-validated, independently enabled named profiles.</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>watch_queue</code>/<code>watch_worker</code> so watch processing
+runs off the UI thread and marshals results through
+<code>wx.CallAfter</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>watch_actions</code> for per-profile actions (open in editor, run
+intake action).</label></li>
+<li><label><input type="checkbox" checked="" />Add the accessible Watch
+Queue Monitor (queued/in-progress/completed/failed, with retry) under
+the Watch menu.</label></li>
+<li><label><input type="checkbox" checked="" />Surface watch status and
+failures through the existing status/notification channel; no silent
+failures.</label></li>
+</ul>
+<h3 id="settings-home-and-feature-profiles-ui">21.18 Settings home and
+feature profiles UI</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" />Add a registry-driven
+tabbed Settings dialog rendered from
+<code>quill.core.settings_registry</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Add a settings search box
+(SET-6) that jumps to a matching control across pages.</label></li>
+<li><label><input type="checkbox" checked="" />Add Reset to Factory
+Defaults and profile Import paths that re-apply settings consistently
+(theme, spellcheck, wrap, tabs, menus).</label></li>
+<li><label><input type="checkbox" checked="" />Add feature-profile
+export/import (<code>.qpf</code>) with schema validation and
+locked-safety enforcement.</label></li>
+</ul>
+<h3 id="update-experience-enhancements">21.19 Update experience
+enhancements</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" />Enhance the in-app update
+checker with manual Check for Updates, throttled background checks, and
+a skip-this-version option.</label></li>
+<li><label><input type="checkbox" checked="" />Add accessible streaming
+download progress announcements and a post-download Install/Open/Close
+dialog (reveal in folder, launch installer).</label></li>
+<li><label><input type="checkbox" checked="" />Record
+<code>skipped_update_version</code> and <code>last_update_check</code>
+in settings (documented in sections 5.74 and 10.12).</label></li>
+</ul>
+<h3 id="foundation-work-in-progress-post-1.0">21.20 Foundation work in
+progress (post-1.0)</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />Wire the
+<code>quill.core.menu_customization</code> model (menu and context-menu
+reordering/hiding) into an accessible Menu Editor UI.</label></li>
 </ul>
 </body>
 </html>
