@@ -4897,7 +4897,7 @@ instructions-then-style-then-prompt ordering.</td>
 <td>Mid-task model speed/cost tiers</td>
 <td>AI</td>
 <td>S</td>
-<td>In progress</td>
+<td>Done</td>
 <td>Derived from Pi’s mid-session model switching (see
 <code>pi.md</code>). Let the user pick a fast or local model for quick
 edits and a stronger model for a careful rewrite, switchable mid-task
@@ -4922,10 +4922,18 @@ persist atomically under
 mid-task switch persistence, per-tier reassignment, <code>auto</code>
 assignment, unknown-tier/unknown-model rejection, <code>auto</code>→spec
 resolution, and the spoken announcements (8 tests); ruff + strict mypy
-clean. <strong>In progress (honest):</strong> the engine is complete and
-tested, but the AI model panel control to pick the tier and announce the
-switch in the running UI is not yet wired, so this row stays In
-progress.</td>
+clean. <strong>UI wired:</strong> the AI model panel
+(<code>quill/ui/ai_model_panel.py</code>) now surfaces a “Speed tier”
+section — an accessible <strong>Active speed tier</strong> picker
+(Fast/Strong) plus a per-tier model assignment control — that switches
+the active tier mid-task through <code>switch_active_tier</code> (a thin
+wx-free orchestration helper that persists the change and returns the
+A11Y-1 announcement) and speaks the result, and re-points either tier at
+any registered model via <code>assign_model_to_tier</code>. The
+<code>switch_active_tier</code> helper is covered by a behavior test
+(switch + idempotent re-select announcements), and the panel wiring is
+covered by a source-contract test (engine imports, tier section,
+announced switch, per-tier assignment). Done.</td>
 </tr>
 <tr>
 <td>AI-23</td>
@@ -5810,10 +5818,10 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 2</td>
 <td>Flagship experience</td>
 <td>58</td>
-<td>44</td>
-<td>14</td>
-<td>OCR-1, OCR-3, OCR-4, AGENT-1, AI-19, AI-20, AI-22, AI-24, SET-2,
-SET-3, CTX-1, DICT-2, FEAT-19, DLG-1</td>
+<td>45</td>
+<td>13</td>
+<td>OCR-1, OCR-3, OCR-4, AGENT-1, AI-19, AI-20, AI-24, SET-2, SET-3,
+CTX-1, DICT-2, FEAT-19, DLG-1</td>
 </tr>
 <tr>
 <td>Tier 4</td>
@@ -5925,7 +5933,7 @@ the third table and are not part of either 1.0 list.</p>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
 <td>SET-2, SET-3, MENU-1, MENU-5, AGENT-1, OCR-1, OCR-3, OCR-4, CTX-1,
-DICT-2, FEAT-19, DLG-1, AI-20, AI-22, AI-24, AI-19</td>
+DICT-2, FEAT-19, DLG-1, AI-20, AI-24, AI-19</td>
 </tr>
 <tr>
 <td>Tier 2 — Flagship</td>

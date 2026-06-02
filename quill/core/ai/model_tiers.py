@@ -162,3 +162,16 @@ def announce_tier_change(previous: ModelTier, current: ModelTier) -> str:
         return f"Staying on the {current.label} tier ({spec.name})."
     spec = resolve_tier_spec(current)
     return f"Switched to the {current.label} tier ({spec.name}) for {current.purpose}."
+
+
+def switch_active_tier(tier_id: str) -> str:
+    """Switch the active tier mid-task and return the spoken announcement.
+
+    Thin orchestration used by the AI model panel: it reads the tier in use,
+    persists the new active tier, and produces the A11Y-1 announcement for the
+    change so the UI only has to speak the returned string.
+    """
+
+    previous = active_tier()
+    set_active_tier(tier_id)
+    return announce_tier_change(previous, active_tier())

@@ -18,6 +18,7 @@ from quill.core.ai.model_tiers import (
     load_tiers,
     resolve_tier_spec,
     set_active_tier,
+    switch_active_tier,
 )
 
 
@@ -85,4 +86,16 @@ def test_describe_and_announce_are_spoken() -> None:
     assert "quick edits" in message
 
     same = announce_tier_change(fast, fast)
+    assert same.startswith("Staying on the Fast tier")
+
+
+def test_switch_active_tier_returns_announcement() -> None:
+    set_active_tier(TIER_STRONG)
+
+    message = switch_active_tier(TIER_FAST)
+    assert active_tier_id() == TIER_FAST
+    assert message.startswith("Switched to the Fast tier")
+
+    same = switch_active_tier(TIER_FAST)
+    assert active_tier_id() == TIER_FAST
     assert same.startswith("Staying on the Fast tier")

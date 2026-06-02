@@ -19,6 +19,14 @@ from quill.core.ai.model_manager import (
     save_model_choice,
     total_ram_gb,
 )
+from quill.core.ai.model_tiers import (
+    TIER_FAST,
+    TIER_STRONG,
+    active_tier_id,
+    assign_model_to_tier,
+    load_tiers,
+    switch_active_tier,
+)
 from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
 
 
@@ -62,6 +70,11 @@ class AIModelDialog:
         self.choice = None
         self.download_button = None
         self.status = None
+        self.tier_choice = None
+        self.tier_model_choices: dict[str, object] = {}
+        self.tier_status = None
+        self._tier_order = (TIER_FAST, TIER_STRONG)
+        self._tier_model_ids = ["auto", *MODELS.keys()]
 
         if self._fm:
             # macOS: Quill uses Apple Foundation Models — no GGUF model to pick.
@@ -107,6 +120,8 @@ class AIModelDialog:
             self.status = wx.StaticText(self.dialog, label="")
             root.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 12)
 
+            self._build_tier_section(root)
+
         # Optional: connect Ollama (local or cloud) for more models.
         if self._open_connection is not None:
             add_help(
@@ -140,6 +155,76 @@ class AIModelDialog:
     def _on_connection(self, _event: object) -> None:
         if self._open_connection is not None:
             self._open_connection()
+
+    def _build_tier_section(self, root: object) -> None:
+        """Fast/Strong speed-tier picker: choose the active tier (switchable
+        mid-task with a spoken announcement) and which model backs each tier."""
+
+        wx = self._wx
+        tiers = {tier.tier_id: tier for tier in load_tiers()}
+
+        root.Add(
+            wx.StaticText(self.dialog, label="Speed tier"),
+            0,
+            wx.LEFT | wx.RIGHT | wx.TOP,
+            12,
+        )
+        intro = wx.StaticText(
+            self.dialog,
+            label="Pick how Quill balances speed against quality. The Fast tier "
+            "answers quickly; the Strong tier is more capable. You can switch "
+            "tiers at any time and Quill announces the change.",
+        )
+        intro.Wrap(520)
+        root.Add(intro, 0, wx.LEFT | wx.RIGHT, 12)
+
+        active = active_tier_id()
+        tier_labels = [tiers[tier_id].label for tier_id in self._tier_order]
+        self.tier_choice = wx.Choice(self.dialog, choices=tier_labels)
+        self.tier_choice.SetName("Active speed tier")
+        self.tier_choice.SetSelection(
+            self._tier_order.index(active) if active in self._tier_order else 0
+        )
+        self.tier_choice.Bind(wx.EVT_CHOICE, self._on_tier_change)
+        root.Add(self.tier_choice, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 12)
+
+        model_labels = ["Recommended (automatic)"]
+        for spec in MODELS.values():
+            model_labels.append(f"{spec.name} (~{spec.approx_gb:g} GB)")
+        for tier_id in self._tier_order:
+            tier = tiers[tier_id]
+            root.Add(
+                wx.StaticText(self.dialog, label=f"{tier.label} tier model"),
+                0,
+                wx.LEFT | wx.RIGHT | wx.TOP,
+                12,
+            )
+            picker = wx.Choice(self.dialog, choices=model_labels)
+            picker.SetName(f"{tier.label} tier model")
+            picker.SetSelection(
+                self._tier_model_ids.index(tier.model_id)
+                if tier.model_id in self._tier_model_ids
+                else 0
+            )
+            picker.Bind(wx.EVT_CHOICE, self._on_tier_model_change)
+            self.tier_model_choices[tier_id] = picker
+            root.Add(picker, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 12)
+
+        self.tier_status = wx.StaticText(self.dialog, label="")
+        root.Add(self.tier_status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 12)
+
+    def _on_tier_change(self, _event: object) -> None:
+        message = switch_active_tier(self._tier_order[self.tier_choice.GetSelection()])
+        if self.tier_status is not None:
+            self.tier_status.SetLabel(message)
+        self._announce(message)
+
+    def _on_tier_model_change(self, _event: object) -> None:
+        for tier_id, picker in self.tier_model_choices.items():
+            model_id = self._tier_model_ids[picker.GetSelection()]
+            assign_model_to_tier(tier_id, model_id)
+        if self.tier_choice is not None:
+            self._on_tier_change(None)
 
     def _selected_id(self) -> str:
         return self._ids[self.choice.GetSelection()]
