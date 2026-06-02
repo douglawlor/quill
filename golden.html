@@ -1340,6 +1340,25 @@ Until migrated, dialogs must still satisfy the A11Y-4 contract
 guard.</td>
 </tr>
 <tr>
+<td>QA-1</td>
+<td>Living dialog regression checklist</td>
+<td>Code quality</td>
+<td>S</td>
+<td>Done</td>
+<td><code>dialogs.md</code> in the repo root is the master manual
+regression checklist for every user-facing dialog, each mapped to the
+keyboard command or menu path that opens it, grouped by menu, with
+nested and startup-only dialogs called out. It is generated from a full
+scrub of <code>quill/ui/</code> and the
+<code>quill/core/keymap.py</code> bindings, formatted as a tick-off todo
+list so a tester can record a full pass on a build. A contributor rule
+in <code>.github/copilot-instructions.md</code> (“Keep dialogs.md
+current”) requires the matching row to be updated in the same change
+whenever a dialog is added, removed, renamed, or rebound, so the map
+never drifts. This is the manual companion to the A11Y-4
+machine-enforced dialog-contract guard.</td>
+</tr>
+<tr>
 <td>CQ-8</td>
 <td>Degrade-and-log helper for broad excepts</td>
 <td>Code quality</td>
@@ -1704,6 +1723,73 @@ defaults; a documented schema lets administrators pre-tune before first
 run. (Pairs with DOC-7.)</td>
 </tr>
 <tr>
+<td>SHARE-1</td>
+<td>One Export and Back Up dialog with a shareable-profile mode</td>
+<td>Settings</td>
+<td>M</td>
+<td>Todo</td>
+<td>A single accessible dialog is the front door for getting
+configuration out of QUILL, replacing the temptation to ship four
+separate export commands. A radio group picks the intent: <strong>Share
+a profile</strong> (a portable, privacy-scrubbed package meant to hand
+to a friend) or <strong>Back up everything</strong> (a full personal
+restore point for this device). A checkbox tree then chooses exactly
+what to include (settings groups, feature flags and profile, keymap and
+keyboard pack, snippets and macros, watch profiles, dictionaries and
+added words, style models, UI layout), with a live count and a one-line
+plain-language summary of each group. The privacy boundary is
+structural, not cosmetic: in <strong>Share a profile</strong> mode the
+private items (API keys and any DPAPI/Credential-Manager secret, license
+and registration data, recent-files and recent-folders history,
+per-device paths, telemetry ids) are not merely unchecked but absent
+from the surface and provably never written, and the dialog says so. The
+dialog satisfies the A11Y-4 contract guard, announces what was written,
+and uses the shared <code>show_web_form</code>/stock surface (pairs with
+DLG-1). Supersedes the plumbing of SET-7 and FLAG-4 as the user-facing
+experience; those become the underlying serializers.</td>
+</tr>
+<tr>
+<td>SHARE-2</td>
+<td>One Import and Restore dialog with the same two modes</td>
+<td>Settings</td>
+<td>M</td>
+<td>Todo</td>
+<td>The mirror of SHARE-1: a single accessible dialog brings
+configuration back in. A radio group picks <strong>Import a
+profile</strong> (apply a shared package, merging onto the current
+setup) or <strong>Restore a backup</strong> (replace this device’s
+configuration from a full restore point). After choosing a file the
+dialog shows a readable, screen-reader-pageable preview of what the
+package contains and a checkbox tree of what to apply, so a user can
+take just the keymap from a friend’s profile without disturbing their
+own AI keys. Application is schema-validated, atomic, and recoverable (a
+pre-apply safety snapshot is taken so an import can be undone),
+feature-flag dependencies resolve and announce per FLAG-1, and a shared
+package can never carry private secrets in (SHARE-3). Honors the A11Y-4
+contract guard and the shared form surface.</td>
+</tr>
+<tr>
+<td>SHARE-3</td>
+<td>Portable, privacy-safe profile and backup package format</td>
+<td>Settings</td>
+<td>S</td>
+<td>Todo</td>
+<td>Define the on-disk package both SHARE dialogs read and write: a
+documented, versioned, human-readable manifest (a
+<code>.quillprofile</code> for shareable profiles and a
+<code>.quillbackup</code> for full restore points) listing contents,
+source version, and a plain-language “what’s inside” summary that can be
+read aloud before import. The schema marks every field as shareable or
+private; the writer refuses to emit private fields into a profile
+package and the reader refuses to apply them from one, enforced by a
+round-trip test and a privacy test that fails if any
+secret/recent-path/license field can reach a profile package. Magical
+touches that make sharing delightful: a spoken summary of what a package
+will change, named packages, and a safe-by-default merge that never
+clobbers silently. (Implements the format behind SHARE-1/2 and the
+schemas FLAG-4 and SET-7 reference.)</td>
+</tr>
+<tr>
 <td>MENU-2</td>
 <td>Split the Tools menu and elevate Accessibility</td>
 <td>Menus</td>
@@ -1729,6 +1815,70 @@ keybindings, readable top to bottom.</td>
 <td>Todo</td>
 <td>Add to document dictionary and ignore for session, with
 announcements.</td>
+</tr>
+<tr>
+<td>CTX-1</td>
+<td>Rich context and Application-key menu</td>
+<td>Features</td>
+<td>M</td>
+<td>Todo</td>
+<td>Right-click and the Application/Menu key open one rich, fully
+keyboard- and screen-reader-operable context menu built from the word
+and selection under the cursor, turning a plain editor menu into a
+writer’s command surface (GitHub issue #86). When the cursor is on a
+misspelled word the menu leads with the in-context spelling suggestions
+as selectable items, followed by <strong>Add to dictionary</strong> and
+<strong>Ignore</strong> (pairs with FEAT-2), so a correction is one
+keystroke away without opening the F7 dialog. Below that it offers
+<strong>Look up</strong> (definition, DICT-2) and
+<strong>Thesaurus</strong> (synonyms, DICT-1/2) for the current word,
+the scope-aware selection actions (SEL-3) when text is selected, and the
+usual cut/copy/paste. The menu is rebuilt live from the cursor context,
+every item is reachable and announced, and it honors
+<code>FeatureManager</code> so entries for disabled features do not
+appear. Tests cover the misspelled-word menu shape, the
+add-to-dictionary path, and feature-off filtering.</td>
+</tr>
+<tr>
+<td>DICT-1</td>
+<td>Pluggable dictionary and thesaurus services (Free Dictionary,
+Datamuse)</td>
+<td>Features</td>
+<td>M</td>
+<td>Todo</td>
+<td>Implements GitHub issue #86: a small, UI-agnostic lexical service
+layer in <code>core</code> with a common provider interface so
+definitions, synonyms, antonyms, rhymes, and related words come from
+selectable backends. Ship the offline path first (the existing
+spell/thesaurus data) as the always-available default, then add two free
+online providers behind an explicit per-feature consent gate that honors
+the no-silent-network rule (GATE-9): the Free Dictionary API
+(<code>freedictionaryapi.com</code>) for definitions and Datamuse
+(<code>datamuse.com/api</code>) for synonyms/antonyms/rhymes/means-like.
+All HTTPS goes through the verified TLS context (SEC-5); responses are
+normalized into a shared <code>LexicalResult</code>, cached, and
+rate-limit/error-tolerant with a graceful spoken fallback to offline
+when a provider is unavailable. No API key is required by either
+provider. Tests cover provider normalization, the consent-off
+(offline-only) path, cache behavior, and error fallback; the new egress
+sites are registered in the GATE-9 audit.</td>
+</tr>
+<tr>
+<td>DICT-2</td>
+<td>Accessible Look Up and definitions surface</td>
+<td>Features</td>
+<td>S</td>
+<td>Todo</td>
+<td>A screen-reader-pageable Look Up surface presents a word’s part of
+speech, definitions, and example sentences (Free Dictionary via DICT-1)
+alongside synonyms, antonyms, rhymes, and related words (Datamuse via
+DICT-1), each selectable to insert or to pivot the lookup. It is
+reachable from the context menu (CTX-1), the Tools menu, and the QUILL
+key, replaces the bare <code>SingleChoiceDialog</code> thesaurus with a
+richer but equally keyboard-first surface, and announces results through
+the shared grammar (A11Y-1). Gated by the DICT-1 feature; tests cover
+rendering from a normalized <code>LexicalResult</code>, the insert/pivot
+actions, and the offline-only shape.</td>
 </tr>
 <tr>
 <td>FEAT-19</td>
@@ -4265,6 +4415,92 @@ the AIBackend boundary with an accessible OAuth device-flow sign-in,
 gated and never default; documented rationale (section 18.5) is honored.
 Not required for 1.0.</td>
 </tr>
+<tr>
+<td>AI-19</td>
+<td>Accessible subscription sign-in (no pasted API key)</td>
+<td>AI</td>
+<td>M</td>
+<td>Todo</td>
+<td>Derived from the Pi research (see <code>pi.md</code>). Add a guided,
+fully keyboard-and-screen-reader login that lets a user authenticate
+with an existing provider subscription via an interactive flow (for
+example OAuth device flow) instead of pasting an unreadable API key,
+alongside the current key path. The most user-facing accessibility win
+from Pi: “sign in with the subscription you already have” rather than
+“paste a 51-character secret you cannot see.” Credentials in DPAPI,
+explicit consent, no silent network, registered in the GATE-9 egress
+audit. Sits behind the AIBackend boundary (AI-13) and reuses the
+connection error taxonomy (AI-17).</td>
+</tr>
+<tr>
+<td>AI-20</td>
+<td>Branchable, resumable AI writing sessions</td>
+<td>AI</td>
+<td>L</td>
+<td>Todo</td>
+<td>Derived from Pi’s session tree (see <code>pi.md</code>). Elevate the
+existing assistant transcript and Save/Open Session into a durable,
+navigable history: auto-saved sessions, continue-most-recent,
+browse-past, and fork/branch so a writer can try two rewrites of a
+section without losing state, then compare and resume. The surface is an
+accessible list or tree of branches, each announced, with one-key jump
+and compare; no redraw-heavy TUI. Honors FeatureManager (FLAG-1) and the
+shared announcement grammar (A11Y-1).</td>
+</tr>
+<tr>
+<td>AI-21</td>
+<td>Durable per-document writing instructions the assistant cannot
+drop</td>
+<td>AI</td>
+<td>M</td>
+<td>Todo</td>
+<td>Derived from Pi’s always-loaded context files (see
+<code>pi.md</code>). A user-owned, editable “writing instructions” file
+(house style, tone, audience, words to avoid) at document or project
+scope that the assistant always honors, with a live reload. Pairs with
+the existing Train Writing Style feature: train the voice, pin the
+rules. Visible and user-controlled; never a hidden prompt.</td>
+</tr>
+<tr>
+<td>AI-22</td>
+<td>Mid-task model speed/cost tiers</td>
+<td>AI</td>
+<td>S</td>
+<td>Todo</td>
+<td>Derived from Pi’s mid-session model switching (see
+<code>pi.md</code>). Let the user pick a fast or local model for quick
+edits and a stronger model for a careful rewrite, switchable mid-task
+with an announced change, surfaced in the existing AI model panel.
+Local-first: the fast tier can be an on-device model.</td>
+</tr>
+<tr>
+<td>AI-23</td>
+<td>Graceful context compaction for long sessions</td>
+<td>AI</td>
+<td>M</td>
+<td>Todo</td>
+<td>Derived from Pi’s compaction (see <code>pi.md</code>). A long
+writing-and-editing session with the assistant compacts and summarizes
+context to stay within the model window, and announces when it does,
+rather than silently truncating the thread. Reliability feature for real
+long-form work.</td>
+</tr>
+<tr>
+<td>AI-24</td>
+<td>Language-agnostic stdio/JSON boundary for external engines</td>
+<td>AI</td>
+<td>M</td>
+<td>Todo</td>
+<td>Derived from Pi’s RPC/JSON integration design (see
+<code>pi.md</code>), and the architectural keystone for adopting any
+non-Python engine from a Python app. Define one consented,
+off-by-default pattern for QUILL to drive an external engine over a
+local subprocess speaking JSONL or MCP on stdio — spawned on demand,
+covered by the GATE-9 egress audit, with a clean unavailable path. This
+is the same boundary the Accessibility Agents work (<code>aa.md</code>)
+needs for its optional Node backend, so building it once de-risks both.
+Adopt the pattern, not the package.</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -4289,6 +4525,15 @@ powerful: write, transcribe, audit, fix, and publish in one place, by
 keyboard and voice, with one set of conventions.</p>
 <h3 id="glow-integration-make-quill-accessibility-native">19. GLOW
 integration: make QUILL accessibility-native</h3>
+<blockquote>
+<p>The full, step-by-step Tier 3 execution plan for this section — the
+three-repo layout (<code>s:\code\quill-glow-core</code>,
+<code>s:\code\glow</code>, and QUILL), the ordered GLOW-0 through GLOW-7
+work, the definition of done, and the risk register — lives in <a
+href="glow.md">glow.md</a> at the repo root. This section is the
+narrative; <a href="glow.md">glow.md</a> is the build sheet, and the two
+must stay in step.</p>
+</blockquote>
 <p>QUILL already contains <code>quill/core/glow.py</code>, a text-level
 GLOW audit and fix surface (generic link text, plain-language lint,
 audit and fix reports for the selection or document) wired to commands
@@ -4465,7 +4710,9 @@ engineering. See SET-1, BW-7.</li>
 </ul>
 <h4 id="new-backlog-items-for-the-combined-suite">21.1 New backlog items
 for the combined suite</h4>
-<p>These extend the section 14 tracker.</p>
+<p>These extend the section 14 tracker. The GLOW family (GLOW-1 through
+GLOW-7) has a dedicated execution plan in <a href="glow.md">glow.md</a>;
+keep both in step when any GLOW item changes scope or status.</p>
 <table style="width:100%;">
 <colgroup>
 <col style="width: 16%" />
@@ -5064,12 +5311,12 @@ CQ-16) are counted once, in their primary tier.</p>
 <tr>
 <td>Tier 2</td>
 <td>Flagship experience</td>
-<td>44</td>
-<td>8</td>
-<td>36</td>
+<td>58</td>
+<td>9</td>
+<td>49</td>
 <td>QK-2, QK-9, NAV-1, NAV-4, OCR-1..5, AGENT-1, AI-7, AI-1, AI-6,
-AI-13, AI-15, AI-17, AI-14, AI-16, SET-1..7, FEAT-19, WATCH-1..7,
-FLAG-3, FLAG-4, DLG-1</td>
+AI-13, AI-15, AI-17, AI-14, AI-16, AI-19..24, SET-1..7, SHARE-1..3,
+CTX-1, DICT-1..3, FEAT-19, WATCH-1..7, FLAG-3, FLAG-4, DLG-1</td>
 </tr>
 <tr>
 <td>Tier 3</td>
@@ -5109,9 +5356,9 @@ CQ-23, CQ-24, LINUX-2</td>
 <tr>
 <td><strong>Total</strong></td>
 <td>All tiers</td>
-<td><strong>166</strong></td>
-<td><strong>31</strong></td>
-<td><strong>135</strong></td>
+<td><strong>180</strong></td>
+<td><strong>32</strong></td>
+<td><strong>148</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -5206,6 +5453,70 @@ WATCH cross-references were all updated. Backlog totals moved 156 -&gt;
 159 (GLOW-6 counted, GLOW-7 new, BW-10 counted). Execution is authorized
 for Tiers 2 through 6 end to end, keeping <code>main</code> green
 throughout.</p>
+<h4
+id="bookmark-accessibility-agents-integration-research-pending-decision">Bookmark:
+Accessibility Agents integration (research, pending decision)</h4>
+<p>A research evaluation of the Community Access “Accessibility Agents”
+project (<code>s:\code\agents</code>, MIT-licensed) is written up in
+full in <a href="aa.md">aa.md</a> at the repo root. The maintainer is
+inclined to adopt it. If approved, it becomes a NEW Tier 4 inserted
+immediately after Tier 3 (GLOW), which renumbers the current tiers: Tier
+4 (structural health and performance) -&gt; Tier 5, Tier 5 (BITS
+Whisperer) -&gt; Tier 6, and Tier 6 (documentation) -&gt; Tier 7.</p>
+<p>The project is about 80 LLM-driven accessibility agents across five
+host platforms (Claude Code, Copilot, Gemini, Codex, and a Node.js MCP
+server with 24 scanning tools). Most of it targets web developers and CI
+and is out of scope for a desktop writing app; the value to QUILL is
+narrower but real, and it already ships a GLOW bridge, so it is designed
+to interoperate with Tier 3, not compete. The proposed work (provisional
+prefix <code>AX-</code>) is five workstreams, all building on the shared
+GLOW engine and all behind <code>FeatureManager</code> (FLAG-1), reusing
+the consented AI layer (AI-13), and honoring the no-silent-network rule
+(GATE-9):</p>
+<ul>
+<li>AX-A: adopt the desktop / wxPython / screen-reader knowledge agents
+(<code>wxpython-specialist</code>, <code>desktop-a11y-specialist</code>,
+<code>desktop-a11y-testing-coach</code>) as curated contributor guidance
+in repo memory and instructions. Zero runtime risk; pure documentation;
+can land even if the rest is declined.</li>
+<li>AX-B: an optional, off-by-default local MCP audit backend for
+structured formats (DOCX, PPTX, XLSX, PDF, EPUB, Markdown) that
+normalizes into the GLOW-3 report surface, adopted only where additive
+to GLOW. Adds an optional (never hard) Node.js dependency with a clean
+“backend unavailable” path.</li>
+<li>AX-C: expose QUILL’s own GLOW engine through the project’s existing
+GLOW-bridge contract so the wider ecosystem can audit and fix through
+QUILL, gated by the GLOW-7 consent rules.</li>
+<li>AX-D: consented agent-assisted remediation (alt text, plain-language
+rewrites) folded into the Accessibility agent (AGENT-1) flagship, never
+a second AI network path; explicit, announced, reviewable
+apply-and-undo, off by default.</li>
+<li>AX-E: an axe-core / WCAG 2.2 AA web accessibility check on the HTML
+a user authors or exports, plus the document-level Web Accessibility
+specialists (<code>aria-specialist</code>,
+<code>keyboard-navigator</code>, <code>contrast-master</code>,
+<code>forms-specialist</code>, <code>modal-specialist</code>,
+<code>live-region-controller</code>, <code>alt-text-headings</code>,
+<code>tables-data-specialist</code>, <code>link-checker</code>,
+<code>i18n-accessibility</code>) as the consented explain-and-fix layer.
+Decisive technical finding: axe-core needs no Node.js — it is a single
+self-contained <code>axe.min.js</code> (about half a megabyte, bundled,
+so zero per-scan bandwidth) injected into QUILL’s already-shipped
+off-screen Edge WebView2 (<code>wx-accessible-webview</code>). The scan
+is therefore in-process, local, and a SILENT REVIEW by construction: the
+WebView is created off-screen and never shown, so a background or
+watch-folder check runs with no UI at all; the navigable findings dialog
+(GLOW-3) appears only on demand. The optional Node backend (AX-B) is
+needed only for the heavier Playwright behavioural passes, not the
+everyday HTML check.</li>
+</ul>
+<p>Sequencing: this tier lands after Tier 3 (GLOW) because AX-B, AX-C,
+AX-D, and AX-E all build on the shared GLOW engine and its report
+surface; documentation still lands last so it describes a product that
+is already GLOW-native, agent-assisted, and transcription-capable. Open
+questions for the maintainer are in <a href="aa.md">aa.md</a> section 6.
+Do not start this work or renumber the tiers until the maintainer
+confirms after reviewing <a href="aa.md">aa.md</a>.</p>
 <h4
 id="continuation-brief-resume-point-for-the-next-agent-or-session">Continuation
 brief (resume point for the next agent or session)</h4>

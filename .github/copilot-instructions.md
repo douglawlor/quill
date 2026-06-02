@@ -86,3 +86,24 @@ Apply these rules to every UI change in `quill/ui/*`:
 	- Set explicit default buttons, bind Escape/Close consistently, and return focus to editor after modal close.
 - Add focused tests for dialog and menu regressions.
 	- Include at least one behavior test (or source-contract test when UI stubs are limited) per bug class.
+
+## Keep dialogs.md current
+
+`dialogs.md` in the repo root is the master manual regression checklist for every
+user-facing dialog in QUILL, each mapped to the keyboard command or menu path
+that opens it. It must stay a faithful, complete map of the shipped dialogs.
+
+- Whenever you add, remove, rename, or rebind a dialog anywhere under `quill/ui/`
+  (including `main_frame.py`, `palette.py`, `assistant_panel.py`,
+  `assistant_tools.py`, `ai_model_panel.py`, `style_panel.py`, `sticky_notes.py`,
+  `preview_dialog.py`, and `web_form.py`), update the matching row in `dialogs.md`
+  in the same change.
+- New dialogs are added as a `- [ ]` checklist item in the correct section, with
+  the keyboard command (or "via menu" when there is no default keybinding, using
+  the literal binding from `quill/core/keymap.py`). Nested dialogs go in the
+  nested section noting their parent; startup-only dialogs go in the startup
+  section noting their trigger.
+- Do not tick checkboxes in `dialogs.md` from code changes. The checkboxes record
+  the outcome of a manual regression pass and are ticked by a human tester.
+- The checklist is the manual companion to the A11Y-4 machine-enforced dialog
+  contract guard; keep both in mind when touching dialog construction.

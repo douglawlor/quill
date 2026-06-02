@@ -435,6 +435,7 @@ This table is the execution source of truth. Update Status as work progresses. S
 | CQ-1 | Decompose main_frame into cohesive modules | Code quality | XL | Todo | main_frame is split into controllers or mixins with no behavior change; characterization tests pass before and after. |
 | CQ-16 | Characterization tests around main_frame | Code quality | L | Todo | Behavior is pinned by tests prior to CQ-1; coverage includes menus, QUILL key, selection, file lifecycle. |
 | DLG-1 | Migrate hand-rolled submit-once form dialogs to the shared accessible helper | Code quality | M | Todo | Executes the form wave of GitHub issue #73. The remaining hand-rolled multi-field `wx.Dialog` forms that are pure submit-once input (find-in-files / replace-in-files, Status Bar Layout, the read-aloud voice chooser, Watch Folder Settings, the YAML structure editor, and General Preferences) move onto the already-shipped `show_web_form` (`quill/ui/web_form.py`, accessible WebView with a native wx fallback) or, where a single field fits, a stock `wx.*` dialog. wxPython has no stock multi-field dialog, so this consolidates them on one tested, screen-reader-friendly surface rather than per-dialog focus/button code. Each migration keeps the existing inputs and outputs, lands behind a focused behavior test, and leaves the public surface unchanged (GATE-6). Until migrated, dialogs must still satisfy the A11Y-4 contract guard. |
+| QA-1 | Living dialog regression checklist | Code quality | S | Done | `dialogs.md` in the repo root is the master manual regression checklist for every user-facing dialog, each mapped to the keyboard command or menu path that opens it, grouped by menu, with nested and startup-only dialogs called out. It is generated from a full scrub of `quill/ui/` and the `quill/core/keymap.py` bindings, formatted as a tick-off todo list so a tester can record a full pass on a build. A contributor rule in `.github/copilot-instructions.md` ("Keep dialogs.md current") requires the matching row to be updated in the same change whenever a dialog is added, removed, renamed, or rebound, so the map never drifts. This is the manual companion to the A11Y-4 machine-enforced dialog-contract guard. |
 | CQ-8 | Degrade-and-log helper for broad excepts | Code quality | S | Todo | A shared helper logs context; broad excepts in core use it; no silent failures remain in the listed files. |
 | DLG-2 | Convert interactive tool dialogs individually, screen-reader verified | Code quality | L | Todo | The remaining custom dialogs that are interactive tools rather than forms (Run Python, Prompt Studio, Agent Center, Writing Assistant, the model pickers, AI Hub, Assistant Connection, Train Style, the command palette) are converted to the web or native pattern of issue #73 one at a time, each verified with a screen reader. These are working, accessible-today features with live lists, generate/preview/verify buttons, async downloads, and background threads, so they are explicitly NOT batch-rewritten; conversion is prioritized by which read poorly today and gated by the A11Y-4 contract guard. This is the structural-breadth half of the dialog work and sequences after Tier 2, alongside CQ-1. |
 | CQ-11 | Spell-check fallback and preload tests | Code quality | S | Todo | Tier fallback and background preload are covered by tests. |
@@ -468,9 +469,15 @@ This table is the execution source of truth. Update Status as work progresses. S
 | SET-5 | Robust settings model with migration | Settings | L | Todo | Flat fields are grouped into nested, versioned dataclasses with validation on load and corrupt-file recovery that preserves other settings; round-trip and migration tests pass. (Pairs with CQ-4.) |
 | SET-6 | Searchable settings with per-setting reset and descriptions | Settings | M | Todo | Settings are searchable by name; each has a plain-language description and a per-setting reset; the surface is fully accessible. |
 | SET-7 | Export, import, and pre-configure settings | Settings | S | Todo | The full configuration can be exported, imported, and reset to defaults; a documented schema lets administrators pre-tune before first run. (Pairs with DOC-7.) |
+| SHARE-1 | One Export and Back Up dialog with a shareable-profile mode | Settings | M | Todo | A single accessible dialog is the front door for getting configuration out of QUILL, replacing the temptation to ship four separate export commands. A radio group picks the intent: **Share a profile** (a portable, privacy-scrubbed package meant to hand to a friend) or **Back up everything** (a full personal restore point for this device). A checkbox tree then chooses exactly what to include (settings groups, feature flags and profile, keymap and keyboard pack, snippets and macros, watch profiles, dictionaries and added words, style models, UI layout), with a live count and a one-line plain-language summary of each group. The privacy boundary is structural, not cosmetic: in **Share a profile** mode the private items (API keys and any DPAPI/Credential-Manager secret, license and registration data, recent-files and recent-folders history, per-device paths, telemetry ids) are not merely unchecked but absent from the surface and provably never written, and the dialog says so. The dialog satisfies the A11Y-4 contract guard, announces what was written, and uses the shared `show_web_form`/stock surface (pairs with DLG-1). Supersedes the plumbing of SET-7 and FLAG-4 as the user-facing experience; those become the underlying serializers. |
+| SHARE-2 | One Import and Restore dialog with the same two modes | Settings | M | Todo | The mirror of SHARE-1: a single accessible dialog brings configuration back in. A radio group picks **Import a profile** (apply a shared package, merging onto the current setup) or **Restore a backup** (replace this device's configuration from a full restore point). After choosing a file the dialog shows a readable, screen-reader-pageable preview of what the package contains and a checkbox tree of what to apply, so a user can take just the keymap from a friend's profile without disturbing their own AI keys. Application is schema-validated, atomic, and recoverable (a pre-apply safety snapshot is taken so an import can be undone), feature-flag dependencies resolve and announce per FLAG-1, and a shared package can never carry private secrets in (SHARE-3). Honors the A11Y-4 contract guard and the shared form surface. |
+| SHARE-3 | Portable, privacy-safe profile and backup package format | Settings | S | Todo | Define the on-disk package both SHARE dialogs read and write: a documented, versioned, human-readable manifest (a `.quillprofile` for shareable profiles and a `.quillbackup` for full restore points) listing contents, source version, and a plain-language "what's inside" summary that can be read aloud before import. The schema marks every field as shareable or private; the writer refuses to emit private fields into a profile package and the reader refuses to apply them from one, enforced by a round-trip test and a privacy test that fails if any secret/recent-path/license field can reach a profile package. Magical touches that make sharing delightful: a spoken summary of what a package will change, named packages, and a safe-by-default merge that never clobbers silently. (Implements the format behind SHARE-1/2 and the schemas FLAG-4 and SET-7 reference.) |
 | MENU-2 | Split the Tools menu and elevate Accessibility | Menus | M | Todo | Tools is smaller; Accessibility is easy to find; labels match announcement grammar. |
 | HELP-1 | Context-aware What Can I Do Here | Help | M | Todo | The help lists commands relevant to the cursor context with keybindings, readable top to bottom. |
 | FEAT-2 | Spell-check usability polish | Features | S | Todo | Add to document dictionary and ignore for session, with announcements. |
+| CTX-1 | Rich context and Application-key menu | Features | M | Todo | Right-click and the Application/Menu key open one rich, fully keyboard- and screen-reader-operable context menu built from the word and selection under the cursor, turning a plain editor menu into a writer's command surface (GitHub issue #86). When the cursor is on a misspelled word the menu leads with the in-context spelling suggestions as selectable items, followed by **Add to dictionary** and **Ignore** (pairs with FEAT-2), so a correction is one keystroke away without opening the F7 dialog. Below that it offers **Look up** (definition, DICT-2) and **Thesaurus** (synonyms, DICT-1/2) for the current word, the scope-aware selection actions (SEL-3) when text is selected, and the usual cut/copy/paste. The menu is rebuilt live from the cursor context, every item is reachable and announced, and it honors `FeatureManager` so entries for disabled features do not appear. Tests cover the misspelled-word menu shape, the add-to-dictionary path, and feature-off filtering. |
+| DICT-1 | Pluggable dictionary and thesaurus services (Free Dictionary, Datamuse) | Features | M | Todo | Implements GitHub issue #86: a small, UI-agnostic lexical service layer in `core` with a common provider interface so definitions, synonyms, antonyms, rhymes, and related words come from selectable backends. Ship the offline path first (the existing spell/thesaurus data) as the always-available default, then add two free online providers behind an explicit per-feature consent gate that honors the no-silent-network rule (GATE-9): the Free Dictionary API (`freedictionaryapi.com`) for definitions and Datamuse (`datamuse.com/api`) for synonyms/antonyms/rhymes/means-like. All HTTPS goes through the verified TLS context (SEC-5); responses are normalized into a shared `LexicalResult`, cached, and rate-limit/error-tolerant with a graceful spoken fallback to offline when a provider is unavailable. No API key is required by either provider. Tests cover provider normalization, the consent-off (offline-only) path, cache behavior, and error fallback; the new egress sites are registered in the GATE-9 audit. |
+| DICT-2 | Accessible Look Up and definitions surface | Features | S | Todo | A screen-reader-pageable Look Up surface presents a word's part of speech, definitions, and example sentences (Free Dictionary via DICT-1) alongside synonyms, antonyms, rhymes, and related words (Datamuse via DICT-1), each selectable to insert or to pivot the lookup. It is reachable from the context menu (CTX-1), the Tools menu, and the QUILL key, replaces the bare `SingleChoiceDialog` thesaurus with a richer but equally keyboard-first surface, and announces results through the shared grammar (A11Y-1). Gated by the DICT-1 feature; tests cover rendering from a normalized `LexicalResult`, the insert/pivot actions, and the offline-only shape. |\n| DICT-3 | User-selectable source mode with merge-and-compare | Features | S | Todo | The user chooses, per lexical kind (spelling suggestions, synonyms, definitions), which source to trust: **Offline only** (fast, always available — the existing spell/thesaurus data), **Online only** (the DICT-1 providers, richer but slower and consent-gated), or **Both, combined**. In combined mode QUILL queries offline and online in parallel, then merges the result lists into one de-duplicated, ranked set that records each entry's provenance (\"offline\", \"Free Dictionary\", \"Datamuse\", or \"both\"), so a word both sources agree on ranks first and the user can see where each suggestion came from. The merge is a pure, tested `core` function (offline list ∪ online list with case-fold de-dupe and a stable agreement-weighted ordering); the online half degrades gracefully so a slow or failed provider never blocks the offline answer. A setting (and the CTX-1 menu) exposes the mode; tests cover the union/de-dupe, agreement ranking, provenance labelling, and the offline-only fallback when consent is off or the network is down. |
 | FEAT-19 | External file-change watch and safe reload | Features | M | Todo | QUILL watches the open document for external modification (and deletion). When the file changes on disk and the buffer is unmodified, it reloads in place without moving the cursor or scroll position and announces "Reloaded from disk." When the buffer has unsaved edits (a conflict), it never overwrites silently: it announces the change and offers reload, keep-mine, or compare, with a clear spoken prompt. Behavior is configurable (auto-reload-when-clean on or off, prompt-on-conflict, watch on or off, debounce interval) in a Settings group, defaults are safe and quiet, and the watcher runs off the UI thread reusing the existing watch-folder and stability patterns. Cursor, selection, and scroll are preserved across reload; tests cover clean reload, conflict prompt, deletion, and cursor preservation. |
 | WATCH-1 | Multi-profile watch engine | Features | L | Todo | Replace the single `WatchFolderConfig`/`WatchFolderService` with a list of named, independently enabled `WatchProfile`s, each with its own folder, filters, action, and post-action handling. A `WatchManager` runs one watcher per profile concurrently with isolated failure (one bad profile or file never stalls the others), shared de-duplication so a file is claimed exactly once across profiles, and clean start/stop/restart. The whole surface lives behind a feature id that succeeds `core.watch_folder` and honors `FeatureManager` per FLAG-1: when the feature is off, no watcher runs and its surfaces disappear. The core stays UI-agnostic (no `wx`), reuses the existing poll/age/seen-set patterns, and persists profiles as schema-validated JSON under `%APPDATA%\Quill` with atomic writes and corrupt-file recovery. Tests cover concurrent profiles, isolation, dedupe, persistence round-trip, and the feature-off path. |
 | WATCH-2 | Pluggable watch action registry | Features | M | Todo | A typed action registry binds each profile to exactly one action via a stable action id. Actions implement a small contract (`describe`, `validate(options)`, `run(item) -> outcome`) so new actions register without touching the engine, and each action declares the feature id it requires so the registry can gate it through `FeatureManager` (FLAG-1). The registry is the seam GLOW (WATCH-8) and BITS Whisperer (WATCH-9) plug into. Unknown, disabled, or unavailable actions degrade gracefully with an announced reason rather than failing a profile. Tests cover registration, validation, the disabled-feature path, and the unavailable-action path. |
@@ -929,6 +936,13 @@ These extend the section 14 tracker.
 | AI-16 | Per-provider contract tests | AI | M | Todo | Recorded or mocked request/response tests cover each provider with no live network in CI; a provider schema change fails the build instead of silently breaking generation. |
 | AI-17 | Extend the error taxonomy to the chat path | AI | S | Todo | The existing auth/forbidden/rate-limited/warming-up/timeout categories produce the same cause-specific, screen-reader-friendly messages for generation as they do for model listing. |
 | AI-18 | GitHub Copilot SDK as an optional post-1.0 provider | AI | M | Todo | If pursued, Copilot is an optional, clearly labeled provider behind the AIBackend boundary with an accessible OAuth device-flow sign-in, gated and never default; documented rationale (section 18.5) is honored. Not required for 1.0. |
+| AI-19 | Accessible subscription sign-in (no pasted API key) | AI | M | Todo | Derived from the Pi research (see `pi.md`). Add a guided, fully keyboard-and-screen-reader login that lets a user authenticate with an existing provider subscription via an interactive flow (for example OAuth device flow) instead of pasting an unreadable API key, alongside the current key path. The most user-facing accessibility win from Pi: "sign in with the subscription you already have" rather than "paste a 51-character secret you cannot see." Credentials in DPAPI, explicit consent, no silent network, registered in the GATE-9 egress audit. Sits behind the AIBackend boundary (AI-13) and reuses the connection error taxonomy (AI-17). |
+| AI-20 | Branchable, resumable AI writing sessions | AI | L | Todo | Derived from Pi's session tree (see `pi.md`). Elevate the existing assistant transcript and Save/Open Session into a durable, navigable history: auto-saved sessions, continue-most-recent, browse-past, and fork/branch so a writer can try two rewrites of a section without losing state, then compare and resume. The surface is an accessible list or tree of branches, each announced, with one-key jump and compare; no redraw-heavy TUI. Honors FeatureManager (FLAG-1) and the shared announcement grammar (A11Y-1). |
+| AI-21 | Durable per-document writing instructions the assistant cannot drop | AI | M | Todo | Derived from Pi's always-loaded context files (see `pi.md`). A user-owned, editable "writing instructions" file (house style, tone, audience, words to avoid) at document or project scope that the assistant always honors, with a live reload. Pairs with the existing Train Writing Style feature: train the voice, pin the rules. Visible and user-controlled; never a hidden prompt. |
+| AI-22 | Mid-task model speed/cost tiers | AI | S | Todo | Derived from Pi's mid-session model switching (see `pi.md`). Let the user pick a fast or local model for quick edits and a stronger model for a careful rewrite, switchable mid-task with an announced change, surfaced in the existing AI model panel. Local-first: the fast tier can be an on-device model. |
+| AI-23 | Graceful context compaction for long sessions | AI | M | Todo | Derived from Pi's compaction (see `pi.md`). A long writing-and-editing session with the assistant compacts and summarizes context to stay within the model window, and announces when it does, rather than silently truncating the thread. Reliability feature for real long-form work. |
+| AI-24 | Language-agnostic stdio/JSON boundary for external engines | AI | M | Todo | Derived from Pi's RPC/JSON integration design (see `pi.md`), and the architectural keystone for adopting any non-Python engine from a Python app. Define one consented, off-by-default pattern for QUILL to drive an external engine over a local subprocess speaking JSONL or MCP on stdio — spawned on demand, covered by the GATE-9 egress audit, with a clean unavailable path. This is the same boundary the Accessibility Agents work (`aa.md`) needs for its optional Node backend, so building it once de-risks both. Adopt the pattern, not the package. |
+
 
 ---
 
@@ -939,6 +953,12 @@ QUILL does not exist alone. It sits beside two sibling products built for the sa
 The strategic case: all three products share a mission (do excellent work for blind and low-vision people), a stack (Python and wxPython, accessibility-first, local-first), and an audience. Three separate apps mean three menus to learn, three update mechanisms, three places for a document to live, and triplicated engineering. One suite, with QUILL as the writing and editing home, GLOW as its accessibility engine, and BITS Whisperer as its transcription engine, is simpler for users and far more powerful: write, transcribe, audit, fix, and publish in one place, by keyboard and voice, with one set of conventions.
 
 ### 19. GLOW integration: make QUILL accessibility-native
+
+> The full, step-by-step Tier 3 execution plan for this section — the three-repo
+> layout (`s:\code\quill-glow-core`, `s:\code\glow`, and QUILL), the ordered
+> GLOW-0 through GLOW-7 work, the definition of done, and the risk register —
+> lives in [glow.md](glow.md) at the repo root. This section is the narrative;
+> [glow.md](glow.md) is the build sheet, and the two must stay in step.
 
 QUILL already contains `quill/core/glow.py`, a text-level GLOW audit and fix surface (generic link text, plain-language lint, audit and fix reports for the selection or document) wired to commands such as `tools.glow_fix_document` and `tools.glow_fix_selection`. Separately, GLOW is a full document-accessibility platform (a VS Code agent toolkit, a desktop app, and a web app) enforcing ACB Large Print, APH, WCAG 2.2 AA, and Microsoft Accessibility Checker rules across Word, Excel, PowerPoint, PDF, EPUB, HTML, and Markdown, with audit, auto-fix, template generation, and conversion. The shared library `quill-glow-core` already exposes a stable host-facing API (`audit_by_extension`, `fix_by_extension`, `convert_to_markdown`, `get_component_versions`) with a dispatch core, a safe no-op fallback, and a GLOW backend adapter.
 
@@ -991,7 +1011,9 @@ The combined-suite outcome: one accessible app where a blind or low-vision user 
 
 #### 21.1 New backlog items for the combined suite
 
-These extend the section 14 tracker.
+These extend the section 14 tracker. The GLOW family (GLOW-1 through GLOW-7) has a
+dedicated execution plan in [glow.md](glow.md); keep both in step when any GLOW
+item changes scope or status.
 
 | ID | Item | Area | Size | Status | Acceptance criteria |
 | --- | --- | --- | --- | --- | --- |
@@ -1130,12 +1152,12 @@ This table tracks how many of the backlog IDs each tier names are still open. It
 | Tier | Scope | Total items | Done | Remaining | Open item IDs |
 | --- | --- | --- | --- | --- | --- |
 | Tier 1 | Protect users and unlock the team | 23 | 23 | 0 | (complete) |
-| Tier 2 | Flagship experience | 44 | 8 | 36 | QK-2, QK-9, NAV-1, NAV-4, OCR-1..5, AGENT-1, AI-7, AI-1, AI-6, AI-13, AI-15, AI-17, AI-14, AI-16, SET-1..7, FEAT-19, WATCH-1..7, FLAG-3, FLAG-4, DLG-1 |
+| Tier 2 | Flagship experience | 58 | 9 | 49 | QK-2, QK-9, NAV-1, NAV-4, OCR-1..5, AGENT-1, AI-7, AI-1, AI-6, AI-13, AI-15, AI-17, AI-14, AI-16, AI-19..24, SET-1..7, SHARE-1..3, CTX-1, DICT-1..3, FEAT-19, WATCH-1..7, FLAG-3, FLAG-4, DLG-1 |
 | Tier 3 | GLOW accessibility engine | 8 | 0 | 8 | GLOW-1..7, WATCH-8 |
 | Tier 4 | Structural health and performance | 30 | 9 | 21 | CQ-16, CQ-1, DLG-2, GATE-11, PERF-1..3, PERF-9..14, GATE-10, SEC-6, SEC-7, SEC-8, SEC-14..17 |
 | Tier 5 | BITS Whisperer transcription | 28 | 0 | 28 | BW-1..10, WATCH-9, NAV-10, AI-11, AI-12, AI-18, FEAT-12..18, LINUX-1, ECO-1, L10N-1, COLLAB-1 |
 | Tier 6 | Documentation and learning surface | 33 | 0 | 33 | DOC-14..17, DOC-11, DOC-12, DOC-1..8, POD-1..5, TUT-1..7, CQ-11..15, CQ-23, CQ-24, LINUX-2 |
-| **Total** | All tiers | **166** | **31** | **135** | |
+| **Total** | All tiers | **180** | **32** | **148** | |
 
 Completed outside the formal tier lists (cross-cutting protections and quality work that the tiers reference only by theme): SEC-3 (OCR language allowlist), SEC-5 (verified TLS everywhere), GATE-1 (pre-commit), PERF-8 (documented scoped type-check), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also incidentally cleared the `quill/core` and `quill/io` portion of the TYPE-1..8 zone, though those formal rows stay open until each is individually verified and closed.
 
@@ -1159,6 +1181,60 @@ A grounded read of the three integration repos (`s:\code\quill-glow-core`, `s:\c
 - New GLOW items: GLOW-6 now explicitly surfaces engine/rule version in `diagnostics.py` and About; GLOW-7 adds a consent gate so GLOW's optional networked AI features are off by default and honor the no-silent-network rule and the GATE-9 egress audit.
 
 Tier swap: per the standing request, BITS Whisperer transcription moves to Tier 5 and documentation to Tier 6, so the docs land last and describe a product that is already GLOW-native and transcription-capable, reusing the `s:\code\bw\docs` material. The roadmap prose (section 23), the tier tracker, and the WATCH cross-references were all updated. Backlog totals moved 156 -> 159 (GLOW-6 counted, GLOW-7 new, BW-10 counted). Execution is authorized for Tiers 2 through 6 end to end, keeping `main` green throughout.
+
+#### Bookmark: Accessibility Agents integration (research, pending decision)
+
+A research evaluation of the Community Access "Accessibility Agents" project
+(`s:\code\agents`, MIT-licensed) is written up in full in [aa.md](aa.md) at the
+repo root. The maintainer is inclined to adopt it. If approved, it becomes a NEW
+Tier 4 inserted immediately after Tier 3 (GLOW), which renumbers the current
+tiers: Tier 4 (structural health and performance) -> Tier 5, Tier 5 (BITS
+Whisperer) -> Tier 6, and Tier 6 (documentation) -> Tier 7.
+
+The project is about 80 LLM-driven accessibility agents across five host
+platforms (Claude Code, Copilot, Gemini, Codex, and a Node.js MCP server with 24
+scanning tools). Most of it targets web developers and CI and is out of scope for
+a desktop writing app; the value to QUILL is narrower but real, and it already
+ships a GLOW bridge, so it is designed to interoperate with Tier 3, not compete.
+The proposed work (provisional prefix `AX-`) is five workstreams, all building on
+the shared GLOW engine and all behind `FeatureManager` (FLAG-1), reusing the
+consented AI layer (AI-13), and honoring the no-silent-network rule (GATE-9):
+
+- AX-A: adopt the desktop / wxPython / screen-reader knowledge agents
+  (`wxpython-specialist`, `desktop-a11y-specialist`, `desktop-a11y-testing-coach`)
+  as curated contributor guidance in repo memory and instructions. Zero runtime
+  risk; pure documentation; can land even if the rest is declined.
+- AX-B: an optional, off-by-default local MCP audit backend for structured
+  formats (DOCX, PPTX, XLSX, PDF, EPUB, Markdown) that normalizes into the GLOW-3
+  report surface, adopted only where additive to GLOW. Adds an optional (never
+  hard) Node.js dependency with a clean "backend unavailable" path.
+- AX-C: expose QUILL's own GLOW engine through the project's existing GLOW-bridge
+  contract so the wider ecosystem can audit and fix through QUILL, gated by the
+  GLOW-7 consent rules.
+- AX-D: consented agent-assisted remediation (alt text, plain-language rewrites)
+  folded into the Accessibility agent (AGENT-1) flagship, never a second AI
+  network path; explicit, announced, reviewable apply-and-undo, off by default.
+- AX-E: an axe-core / WCAG 2.2 AA web accessibility check on the HTML a user
+  authors or exports, plus the document-level Web Accessibility specialists
+  (`aria-specialist`, `keyboard-navigator`, `contrast-master`, `forms-specialist`,
+  `modal-specialist`, `live-region-controller`, `alt-text-headings`,
+  `tables-data-specialist`, `link-checker`, `i18n-accessibility`) as the consented
+  explain-and-fix layer. Decisive technical finding: axe-core needs no Node.js —
+  it is a single self-contained `axe.min.js` (about half a megabyte, bundled, so
+  zero per-scan bandwidth) injected into QUILL's already-shipped off-screen Edge
+  WebView2 (`wx-accessible-webview`). The scan is therefore in-process, local, and
+  a SILENT REVIEW by construction: the WebView is created off-screen and never
+  shown, so a background or watch-folder check runs with no UI at all; the
+  navigable findings dialog (GLOW-3) appears only on demand. The optional Node
+  backend (AX-B) is needed only for the heavier Playwright behavioural passes, not
+  the everyday HTML check.
+
+Sequencing: this tier lands after Tier 3 (GLOW) because AX-B, AX-C, AX-D, and
+AX-E all build on the shared GLOW engine and its report surface; documentation
+still lands last so it describes a product that is already GLOW-native,
+agent-assisted, and transcription-capable. Open questions for the maintainer are
+in [aa.md](aa.md) section 6. Do not start this work or renumber the tiers until
+the maintainer confirms after reviewing [aa.md](aa.md).
 
 #### Continuation brief (resume point for the next agent or session)
 
