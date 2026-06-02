@@ -4808,7 +4808,7 @@ connection error taxonomy (AI-17).</td>
 <td>Branchable, resumable AI writing sessions</td>
 <td>AI</td>
 <td>L</td>
-<td>Todo</td>
+<td>In progress</td>
 <td>Derived from Pi’s session tree (see <code>pi.md</code>). Elevate the
 existing assistant transcript and Save/Open Session into a durable,
 navigable history: auto-saved sessions, continue-most-recent,
@@ -4816,7 +4816,34 @@ browse-past, and fork/branch so a writer can try two rewrites of a
 section without losing state, then compare and resume. The surface is an
 accessible list or tree of branches, each announced, with one-key jump
 and compare; no redraw-heavy TUI. Honors FeatureManager (FLAG-1) and the
-shared announcement grammar (A11Y-1).</td>
+shared announcement grammar (A11Y-1). <strong>Delivered:</strong>
+<code>quill/core/ai/sessions.py</code> is a complete, wx-free,
+strict-typed session-<em>tree</em> engine. Turns form a tree by
+<code>parent_id</code>; the active branch tip is
+<code>current_turn_id</code>. <code>append_turn</code> adds a child of
+the tip and advances it; <code>branch_from</code>/<code>resume</code>
+move the tip back to an earlier turn so the next append creates a
+<em>sibling</em> branch — both rewrites are kept, never lost.
+<code>path_to</code>/<code>current_path</code> give the conversation
+along any branch; <code>branch_tips</code>/<code>branch_points</code>
+enumerate the leaves and forks; <code>compare_branches</code> finds the
+common ancestor and the turns unique to each side;
+<code>relabel_turn</code> names a branch for navigation. Durable JSON
+persistence
+(<code>save_session</code>/<code>load_session</code>/<code>delete_session</code>/<code>list_sessions</code>/<code>most_recent_session</code>)
+writes atomically under <code>&lt;data&gt;/ai-sessions</code>, supports
+continue-most-recent (newest <code>updated_at</code> first) and
+browse-past, and rejects unsafe session ids (path-traversal guard).
+Screen-reader summaries (<code>summarize_session</code>,
+<code>describe_branches</code>) announce turn/branch counts and mark the
+current branch. Tested: linear append, sibling branching without state
+loss, branch comparison/fork detection, resume, relabel, spoken
+summaries, role validation, save/load round-trip, list ordering +
+continue-most-recent, and the unsafe-id guard (10 tests). <strong>In
+progress (honest):</strong> the engine and persistence are complete and
+tested, but the accessible branch-browser/compare UI surface and the
+wiring that records the live assistant transcript into the tree are not
+yet built, so this row stays In progress.</td>
 </tr>
 <tr>
 <td>AI-21</td>
@@ -5829,12 +5856,12 @@ the third table and are not part of either 1.0 list.</p>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
 <td>SET-2, SET-3, MENU-1, MENU-5, AGENT-1, OCR-1, OCR-3, OCR-4, CTX-1,
-DICT-2, FEAT-19, DLG-1</td>
+DICT-2, FEAT-19, DLG-1, AI-20</td>
 </tr>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>Todo</td>
-<td>AI-19, AI-20, AI-22, AI-24</td>
+<td>AI-19, AI-22, AI-24</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
