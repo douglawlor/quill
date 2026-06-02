@@ -4960,7 +4960,7 @@ the too-few-turns and failed/blank-summary no-op paths.</td>
 <td>Language-agnostic stdio/JSON boundary for external engines</td>
 <td>AI</td>
 <td>M</td>
-<td>In progress</td>
+<td>Done</td>
 <td>Derived from Pi’s RPC/JSON integration design (see
 <code>pi.md</code>), and the architectural keystone for adopting any
 non-Python engine from a Python app. Define one consented,
@@ -4989,11 +4989,23 @@ is local-only (pipes, no sockets); QUILL opens no network connection, so
 it adds no new site to the GATE-9
 <code>urlopen</code>/<code>urlretrieve</code> egress inventory, and the
 off-by-default consent gate is the structural control. ruff + strict
-mypy clean. <strong>In progress (honest):</strong> the engine and
-consent/persistence layer are complete and tested, but no concrete
-external engine is shipped and the Settings UI to enable engines and
-configure their command is not yet wired, so this row stays In
-progress.</td>
+mypy clean. <strong>UI wired:</strong> the consent and command
+configuration now live in the registry-driven Settings home (no separate
+dialog): the AI page carries an off-by-default “Allow external engines”
+master checkbox plus an “External engine name”/“External engine command”
+pair and an “Enable this external engine” checkbox, persisted on OK via
+<code>set_external_engines_enabled</code> and
+<code>configure_engine</code> (a wx-free helper that turns the free-text
+command box into a token tuple with <code>shlex</code> and saves an
+<code>EngineConfig</code>). <code>list_engine_ids</code> and
+<code>configure_engine</code> are strict-typed and covered by core
+tests; the Settings integration is pinned by source-contract tests
+asserting the master/command controls and the persist-on-OK wiring, and
+the dialog-contract and public-surface guards stay green. No concrete
+external engine ships by design (adopt the pattern, not the package),
+but the consent gate, persistence, runtime boundary, and the Settings UI
+to enable an engine and configure its command are all complete and
+tested, so this row is Done.</td>
 </tr>
 </tbody>
 </table>
@@ -5818,10 +5830,10 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 2</td>
 <td>Flagship experience</td>
 <td>58</td>
-<td>46</td>
-<td>12</td>
-<td>OCR-1, OCR-3, OCR-4, AGENT-1, AI-19, AI-24, SET-2, SET-3, CTX-1,
-DICT-2, FEAT-19, DLG-1</td>
+<td>47</td>
+<td>11</td>
+<td>OCR-1, OCR-3, OCR-4, AGENT-1, AI-19, SET-2, SET-3, CTX-1, DICT-2,
+FEAT-19, DLG-1</td>
 </tr>
 <tr>
 <td>Tier 4</td>
@@ -5933,7 +5945,7 @@ the third table and are not part of either 1.0 list.</p>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
 <td>SET-2, SET-3, MENU-1, MENU-5, AGENT-1, OCR-1, OCR-3, OCR-4, CTX-1,
-DICT-2, FEAT-19, DLG-1, AI-24, AI-19</td>
+DICT-2, FEAT-19, DLG-1, AI-19</td>
 </tr>
 <tr>
 <td>Tier 2 — Flagship</td>

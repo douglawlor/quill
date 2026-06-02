@@ -9932,8 +9932,14 @@ class MainFrame:
         writers: dict[str, Callable[[object], None]] = {}
         control_index: dict[str, tuple[int, object]] = {}
         ai_enabled_cb = None  # special-cased: not a Settings field
+        ext_master_cb = None  # special-cased: external-engine master consent
+        ext_name_field = None
+        ext_command_field = None
+        ext_engine_enabled_cb = None
         collected: dict[str, object] = {}
         ai_value: bool | None = None
+        ext_master_value: bool | None = None
+        ext_engine_spec: tuple[str, str, bool] | None = None
 
         with wx.Dialog(self.frame, title="Settings") as dialog:
             outer = wx.BoxSizer(wx.VERTICAL)
@@ -10093,6 +10099,38 @@ class MainFrame:
                         "Use Artificial Intelligence. Master switch for all AI features."
                     )
                     page_sizer.Add(ai_enabled_cb, 0, wx.ALL, 6)
+                    # External engines (AI-24): consent + one engine's command,
+                    # folded into the Settings home rather than a separate dialog.
+                    from quill.core.ai.external_engine import (
+                        external_engines_enabled,
+                        list_engine_ids,
+                        load_engine_config,
+                    )
+
+                    ext_master_cb = wx.CheckBox(page, label="Allow external engines")
+                    ext_master_cb.SetValue(external_engines_enabled())
+                    ext_master_cb.SetName(
+                        "Allow external engines. Off by default. Let QUILL drive a "
+                        "trusted helper program as a local subprocess."
+                    )
+                    page_sizer.Add(ext_master_cb, 0, wx.ALL, 6)
+                    _engine_ids = list_engine_ids()
+                    _first_engine = load_engine_config(_engine_ids[0]) if _engine_ids else None
+                    ext_name_field = wx.TextCtrl(page)
+                    ext_name_field.SetName("External engine name")
+                    ext_name_field.SetValue(_first_engine.engine_id if _first_engine else "")
+                    _add_field_row(page, page_sizer, "External engine name", ext_name_field)
+                    ext_command_field = wx.TextCtrl(page)
+                    ext_command_field.SetName("External engine command")
+                    ext_command_field.SetValue(
+                        " ".join(_first_engine.command) if _first_engine else ""
+                    )
+                    _add_field_row(page, page_sizer, "External engine command", ext_command_field)
+                    ext_engine_enabled_cb = wx.CheckBox(page, label="Enable this external engine")
+                    ext_engine_enabled_cb.SetValue(
+                        bool(_first_engine.enabled) if _first_engine else False
+                    )
+                    page_sizer.Add(ext_engine_enabled_cb, 0, wx.ALL, 6)
                 for spec in specs:
                     _make_control(page, page_sizer, spec, page_index)
                 page.SetSizer(page_sizer)
@@ -10248,6 +10286,17 @@ class MainFrame:
                 action["mode"] = "ok"
                 collected = {key: reader() for key, reader in readers.items()}
                 ai_value = bool(ai_enabled_cb.GetValue()) if ai_enabled_cb is not None else None
+                ext_master_value = (
+                    bool(ext_master_cb.GetValue()) if ext_master_cb is not None else None
+                )
+                if ext_name_field is not None and ext_command_field is not None:
+                    ext_engine_spec = (
+                        str(ext_name_field.GetValue()),
+                        str(ext_command_field.GetValue()),
+                        bool(ext_engine_enabled_cb.GetValue())
+                        if ext_engine_enabled_cb is not None
+                        else False,
+                    )
 
         mode = action["mode"]
         if mode == "import":
@@ -10271,6 +10320,22 @@ class MainFrame:
         if ai_value is not None:
             save_ai_enabled(ai_value)
             self._sync_ai_enabled_menu(ai_value)
+        if ext_master_value is not None:
+            from quill.core.ai.external_engine import (
+                configure_engine,
+                set_external_engines_enabled,
+            )
+
+            set_external_engines_enabled(ext_master_value)
+            if ext_engine_spec is not None and ext_engine_spec[0].strip():
+                try:
+                    configure_engine(
+                        ext_engine_spec[0],
+                        ext_engine_spec[1],
+                        enabled=ext_engine_spec[2],
+                    )
+                except ValueError as error:
+                    self._set_status(str(error))
         self._settings_dialog_apply_refresh("Updated settings")
 
     def open_ai_preferences(self) -> None:

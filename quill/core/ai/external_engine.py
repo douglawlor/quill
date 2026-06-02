@@ -28,6 +28,7 @@ spawning real processes.
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -133,6 +134,45 @@ def set_engine_enabled(engine_id: str, enabled: bool) -> EngineConfig:
     )
     save_engine_config(updated)
     return updated
+
+
+def list_engine_ids() -> tuple[str, ...]:
+    """Every configured engine id, sorted, for a Settings list."""
+
+    engines = _load_document()["engines"]
+    return tuple(sorted(str(engine_id) for engine_id in engines))
+
+
+def configure_engine(
+    engine_id: str,
+    command_text: str,
+    *,
+    enabled: bool = False,
+    description: str = "",
+) -> EngineConfig:
+    """Parse a shell-style command line and persist one engine's config.
+
+    Thin, wx-free orchestration for the Settings UI: it turns the free-text
+    command box into a token tuple (via ``shlex``) and saves an
+    :class:`EngineConfig`, so the dialog holds no parsing or storage logic.
+    Raises ``ValueError`` for a blank engine id or an unparseable command.
+    """
+
+    cleaned_id = engine_id.strip()
+    if not cleaned_id:
+        raise ValueError("Enter a name for the engine.")
+    try:
+        command = tuple(shlex.split(command_text.strip()))
+    except ValueError as error:
+        raise ValueError(f"The command could not be understood: {error}") from error
+    config = EngineConfig(
+        engine_id=cleaned_id,
+        command=command,
+        enabled=bool(enabled),
+        description=description.strip(),
+    )
+    save_engine_config(config)
+    return config
 
 
 # ---------------------------------------------------------------------------

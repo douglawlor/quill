@@ -157,3 +157,27 @@ def test_config_persists_round_trip():
     assert reloaded.enabled is True
     assert reloaded.description == "A11y backend"
     assert ee.external_engines_enabled() is True
+
+
+def test_list_engine_ids_is_sorted():
+    ee.save_engine_config(ee.EngineConfig("zeta", command=("z",)))
+    ee.save_engine_config(ee.EngineConfig("alpha", command=("a",)))
+    assert ee.list_engine_ids() == ("alpha", "zeta")
+
+
+def test_configure_engine_parses_command_text():
+    config = ee.configure_engine("helper", '  node "tool one.js" --flag ', enabled=True)
+    assert config.engine_id == "helper"
+    assert config.command == ("node", "tool one.js", "--flag")
+    assert config.enabled is True
+    assert ee.load_engine_config("helper").command == ("node", "tool one.js", "--flag")
+
+
+def test_configure_engine_rejects_blank_id():
+    with pytest.raises(ValueError):
+        ee.configure_engine("   ", "node tool.js")
+
+
+def test_configure_engine_rejects_unparseable_command():
+    with pytest.raises(ValueError):
+        ee.configure_engine("helper", 'node "unterminated')
