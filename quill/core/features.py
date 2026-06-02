@@ -442,6 +442,32 @@ def features_path() -> Path:
     return app_data_dir() / "features.json"
 
 
+QPF_EXTENSION = ".qpf"
+
+
+def export_feature_profile_file(manager: FeatureManager, path: Path) -> None:
+    """Write a manager's profile and feature-flag state to a ``.qpf`` file.
+
+    The on-disk shape is the versioned mapping produced by
+    :meth:`FeatureManager.export_profile_data`, so a power user or
+    administrator can pre-tune which features are on before first run.
+    """
+
+    write_json_atomic(path, manager.export_profile_data())
+
+
+def import_feature_profile_file(manager: FeatureManager, path: Path) -> list[str]:
+    """Apply a ``.qpf`` profile file to ``manager`` and persist the result.
+
+    Returns a list of human-readable warnings for anything that was ignored
+    (for example an unknown profile id). Raises ``ValueError`` when the file is
+    missing, empty, or not a supported profile document.
+    """
+
+    raw = read_json(path, default=None)
+    return manager.import_profile_data(raw)
+
+
 def reset_feature_profile_store() -> None:
     manager = FeatureManager.load()
     manager.reset_to_essential_profile()

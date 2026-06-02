@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import pytest
 
 from quill.core.commands import CommandRegistry
 from quill.core.features import (
@@ -13,8 +16,10 @@ from quill.core.features import (
     PROFILE_ESSENTIAL,
     PROFILE_FULL_QUILL,
     FeatureManager,
+    export_feature_profile_file,
     feature_for_command,
     find_feature,
+    import_feature_profile_file,
 )
 
 
@@ -121,6 +126,31 @@ def test_feature_profile_import_and_export_roundtrip() -> None:
     assert manager.active_profile_id == PROFILE_DEVELOPER_POWER_TEXT
     assert manager.state_for("future.cleanup") == FEATURE_STATE_QUIET
     assert manager.state_for("core.profile") == FEATURE_STATE_ON
+
+
+def test_feature_profile_file_export_import_roundtrip(tmp_path: Path) -> None:
+    source = FeatureManager(active_profile_id=PROFILE_DEVELOPER_POWER_TEXT)
+    source.overrides = {"future.cleanup": "quiet"}
+    path = tmp_path / "team.qpf"
+
+    export_feature_profile_file(source, path)
+    assert path.exists()
+
+    target = FeatureManager()
+    warnings = import_feature_profile_file(target, path)
+
+    assert warnings == []
+    assert target.active_profile_id == PROFILE_DEVELOPER_POWER_TEXT
+    assert target.state_for("future.cleanup") == FEATURE_STATE_QUIET
+
+
+def test_feature_profile_file_import_rejects_garbage(tmp_path: Path) -> None:
+    path = tmp_path / "broken.qpf"
+    path.write_text("not a profile", encoding="utf-8")
+
+    target = FeatureManager()
+    with pytest.raises(ValueError):
+        import_feature_profile_file(target, path)
 
 
 def test_feature_dependency_enforcement_turns_on_required_features() -> None:

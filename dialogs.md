@@ -49,6 +49,8 @@ or the command palette (`Ctrl+Shift+P`).
 - [ ] Export settings to `.qsf` (button within Settings)
 - [ ] Import settings from `.qsf` (button within Settings)
 - [ ] Reset to Factory Defaults (button within Settings)
+- [ ] Export profile to `.qpf` (button within Settings)
+- [ ] Import profile from `.qpf` (button within Settings)
 - [ ] Command Palette: `Ctrl+Shift+P`
 
 ## C. Navigate

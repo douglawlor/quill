@@ -132,6 +132,8 @@ from quill.core.features import (
     PROFILE_DEFINITIONS,
     PROFILE_ESSENTIAL,
     FeatureManager,
+    export_feature_profile_file,
+    import_feature_profile_file,
 )
 from quill.core.file_search import (
     FileReplaceReport,
@@ -9464,6 +9466,7 @@ class MainFrame:
 
     #: Wildcard for exported QUILL settings files (SET-7).
     QSF_WILDCARD = "QUILL settings file (*.qsf)|*.qsf|All files (*.*)|*.*"
+    QPF_WILDCARD = "QUILL profile file (*.qpf)|*.qpf|All files (*.*)|*.*"
 
     def _settings_dialog_apply_refresh(self, status: str) -> None:
         """Persist ``self.settings`` and re-run every UI side effect.
@@ -9664,6 +9667,14 @@ class MainFrame:
             maintenance.Add(reset_btn, 0)
             outer.Add(maintenance, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
+            # --- Profile buttons (FLAG-4): export / import feature-flag state --
+            profile_row = wx.BoxSizer(wx.HORIZONTAL)
+            export_profile_btn = wx.Button(dialog, label="Export &profile...")
+            import_profile_btn = wx.Button(dialog, label="Import pro&file...")
+            profile_row.Add(export_profile_btn, 0, wx.RIGHT, 8)
+            profile_row.Add(import_profile_btn, 0)
+            outer.Add(profile_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
             # action carries the post-dialog instruction: "ok" | "cancel" |
             # "import" | "reset"; imported holds the Settings parsed from a file.
             action: dict[str, object] = {"mode": "cancel", "imported": None}
@@ -9714,9 +9725,55 @@ class MainFrame:
                 action["mode"] = "reset"
                 dialog.EndModal(wx.ID_CANCEL)
 
+            def _on_export_profile(_event: object) -> None:
+                with wx.FileDialog(
+                    dialog,
+                    "Export profile",
+                    wildcard=self.QPF_WILDCARD,
+                    style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+                ) as file_dialog:
+                    if self._show_modal_dialog(file_dialog, "Export profile") != wx.ID_OK:
+                        return
+                    target = Path(file_dialog.GetPath())
+                if target.suffix.lower() != ".qpf":
+                    target = target.with_suffix(".qpf")
+                try:
+                    export_feature_profile_file(self.features, target)
+                except OSError:
+                    self._set_status(f"Could not write profile to {target.name}")
+                    return
+                self._set_status(f"Exported feature profile to {target.name}")
+
+            def _on_import_profile(_event: object) -> None:
+                with wx.FileDialog(
+                    dialog,
+                    "Import profile",
+                    wildcard=self.QPF_WILDCARD,
+                    style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+                ) as file_dialog:
+                    if self._show_modal_dialog(file_dialog, "Import profile") != wx.ID_OK:
+                        return
+                    source = Path(file_dialog.GetPath())
+                try:
+                    warnings = import_feature_profile_file(self.features, source)
+                except (OSError, ValueError):
+                    self._set_status(f"Could not read a feature profile from {source.name}")
+                    return
+                self._apply_accelerators()
+                self._build_menu()
+                profile_name = self.features.active_profile.name
+                if warnings:
+                    self._set_status(
+                        f"Imported profile {profile_name} ({len(warnings)} item(s) ignored)"
+                    )
+                else:
+                    self._set_status(f"Imported feature profile {profile_name}")
+
             export_btn.Bind(wx.EVT_BUTTON, _on_export)
             import_btn.Bind(wx.EVT_BUTTON, _on_import)
             reset_btn.Bind(wx.EVT_BUTTON, _on_reset)
+            export_profile_btn.Bind(wx.EVT_BUTTON, _on_export_profile)
+            import_profile_btn.Bind(wx.EVT_BUTTON, _on_import_profile)
 
             buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
             if buttons is not None:
