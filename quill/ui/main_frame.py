@@ -9462,356 +9462,297 @@ class MainFrame:
         _label, handler = options[selected]
         handler()
 
-    def open_general_preferences(self) -> None:
-        wx = self._wx
-        from quill.core.ai.model_manager import load_ai_enabled, save_ai_enabled
+    #: Wildcard for exported QUILL settings files (SET-7).
+    QSF_WILDCARD = "QUILL settings file (*.qsf)|*.qsf|All files (*.*)|*.*"
 
-        with wx.Dialog(self.frame, title="General Preferences") as dialog:
-            panel = wx.Panel(dialog)
-            root = wx.BoxSizer(wx.VERTICAL)
-            panel_sizer = wx.BoxSizer(wx.VERTICAL)
+    def _settings_dialog_apply_refresh(self, status: str) -> None:
+        """Persist ``self.settings`` and re-run every UI side effect.
 
-            def _add_choice_row(label: str, control) -> None:
-                row = wx.BoxSizer(wx.HORIZONTAL)
-                row.Add(wx.StaticText(panel, label=label), 0, wx.ALIGN_CENTER_VERTICAL)
-                row.AddSpacer(8)
-                row.Add(control, 1, wx.EXPAND)
-                panel_sizer.Add(row, 0, wx.EXPAND | wx.ALL, 8)
-
-            theme_choice = wx.Choice(panel, choices=["System", "Light", "Dark"])
-            theme_choice.SetStringSelection(self.settings.theme.capitalize())
-            _add_choice_row("Theme", theme_choice)
-
-            title_path_choice = wx.Choice(panel, choices=["File name only", "Full path"])
-            title_path_choice.SetSelection(
-                1 if getattr(self.settings, "title_bar_path_mode", "name") == "full_path" else 0
-            )
-            _add_choice_row("Title bar path", title_path_choice)
-
-            dirty_style_choice = wx.Choice(panel, choices=["Text", "Asterisk", "Asterisk + text"])
-            dirty_style_choice.SetSelection(
-                {"text": 0, "asterisk": 1, "asterisk_text": 2}.get(
-                    self.settings.dirty_title_style,
-                    0,
-                )
-            )
-            _add_choice_row("Dirty title style", dirty_style_choice)
-
-            tray_mode = wx.CheckBox(panel, label="Enable system tray mode")
-            tray_mode.SetValue(self.settings.tray_enabled)
-            panel_sizer.Add(tray_mode, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            soft_wrap = wx.CheckBox(panel, label="Enable soft wrap")
-            soft_wrap.SetValue(self.settings.soft_wrap)
-            panel_sizer.Add(soft_wrap, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            show_tabs = wx.CheckBox(panel, label="Show tab control")
-            show_tabs.SetValue(self.settings.show_tab_control)
-            panel_sizer.Add(show_tabs, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            wrap_find = wx.CheckBox(panel, label="Wrap find searches")
-            wrap_find.SetValue(self.settings.wrap_find)
-            panel_sizer.Add(wrap_find, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            browse_wrap = wx.CheckBox(
-                panel, label="Wrap QUILL browse navigation at document boundaries"
-            )
-            browse_wrap.SetValue(bool(getattr(self.settings, "browse_mode_wrap", True)))
-            panel_sizer.Add(browse_wrap, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            browse_feedback = wx.Choice(
-                panel,
-                choices=["Speech only", "Sound only", "Speech and sound", "Silent"],
-            )
-            browse_feedback.SetSelection(
-                {
-                    "speech": 0,
-                    "sound": 1,
-                    "both": 2,
-                    "none": 3,
-                }.get(str(getattr(self.settings, "browse_mode_feedback", "speech")).lower(), 0)
-            )
-            _add_choice_row("QUILL browse feedback", browse_feedback)
-
-            browse_preload_cache = wx.CheckBox(
-                panel,
-                label="Preload QUILL browse cache in background",
-            )
-            browse_preload_cache.SetValue(
-                bool(getattr(self.settings, "browse_mode_preload_cache", True))
-            )
-            panel_sizer.Add(browse_preload_cache, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            auto_updates = wx.CheckBox(panel, label="Check for updates on startup")
-            auto_updates.SetValue(self.settings.auto_check_updates)
-            panel_sizer.Add(auto_updates, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            beta_updates = wx.CheckBox(
-                panel, label="Get beta updates (note: these may be unstable)"
-            )
-            beta_updates.SetValue(getattr(self.settings, "beta_updates", False))
-            beta_updates.SetName("Get beta updates, note these may be unstable")
-            panel_sizer.Add(beta_updates, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            def _on_beta_toggle(event: object, _cb=beta_updates) -> None:
-                # Require the HTML consent gate before turning beta on.
-                if _cb.GetValue() and not self._confirm_beta_channel():
-                    _cb.SetValue(False)
-
-            beta_updates.Bind(wx.EVT_CHECKBOX, _on_beta_toggle)
-
-            persistent_undo = wx.CheckBox(panel, label="Enable persistent undo")
-            persistent_undo.SetValue(self.settings.persistent_undo)
-            panel_sizer.Add(persistent_undo, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            spellcheck = wx.CheckBox(panel, label="Spell check as you type")
-            spellcheck.SetValue(self.settings.spellcheck_as_you_type)
-            panel_sizer.Add(spellcheck, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            intellisense = wx.CheckBox(panel, label="Word prediction and tag IntelliSense")
-            intellisense.SetValue(getattr(self.settings, "intellisense_as_you_type", False))
-            panel_sizer.Add(intellisense, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            ai_enabled = wx.CheckBox(panel, label="Use Artificial Intelligence")
-            ai_enabled.SetValue(load_ai_enabled())
-            panel_sizer.Add(ai_enabled, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            assistant_enabled = wx.CheckBox(panel, label="Enable writing assistant")
-            assistant_enabled.SetValue(getattr(self.settings, "assistant_enabled", False))
-            panel_sizer.Add(assistant_enabled, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            assistant_style = wx.Choice(
-                panel,
-                choices=["Balanced", "Concise", "Gentle", "Technical"],
-            )
-            assistant_style.SetSelection(
-                {
-                    "balanced": 0,
-                    "concise": 1,
-                    "gentle": 2,
-                    "technical": 3,
-                }.get(getattr(self.settings, "assistant_prompt_style", "balanced"), 0)
-            )
-            _add_choice_row("Assistant prompt style", assistant_style)
-
-            bw_auto_open_status = wx.CheckBox(
-                panel,
-                label="Auto-open Status Page when BITS Whisperer model downloads start",
-            )
-            bw_auto_open_status.SetValue(
-                bool(getattr(self.settings, "bw_auto_open_status_page_on_download_start", False))
-            )
-            panel_sizer.Add(bw_auto_open_status, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            status_refresh_cadence = wx.Choice(
-                panel,
-                choices=[
-                    "Quiet (no spoken refresh notifications)",
-                    "Normal (spoken every 30 seconds)",
-                    "Verbose (spoken every 10 seconds)",
-                ],
-            )
-            status_refresh_cadence.SetSelection(
-                {
-                    "quiet": 0,
-                    "normal": 1,
-                    "verbose": 2,
-                }.get(
-                    str(
-                        getattr(
-                            self.settings,
-                            "status_page_refresh_announcement_cadence",
-                            "quiet",
-                        )
-                    ).lower(),
-                    0,
-                )
-            )
-            _add_choice_row("Status page refresh announcements", status_refresh_cadence)
-
-            bw_safe_mode_lock = wx.CheckBox(
-                panel,
-                label="Enable BITS Whisperer safe mode lock (blocks download/retry actions)",
-            )
-            bw_safe_mode_lock.SetValue(bool(getattr(self.settings, "bw_safe_mode_lock", False)))
-            panel_sizer.Add(bw_safe_mode_lock, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            browser_choice = wx.Choice(
-                panel,
-                choices=[option.label for option in available_browser_options()],
-            )
-            browser_choice.SetStringSelection(
-                browser_choice_label_for_value(getattr(self.settings, "preview_browser", "system"))
-            )
-            _add_choice_row("Preview browser", browser_choice)
-
-            snippet_expansion = wx.CheckBox(
-                panel,
-                label="Expand snippet triggers while typing",
-            )
-            snippet_expansion.SetValue(self.settings.snippet_trigger_expansion)
-            panel_sizer.Add(snippet_expansion, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            start_empty = wx.CheckBox(panel, label="Start with no document open")
-            start_empty.SetValue(self.settings.start_with_no_document_open)
-            panel_sizer.Add(start_empty, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-            buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
-            panel.SetSizer(panel_sizer)
-            root.Add(panel, 1, wx.EXPAND | wx.ALL, 8)
-            if buttons is not None:
-                root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
-            apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
-            dialog.SetSizerAndFit(root)
-
-            if self._show_modal_dialog(dialog, "General Preferences") != wx.ID_OK:
-                self._set_status("Preferences cancelled")
-                return
-
-            values: dict[str, object] = {
-                "theme": (theme_choice.GetStringSelection() or "System").lower(),
-                "tray_enabled": bool(tray_mode.GetValue()),
-                "soft_wrap": bool(soft_wrap.GetValue()),
-                "show_tab_control": bool(show_tabs.GetValue()),
-                "wrap_find": bool(wrap_find.GetValue()),
-                "browse_mode_wrap": bool(browse_wrap.GetValue()),
-                "browse_mode_feedback": {
-                    0: "speech",
-                    1: "sound",
-                    2: "both",
-                    3: "none",
-                }.get(browse_feedback.GetSelection(), "speech"),
-                "browse_mode_preload_cache": bool(browse_preload_cache.GetValue()),
-                "title_bar_path_mode": (
-                    "full_path" if title_path_choice.GetSelection() == 1 else "name"
-                ),
-                "auto_check_updates": bool(auto_updates.GetValue()),
-                "beta_updates": bool(beta_updates.GetValue()),
-                "persistent_undo": bool(persistent_undo.GetValue()),
-                "spellcheck_as_you_type": bool(spellcheck.GetValue()),
-                "intellisense_as_you_type": bool(intellisense.GetValue()),
-                "ai_enabled": bool(ai_enabled.GetValue()),
-                "assistant_enabled": bool(assistant_enabled.GetValue()),
-                "assistant_prompt_style": {
-                    0: "balanced",
-                    1: "concise",
-                    2: "gentle",
-                    3: "technical",
-                }.get(assistant_style.GetSelection(), "balanced"),
-                "bw_auto_open_status_page_on_download_start": bool(bw_auto_open_status.GetValue()),
-                "status_page_refresh_announcement_cadence": {
-                    0: "quiet",
-                    1: "normal",
-                    2: "verbose",
-                }.get(status_refresh_cadence.GetSelection(), "quiet"),
-                "bw_safe_mode_lock": bool(bw_safe_mode_lock.GetValue()),
-                "preview_browser": browser_choice_value_for_label(
-                    browser_choice.GetStringSelection() or "System default browser"
-                ),
-                "snippet_trigger_expansion": bool(snippet_expansion.GetValue()),
-                "start_with_no_document_open": bool(start_empty.GetValue()),
-                "dirty_title_style": {
-                    0: "text",
-                    1: "asterisk",
-                    2: "asterisk_text",
-                }.get(dirty_style_choice.GetSelection(), "text"),
-            }
-        theme = str(values.get("theme", self.settings.theme))
-        self.set_theme(theme)
-        self.settings.tray_enabled = bool(values.get("tray_enabled", self.settings.tray_enabled))
-        self.settings.soft_wrap = bool(values.get("soft_wrap", self.settings.soft_wrap))
-        self.settings.show_tab_control = bool(
-            values.get("show_tab_control", self.settings.show_tab_control)
-        )
-        self.settings.wrap_find = bool(values.get("wrap_find", self.settings.wrap_find))
-        self.settings.browse_mode_wrap = bool(
-            values.get("browse_mode_wrap", getattr(self.settings, "browse_mode_wrap", True))
-        )
-        self.settings.browse_mode_feedback = str(
-            values.get(
-                "browse_mode_feedback",
-                getattr(self.settings, "browse_mode_feedback", "speech"),
-            )
-        )
-        self.settings.browse_mode_preload_cache = bool(
-            values.get(
-                "browse_mode_preload_cache",
-                getattr(self.settings, "browse_mode_preload_cache", True),
-            )
-        )
-        self.settings.title_bar_path_mode = str(
-            values.get("title_bar_path_mode", self.settings.title_bar_path_mode)
-        )
-        self.settings.auto_check_updates = bool(
-            values.get("auto_check_updates", self.settings.auto_check_updates)
-        )
-        self.settings.beta_updates = bool(values.get("beta_updates", self.settings.beta_updates))
-        self.settings.persistent_undo = bool(
-            values.get("persistent_undo", self.settings.persistent_undo)
-        )
-        spellcheck_enabled = bool(
-            values.get("spellcheck_as_you_type", self.settings.spellcheck_as_you_type)
-        )
-        self._set_spellcheck_mode(spellcheck_enabled)
-        self.settings.intellisense_as_you_type = bool(
-            values.get(
-                "intellisense_as_you_type",
-                getattr(self.settings, "intellisense_as_you_type", False),
-            )
-        )
-        ai_enabled_value = bool(values.get("ai_enabled", load_ai_enabled()))
-        save_ai_enabled(ai_enabled_value)
-        self._sync_ai_enabled_menu(ai_enabled_value)
+        Shared by the OK, Reset to Factory Defaults, and Import paths of the
+        tabbed Settings dialog so each one leaves the app in a consistent state.
+        """
+        save_settings(self.settings)
+        self.set_theme(self.settings.theme)
+        self._set_spellcheck_mode(self.settings.spellcheck_as_you_type)
         self._apply_ai_menu_enabled()
         self._refresh_ai_status()
-        self.settings.assistant_enabled = bool(
-            values.get("assistant_enabled", getattr(self.settings, "assistant_enabled", False))
-        )
-        self.settings.assistant_prompt_style = str(
-            values.get(
-                "assistant_prompt_style",
-                getattr(self.settings, "assistant_prompt_style", "balanced"),
-            )
-        )
-        self.settings.bw_auto_open_status_page_on_download_start = bool(
-            values.get(
-                "bw_auto_open_status_page_on_download_start",
-                getattr(self.settings, "bw_auto_open_status_page_on_download_start", False),
-            )
-        )
-        self.settings.status_page_refresh_announcement_cadence = str(
-            values.get(
-                "status_page_refresh_announcement_cadence",
-                getattr(self.settings, "status_page_refresh_announcement_cadence", "quiet"),
-            )
-        )
-        self.settings.bw_safe_mode_lock = bool(
-            values.get("bw_safe_mode_lock", getattr(self.settings, "bw_safe_mode_lock", False))
-        )
-        self.settings.preview_browser = normalize_browser_choice(
-            str(values.get("preview_browser", self.settings.preview_browser))
-        )
-        self.settings.snippet_trigger_expansion = bool(
-            values.get("snippet_trigger_expansion", self.settings.snippet_trigger_expansion)
-        )
-        self._clear_navigation_issue_state()
-        self.settings.start_with_no_document_open = bool(
-            values.get(
-                "start_with_no_document_open",
-                self.settings.start_with_no_document_open,
-            )
-        )
-        self.settings.dirty_title_style = str(
-            values.get("dirty_title_style", self.settings.dirty_title_style)
-        )
-        save_settings(self.settings)
         self._apply_soft_wrap_setting()
         self._rebuild_tab_host(self.settings.show_tab_control)
         self._build_menu()
         self._apply_dirty_title_style_setting()
         self._refresh_title()
         self._refresh_view_menu_checks()
-        self._set_status("Updated general preferences")
+        self._clear_navigation_issue_state()
+        self._set_status(status)
+
+    def open_general_preferences(self) -> None:
+        from quill.core import settings_registry as registry
+        from quill.core.ai.model_manager import load_ai_enabled, save_ai_enabled
+
+        wx = self._wx
+
+        # Readers map each rendered registry key to a callable returning its
+        # stored (normalized) value. Index maps key -> (page_index, control) so
+        # the search box can jump straight to a matching control.
+        readers: dict[str, Callable[[], object]] = {}
+        control_index: dict[str, tuple[int, object]] = {}
+        ai_enabled_cb = None  # special-cased: not a Settings field
+        collected: dict[str, object] = {}
+        ai_value: bool | None = None
+
+        with wx.Dialog(self.frame, title="Settings") as dialog:
+            outer = wx.BoxSizer(wx.VERTICAL)
+
+            # --- Search (SET-6) ------------------------------------------------
+            search_row = wx.BoxSizer(wx.HORIZONTAL)
+            search_row.Add(
+                wx.StaticText(dialog, label="&Search settings:"),
+                0,
+                wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+                8,
+            )
+            search_box = wx.TextCtrl(dialog, style=wx.TE_PROCESS_ENTER)
+            search_box.SetName("Search settings")
+            search_row.Add(search_box, 1, wx.EXPAND)
+            outer.Add(search_row, 0, wx.EXPAND | wx.ALL, 8)
+
+            notebook = wx.Notebook(dialog)
+            notebook.SetName("Settings categories")
+
+            def _add_field_row(parent_panel, sizer, label: str, control) -> None:
+                row = wx.BoxSizer(wx.HORIZONTAL)
+                row.Add(
+                    wx.StaticText(parent_panel, label=label),
+                    0,
+                    wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+                    8,
+                )
+                row.Add(control, 1, wx.EXPAND)
+                sizer.Add(row, 0, wx.EXPAND | wx.ALL, 6)
+
+            def _make_control(parent_panel, sizer, spec, page_index: int) -> None:
+                current = registry.get_value(self.settings, spec.key)
+                # preview_browser is stored as text but is best chosen from the
+                # list of installed browsers.
+                if spec.key == "preview_browser":
+                    choice = wx.Choice(
+                        parent_panel,
+                        choices=[opt.label for opt in available_browser_options()],
+                    )
+                    choice.SetName(spec.label)
+                    choice.SetStringSelection(browser_choice_label_for_value(str(current)))
+                    _add_field_row(parent_panel, sizer, spec.label, choice)
+                    readers[spec.key] = lambda c=choice: browser_choice_value_for_label(
+                        c.GetStringSelection() or "System default browser"
+                    )
+                    control_index[spec.key] = (page_index, choice)
+                    return
+                if spec.kind == "bool":
+                    cb = wx.CheckBox(parent_panel, label=spec.label)
+                    cb.SetValue(bool(current))
+                    if spec.description:
+                        cb.SetName(f"{spec.label}. {spec.description}")
+                    sizer.Add(cb, 0, wx.ALL, 6)
+                    readers[spec.key] = lambda c=cb: bool(c.GetValue())
+                    control_index[spec.key] = (page_index, cb)
+                    if spec.key == "beta_updates":
+
+                        def _on_beta_toggle(_event: object, _cb=cb) -> None:
+                            if _cb.GetValue() and not self._confirm_beta_channel():
+                                _cb.SetValue(False)
+
+                        cb.Bind(wx.EVT_CHECKBOX, _on_beta_toggle)
+                    return
+                if spec.kind == "choice":
+                    labels = [label for _value, label in spec.choices]
+                    value_for_label = {label: value for value, label in spec.choices}
+                    label_for_value = {value: label for value, label in spec.choices}
+                    choice = wx.Choice(parent_panel, choices=labels)
+                    choice.SetName(spec.label)
+                    choice.SetStringSelection(label_for_value.get(str(current), labels[0]))
+                    _add_field_row(parent_panel, sizer, spec.label, choice)
+                    readers[spec.key] = lambda c=choice, m=value_for_label, d=str(current): m.get(
+                        c.GetStringSelection(), d
+                    )
+                    control_index[spec.key] = (page_index, choice)
+                    return
+                if spec.kind == "int":
+                    spin = wx.SpinCtrl(parent_panel)
+                    if spec.minimum is not None and spec.maximum is not None:
+                        spin.SetRange(int(spec.minimum), int(spec.maximum))
+                    spin.SetValue(int(current))
+                    spin.SetName(spec.label)
+                    _add_field_row(parent_panel, sizer, spec.label, spin)
+                    readers[spec.key] = lambda c=spin: int(c.GetValue())
+                    control_index[spec.key] = (page_index, spin)
+                    return
+                if spec.kind == "float":
+                    spin = wx.SpinCtrlDouble(parent_panel, inc=0.1)
+                    if spec.minimum is not None and spec.maximum is not None:
+                        spin.SetRange(float(spec.minimum), float(spec.maximum))
+                    spin.SetValue(float(current))
+                    spin.SetName(spec.label)
+                    _add_field_row(parent_panel, sizer, spec.label, spin)
+                    readers[spec.key] = lambda c=spin: float(c.GetValue())
+                    control_index[spec.key] = (page_index, spin)
+                    return
+                # text
+                text = wx.TextCtrl(parent_panel)
+                text.SetValue(str(current))
+                text.SetName(spec.label)
+                _add_field_row(parent_panel, sizer, spec.label, text)
+                readers[spec.key] = lambda c=text: str(c.GetValue())
+                control_index[spec.key] = (page_index, text)
+
+            page_index = 0
+            for group in registry.groups():
+                specs = [
+                    spec
+                    for spec in registry.specs_for_group(group.id)
+                    if not spec.feature_id or self._feature_enabled(spec.feature_id)
+                ]
+                # Surface the AI master toggle on the AI page even though it is
+                # stored outside Settings.
+                show_ai_master = group.id == "ai"
+                if not specs and not show_ai_master:
+                    continue
+                page = wx.Panel(notebook, style=wx.TAB_TRAVERSAL)
+                page_sizer = wx.BoxSizer(wx.VERTICAL)
+                if group.description:
+                    intro = wx.StaticText(page, label=group.description)
+                    page_sizer.Add(intro, 0, wx.ALL, 6)
+                if show_ai_master:
+                    ai_enabled_cb = wx.CheckBox(page, label="Use Artificial Intelligence")
+                    ai_enabled_cb.SetValue(load_ai_enabled())
+                    ai_enabled_cb.SetName(
+                        "Use Artificial Intelligence. Master switch for all AI features."
+                    )
+                    page_sizer.Add(ai_enabled_cb, 0, wx.ALL, 6)
+                for spec in specs:
+                    _make_control(page, page_sizer, spec, page_index)
+                page.SetSizer(page_sizer)
+                notebook.AddPage(page, group.title)
+                page_index += 1
+
+            outer.Add(notebook, 1, wx.EXPAND | wx.ALL, 8)
+
+            # --- Search behavior: jump to the first matching control ----------
+            def _on_search(_event: object) -> None:
+                query = search_box.GetValue().strip()
+                if not query:
+                    return
+                for spec in registry.search_specs(query):
+                    if spec.key in control_index:
+                        index, control = control_index[spec.key]
+                        notebook.SetSelection(index)
+                        focus = getattr(control, "SetFocus", None)
+                        if callable(focus):
+                            focus()
+                        self._set_status(f"Jumped to {spec.label}")
+                        return
+                self._set_status(f"No setting matches {query!r}")
+
+            search_box.Bind(wx.EVT_TEXT_ENTER, _on_search)
+
+            # --- Maintenance buttons (SET-7): Export / Import / Reset ----------
+            maintenance = wx.BoxSizer(wx.HORIZONTAL)
+            export_btn = wx.Button(dialog, label="&Export settings...")
+            import_btn = wx.Button(dialog, label="&Import settings...")
+            reset_btn = wx.Button(dialog, label="&Reset to Factory Defaults")
+            maintenance.Add(export_btn, 0, wx.RIGHT, 8)
+            maintenance.Add(import_btn, 0, wx.RIGHT, 8)
+            maintenance.Add(reset_btn, 0)
+            outer.Add(maintenance, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+            # action carries the post-dialog instruction: "ok" | "cancel" |
+            # "import" | "reset"; imported holds the Settings parsed from a file.
+            action: dict[str, object] = {"mode": "cancel", "imported": None}
+
+            def _on_export(_event: object) -> None:
+                with wx.FileDialog(
+                    dialog,
+                    "Export settings",
+                    wildcard=self.QSF_WILDCARD,
+                    style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+                ) as file_dialog:
+                    if self._show_modal_dialog(file_dialog, "Export settings") != wx.ID_OK:
+                        return
+                    target = Path(file_dialog.GetPath())
+                if target.suffix.lower() != ".qsf":
+                    target = target.with_suffix(".qsf")
+                payload = registry.export_settings(self.settings)
+                target.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                self._set_status(f"Exported settings to {target.name}")
+
+            def _on_import(_event: object) -> None:
+                with wx.FileDialog(
+                    dialog,
+                    "Import settings",
+                    wildcard=self.QSF_WILDCARD,
+                    style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+                ) as file_dialog:
+                    if self._show_modal_dialog(file_dialog, "Import settings") != wx.ID_OK:
+                        return
+                    source = Path(file_dialog.GetPath())
+                try:
+                    raw = json.loads(source.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    self._set_status(f"Could not read settings from {source.name}")
+                    return
+                action["mode"] = "import"
+                action["imported"] = registry.import_settings(raw)
+                dialog.EndModal(wx.ID_CANCEL)
+
+            def _on_reset(_event: object) -> None:
+                result = self._show_message_box(
+                    "Reset every setting to its factory default? This cannot be undone.",
+                    "Reset to Factory Defaults",
+                    wx.ICON_WARNING | wx.YES_NO | wx.NO_DEFAULT,
+                )
+                if result != wx.YES:
+                    return
+                action["mode"] = "reset"
+                dialog.EndModal(wx.ID_CANCEL)
+
+            export_btn.Bind(wx.EVT_BUTTON, _on_export)
+            import_btn.Bind(wx.EVT_BUTTON, _on_import)
+            reset_btn.Bind(wx.EVT_BUTTON, _on_reset)
+
+            buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
+            if buttons is not None:
+                outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+            apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+            dialog.SetSizerAndFit(outer)
+
+            result = self._show_modal_dialog(dialog, "Settings")
+            if result == wx.ID_OK:
+                action["mode"] = "ok"
+                collected = {key: reader() for key, reader in readers.items()}
+                ai_value = bool(ai_enabled_cb.GetValue()) if ai_enabled_cb is not None else None
+
+        mode = action["mode"]
+        if mode == "import":
+            imported = action["imported"]
+            if isinstance(imported, Settings):
+                self.settings = imported
+                self._settings_dialog_apply_refresh("Imported settings")
+            return
+        if mode == "reset":
+            self.settings = registry.reset_all()
+            self._settings_dialog_apply_refresh("Reset settings to factory defaults")
+            return
+        if mode != "ok":
+            self._set_status("Settings cancelled")
+            return
+
+        updated = self.settings
+        for key, value in collected.items():
+            updated = registry.set_value(updated, key, value)
+        self.settings = updated
+        if ai_value is not None:
+            save_ai_enabled(ai_value)
+            self._sync_ai_enabled_menu(ai_value)
+        self._settings_dialog_apply_refresh("Updated settings")
 
     def open_ai_preferences(self) -> None:
         dialog = AssistantConnectionDialog(self.frame)
