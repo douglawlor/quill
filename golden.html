@@ -1340,7 +1340,7 @@ QUILL key, selection, file lifecycle.</td>
 accessible helper</td>
 <td>Code quality</td>
 <td>M</td>
-<td>Todo</td>
+<td>In progress</td>
 <td>Executes the form wave of GitHub issue #73. The remaining
 hand-rolled multi-field <code>wx.Dialog</code> forms that are pure
 submit-once input (find-in-files / replace-in-files, Status Bar Layout,
@@ -1353,8 +1353,25 @@ multi-field dialog, so this consolidates them on one tested,
 screen-reader-friendly surface rather than per-dialog focus/button code.
 Each migration keeps the existing inputs and outputs, lands behind a
 focused behavior test, and leaves the public surface unchanged (GATE-6).
-Until migrated, dialogs must still satisfy the A11Y-4 contract
-guard.</td>
+Until migrated, dialogs must still satisfy the A11Y-4 contract guard.
+<strong>Delivered:</strong> the Insert Link dialog (two-field
+display-text + URL submit-once form) is migrated off its hand-rolled
+<code>wx.Dialog</code> (HtmlWindow intro + two <code>wx.TextCtrl</code>
++ custom show/activate focus handlers) onto <code>show_web_form</code>,
+keeping identical inputs and outputs (prefilled selection,
+<code>https://</code> default, blank-URL cancel, markdown/HTML/plain
+link emission) behind three focused behavior tests; public surface
+unchanged. <strong>In progress:</strong> the named
+CRUD/conditional/reorder targets are poor submit-once fits and are
+deferred — find/replace-in-files carries a <code>DirPickerCtrl</code>
+Browse plus mode/output <code>wx.Choice</code>es, Watch Folder Settings
+is a list manager (Add/Edit/Duplicate/Toggle/Delete) whose per-profile
+editor has Browse buttons, conditional schedule/action fields, and a
+sandboxed Python code editor, the read-aloud chooser is a per-engine
+chain of stock choice/entry dialogs, Status Bar Layout has Move Up/Down
+reordering, and the YAML editor is a tree editor. These remain
+A11Y-4-compliant and are migrated only where a genuine submit-once shape
+exists, to avoid degrading working dialogs.</td>
 </tr>
 <tr>
 <td>QA-1</td>
@@ -5812,12 +5829,12 @@ the third table and are not part of either 1.0 list.</p>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
 <td>SET-2, SET-3, MENU-1, MENU-5, AGENT-1, OCR-1, OCR-3, OCR-4, CTX-1,
-DICT-2, FEAT-19</td>
+DICT-2, FEAT-19, DLG-1</td>
 </tr>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>Todo</td>
-<td>AI-19, AI-20, AI-22, AI-24, DLG-1</td>
+<td>AI-19, AI-20, AI-22, AI-24</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>

@@ -133,6 +133,7 @@ or the command palette (`Ctrl+Shift+P`).
 
 ## O. Tools: formatting
 
+- [ ] Insert Link: `Ctrl+K` (shared accessible web form: display text + URL)
 - [ ] List Manager: QUILL key, then `L`
 - [ ] YAML Structure Editor: via Tools menu
 

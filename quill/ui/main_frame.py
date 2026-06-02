@@ -18373,88 +18373,36 @@ class MainFrame:
         self._run_background_task("Replacing files", work, on_success)
 
     def insert_link(self) -> None:
-        wx = self._wx
-        import wx.html as wxhtml
+        from quill.ui.web_form import show_web_form
 
         selected_text = self.editor.GetStringSelection()
-        dialog = wx.Dialog(
-            self.frame, title="Insert Link", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
+        values = show_web_form(
+            self.frame,
+            self._wx,
+            title="Insert Link",
+            intro=("Enter the text to display and the destination URL, then choose Insert."),
+            save_label="Insert",
+            fields=[
+                {
+                    "name": "display_text",
+                    "label": "Display text",
+                    "type": "text",
+                    "value": selected_text or "",
+                },
+                {
+                    "name": "url",
+                    "label": "URL",
+                    "type": "text",
+                    "value": "https://",
+                },
+            ],
         )
-        dialog.SetSize((700, 380))
+        if values is None:
+            self._set_status("Insert link cancelled")
+            return
 
-        intro_html = (
-            "<h1 id='insert-link-title' tabindex='-1'>Insert Link</h1>"
-            "<p>Enter the text to display and the destination URL. "
-            "Then tab to the buttons below.</p>"
-        )
-
-        html_pane = wxhtml.HtmlWindow(dialog)
-        html_pane.SetPage(
-            "<!doctype html><html><head><meta charset='utf-8'>"
-            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-            "<style>body{font-family:Segoe UI,Arial,sans-serif;line-height:1.5;margin:12px 14px;}"
-            "h1{margin:0 0 .5rem 0;} p{margin:0 0 .75rem 0;} "
-            ":focus{outline:2px solid Highlight;}</style>"
-            "</head><body>"
-            f"{intro_html}"
-            "</body></html>"
-        )
-
-        root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(html_pane, 0, wx.EXPAND | wx.ALL, 10)
-
-        root.Add(wx.StaticText(dialog, label="Display text:"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 10)
-        display_text_ctrl = wx.TextCtrl(dialog, value=selected_text or "")
-        root.Add(display_text_ctrl, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
-
-        root.Add(wx.StaticText(dialog, label="URL:"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 10)
-        url_ctrl = wx.TextCtrl(dialog, value="https://", style=wx.TE_PROCESS_ENTER)
-        root.Add(url_ctrl, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
-
-        buttons = dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
-        if buttons is not None:
-            ok_button = dialog.FindWindowById(wx.ID_OK)
-            if ok_button is not None:
-                ok_button.SetLabel("Insert")
-            root.Add(buttons, 0, wx.EXPAND | wx.ALL, 10)
-
-        dialog.SetSizerAndFit(root)
-        if buttons is not None:
-            ok_button = dialog.FindWindowById(wx.ID_OK)
-            if ok_button is not None and hasattr(dialog, "SetDefaultItem"):
-                dialog.SetDefaultItem(ok_button)
-
-        def _focus_insert_dialog_on_show(event: object) -> None:
-            shown = getattr(event, "IsShown", None)
-            if callable(shown) and not shown():
-                skip = getattr(event, "Skip", None)
-                if callable(skip):
-                    skip()
-                return
-            self._wx.CallAfter(html_pane.SetFocus)
-            skip = getattr(event, "Skip", None)
-            if callable(skip):
-                skip()
-
-        def _focus_insert_dialog_on_activate(event: object) -> None:
-            active = getattr(event, "GetActive", None)
-            if callable(active) and active():
-                self._wx.CallAfter(html_pane.SetFocus)
-            skip = getattr(event, "Skip", None)
-            if callable(skip):
-                skip()
-
-        dialog.Bind(wx.EVT_SHOW, _focus_insert_dialog_on_show)
-        dialog.Bind(wx.EVT_ACTIVATE, _focus_insert_dialog_on_activate)
-        try:
-            if self._show_modal_dialog(dialog, "Insert Link") != wx.ID_OK:
-                self._set_status("Insert link cancelled")
-                return
-            url = url_ctrl.GetValue().strip()
-            display_text = display_text_ctrl.GetValue()
-        finally:
-            dialog.Destroy()
-
+        url = str(values.get("url", "")).strip()
+        display_text = str(values.get("display_text", ""))
         if not url:
             self._set_status("Insert link cancelled")
             return
