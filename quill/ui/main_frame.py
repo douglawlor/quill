@@ -6237,33 +6237,148 @@ class MainFrame(
         self._set_status("Closed sticky notes vault")
 
     def open_preferences(self) -> None:
+        """Open the multi-page Preferences hub.
+
+        A single book control hosts one page per settings area. The selector is
+        a stock wx book widget so it is keyboard- and screen-reader-accessible
+        by construction, with native first-letter type-ahead and arrow-key
+        movement, and the first category is selected on open. The selector chrome
+        is chosen per platform: a left-hand category list (``wx.Listbook``,
+        Edge/Settings style) on Windows and Linux, and a top category toolbar
+        (``wx.Toolbook``, macOS System Settings style) on macOS. Moving across
+        categories immediately swaps the content pane -- no intermediate
+        "choose then press OK" step -- and each page opens its area with an
+        explicit button.
+        """
         wx = self._wx
-        options: list[tuple[str, Callable[[], None]]] = [
-            ("General", self.open_general_preferences),
-            ("Profiles and Features", self.open_profiles_and_features_settings),
-            ("Status Bar Layout", self.open_status_bar_settings),
-            ("Keymap Editor", self.open_keymap_editor),
-            ("AI Connection", self.open_ai_preferences),
-            ("Watch Folder Automation", self.open_watch_folder_settings),
-            ("GLOW Accessibility", self.open_glow_settings),
-            ("Install Starter Snippet Packs", self.install_starter_snippet_packs),
+        # (label, description, handler) per settings area. The description is
+        # shown in the content pane so arrowing the selector previews each area.
+        areas: list[tuple[str, str, Callable[[], None]]] = [
+            (
+                "General",
+                "Appearance, editing, autosave, updates, and the AI master switch.",
+                self.open_general_preferences,
+            ),
+            (
+                "Profiles and Features",
+                "Turn optional features on or off and switch between feature profiles.",
+                self.open_profiles_and_features_settings,
+            ),
+            (
+                "Status Bar Layout",
+                "Choose which fields appear in the status bar and their order.",
+                self.open_status_bar_settings,
+            ),
+            (
+                "Keymap Editor",
+                "Review and change the keyboard shortcuts for every command.",
+                self.open_keymap_editor,
+            ),
+            (
+                "AI Connection",
+                "Connect an AI provider, enter your key, and verify the connection.",
+                self.open_ai_preferences,
+            ),
+            (
+                "Watch Folder Automation",
+                "Automate actions when files appear in a folder you watch.",
+                self.open_watch_folder_settings,
+            ),
+            (
+                "GLOW Accessibility",
+                "Quill's built-in accessibility engine and its optional network features.",
+                self.open_glow_settings,
+            ),
+            (
+                "Install Starter Snippet Packs",
+                "Add a set of ready-made text snippets you can insert while writing.",
+                self.install_starter_snippet_packs,
+            ),
         ]
-        with wx.SingleChoiceDialog(
-            self.frame,
-            "Choose a settings area:",
-            "Preferences",
-            choices=[label for label, _handler in options],
-        ) as dialog:
-            dialog.SetSelection(0)
-            apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
-            if self._show_modal_dialog(dialog, "Preferences") != wx.ID_OK:
-                self._set_status("Preferences cancelled")
-                return
-            selected = dialog.GetSelection()
-        if selected < 0 or selected >= len(options):
-            self._set_status("Preferences cancelled")
+        # macOS users expect a top toolbar selector (System Settings); Windows
+        # and Linux expect a left-hand category list (Edge / Windows Settings).
+        use_toolbook = sys.platform == "darwin"
+        # The handler chosen by the user; run after the hub closes so only one
+        # modal is on screen at a time.
+        chosen: dict[str, Callable[[], None] | None] = {"handler": None}
+
+        with wx.Dialog(self.frame, title="Preferences") as dialog:
+            outer = wx.BoxSizer(wx.VERTICAL)
+            if use_toolbook:
+                book = wx.Toolbook(dialog, style=wx.BK_TOP)
+            else:
+                book = wx.Listbook(dialog, style=wx.BK_LEFT)
+            book.SetName("Preferences categories")
+
+            def _make_open(handler: Callable[[], None]) -> Callable[[object], None]:
+                def _on_open(_event: object) -> None:
+                    chosen["handler"] = handler
+                    dialog.EndModal(wx.ID_OK)
+
+                return _on_open
+
+            for label, description, handler in areas:
+                page = wx.Panel(book, style=wx.TAB_TRAVERSAL)
+                page_sizer = wx.BoxSizer(wx.VERTICAL)
+                heading = wx.StaticText(page, label=label)
+                heading_font = heading.GetFont()
+                heading_font.MakeBold()
+                heading.SetFont(heading_font)
+                page_sizer.Add(heading, 0, wx.ALL, 8)
+                intro = wx.StaticText(page, label=description)
+                intro.Wrap(420)
+                page_sizer.Add(intro, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+                open_btn = wx.Button(page, label=f"&Open {label}...")
+                open_btn.SetName(f"Open {label}")
+                open_btn.Bind(wx.EVT_BUTTON, _make_open(handler))
+                page_sizer.Add(open_btn, 0, wx.ALL, 8)
+                page.SetSizer(page_sizer)
+                book.AddPage(page, label)
+
+            if book.GetPageCount() > 0:
+                book.SetSelection(0)
+            outer.Add(book, 1, wx.EXPAND | wx.ALL, 8)
+
+            # Enter on a highlighted category opens it, so keyboard users do not
+            # have to Tab to the page's Open button. When a button already holds
+            # focus, let the keystroke fall through so it activates that button
+            # (or the default Close button) as usual.
+            def _on_char_hook(event: object) -> None:
+                key = event.GetKeyCode()
+                if key not in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
+                    event.Skip()
+                    return
+                focused = wx.Window.FindFocus()
+                if isinstance(focused, wx.Button):
+                    event.Skip()
+                    return
+                index = book.GetSelection()
+                if 0 <= index < len(areas):
+                    chosen["handler"] = areas[index][2]
+                    dialog.EndModal(wx.ID_OK)
+                    return
+                event.Skip()
+
+            dialog.Bind(wx.EVT_CHAR_HOOK, _on_char_hook)
+
+            buttons = dialog.CreateButtonSizer(wx.CLOSE)
+            if buttons is not None:
+                outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+            apply_modal_ids(dialog, affirmative_id=wx.ID_CLOSE, escape_id=wx.ID_CLOSE)
+            dialog.SetSizerAndFit(outer)
+            # Land initial focus on the category selector so arrow keys and
+            # first-letter type-ahead work the instant the hub opens. The
+            # selector (Listbook list / Toolbook toolbar) is not one of the
+            # generic preferred-focus classes, so opt out of the heuristic and
+            # keep this explicit focus on both platforms.
+            book.SetFocus()
+            dialog._quill_keep_initial_focus = True
+            self._show_modal_dialog(dialog, "Preferences")
+
+        handler = chosen["handler"]
+        if handler is None:
+            self._set_status("Preferences closed")
             return
-        _label, handler = options[selected]
         handler()
 
     def open_glow_settings(self) -> None:
@@ -6967,19 +7082,6 @@ class MainFrame(
         with wx.Dialog(self.frame, title="Settings") as dialog:
             outer = wx.BoxSizer(wx.VERTICAL)
 
-            # --- Search (SET-6) ------------------------------------------------
-            search_row = wx.BoxSizer(wx.HORIZONTAL)
-            search_row.Add(
-                wx.StaticText(dialog, label="&Search settings:"),
-                0,
-                wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
-                8,
-            )
-            search_box = wx.TextCtrl(dialog, style=wx.TE_PROCESS_ENTER)
-            search_box.SetName("Search settings")
-            search_row.Add(search_box, 1, wx.EXPAND)
-            outer.Add(search_row, 0, wx.EXPAND | wx.ALL, 8)
-
             notebook = wx.Notebook(dialog)
             notebook.SetName("Settings categories")
 
@@ -7161,24 +7263,6 @@ class MainFrame(
                 page_index += 1
 
             outer.Add(notebook, 1, wx.EXPAND | wx.ALL, 8)
-
-            # --- Search behavior: jump to the first matching control ----------
-            def _on_search(_event: object) -> None:
-                query = search_box.GetValue().strip()
-                if not query:
-                    return
-                for spec in registry.search_specs(query):
-                    if spec.key in control_index:
-                        index, control = control_index[spec.key]
-                        notebook.SetSelection(index)
-                        focus = getattr(control, "SetFocus", None)
-                        if callable(focus):
-                            focus()
-                        self._set_status(f"Jumped to {spec.label}")
-                        return
-                self._set_status(f"No setting matches {query!r}")
-
-            search_box.Bind(wx.EVT_TEXT_ENTER, _on_search)
 
             # --- Maintenance buttons (SET-7): Export / Import / Reset ----------
             maintenance = wx.BoxSizer(wx.HORIZONTAL)

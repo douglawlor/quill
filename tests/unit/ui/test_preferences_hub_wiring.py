@@ -1,0 +1,72 @@
+"""Source-contract test for the multi-page Preferences hub wiring.
+
+The Preferences hub replaces the old "pick an area, press OK, then the area
+opens" ``wx.SingleChoiceDialog`` with a single platform-conditional book
+control: a left-hand category list (``wx.Listbook``) on Windows and Linux, and
+a top category toolbar (``wx.Toolbook``) on macOS. These assertions read the
+source as text (wxPython cannot be imported in headless CI) and pin the wiring
+that keeps the hub accessible: a book selector, first category selected on
+open, and one open button per area.
+"""
+
+from pathlib import Path
+
+
+def _open_preferences_source() -> str:
+    source = Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    start = source.index("def open_preferences(self)")
+    end = source.index("\n    def ", start + 1)
+    return source[start:end]
+
+
+def test_preferences_uses_platform_conditional_book_control() -> None:
+    body = _open_preferences_source()
+    # macOS gets the toolbar selector; everyone else gets the category list.
+    assert 'sys.platform == "darwin"' in body
+    assert "wx.Toolbook(" in body
+    assert "wx.Listbook(" in body
+
+
+def test_preferences_no_longer_uses_single_choice_picker() -> None:
+    body = _open_preferences_source()
+    # The old "choose then OK then open" indirection is gone.
+    assert "SingleChoiceDialog" not in body
+
+
+def test_preferences_selects_first_category_on_open() -> None:
+    body = _open_preferences_source()
+    assert "book.SetSelection(0)" in body
+
+
+def test_preferences_lands_initial_focus_on_the_selector() -> None:
+    body = _open_preferences_source()
+    # Focus must land on the category selector so arrow keys and first-letter
+    # type-ahead work immediately, and the contract focus heuristic must not
+    # steal it back to a button.
+    assert "book.SetFocus()" in body
+    assert "dialog._quill_keep_initial_focus = True" in body
+
+
+def test_preferences_enter_opens_highlighted_category() -> None:
+    body = _open_preferences_source()
+    # Enter on a highlighted category opens it without Tabbing to the button,
+    # but a focused button keeps its native Enter behavior.
+    assert "wx.EVT_CHAR_HOOK" in body
+    assert "isinstance(focused, wx.Button)" in body
+    assert "book.GetSelection()" in body
+
+
+def test_preferences_adds_a_page_and_open_button_per_area() -> None:
+    body = _open_preferences_source()
+    assert "book.AddPage(" in body
+    assert 'open_btn.SetName(f"Open {label}")' in body
+    # Each area is launched by its own button after the hub closes.
+    assert 'chosen["handler"] = handler' in body
+
+
+def test_general_settings_search_box_removed() -> None:
+    source = Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # The "no search button here" requirement: the Settings notebook must no
+    # longer build a search box or its enter-to-jump handler.
+    assert "Search settings" not in source
+    assert "def _on_search(" not in source

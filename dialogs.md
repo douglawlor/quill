@@ -53,8 +53,10 @@ or the command palette (`Ctrl+Shift+P`).
 
 ## B. Application settings
 
-- [ ] Settings (tabbed, registry-driven): `Ctrl+,` then `General`
-- [ ] Settings search jumps to first matching control (within Settings)
+- [ ] Preferences hub (multi-page book control): `Ctrl+,`
+  - [ ] Category selector navigable by arrow keys with first-letter type-ahead, first category selected on open
+  - [ ] Each category page opens its area with its `Open ...` button
+- [ ] Settings (tabbed, registry-driven): `Ctrl+,` then `Open General`
 - [ ] Export settings to `.qsf` (button within Settings)
 - [ ] Import settings from `.qsf` (button within Settings)
 - [ ] Reset to Factory Defaults (button within Settings)

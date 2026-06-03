@@ -99,7 +99,7 @@
   "quill/ui/main_frame.py::MainFrame.open_keymap_editor.edit_selected::wx.TextEntryDialog": "native",
   "quill/ui/main_frame.py::MainFrame.open_keymap_editor::wx.Dialog": "hardened_custom",
   "quill/ui/main_frame.py::MainFrame.open_menu_editor::wx.Dialog": "hardened_custom",
-  "quill/ui/main_frame.py::MainFrame.open_preferences::wx.SingleChoiceDialog": "native",
+  "quill/ui/main_frame.py::MainFrame.open_preferences::wx.Dialog": "hardened_custom",
   "quill/ui/main_frame.py::MainFrame.open_profiles_and_features_settings.create_custom_profile::wx.MessageDialog": "native",
   "quill/ui/main_frame.py::MainFrame.open_profiles_and_features_settings.create_custom_profile::wx.SingleChoiceDialog": "native",
   "quill/ui/main_frame.py::MainFrame.open_profiles_and_features_settings.create_custom_profile::wx.TextEntryDialog": "native",
