@@ -494,6 +494,7 @@ from quill.ui.csv_grid import CsvGridSurface
 from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
 from quill.ui.main_frame_browse import BrowseModeMixin
 from quill.ui.main_frame_edsharp import EdSharpActionsMixin
+from quill.ui.main_frame_edsharp_menu import EdSharpMenuMixin
 from quill.ui.main_frame_image import ImageCaptureMixin
 from quill.ui.palette import CommandPaletteDialog
 from quill.ui.session_browser import SessionBrowserDialog
@@ -752,7 +753,7 @@ class _IntellisensePopup:
         return self.suggestions[index]
 
 
-class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
+class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharpMenuMixin):
     _ANNOUNCEMENT_BACKEND_LABELS: dict[str, str] = {
         "auto": "Automatic (use Prism when available)",
         "prism": "Prism",
@@ -2610,6 +2611,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
             self.convert_indentation_to_tabs,
             None,
         )
+        self._register_edsharp_commands()
 
     def _build_menu(self) -> None:
         wx = self._wx
@@ -3878,6 +3880,8 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
         customize_menu.Append(self._id_import_keymap, "&Import Keymap...")
         customize_menu.Append(self._id_reset_keymap, "&Reset Keymap")
         tools_menu.AppendSubMenu(customize_menu, "&Customize")
+        tools_menu.AppendSeparator()
+        tools_menu.AppendSubMenu(self._build_edsharp_menu(), "Ed&Sharp Tools")
         menu_bar.Append(navigate_menu, "&Navigate")
         menu_bar.Append(format_menu, "F&ormat")
         menu_bar.Append(tools_menu, "&Tools")
@@ -5330,6 +5334,8 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
 
     def _on_editor_char_hook(self, event: object) -> None:
         wx = self._wx
+        if self._maybe_describe_key(event):
+            return
         if (
             event.ControlDown()
             and not event.AltDown()
@@ -5407,6 +5413,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
             self.document = document
             self._apply_statusbar_layout()
             self._refresh_title()
+            self._refresh_read_only_state()
             self._maybe_auto_side_preview(tab)
         self._refresh_sessions_menu()
         return index
@@ -5615,7 +5622,10 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
             if self._quill_key_prefix_matches(event):
                 self._quill_key_prefix_pending = True
                 self._quill_key_prefix_started_at = time.monotonic()
-                message = "QUILL key prefix active. Press N for browse mode, G to go to anything, M to paste HTML as Markdown"
+                message = (
+                    "QUILL key prefix active. Press N for browse mode, G to go to anything, "
+                    "M to paste HTML as Markdown"
+                )
                 if self._has_active_selection():
                     message = (
                         "QUILL key prefix active. Press N for browse mode, G to go to anything, "
@@ -6008,6 +6018,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
         self._refresh_title()
         self._refresh_contextual_menu_items()
         self._refresh_sessions_menu()
+        self._refresh_read_only_state()
         self._maybe_auto_side_preview(tab)
 
     def _maybe_auto_side_preview(self, tab) -> None:
@@ -6143,6 +6154,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
 
     def _on_editor_caret_activity(self, event: object) -> None:
         self._refresh_statusbar()
+        self._maybe_announce_indent()
         event.Skip()
 
     def _on_editor_key_up(self, event: object) -> None:
@@ -8903,6 +8915,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
             self.document = document
             self._apply_statusbar_layout()
             self._refresh_title()
+            self._refresh_read_only_state()
         self._refresh_sessions_menu()
         return index
 
@@ -8921,6 +8934,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
             self.document = document
             self._apply_statusbar_layout()
             self._refresh_title()
+            self._refresh_read_only_state()
         self._refresh_sessions_menu()
         return index
 
@@ -20492,6 +20506,9 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
         if not self._feature_enabled("core.format"):
             self._set_status(f"{status} is unavailable in this profile")
             return
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
+            return
         text = self.editor.GetValue()
         start, end = self.editor.GetSelection()
         updated, new_start, new_end = operation(text, start, end)
@@ -20511,6 +20528,9 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
     ) -> None:
         if not self._feature_enabled("core.format"):
             self._set_status(f"{status} is unavailable in this profile")
+            return
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
             return
         text = self.editor.GetValue()
         start, end = self.editor.GetSelection()
@@ -20533,6 +20553,9 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin):
     ) -> None:
         if not self._feature_enabled("core.format"):
             self._set_status(f"{status} is unavailable in this profile")
+            return
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
             return
         text = self.editor.GetValue()
         cursor = self.editor.GetInsertionPoint()

@@ -221,7 +221,26 @@ parent first.
 - [ ] Regex Helper (from Tools)
 - [ ] Update downloaded (from Check for Updates, after a successful download)
 
-## W. Startup-only dialogs
+## W. EdSharp Tools
+
+EdSharp-parity conveniences (EDS-1..20). These commands carry no default
+keybinding; reach each from **Tools > EdSharp Tools** (or the command palette,
+`Ctrl+Shift+P`). Only the commands that present a dialog are listed here; the
+remaining EdSharp commands act directly on the document and announce their result.
+
+- [ ] Insert Special Character (codepoint prompt): Tools > EdSharp Tools > Insert > Insert Special Character
+- [ ] Insert Calculated Date: Tools > EdSharp Tools > Insert > Insert Calculated Date
+- [ ] Insert File Content (file picker): Tools > EdSharp Tools > Insert > Insert File Content
+- [ ] Number Lines (start prompt): Tools > EdSharp Tools > Lines > Number Lines
+- [ ] Hard-Wrap Lines (width prompt): Tools > EdSharp Tools > Lines > Hard-Wrap Lines
+- [ ] Count Matches (regex prompt): Tools > EdSharp Tools > Find with Regex > Count Matches
+- [ ] Extract Matches (regex prompt): Tools > EdSharp Tools > Find with Regex > Extract Matches
+- [ ] Go to Percent (percentage prompt): Tools > EdSharp Tools > Go > Go to Percent
+- [ ] Infer Indentation (adopt-unit confirm): Tools > EdSharp Tools > Infer Indentation
+- [ ] Rename Current File (name prompt): Tools > EdSharp Tools > Rename Current File
+- [ ] Delete Current File (delete confirm): Tools > EdSharp Tools > Delete Current File
+
+## X. Startup-only dialogs
 
 These appear only during a specific startup condition. Test by reproducing the
 trigger.

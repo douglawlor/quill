@@ -347,7 +347,7 @@ class EdSharpActionsMixin:
         """Re-apply the persisted read-only guard to the active editor."""
         read_only = self._document_is_read_only()
         self.document.source_metadata["eds_read_only"] = read_only
-        self.editor.SetEditable(not read_only)
+        getattr(self.editor, "SetEditable", lambda _v: None)(not read_only)
 
     def toggle_read_only_guard(self) -> None:
         read_only = not self._document_is_read_only()
@@ -386,13 +386,13 @@ class EdSharpActionsMixin:
     def toggle_clipboard_collector(self) -> None:
         active = not getattr(self, "_eds_clipboard_collector", False)
         self._eds_clipboard_collector = active
-        wx = self._wx
-        copy_event = getattr(wx, "EVT_TEXT_COPY", None)
-        if copy_event is not None:
-            if active:
-                self.editor.Bind(copy_event, self._on_eds_collect_copy)
-            else:
-                self.editor.Unbind(copy_event)
+        copy_event = getattr(self._wx, "EVT_TEXT_COPY", None)
+        previous = getattr(self, "_eds_collector_editor", None)
+        if copy_event is not None and previous is not None:
+            previous.Unbind(copy_event)
+        self._eds_collector_editor = self.editor if (copy_event is not None and active) else None
+        if copy_event is not None and active:
+            self.editor.Bind(copy_event, self._on_eds_collect_copy)
         self._announce(
             "Clipboard collector on; copies append to this document"
             if active
@@ -633,7 +633,7 @@ class EdSharpActionsMixin:
                 self.settings.indent_with_tabs = True
             else:
                 self.settings.indent_with_tabs = False
-                self.settings.indent_width = len(unit)
+                self.settings.indent_size = len(unit)
             self._announce(f"Adopted indentation: {description}")
         else:
             self._announce(f"Inferred indentation: {description}")
