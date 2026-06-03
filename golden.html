@@ -1636,8 +1636,8 @@ prefix-then-<code>A</code> wiring.</td>
 <td>Native Windows OCR backend (zero-install)</td>
 <td>Image to text</td>
 <td>M</td>
-<td>In progress</td>
-<td><code>quill/io/ocr.py</code> is now backend-pluggable
+<td>Done</td>
+<td><code>quill/io/ocr.py</code> is backend-pluggable
 (<code>OcrBackend</code> Protocol, <code>WindowsOcrBackend</code>,
 <code>TesseractBackend</code>, shared
 <code>OcrResult</code>/<code>OcrLine</code> with per-line confidence)
@@ -1646,19 +1646,25 @@ clean unavailable path; the WinRT backend lives in
 <code>quill/platform/windows/windows_ocr.py</code>
 (<code>Windows.Media.Ocr</code>, offline, no network). Tests cover
 backend selection, fall-back, the unavailable path, and Tesseract TSV
-per-line confidence parsing. <strong>Remaining (honest, Linux/cloud
-blocker):</strong> live WinRT recognition
-(<code>Windows.Media.Ocr</code>) is unverifiable in this environment
-(winsdk Python bindings not installed on Linux, WinRT APIs unavailable
-outside Windows). The <code>WindowsOcrBackend</code> engine surface and
-selection logic are wired and tested, but the actual WinRT
-<code>recognize</code> call cannot run here. <strong>Windows
-finish-line:</strong> Install QUILL on a real Windows machine, choose
-the Windows OCR engine in settings or let it auto-select, run OCR on a
-test image (PNG/JPG with known text content), and verify the recognized
-text is accurate and the confidence scores are sensible. Confirm the
-zero-install promise: no Tesseract download required when using the
-native backend.</td>
+per-line confidence parsing. <strong>Verified on Windows
+(2026-06-10):</strong> with the bundled <code>winsdk</code> wheel
+present (declared in <code>pyproject.toml</code> <code>ocr</code> extra
+under <code>sys_platform == 'win32'</code>, bundled by
+<code>build_windows_distribution.py</code>’s default
+<code>("ui", "spellcheck", "ocr")</code> group),
+<code>available_engines()</code> reports <code>['windows']</code> and
+<code>ocr_image(path, engine="windows")</code> recognizes a generated
+test image (<code>Hello QUILL OCR</code> /
+<code>Native Windows engine</code>) verbatim through the live
+<code>Windows.Media.Ocr</code> engine — no Tesseract install, fully
+offline. Installing <code>winsdk</code> locally also surfaced and fixed
+a latent test-isolation bug: five Tesseract-path tests in
+<code>tests/unit/io/test_ocr.py</code> relied on <code>auto</code>
+defaulting to Tesseract because winsdk was absent; they now pin
+<code>engine=ENGINE_TESSERACT</code> so the suite is hermetic whether or
+not the native backend is installed. The zero-install promise holds: the
+WinRT engine is a built-in OS component and the projection wheel ships
+in the Windows bundle.</td>
 </tr>
 <tr>
 <td>OCR-2</td>
@@ -5984,9 +5990,9 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 2</td>
 <td>Flagship experience</td>
 <td>57</td>
-<td>51</td>
-<td>6</td>
-<td>OCR-1, OCR-3, AGENT-1, AI-19, SET-2, SET-3</td>
+<td>52</td>
+<td>5</td>
+<td>OCR-3, AGENT-1, AI-19, SET-2, SET-3</td>
 </tr>
 <tr>
 <td>Tier 4</td>
@@ -6010,8 +6016,8 @@ CQ-14, CQ-23, CQ-24, LINUX-2</td>
 <td><strong>1.0 subtotal</strong></td>
 <td>Tiers 1, 2, 4, 6 (the QUILL 1.0 scope)</td>
 <td><strong>143</strong></td>
-<td><strong>89</strong></td>
-<td><strong>54</strong></td>
+<td><strong>90</strong></td>
+<td><strong>53</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -6051,8 +6057,8 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 <td><strong>Total</strong></td>
 <td>All tiers (1.0 + 2.0)</td>
 <td><strong>185</strong></td>
-<td><strong>89</strong></td>
-<td><strong>96</strong></td>
+<td><strong>90</strong></td>
+<td><strong>95</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -6097,7 +6103,7 @@ the third table and are not part of either 1.0 list.</p>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
-<td>SET-2, SET-3, AGENT-1, OCR-1, OCR-3, AI-19</td>
+<td>SET-2, SET-3, AGENT-1, OCR-3, AI-19</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -6142,7 +6148,7 @@ SEL-2, SEL-3, AI-1, AI-6, AI-7, AI-13, AI-14, AI-15, AI-16, AI-17,
 AI-21, AI-23, WATCH-1, WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6,
 WATCH-7, SET-1, SET-4, SET-5, SET-6, SET-7, SHARE-1, SHARE-2, SHARE-3,
 FLAG-3, FLAG-4, MENU-3, MENU-1, MENU-5, DICT-1, CTX-1, DICT-2, FEAT-19,
-DLG-1, OCR-2, OCR-4, OCR-5, A11Y-4</td>
+DLG-1, OCR-1, OCR-2, OCR-4, OCR-5, A11Y-4</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -6204,6 +6210,45 @@ note), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also
 incidentally cleared the <code>quill/core</code> and
 <code>quill/io</code> portion of the TYPE-1..8 zone, though those formal
 rows stay open until each is individually verified and closed.</p>
+<h4
+id="native-windows-ocr-verified-end-to-end-ocr-1-landed-done">2026-06-10:
+Native Windows OCR verified end to end — OCR-1 landed Done</h4>
+<p>Run on a real Windows 11 box with the bundled <code>winsdk</code>
+wheel installed, the native <code>Windows.Media.Ocr</code> backend was
+verified recognizing text for the first time, closing the last honest
+blocker on OCR-1.</p>
+<ul>
+<li><strong>OCR-1 (Done):</strong> <code>available_engines()</code>
+reports <code>['windows']</code> once <code>winsdk</code> is present,
+and <code>ocr_image(path, engine="windows")</code> recognized a
+generated test image (<code>Hello QUILL OCR</code> /
+<code>Native Windows engine</code>) verbatim through the live WinRT
+engine — fully offline, no Tesseract. The packaging chain that makes
+this zero-install for end users is real and in place:
+<code>winsdk</code> is declared in <code>pyproject.toml</code>’s
+<code>ocr</code> extra under <code>sys_platform == 'win32'</code>, and
+<code>scripts/build_windows_distribution.py</code> bundles the
+<code>ocr</code> group by default
+(<code>("ui", "spellcheck", "ocr")</code>). The WinRT OCR engine itself
+is a built-in Windows component, so users install nothing.</li>
+<li><strong>Test hermeticity fix:</strong> installing
+<code>winsdk</code> locally exposed a latent isolation bug — five
+Tesseract-path tests in <code>tests/unit/io/test_ocr.py</code> passed
+only because winsdk was absent (so <code>auto</code> fell back to
+Tesseract). They now pin <code>engine=ENGINE_TESSERACT</code>, so the
+OCR suite (35 tests) is green whether or not the native backend is
+installed.</li>
+<li><strong>Still honestly open:</strong> OCR-3’s clipboard-image and
+screen-region capture sources are not yet built (only file capture
+ships), so OCR-3 stays In progress. SET-2 (no sensitivity-aware
+dictation backend; Win+H exposes no such control) and AI-19 (needs a
+live provider device-login endpoint) remain genuinely blocked even on
+Windows.</li>
+<li>Counts: OCR-1 closes, moving Tier 2 to <strong>52 of 57 done (5
+remaining)</strong>, the QUILL 1.0 scope to <strong>90 of 143 done (53
+remaining)</strong>, and the overall total to <strong>90 of
+185</strong>.</li>
+</ul>
 <h4
 id="structural-health-a11y-4-and-gate-11-closed-done-cq-1-first-seam-extracted">2026-06-10:
 Structural health — A11Y-4 and GATE-11 closed Done; CQ-1 first seam

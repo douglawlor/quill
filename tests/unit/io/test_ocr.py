@@ -30,7 +30,7 @@ def test_ocr_image_raises_when_tesseract_is_missing(monkeypatch, tmp_path: Path)
     monkeypatch.setattr("quill.io.ocr.shutil.which", lambda _name: None)
 
     with pytest.raises(OcrUnavailableError):
-        ocr_image(tmp_path / "sample.png")
+        ocr_image(tmp_path / "sample.png", engine=ENGINE_TESSERACT)
 
 
 def test_ocr_image_returns_text(monkeypatch, tmp_path: Path) -> None:
@@ -57,7 +57,7 @@ def test_ocr_image_returns_text(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr("quill.io.ocr.subprocess.Popen", lambda *args, **kwargs: CompletedProcess())
 
-    result = ocr_image(tmp_path / "sample.png")
+    result = ocr_image(tmp_path / "sample.png", engine=ENGINE_TESSERACT)
 
     assert result.engine == "tesseract"
     assert result.text == "Recognized text\n"
@@ -88,7 +88,7 @@ def test_ocr_image_raises_on_failure(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("quill.io.ocr.subprocess.Popen", lambda *args, **kwargs: CompletedProcess())
 
     with pytest.raises(OcrFailedError, match="bad image"):
-        ocr_image(tmp_path / "sample.png")
+        ocr_image(tmp_path / "sample.png", engine=ENGINE_TESSERACT)
 
 
 def test_ocr_image_can_be_cancelled(monkeypatch, tmp_path: Path) -> None:
@@ -122,7 +122,11 @@ def test_ocr_image_can_be_cancelled(monkeypatch, tmp_path: Path) -> None:
         return calls["count"] > 1
 
     with pytest.raises(OcrCancelledError):
-        ocr_image(tmp_path / "sample.png", cancel_requested=cancel_requested)
+        ocr_image(
+            tmp_path / "sample.png",
+            engine=ENGINE_TESSERACT,
+            cancel_requested=cancel_requested,
+        )
 
 
 @pytest.mark.parametrize("code", ["eng", "fra", "eng+fra", "chi_sim", "aze_cyrl", "deu+eng+spa"])
@@ -162,7 +166,7 @@ def test_ocr_image_rejects_malicious_language(monkeypatch, tmp_path: Path) -> No
         lambda *args, **kwargs: pytest.fail("Popen must not run with an invalid language"),
     )
     with pytest.raises(OcrLanguageError):
-        ocr_image(tmp_path / "sample.png", language="--config")
+        ocr_image(tmp_path / "sample.png", engine=ENGINE_TESSERACT, language="--config")
 
 
 # --- backend-pluggable selection (OCR-1, OCR-2) ----------------------------
