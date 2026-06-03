@@ -7809,11 +7809,16 @@ class MainFrame(
             ok_button = dialog.FindWindowById(wx.ID_OK)
             if ok_button is not None:
                 ok_button.SetDefault()
-            root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
         panel.SetSizer(root)
+        # CreateButtonSizer's buttons are children of the dialog, so they must
+        # live in the dialog's own sizer (outer), not the inner panel's sizer
+        # (root). Adding them to root left them unrealized and broke Escape/
+        # Cancel dismissal (same class as #84/#119).
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(panel, 1, wx.EXPAND)
+        if buttons is not None:
+            outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         dialog.SetSizerAndFit(outer)
 
         def sync_private(_event: object = None) -> None:
@@ -7939,11 +7944,16 @@ class MainFrame(
             ok_button = dialog.FindWindowById(wx.ID_OK)
             if ok_button is not None:
                 ok_button.SetDefault()
-            root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
         panel.SetSizer(root)
+        # CreateButtonSizer's buttons are children of the dialog, so they must
+        # live in the dialog's own sizer (outer), not the inner panel's sizer
+        # (root). Adding them to root left them unrealized and broke Escape/
+        # Cancel dismissal (same class as #84/#119).
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(panel, 1, wx.EXPAND)
+        if buttons is not None:
+            outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         dialog.SetSizerAndFit(outer)
         if self._show_modal_dialog(dialog, "Import and Restore") != wx.ID_OK:
             self._set_status("Import cancelled")
@@ -15165,11 +15175,16 @@ class MainFrame(
             ok_button = dialog.FindWindowById(wx.ID_OK)
             if ok_button is not None:
                 ok_button.SetDefault()
-            root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
         panel.SetSizer(root)
+        # CreateButtonSizer's buttons are children of the dialog, so they belong
+        # in the dialog's own sizer (outer), not the inner panel's sizer (root).
+        # Adding them to root left them unrealized and broke Escape/Cancel
+        # dismissal (same class as #84/#119).
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(panel, 1, wx.EXPAND)
+        if buttons is not None:
+            outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         dialog.SetSizerAndFit(outer)
 
         def submit(_event: object) -> None:
@@ -17681,11 +17696,16 @@ class MainFrame(
             ok_button = dialog.FindWindowById(wx.ID_OK)
             if ok_button is not None:
                 ok_button.SetDefault()
-            root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
         panel.SetSizer(root)
+        # CreateButtonSizer's buttons are children of the dialog, so they must
+        # live in the dialog's own sizer (outer), not the inner panel's sizer
+        # (root). Adding them to root left them unrealized and broke Escape/
+        # close dismissal (same class as #84/#119).
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(panel, 1, wx.EXPAND)
+        if buttons is not None:
+            outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         dialog.SetSizerAndFit(outer)
         self._show_modal_dialog(dialog, "Manage Individual Features")
         self._refresh_title()
