@@ -5988,13 +5988,13 @@ keyboard and voice, with one set of conventions.</p>
 <h3 id="glow-integration-make-quill-accessibility-native">19. GLOW
 integration: make QUILL accessibility-native</h3>
 <blockquote>
-<p>The full, step-by-step Tier 3 execution plan for this section — the
-three-repo layout (<code>s:\code\quill-glow-core</code>,
-<code>s:\code\glow</code>, and QUILL), the ordered GLOW-0 through GLOW-7
-work, the definition of done, and the risk register — lives in <a
-href="glow.md">glow.md</a> at the repo root. This section is the
-narrative; <a href="glow.md">glow.md</a> is the build sheet, and the two
-must stay in step.</p>
+<p>The full, step-by-step 1.0 execution plan for this section (Tier 2
+scope, sequenced after Tier 4) — the three-repo layout
+(<code>s:\code\quill-glow-core</code>, <code>s:\code\glow</code>, and
+QUILL), the ordered GLOW-0 through GLOW-7 work, the definition of done,
+and the risk register — lives in <a href="glow.md">glow.md</a> at the
+repo root. This section is the narrative; <a href="glow.md">glow.md</a>
+is the build sheet, and the two must stay in step.</p>
 </blockquote>
 <p>QUILL already contains <code>quill/core/glow.py</code>, a text-level
 GLOW audit and fix surface (generic link text, plain-language lint,
@@ -6025,12 +6025,13 @@ and fix by exactly the same rules, with one place to improve them.</p>
 plus <code>from_glow_backend</code>, which bridges to the canonical
 engine <code>acb_large_print_core</code>). The full GLOW platform repo
 is <code>s:\code\glow</code>. Note: <code>s:\code\glow-7.0.0</code> is a
-stale snapshot and should be ignored; do not read or modify it. Tier 3
-therefore spans up to three repos — QUILL (this repo, the presentation
-layer), <code>quill-glow-core</code> (the shared contract), and
-<code>glow</code> (the rule engine) — so changes must be coordinated,
-each committed in its own repo, and the shared API kept stable.</p>
-<p>Cross-repo prerequisite for Tier 3 step 1: the
+stale snapshot and should be ignored; do not read or modify it. This
+GLOW work therefore spans up to three repos — QUILL (this repo, the
+presentation layer), <code>quill-glow-core</code> (the shared contract),
+and <code>glow</code> (the rule engine) — so changes must be
+coordinated, each committed in its own repo, and the shared API kept
+stable.</p>
+<p>Cross-repo prerequisite for GLOW-1 step 1: the
 <code>s:\code\glow</code> repo currently has failing CI/tests. Before
 QUILL depends on <code>quill-glow-core</code> (GLOW-1), the
 <code>glow</code> repo’s failures must be diagnosed and fixed and its
@@ -6732,16 +6733,20 @@ batch-rewritten.</li>
 <p>Why second: this is where user love is won. It comes right after the
 protections so the flagship is built on a safe, gated base.</p>
 <h4
-id="tier-3-glow-the-accessibility-engine-inside-quill-deferred-to-quill-2.0">Tier
-3: GLOW, the accessibility engine inside QUILL (deferred to QUILL
-2.0)</h4>
+id="tier-3-glow-the-accessibility-engine-inside-quill-quill-1.0-tier-2-scope-sequenced-after-tier-4">Tier
+3: GLOW, the accessibility engine inside QUILL (QUILL 1.0 — Tier 2
+scope, sequenced after Tier 4)</h4>
 <blockquote>
-<p>Status (2026-06-02): deferred to <strong>QUILL 2.0</strong>. GLOW
-remains the second strategic priority and the design below stands, but
-it is no longer part of the 1.0 milestone; it ships as a 2.0 headline
-once the shared <code>quill-glow-core</code> engine is green. The
-axe-core / Accessibility Agents workstream (AX-A through AX-F) depends
-on this engine and is deferred with it.</p>
+<p>Status (2026-06-03): <strong>back in QUILL 1.0.</strong> Per
+maintainer direction the shared <code>quill-glow-core</code> engine
+requirements are now met (the engine is green), so the GLOW family
+(GLOW-1 through GLOW-7) returns to the 1.0 milestone, classified under
+Tier 2 (the flagship experience) and sequenced for execution after the
+Tier 4 structural work. The GLOW watch-action binding (WATCH-8) and the
+axe-core / Accessibility Agents workstream (AX-A through AX-F) remain
+deferred to <strong>QUILL 2.0</strong>. The “Tier 3” heading is retained
+for continuity with the cross-repo execution plan in <a
+href="glow.md">glow.md</a>.</p>
 </blockquote>
 <p>Per the build directive, GLOW comes before transcription: it deepens
 QUILL’s core mission of accessible documents and reuses a proven
@@ -7754,10 +7759,10 @@ CQ-16) are counted once, in their primary tier.</p>
 <tr>
 <td>Tier 2</td>
 <td>Flagship experience</td>
-<td>60</td>
+<td>67</td>
 <td>57</td>
-<td>3</td>
-<td>AI-19, SHELL-2, SHELL-3</td>
+<td>10</td>
+<td>AI-19, SHELL-2, SHELL-3, GLOW-1..7</td>
 </tr>
 <tr>
 <td>Tier 4</td>
@@ -7779,18 +7784,18 @@ CQ-14, CQ-23, CQ-24, LINUX-2</td>
 <tr>
 <td><strong>1.0 subtotal</strong></td>
 <td>Tiers 1, 2, 4, 6 (the QUILL 1.0 scope)</td>
-<td><strong>149</strong></td>
+<td><strong>156</strong></td>
 <td><strong>111</strong></td>
-<td><strong>38</strong></td>
+<td><strong>45</strong></td>
 <td></td>
 </tr>
 <tr>
 <td>Tier 3 (2.0)</td>
-<td>GLOW accessibility engine — deferred to QUILL 2.0</td>
-<td>8</td>
+<td>GLOW watch action — deferred to QUILL 2.0</td>
+<td>1</td>
 <td>0</td>
-<td>8</td>
-<td>GLOW-1..7, WATCH-8</td>
+<td>1</td>
+<td>WATCH-8</td>
 </tr>
 <tr>
 <td>Tier 5 (2.0)</td>
@@ -7827,10 +7832,11 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 </tr>
 <tr>
 <td><strong>2.0 subtotal</strong></td>
-<td>GLOW + BITS Whisperer + axe-core (EdSharp parity now delivered)</td>
-<td><strong>64</strong></td>
+<td>BITS Whisperer + axe-core + GLOW watch action (EdSharp parity
+delivered; GLOW engine now in 1.0)</td>
+<td><strong>57</strong></td>
 <td><strong>21</strong></td>
-<td><strong>43</strong></td>
+<td><strong>36</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -7854,6 +7860,20 @@ reconciled to the per-tier sums (the previous Total of 55/125 did not
 match the rows); going forward the totals are internally consistent.
 QUILL 1.0 ships when the 1.0 subtotal reaches zero remaining.</p>
 </blockquote>
+<blockquote>
+<p>Scope move (2026-06-03): per maintainer direction, the GLOW
+accessibility engine family (<strong>GLOW-1 through GLOW-7</strong>)
+returns from QUILL 2.0 into the <strong>1.0</strong> milestone now that
+the shared <code>quill-glow-core</code> engine requirements are met (the
+engine is green). The seven items are classified under <strong>Tier
+2</strong> (the flagship experience) and sequenced for execution
+<strong>after Tier 4</strong>. Only these seven move: the GLOW
+watch-action binding (<strong>WATCH-8</strong>) and the axe-core /
+Accessibility Agents workstream (<strong>AX-A through AX-F</strong>)
+stay in 2.0. The grand Total is unchanged (the seven items relocate
+between milestones); the 1.0 subtotal rises by seven and the 2.0
+subtotal falls by seven.</p>
+</blockquote>
 <h4 id="feature-status-by-tier-the-two-living-lists">Feature status by
 tier (the two living lists)</h4>
 <p>These two tables are the at-a-glance companion to the per-area item
@@ -7863,8 +7883,10 @@ them, grouped by tier. When an item closes, move its ID from
 same change, so both lists stay a truthful snapshot. The canonical
 per-item detail (acceptance text and evidence) always lives in the
 per-area tables higher up; these two are the watch lists. Items deferred
-to QUILL 2.0 (GLOW, BITS Whisperer, axe-core) are tracked separately in
-the third table and are not part of either 1.0 list.</p>
+to QUILL 2.0 (BITS Whisperer, axe-core, and the GLOW watch action) are
+tracked separately in the third table and are not part of either 1.0
+list. The GLOW engine family (GLOW-1..7) is in the 1.0 lists under Tier
+2.</p>
 <p><strong>Work in progress (QUILL 1.0 — open items)</strong></p>
 <table>
 <colgroup>
@@ -7883,7 +7905,8 @@ the third table and are not part of either 1.0 list.</p>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
-<td>AI-19, SHELL-2, SHELL-3</td>
+<td>AI-19, SHELL-2, SHELL-3, GLOW-1, GLOW-2, GLOW-3, GLOW-4, GLOW-5,
+GLOW-6, GLOW-7 (GLOW family sequenced after Tier 4)</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -7961,10 +7984,11 @@ EDS-19, EDS-20, EDS-21</td>
 </thead>
 <tbody>
 <tr>
-<td>GLOW accessibility engine (Tier 3)</td>
-<td>GLOW-1, GLOW-2, GLOW-3, GLOW-4, GLOW-5, GLOW-6, GLOW-7, WATCH-8</td>
-<td>Cross-repo engine integration; lands as a 2.0 headline once the
-shared <code>quill-glow-core</code> engine is green.</td>
+<td>GLOW watch action (Tier 3)</td>
+<td>WATCH-8</td>
+<td>The GLOW engine (GLOW-1..7) moved into QUILL 1.0 (Tier 2, sequenced
+after Tier 4) now that the shared <code>quill-glow-core</code> engine is
+green; the Watch Profile binding stays a 2.0 follow-on.</td>
 </tr>
 <tr>
 <td>BITS Whisperer transcription (Tier 5)</td>
@@ -7976,8 +8000,9 @@ flagship ships.</td>
 <tr>
 <td>Accessibility Agents / axe-core (AX)</td>
 <td>AX-A, AX-B, AX-C, AX-D, AX-E, AX-F</td>
-<td>Builds on the GLOW engine and report surface, so it follows GLOW
-into 2.0.</td>
+<td>Builds on the GLOW engine and report surface; stays a 2.0 workstream
+per maintainer direction even though the GLOW engine itself is now in
+1.0.</td>
 </tr>
 <tr>
 <td>Tier 5 stretch explorations</td>

@@ -978,19 +978,20 @@ The strategic case: all three products share a mission (do excellent work for bl
 
 ### 19. GLOW integration: make QUILL accessibility-native
 
-> The full, step-by-step Tier 3 execution plan for this section — the three-repo
-> layout (`s:\code\quill-glow-core`, `s:\code\glow`, and QUILL), the ordered
-> GLOW-0 through GLOW-7 work, the definition of done, and the risk register —
-> lives in [glow.md](glow.md) at the repo root. This section is the narrative;
-> [glow.md](glow.md) is the build sheet, and the two must stay in step.
+> The full, step-by-step 1.0 execution plan for this section (Tier 2 scope,
+> sequenced after Tier 4) — the three-repo layout (`s:\code\quill-glow-core`,
+> `s:\code\glow`, and QUILL), the ordered GLOW-0 through GLOW-7 work, the
+> definition of done, and the risk register — lives in [glow.md](glow.md) at the
+> repo root. This section is the narrative; [glow.md](glow.md) is the build sheet,
+> and the two must stay in step.
 
 QUILL already contains `quill/core/glow.py`, a text-level GLOW audit and fix surface (generic link text, plain-language lint, audit and fix reports for the selection or document) wired to commands such as `tools.glow_fix_document` and `tools.glow_fix_selection`. Separately, GLOW is a full document-accessibility platform (a VS Code agent toolkit, a desktop app, and a web app) enforcing ACB Large Print, APH, WCAG 2.2 AA, and Microsoft Accessibility Checker rules across Word, Excel, PowerPoint, PDF, EPUB, HTML, and Markdown, with audit, auto-fix, template generation, and conversion. The shared library `quill-glow-core` already exposes a stable host-facing API (`audit_by_extension`, `fix_by_extension`, `convert_to_markdown`, `get_component_versions`) with a dispatch core, a safe no-op fallback, and a GLOW backend adapter.
 
 The plan: adopt `quill-glow-core` as the single shared engine so QUILL's in-editor GLOW and the GLOW desktop and web apps audit and fix by exactly the same rules, with one place to improve them.
 
-Where the code lives (for the implementer): the shared engine is the `quill-glow-core` repo at `s:\code\quill-glow-core` (package `quill_glow_core`, public API in `src/quill_glow_core/services.py`: `configure_default_services`, `audit_by_extension`, `fix_by_extension`, `convert_to_markdown`, `get_component_versions`, plus `from_glow_backend`, which bridges to the canonical engine `acb_large_print_core`). The full GLOW platform repo is `s:\code\glow`. Note: `s:\code\glow-7.0.0` is a stale snapshot and should be ignored; do not read or modify it. Tier 3 therefore spans up to three repos — QUILL (this repo, the presentation layer), `quill-glow-core` (the shared contract), and `glow` (the rule engine) — so changes must be coordinated, each committed in its own repo, and the shared API kept stable.
+Where the code lives (for the implementer): the shared engine is the `quill-glow-core` repo at `s:\code\quill-glow-core` (package `quill_glow_core`, public API in `src/quill_glow_core/services.py`: `configure_default_services`, `audit_by_extension`, `fix_by_extension`, `convert_to_markdown`, `get_component_versions`, plus `from_glow_backend`, which bridges to the canonical engine `acb_large_print_core`). The full GLOW platform repo is `s:\code\glow`. Note: `s:\code\glow-7.0.0` is a stale snapshot and should be ignored; do not read or modify it. This GLOW work therefore spans up to three repos — QUILL (this repo, the presentation layer), `quill-glow-core` (the shared contract), and `glow` (the rule engine) — so changes must be coordinated, each committed in its own repo, and the shared API kept stable.
 
-Cross-repo prerequisite for Tier 3 step 1: the `s:\code\glow` repo currently has failing CI/tests. Before QUILL depends on `quill-glow-core` (GLOW-1), the `glow` repo's failures must be diagnosed and fixed and its suite brought green, so QUILL builds on a stable engine rather than inheriting breakage. This is the first task of GLOW-1 and is tracked in the GLOW-1 acceptance criteria.
+Cross-repo prerequisite for GLOW-1 step 1: the `s:\code\glow` repo currently has failing CI/tests. Before QUILL depends on `quill-glow-core` (GLOW-1), the `glow` repo's failures must be diagnosed and fixed and its suite brought green, so QUILL builds on a stable engine rather than inheriting breakage. This is the first task of GLOW-1 and is tracked in the GLOW-1 acceptance criteria.
 
 - Depend on the shared core. Replace QUILL's bespoke text-level checks with calls into `quill-glow-core` (`configure_default_services` then `audit_by_extension` and `fix_by_extension`), keeping QUILL's friendly in-editor reports as the presentation layer. When the GLOW backend is present, QUILL gets the full ACB, APH, WCAG, and MSAC rule sets; when it is absent, the safe no-op fallback keeps QUILL fully functional. See GLOW-1.
 - Audit and fix by structure, not just text. Today QUILL audits plain text, Markdown, and HTML. Extend it through the shared core to audit and fix the structured formats QUILL already reads (DOCX, PPTX, XLSX, PDF, EPUB) so a user can open a real document and run a full accessibility audit in place. See GLOW-2, IO-1.
@@ -1226,9 +1227,9 @@ The highest user-impact features: the reasons a blind writer would choose and re
 
 Why second: this is where user love is won. It comes right after the protections so the flagship is built on a safe, gated base.
 
-#### Tier 3: GLOW, the accessibility engine inside QUILL (deferred to QUILL 2.0)
+#### Tier 3: GLOW, the accessibility engine inside QUILL (QUILL 1.0 — Tier 2 scope, sequenced after Tier 4)
 
-> Status (2026-06-02): deferred to **QUILL 2.0**. GLOW remains the second strategic priority and the design below stands, but it is no longer part of the 1.0 milestone; it ships as a 2.0 headline once the shared `quill-glow-core` engine is green. The axe-core / Accessibility Agents workstream (AX-A through AX-F) depends on this engine and is deferred with it.
+> Status (2026-06-03): **back in QUILL 1.0.** Per maintainer direction the shared `quill-glow-core` engine requirements are now met (the engine is green), so the GLOW family (GLOW-1 through GLOW-7) returns to the 1.0 milestone, classified under Tier 2 (the flagship experience) and sequenced for execution after the Tier 4 structural work. The GLOW watch-action binding (WATCH-8) and the axe-core / Accessibility Agents workstream (AX-A through AX-F) remain deferred to **QUILL 2.0**. The "Tier 3" heading is retained for continuity with the cross-repo execution plan in [glow.md](glow.md).
 
 Per the build directive, GLOW comes before transcription: it deepens QUILL's core mission of accessible documents and reuses a proven engine.
 
@@ -1432,16 +1433,16 @@ This table tracks how many of the backlog IDs each tier names are still open. It
 | Tier | Scope | Total items | Done | Remaining | Open item IDs |
 | --- | --- | --- | --- | --- | --- |
 | Tier 1 | Protect users and unlock the team | 23 | 23 | 0 | (complete) |
-| Tier 2 | Flagship experience | 60 | 57 | 3 | AI-19, SHELL-2, SHELL-3 |
+| Tier 2 | Flagship experience | 67 | 57 | 10 | AI-19, SHELL-2, SHELL-3, GLOW-1..7 |
 | Tier 4 | Structural health and performance | 32 | 28 | 4 | DLG-3, CQ-1, DLG-2, ORG-1 |
 | Tier 6 | Documentation and learning surface | 34 | 3 | 31 | DOC-14..18, DOC-11, DOC-12, DOC-1..8, POD-1..5, TUT-1..7, CQ-11, CQ-14, CQ-23, CQ-24, LINUX-2 |
-| **1.0 subtotal** | Tiers 1, 2, 4, 6 (the QUILL 1.0 scope) | **149** | **111** | **38** | |
-| Tier 3 (2.0) | GLOW accessibility engine — deferred to QUILL 2.0 | 8 | 0 | 8 | GLOW-1..7, WATCH-8 |
+| **1.0 subtotal** | Tiers 1, 2, 4, 6 (the QUILL 1.0 scope) | **156** | **111** | **45** | |
+| Tier 3 (2.0) | GLOW watch action — deferred to QUILL 2.0 | 1 | 0 | 1 | WATCH-8 |
 | Tier 5 (2.0) | BITS Whisperer transcription — deferred to QUILL 2.0 | 28 | 0 | 28 | BW-1..10, WATCH-9, NAV-10, AI-11, AI-12, AI-18, FEAT-12..18, LINUX-1, ECO-1, L10N-1, COLLAB-1 |
 | AX (2.0) | Accessibility Agents / axe-core engine — deferred to QUILL 2.0 | 6 | 0 | 6 | AX-A..F |
 | PKG (2.0) | Packaging / freezing evaluation — deferred to QUILL 2.0 | 1 | 0 | 1 | PKG-1 |
 | EDS | EdSharp feature parity — delivered in QUILL 1.0 | 21 | 21 | 0 | (complete) |
-| **2.0 subtotal** | GLOW + BITS Whisperer + axe-core (EdSharp parity now delivered) | **64** | **21** | **43** | |
+| **2.0 subtotal** | BITS Whisperer + axe-core + GLOW watch action (EdSharp parity delivered; GLOW engine now in 1.0) | **57** | **21** | **36** | |
 | **Total** | All tiers (1.0 + 2.0) | **212** | **130** | **82** | |
 
 > Deferral note (2026-06-02): per maintainer direction, the GLOW accessibility
@@ -1453,6 +1454,16 @@ This table tracks how many of the backlog IDs each tier names are still open. It
 > rows); going forward the totals are internally consistent. QUILL 1.0 ships when
 > the 1.0 subtotal reaches zero remaining.
 
+> Scope move (2026-06-03): per maintainer direction, the GLOW accessibility
+> engine family (**GLOW-1 through GLOW-7**) returns from QUILL 2.0 into the **1.0**
+> milestone now that the shared `quill-glow-core` engine requirements are met (the
+> engine is green). The seven items are classified under **Tier 2** (the flagship
+> experience) and sequenced for execution **after Tier 4**. Only these seven move:
+> the GLOW watch-action binding (**WATCH-8**) and the axe-core / Accessibility
+> Agents workstream (**AX-A through AX-F**) stay in 2.0. The grand Total is
+> unchanged (the seven items relocate between milestones); the 1.0 subtotal rises
+> by seven and the 2.0 subtotal falls by seven.
+
 #### Feature status by tier (the two living lists)
 
 These two tables are the at-a-glance companion to the per-area item tables above:
@@ -1460,15 +1471,16 @@ every feature in the 1.0 scope appears in exactly one of them, grouped by tier.
 When an item closes, move its ID from **Work in progress** to **Completed** in the
 same change, so both lists stay a truthful snapshot. The canonical per-item detail
 (acceptance text and evidence) always lives in the per-area tables higher up; these
-two are the watch lists. Items deferred to QUILL 2.0 (GLOW, BITS Whisperer,
-axe-core) are tracked separately in the third table and are not part of either 1.0
-list.
+two are the watch lists. Items deferred to QUILL 2.0 (BITS Whisperer, axe-core,
+and the GLOW watch action) are tracked separately in the third table and are not
+part of either 1.0 list. The GLOW engine family (GLOW-1..7) is in the 1.0 lists
+under Tier 2.
 
 **Work in progress (QUILL 1.0 — open items)**
 
 | Tier | Status | Feature IDs |
 | --- | --- | --- |
-| Tier 2 — Flagship | In progress | AI-19, SHELL-2, SHELL-3 |
+| Tier 2 — Flagship | In progress | AI-19, SHELL-2, SHELL-3, GLOW-1, GLOW-2, GLOW-3, GLOW-4, GLOW-5, GLOW-6, GLOW-7 (GLOW family sequenced after Tier 4) |
 | Tier 4 — Structural health | In progress / Todo | DLG-3, CQ-1 (in progress), DLG-2, ORG-1 |
 | Tier 6 — Documentation | Todo | DOC-1, DOC-2, DOC-3, DOC-4, DOC-5, DOC-6, DOC-7, DOC-8, DOC-11, DOC-12, DOC-14, DOC-15, DOC-16, DOC-17, DOC-18, POD-1, POD-2, POD-3, POD-4, POD-5, TUT-1, TUT-2, TUT-3, TUT-4, TUT-5, TUT-6, TUT-7, CQ-11, CQ-23, CQ-24, LINUX-2 |
 
@@ -1485,9 +1497,9 @@ list.
 
 | Workstream | Feature IDs | Why deferred |
 | --- | --- | --- |
-| GLOW accessibility engine (Tier 3) | GLOW-1, GLOW-2, GLOW-3, GLOW-4, GLOW-5, GLOW-6, GLOW-7, WATCH-8 | Cross-repo engine integration; lands as a 2.0 headline once the shared `quill-glow-core` engine is green. |
+| GLOW watch action (Tier 3) | WATCH-8 | The GLOW engine (GLOW-1..7) moved into QUILL 1.0 (Tier 2, sequenced after Tier 4) now that the shared `quill-glow-core` engine is green; the Watch Profile binding stays a 2.0 follow-on. |
 | BITS Whisperer transcription (Tier 5) | BW-1, BW-2, BW-3, BW-4, BW-5, BW-6, BW-7, BW-8, BW-9, BW-10, WATCH-9 | The second distinctive engine; a clean 2.0 integration after the 1.0 flagship ships. |
-| Accessibility Agents / axe-core (AX) | AX-A, AX-B, AX-C, AX-D, AX-E, AX-F | Builds on the GLOW engine and report surface, so it follows GLOW into 2.0. |
+| Accessibility Agents / axe-core (AX) | AX-A, AX-B, AX-C, AX-D, AX-E, AX-F | Builds on the GLOW engine and report surface; stays a 2.0 workstream per maintainer direction even though the GLOW engine itself is now in 1.0. |
 | Tier 5 stretch explorations | NAV-10, AI-11, AI-12, AI-18, FEAT-12, FEAT-13, FEAT-14, FEAT-15, FEAT-16, FEAT-17, FEAT-18, LINUX-1, ECO-1, L10N-1, COLLAB-1 | Post-1.0 breadth, chosen with beta feedback in 2.0. |
 | Competitive parity plan (Notepad++ benchmark) | COMP-1, COMP-2, COMP-3, COMP-4, COMP-5, COMP-6, COMP-7 | Closes high-value project workflow gaps (search, workspace, plugin lifecycle, encoding conversion, macros, split review) plus an optional GitHub Copilot SDK cloud provider, while preserving QUILL's screen-reader-first and explicit-consent architecture. |
 

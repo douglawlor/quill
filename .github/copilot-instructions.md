@@ -111,11 +111,14 @@ rules in addition to everything above.
 
 ### Out of scope for 1.0 (do NOT work on these)
 
-- GLOW integrations.
 - axe-core / vnu (Nu Html Checker) HTML/CSS/SVG validation.
 - BITS Whisperer.
+- The GLOW watch-action binding (WATCH-8) and the axe-core / Accessibility
+  Agents workstream (AX-A..F).
 
 These are deferred to QUILL 2.0 and are already tracked as such in `golden.md`.
+The GLOW engine family (GLOW-1..7) is back in the 1.0 milestone (Tier 2,
+sequenced after Tier 4) now that the shared `quill-glow-core` engine is green.
 
 ### Per-change discipline (every commit / PR)
 
