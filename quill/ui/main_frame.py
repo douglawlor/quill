@@ -22182,93 +22182,74 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
         return False
 
     def _build_startup_wizard_html(self) -> str:
-        status_rows = [
+        done = "Done"
+        todo = "Not set up yet"
+        setup_steps = [
             (
-                "Trust and privacy consent",
-                "Completed" if load_trust_consent_complete() else "Pending",
-                "Acknowledge responsible AI use, data handling, and user accountability.",
+                "A quick word on privacy",
+                done if load_trust_consent_complete() else todo,
+                "How Quill looks after your writing and uses AI, in plain terms.",
             ),
             (
-                "Profile setup",
-                "Completed" if load_onboarding_complete() else "Pending",
-                "Choose how Quill starts and what features are surfaced.",
+                "How Quill starts",
+                done if load_onboarding_complete() else todo,
+                "Pick a starting setup that matches how you like to work.",
             ),
             (
-                "Writing assistant setup",
-                "Completed" if load_assistant_onboarding_complete() else "Pending",
-                "Enable assistant defaults and prompt style.",
+                "Writing help",
+                done if load_assistant_onboarding_complete() else todo,
+                "Turn on optional AI writing help and choose its style.",
             ),
             (
-                "Speech setup",
-                "Completed" if load_speech_onboarding_complete() else "Pending",
-                "Configure engines, paths, voices, and downloads.",
+                "Speech and voices",
+                done if load_speech_onboarding_complete() else todo,
+                "Choose voices and download optional speech only if you want it.",
             ),
             (
-                "BITS Whisperer rollout setup",
+                "Speech model preferences",
                 (
-                    "Configured"
+                    done
                     if bool(getattr(self.settings, "bw_provider_id", ""))
                     and bool(getattr(self.settings, "bw_speech_model_id", ""))
-                    else "Pending"
+                    else todo
                 ),
-                "Set provider/model defaults, readiness checks, and status-page behavior.",
+                "Pick your preferred speech provider and voice model.",
             ),
             (
-                "Watch folder setup",
-                "Completed" if load_watch_folder_onboarding_complete() else "Pending",
-                "Automatically open new supported files dropped into one folder.",
+                "Open a folder automatically",
+                done if load_watch_folder_onboarding_complete() else todo,
+                "Let Quill open files you drop into one folder for you.",
             ),
         ]
-        status_html = "".join(
+        steps_html = "".join(
             (
-                "<tr>"
-                f"<td>{html.escape(step)}</td>"
-                f"<td>{html.escape(state)}</td>"
-                f"<td>{html.escape(detail)}</td>"
-                "</tr>"
+                "<li>"
+                f"<strong>{html.escape(step)}</strong> &mdash; {html.escape(state)}. "
+                f"{html.escape(detail)}"
+                "</li>"
             )
-            for step, state, detail in status_rows
+            for step, state, detail in setup_steps
         )
-
-        flow_steps = [
-            "Step 1: Review and accept trust, privacy, and responsible AI terms.",
-            "Step 2: Choose your startup profile.",
-            "Step 3: Decide whether AI should be enabled now.",
-            "Step 4: Configure writing assistant defaults.",
-            "Step 5: Configure speech engines and download optional runtimes.",
-            "Step 6: Configure BITS Whisperer rollout defaults and readiness checks.",
-            "Step 7: Set up watch folder automation for supported document intake.",
-            "Step 8: Confirm settings and start writing.",
-        ]
-        flow_html = "".join(f"<li>{html.escape(step)}</li>" for step in flow_steps)
 
         return (
             "<h1 id='startup-wizard'>Startup Wizard</h1>"
-            "<p>This guided setup prepares Quill for your preferred writing, "
-            "AI, and speech experience.</p>"
-            "<h2 id='progress'>Current Setup Progress</h2>"
-            "<table>"
-            "<caption>Wizard setup status</caption>"
-            "<thead><tr>"
-            "<th scope='col'>Setup area</th>"
-            "<th scope='col'>Status</th>"
-            "<th scope='col'>What this controls</th>"
-            "</tr></thead>"
-            f"<tbody>{status_html}</tbody>"
-            "</table>"
-            "<h2 id='guided-flow'>Guided Flow</h2>"
-            f"<ol>{flow_html}</ol>"
-            "<h2 id='accessibility-notes'>Accessibility Notes</h2>"
+            "<p>Welcome to Quill &mdash; a fast, friendly writing app built to work "
+            "beautifully with your screen reader. This short setup gets things ready "
+            "the way you like. You can stop any time and come back later.</p>"
+            "<h2 id='what-youll-set-up'>What you'll set up</h2>"
+            "<p>Each step is optional and takes a moment. Here's what it gives you "
+            "and what you've finished so far:</p>"
+            f"<ul>{steps_html}</ul>"
+            "<h2 id='good-to-know'>Good to know</h2>"
             "<ul>"
-            "<li>Every step uses keyboard-first dialogs with clear announcements.</li>"
-            "<li>You can cancel any step and rerun Startup Wizard from the Help menu.</li>"
-            "<li>No speech downloads occur without explicit confirmation.</li>"
-            "<li>BITS Whisperer onboarding changes setup defaults only; "
-            "runtime routing remains staged.</li>"
+            "<li>Everything works from the keyboard, and Quill tells you what just happened.</li>"
+            "<li>You can skip a step now and set it up later.</li>"
+            "<li>Nothing is downloaded until you say yes.</li>"
+            "<li>To start over, open Startup Wizard again from the Help menu.</li>"
             "</ul>"
-            "<h2 id='where-next'>After Wizard</h2>"
-            "<p>You're all set. To check on downloads, speech, and what's "
-            "turned on, open Help &gt; Status Page.</p>"
+            "<h2 id='where-next'>You're all set</h2>"
+            "<p>That's it &mdash; you're ready to write. To check on downloads, "
+            "speech, and what's turned on, open Help &gt; Status Page.</p>"
         )
 
     def _show_bw_onboarding(self, force: bool) -> None:
