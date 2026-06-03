@@ -6247,6 +6247,181 @@ for the suite.</td>
 </tr>
 </tbody>
 </table>
+<h3
+id="packaging-and-freezing-the-nuitka-evaluation-deferred-to-quill-2.0">21.2
+Packaging and freezing: the Nuitka evaluation (deferred to QUILL
+2.0)</h3>
+<blockquote>
+<p>Status (2026-06-03): deferred to <strong>QUILL 2.0</strong>. This is
+a packaging <em>decision</em>, not a feature, and it does not advance
+any open 1.0 acceptance criterion. Shipping 1.0 stays on the working
+embeddable-Python bundle (<a
+href="scripts/build_windows_distribution.py">scripts/build_windows_distribution.py</a>),
+which also keeps the v1.1 plugin path trivial. The section below is the
+full analysis and the go/no-go gate for revisiting freezing in 2.0.</p>
+</blockquote>
+<p><strong>The starting point (honest).</strong> QUILL today ships raw
+<code>quill/**/*.py</code> source alongside a pinned official
+<strong>python-3.12.6-embed-amd64</strong> runtime. The source on disk
+is fully readable and editable by any end user. The PRD’s
+<em>intended</em> frozen build (§10.6) names <strong>PyInstaller
+one-folder</strong> but is unimplemented. So the real choice is
+three-way: (a) today’s embeddable-Python + source, (b) PyInstaller
+one-folder, (c) <strong>free Nuitka <code>--standalone</code></strong>.
+<a href="https://nuitka.net/">Nuitka</a> is a Python→C optimizing
+compiler.</p>
+<p><strong>Framing assumptions that shape the verdict.</strong></p>
+<ul>
+<li><strong>Free Nuitka only.</strong> QUILL is MIT-licensed in a public
+repo. Nuitka Commercial’s headline — obfuscate source/constants/keys
+against reverse engineering (€250–400/yr) — is <strong>structurally
+moot</strong> because the source is already public. Paying to hide a
+public codebase is incoherent, so the commercial tier is disqualified
+outright and every gain below is from <em>free</em> Nuitka. That deletes
+Nuitka’s marquee feature from the benefit column.</li>
+<li><strong>Standalone (one-folder), never onefile.</strong> Onefile
+self-extracts to temp on every launch (slower cold start, AV/SmartScreen
+false positives). The PRD already chose folder mode for exactly this
+reason; the same constraint applies.</li>
+</ul>
+<p><strong>Real gains (free Nuitka).</strong></p>
+<ul>
+<li><strong>G1 — Startup/import speed (the only measurable technical
+gain).</strong> Compiled module bodies skip parse + bytecode-compile, so
+cold-start import is genuinely faster than both alternatives. Bounded
+and modest: the win is in import/startup, <strong>not</strong>
+steady-state editing — once the UI is up you are in wxPython event loops
+and native DLLs (TTS, llama, OCR) that Nuitka cannot speed up. It is a
+lever for PERF-9’s startup budget, but deferred imports in pure source
+can also hit that budget, so Nuitka is <em>a</em> lever, not the only
+one.</li>
+<li><strong>G2 — A real binary you authored (the genuine non-perf
+gain).</strong> Today QUILL signs and ships someone else’s
+<code>python.exe</code>. Nuitka produces a real PE you compiled: cleaner
+<code>signtool</code> identity, faster SmartScreen reputation accrual,
+and tamper resistance against casual in-place edits of the writing-path
+source. This is operational hygiene and integrity, <strong>not</strong>
+IP protection (free Nuitka leaves constants/data readable, and the
+source is on GitHub anyway).</li>
+<li><strong>G3 — Marginally tighter layout.</strong> Easily erased by
+the native dependency payload (llama/OCR/dictionaries dominate the §10.6
+“180–220 MB” footprint). Not a real differentiator.</li>
+</ul>
+<p><strong>Real risks (concentrated on QUILL’s most safety-critical
+surfaces).</strong></p>
+<ul>
+<li><strong>R1 — Native/dynamic dependency resolution (the dominant
+risk).</strong> Nuitka’s static analyzer must find every module and
+native DLL at build time, and QUILL’s stack is full of packages that
+load native code through <em>runtime</em> discovery that static analysis
+cannot follow without manual <code>--include-*</code> help:
+<code>winsdk</code> (WinRT OCR projections are dynamically generated),
+<code>pyenchant</code> (libenchant + provider DLLs via filesystem plugin
+paths), <code>prismatoid</code> (the screen-reader announcement bridge),
+<code>pyttsx3</code> (SAPI5 COM driver discovery), and
+<code>llama-cpp-python</code> (<code>llama.dll</code> + optional GPU
+backends). The failure mode is not “won’t compile” — it is a build that
+<strong>succeeds</strong> with a backend <strong>silently missing at
+runtime</strong>, and the breakages cluster precisely on the
+accessibility-critical and AI paths QUILL exists to deliver.</li>
+<li><strong>R2 — Source tests cannot see freeze breakage (a verification
+gap).</strong> The entire quality bar (ruff, mypy on core/io, GATE-11,
+A11Y-4, source-contract, headless a11y, SR scenarios) runs against
+<em>source</em>, never the compiled artifact. Adopting Nuitka therefore
+<em>mandates a new CI lane</em>: build the standalone bundle and run
+<code>tests/a11y</code> + an SR scenario <strong>against the built
+<code>quill.exe</code></strong>. Without it, R1’s silent-backend
+failures ship unverified — a direct violation of the honesty mandate.
+This is a permanent, slower second test lane.</li>
+<li><strong>R3 — The v1.1 plugin runtime (a structural
+collision).</strong> The PRD plugin model (§10.10) loads plugins as
+<code>.py</code> at runtime; the current “ship interpreter + ship
+source” model makes that trivial. A compiled binary is a closed world.
+Nuitka bundles libpython so runtime import of pure-Python plugins is
+<em>technically</em> possible, but <code>__file__</code>/path semantics
+differ, plugins importing uncompiled third-party packages fail to
+resolve, and the clean “drop a <code>.py</code> in
+<code>plugins/</code>” UX gets fragile. Moot for 1.0 (first-party only,
+compile them in); a genuine architectural tension to pre-commit to for
+1.1.</li>
+<li><strong>R4 — Data-file/<code>__file__</code> relocation (moderate,
+auditable).</strong> QUILL discovers bundled data by package-relative
+paths (<code>quill/data/words_alpha.txt</code>,
+<code>th_en_US_v2.dat</code>, <code>quill/core/schemas/*.json</code> for
+atomic-write validation). Nuitka relocates modules, so every
+<code>Path(__file__).parent / …</code> loader must be verified under the
+compiled layout — easy to miss for the schema path, which would break
+<em>saving</em>, not just a feature.</li>
+<li><strong>R5 — Field-crash debuggability.</strong> Compiled code still
+yields tracebacks but with muddier line-mapping than interpreted source,
+slightly harder for a small team’s own support. (Commercial “traceback
+encryption” is the wrong direction for an OSS project that
+<em>wants</em> readable diagnostics.)</li>
+</ul>
+<p><strong>Not real risks (so they are not over-weighted):</strong>
+wxPython compatibility (Nuitka has a dedicated wx plugin),
+C-toolchain/compile time (a non-factor for this team), cost/lock-in
+(free tier only), and onefile AV issues (avoided by folder mode).</p>
+<p><strong>Net assessment.</strong> The asymmetry is the conclusion: the
+gains are nice-to-have (snappier launch, cleaner signing) while the
+risks land on must-not-break (screen-reader announcements, TTS, OCR, AI,
+plugins). For a screen-reader-first app where a silently-missing SR
+bridge is a category-defining failure invisible to the current
+source-based bar, the risk/reward is unfavorable <em>now</em>.</p>
+<p><strong>Recommendation.</strong> Do <strong>not</strong> adopt for
+1.0. Re-evaluate <strong>free Nuitka, standalone only</strong> as a
+measured 2.0 packaging spike (PKG-1), gated on one empirical question,
+and explicitly drop Nuitka Commercial. The deciding contest is
+<em>Nuitka-standalone vs. PyInstaller-one-folder</em>, not Nuitka
+vs. nothing, and the tiebreaker is dependency-packaging robustness on
+those five native packages, measured against a built artifact.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr>
+<th>ID</th>
+<th>Item</th>
+<th>Area</th>
+<th>Size</th>
+<th>Status</th>
+<th>Acceptance criteria</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PKG-1</td>
+<td>Freezing spike: free Nuitka <code>--standalone</code>
+vs. PyInstaller one-folder</td>
+<td>Packaging</td>
+<td>L</td>
+<td>Todo (2.0)</td>
+<td>A time-boxed, evidence-producing spike. (1) Build QUILL with free
+Nuitka <code>--standalone</code> (never <code>--onefile</code>), wx
+plugin enabled, <code>quill</code> package included. (2) Manually
+resolve native includes for the five hard dependencies —
+<code>winsdk</code>, <code>pyenchant</code>, <code>prismatoid</code>,
+<code>pyttsx3</code>, <code>llama-cpp-python</code> — and confirm each
+backend loads at runtime in the built artifact. (3) Add a CI lane that
+runs <code>tests/a11y</code> + an SR scenario <strong>against the built
+<code>quill.exe</code></strong>, not source, and require it green. (4)
+Verify package-relative data discovery (<code>quill/data/*</code>,
+<code>quill/core/schemas/*.json</code>) and atomic-write/save under the
+relocated layout. (5) Compare cold-start time and installed footprint
+against both the embeddable-Python bundle and a PyInstaller one-folder
+build. <strong>Go</strong> only if all five native backends resolve and
+the built-artifact a11y lane passes; otherwise record a clean
+<strong>No</strong> with evidence. Commercial Nuitka is explicitly out
+of scope (moot for an MIT public repo).</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="part-v-impact-ranking-and-build-order">Part V: Impact ranking
 and build order</h2>
@@ -6605,6 +6780,13 @@ meeting minutes, multilingual segmentation, and a transcription cost
 dashboard. Value: keep the tier focused on the proven loop. Outcome: the
 headline ships clean; the explorations follow real demand.</li>
 </ul>
+<p>Packaging note for 2.0: the freezing decision (PKG-1, §21.2) is a 2.0
+packaging spike, not part of this transcription tier. It runs as an
+independent, evidence-producing evaluation of free Nuitka
+<code>--standalone</code> vs. PyInstaller one-folder, gated on the five
+native backends resolving and an a11y lane passing against the built
+<code>quill.exe</code>. 1.0 ships on the existing embeddable-Python
+bundle.</p>
 <p>Why fifth: it is the second category-defining engine and it completes
 the WATCH loop, but it sits one step further from the
 writing-and-accessibility core than GLOW, so it follows the flagship,
