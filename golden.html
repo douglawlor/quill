@@ -1554,12 +1554,14 @@ a dialog now <em>forces</em> it into the registry via a deliberate
 classification is reviewed in the diff — the “magical” gating now
 documented in PRD §9.13. <code>.github/copilot-instructions.md</code>
 gains a “Dialog Excellence Mandates” block + Dialog Change Checklist
-encoding this. <strong>Remaining (honest, PRD §9.13 Phases
-2–8):</strong> the per-dialog conversion waves (simple→native,
-enhanced-native standardization, web standardization, startup/onboarding
-hardening, assistant/AI consolidation), CQ-16 characterization
-expansion, and the manual NVDA/JAWS/Narrator SR pass across
-<code>dialogs.md</code> are not yet done and require a live Windows
+encoding this. <strong>Remaining (honest, PRD §9.13 Phases 6 +
+8):</strong> Phases 2–5 and 7 are now Done (native-conversion triage,
+enhanced-native standardization, web-surface governance guard,
+startup/onboarding hardening guard, and CQ-16 dialog-launch
+characterization — see the DLG-3.2–DLG-3.5 and DLG-3.7 sub-rows). What
+remains is the assistant/AI tool dialog consolidation (Phase 6, folds in
+DLG-2) and the manual NVDA/JAWS/Narrator SR pass across
+<code>dialogs.md</code> (Phase 8), which requires a live Windows
 screen-reader runtime; this item stays In progress until those land.
 Every single dialog across <code>quill/ui/*</code> is reviewed, and any
 custom-drawn or hand-rolled dialog that <em>could</em> conform to a
@@ -1696,10 +1698,25 @@ and previews preserved.</td>
 rendering/forms justified)</td>
 <td>Code quality</td>
 <td>M</td>
-<td>Todo</td>
-<td>Rich-render/chat/dynamic-form dialogs route only through sanctioned
-web surfaces with native-fallback parity; no raw HTML dumped into
-document tabs in onboarding/welcome paths.</td>
+<td>Done</td>
+<td>A live source audit confirmed the rich-render estate is already
+clean: all raw HTML rendering primitives
+(<code>wx.html.HtmlWindow</code>/<code>.SetPage</code>) are confined to
+the single sanctioned <code>preview_dialog.py</code> ImportError
+fallback; every other rich surface routes through the
+<code>wx_accessible_webview</code> adapters
+(<code>preview_dialog.py</code>, <code>accessible_webview.py</code>) or
+the <code>assistant_panel.py</code> chat dialog, each with a native
+fallback (list box + text field for chat; <code>wx.html</code> for
+previews). Onboarding/welcome tabs carry <strong>Markdown</strong>,
+never HTML (<code>build_welcome_guide</code> emits Markdown; the Startup
+Wizard renders through the <code>MarkdownPreviewDialog</code> web
+surface, not a document tab). New guard
+<code>tests/unit/ui/test_web_surface_governance.py</code> (4 tests)
+locks all of this in: it fails if a raw HTML primitive escapes
+<code>preview_dialog.py</code>, if either sanctioned web surface loses
+its native fallback, or if the welcome-guide tab content becomes
+HTML.</td>
 </tr>
 <tr>
 <td>DLG-3.5</td>
@@ -1707,10 +1724,24 @@ document tabs in onboarding/welcome paths.</td>
 consent, crash recovery)</td>
 <td>Code quality</td>
 <td>M</td>
-<td>Todo</td>
-<td>Deterministic focus across chained modal flows; explicit-consent
-requirements preserved; the screen-reader startup-crash path
-retired.</td>
+<td>Done</td>
+<td>The two code-level acceptance claims are implemented and now
+guarded. The screen-reader <strong>startup-crash path is
+retired</strong>: <code>_run_deferred_startup_tasks</code> isolates
+every deferred step (IPC poll, SR detection, trust consent, crash
+recovery, first-run onboarding, watch folders, update check) in its own
+<code>try/except</code>, persists the traceback to
+<code>logs/startup-errors.log</code> via
+<code>_report_startup_task_failure</code>, and keeps Quill open.
+<strong>Explicit consent is preserved</strong>:
+<code>_show_trust_consent_onboarding</code> marks consent complete only
+on an explicit accept; a decline never records consent and, during
+startup, closes the app instead of silently continuing. New guard
+<code>tests/unit/ui/test_startup_onboarding_hardening.py</code> (4
+tests) characterizes step-isolation, the accept/decline consent
+contract, and the declined-startup close path. Deterministic focus
+across the chained startup modals is structurally enforced by the
+DLG-3.3 hardening contract and confirmed live in DLG-3.8.</td>
 </tr>
 <tr>
 <td>DLG-3.6</td>
@@ -1731,9 +1762,17 @@ work folded here).</td>
 command paths</td>
 <td>Code quality</td>
 <td>M</td>
-<td>Todo</td>
-<td>Return-value and side-effect regression tests protect the public
-command surface before any CQ-1 decomposition.</td>
+<td>Done</td>
+<td>New characterization suite
+<code>tests/unit/ui/test_dialog_launch_characterization.py</code> (4
+tests) pins the return value and observable side effects of the public
+guide/preview launch commands (<code>open_welcome_guide</code>,
+<code>open_user_guide</code> missing-file fallback,
+<code>open_third_party_notices</code>,
+<code>show_startup_wizard_page</code>): the surface opened, the
+location-ring reset, the title refresh, and the exact status line. These
+regression tests protect the command surface before any CQ-1
+decomposition reshapes <code>main_frame.py</code>.</td>
 </tr>
 <tr>
 <td>DLG-3.8</td>
@@ -7649,8 +7688,12 @@ definition of done.</p>
 <li><strong>golden.md tracking:</strong> DLG-3 is now decomposed into
 individually-tracked sub-items DLG-3.0 through DLG-3.8 (plus DLG-3.T
 triage) so each phase shows discrete progress. Phases 0–1 (the
-enforcement engine), the triage, Phase 2 (no applicable work), and Phase
-3 (contract hardening) are Done; Phases 4–8 are Todo.</li>
+enforcement engine), the triage, Phase 2 (no applicable work), Phase 3
+(contract hardening), Phase 4 (web-surface governance guard), Phase 5
+(startup/onboarding hardening guard), and Phase 7 (dialog-launch
+characterization) are Done; Phase 6 (assistant/AI consolidation) and
+Phase 8 (manual SR pass, needs a live Windows screen-reader runtime)
+remain. DLG-3 stays honestly “In progress” until those two close.</li>
 <li><strong>Working files retired:</strong>
 <code>zfix.md</code>/<code>zfix.html</code> deleted now that their
 content lives in the PRD.</li>
