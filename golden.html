@@ -1392,10 +1392,30 @@ dropped 22,866→22,460 lines (budget ratcheted to 22,460); the new module
 is 433 lines (under the 600 cap). Verified live on Windows: the full
 322-test UI suite, GATE-11, GATE-6 characterization, the
 dialog-contract/inventory gates, and the A11Y-4 banned-pattern gate all
-pass. The mixin pattern is now established for the remaining clusters
-(menu construction, QUILL key/Quick Nav, selection/marks, file/session
-lifecycle), so this stays honestly In progress (XL) until those
-land.</td>
+pass. <strong>Fourth seam delivered:</strong> the contiguous 6-method
+intellisense/word-prediction popup cluster
+(<code>_show_intellisense_popup</code>,
+<code>_refresh_intellisense_popup</code>,
+<code>_hide_intellisense_popup</code>,
+<code>_dismiss_intellisense_popup</code>,
+<code>_apply_intellisense_selection</code>,
+<code>_handle_intellisense_key_down</code>, ~130 lines) was extracted
+verbatim from <code>main_frame.py</code> into
+<code>quill/ui/main_frame_intellisense.py</code> as
+<code>IntellisensePopupMixin</code> (now in the <code>MainFrame</code>
+MRO); the two <code>quill.core.intellisense</code> helpers it needs
+(<code>build_intellisense_suggestions</code>,
+<code>collect_document_words</code>) moved with it and ruff trimmed
+those imports from <code>main_frame.py</code>. Because every moved
+method is private, the GATE-6 public-surface snapshot was unchanged and
+needed no regen. <code>main_frame.py</code> dropped 22,460→22,332 lines
+(budget ratcheted to 22,332); the new module is under the 600 cap.
+Verified live on Windows: the full 322-test UI suite, GATE-11, GATE-6
+characterization, the dialog-contract/inventory gates, and the A11Y-4
+banned-pattern gate all pass. The mixin pattern is now established for
+the remaining clusters (menu construction, QUILL key/Quick Nav,
+selection/marks, file/session lifecycle), so this stays honestly In
+progress (XL) until those land.</td>
 </tr>
 <tr>
 <td>CQ-16</td>
