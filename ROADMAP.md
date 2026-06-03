@@ -1,8 +1,10 @@
-# GOLDEN: The QUILL Path to Magical, Accessible Greatness
+# QUILL Roadmap: The Path to Magical, Accessible Greatness
 
 Status: Draft 1, authored 2026-06-01. Owner: product and engineering. Current product version: 0.1.5 Beta (target: 1.0 GA).
 
 This is the master plan to take QUILL from an already strong, screen-reader-first editor to something genuinely delightful, dependable, and shocking in the best way. It combs the whole product: every layer, every feature, the QUILL key, navigation, selection, documentation, podcasts and tutorials, plus a full code-quality, security, and performance review.
+
+> This roadmap is the project's living hub: it combines the tier completion tracker, the work-in-progress and completed living lists, and a dated progress log. It was previously named `golden.md`.
 
 Non-negotiable principle: everything ships accessible. No feature is "done" until it is fully operable and pleasant with NVDA, JAWS, Narrator, and VoiceOver, by keyboard alone, in high contrast, and at large font sizes.
 

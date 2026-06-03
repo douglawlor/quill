@@ -242,7 +242,7 @@ id="blocked-items-completion-guide-the-exact-path-to-done-on-the-environment-gat
 completion guide — the exact path to Done on the environment-gated 1.0
 features</h1>
 <p>Status as of 2026-06-03. A small set of QUILL 1.0 items are honestly
-“In progress” or “Todo” in <code>golden.md</code> because they are
+“In progress” or “Todo” in <code>ROADMAP.md</code> because they are
 genuinely blocked on something that cannot be produced or verified from
 a non-live development environment: there is no live AI provider
 endpoint and no Windows 11 packaged-install cycle available here. None
@@ -251,7 +251,7 @@ is faked Done.</p>
 maintainer (on a real Windows 11 machine with live provider credentials)
 must do to drive each remaining item to verified Done. Nothing here is
 hand-waving: every step names the file, function, and acceptance test.
-It is the operational companion to the <code>golden.md</code> tracker —
+It is the operational companion to the <code>ROADMAP.md</code> tracker —
 the tracker records <em>what</em> remains; this guide records
 <em>exactly how</em> to finish it.</p>
 <blockquote>
@@ -499,8 +499,8 @@ instead.</li>
 <p>The structured verb produces faithful structured Markdown from real
 OCR output on a live backend, with no content loss, responsive UI, and
 accessible status announcements. Then flip SHELL-2 to Done in
-<code>golden.md</code> (tracker + both living lists + a dated
-activity-log entry) and regenerate <code>golden.html</code>.</p>
+<code>ROADMAP.md</code> (tracker + both living lists + a dated
+activity-log entry) and regenerate <code>ROADMAP.html</code>.</p>
 <hr />
 <h2
 id="shell-3-windows-11-modern-context-menu-iexplorercommand-installer">SHELL-3
@@ -566,8 +566,8 @@ the menu entries.</p></li>
 context menu via a registered <code>IExplorerCommand</code>, driven by
 the same <code>shell_verbs.py</code> registry, installed and removed
 cleanly by the installer, and verified on a real Win11 box. Then flip
-SHELL-3 to Done in <code>golden.md</code> and regenerate
-<code>golden.html</code>.</p>
+SHELL-3 to Done in <code>ROADMAP.md</code> and regenerate
+<code>ROADMAP.html</code>.</p>
 <hr />
 <h2 id="per-change-discipline-reminder-applies-to-all-three">Per-change
 discipline reminder (applies to all three)</h2>
@@ -582,11 +582,11 @@ those layers stay wx-free.</li>
 <li>Add at least one behavior test (or source-contract test where wx
 can’t load) per change; keep the targeted <code>pytest</code>
 green.</li>
-<li>After editing <code>golden.md</code>: update the <strong>tracker
+<li>After editing <code>ROADMAP.md</code>: update the <strong>tracker
 totals</strong>, <strong>both living lists</strong>, and add a
 <strong>dated activity-log entry</strong>, then regenerate
-<code>golden.html</code> with
-<code>pandoc -s golden.md -o golden.html</code> and commit both
+<code>ROADMAP.html</code> with
+<code>pandoc -s ROADMAP.md -o ROADMAP.html</code> and commit both
 together.</li>
 <li>New user-facing dialog (e.g. <code>DeviceLoginDialog</code>) → add a
 row to <code>dialogs.md</code>.</li>
@@ -735,7 +735,7 @@ the Quill verbs must be gone.</li>
 <h4 id="step-6-flip-shell-3-to-done">Step 6 — Flip SHELL-3 to Done</h4>
 <p>Once Steps 1–5 pass on real hardware:</p>
 <ul>
-<li>In <code>golden.md</code>: change the <strong>SHELL-3</strong> row
+<li>In <code>ROADMAP.md</code>: change the <strong>SHELL-3</strong> row
 Status from <code>In progress</code> to <code>Done</code>, move
 <code>SHELL-3</code> out of the two living <em>Work-in-progress</em>
 lists into the <em>Completed</em> Tier 2 list, and update the tracker
@@ -744,8 +744,8 @@ the 1.0 subtotal and grand total Done counts by 1).</li>
 <li>Add a dated activity-log entry recording the live verification
 pass.</li>
 <li>Regenerate the HTML:
-<code>pandoc -s golden.md -o golden.html</code>.</li>
-<li>Stage <code>golden.md</code> + <code>golden.html</code> only and
+<code>pandoc -s ROADMAP.md -o ROADMAP.html</code>.</li>
+<li>Stage <code>ROADMAP.md</code> + <code>ROADMAP.html</code> only and
 commit.</li>
 </ul>
 <h3 id="part-2-whats-left-issue-by-issue">Part 2 — What’s left, issue by

@@ -93,7 +93,7 @@ rules in addition to everything above.
 
 ### Mission and honesty
 
-- Drive QUILL 1.0 work (Tier 2 roadmap items in `golden.md` plus all associated
+- Drive QUILL 1.0 work (Tier 2 roadmap items in `ROADMAP.md` plus all associated
   1.0 work, **including documentation**) toward genuine, tested Done.
 - HONESTY IS NON-NEGOTIABLE. Only mark an item Done when it is genuinely complete
   and tested. If an item has a real runtime blocker, leave it honestly
@@ -116,7 +116,7 @@ rules in addition to everything above.
 - The GLOW watch-action binding (WATCH-8) and the axe-core / Accessibility
   Agents workstream (AX-A..F).
 
-These are deferred to QUILL 2.0 and are already tracked as such in `golden.md`.
+These are deferred to QUILL 2.0 and are already tracked as such in `ROADMAP.md`.
 The GLOW engine family (GLOW-1..7) is back in the 1.0 milestone (Tier 2,
 sequenced after Tier 4) now that the shared `quill-glow-core` engine is green.
 
@@ -126,13 +126,13 @@ sequenced after Tier 4) now that the shared `quill-glow-core` engine is green.
 - Strict typing on changed `quill/core` and `quill/io` files: `mypy` must report
   "Success: no issues found". `quill/core` and `quill/io` must stay wx-free.
 - Run the targeted `pytest` for what you changed; keep the suite green.
-- After editing `golden.md`, regenerate `golden.html` with
-  `pandoc -s golden.md -o golden.html` and commit both together.
+- After editing `ROADMAP.md`, regenerate `ROADMAP.html` with
+  `pandoc -s ROADMAP.md -o ROADMAP.html` and commit both together.
 - If a new public `MainFrame` method is added, regenerate the fixture with
   `python -m quill.tools.ui_surface --write` and stage
   `tests/unit/ui/fixtures/main_frame_public_surface.json`.
 - Stage SPECIFIC files only. NEVER `git add -A` (it pulls in `.history/` and
-  `uv.lock`). Keep `golden.md`, the living lists, and the tracker totals
+  `uv.lock`). Keep `ROADMAP.md`, the living lists, and the tracker totals
   reconciled with each change.
 	- Include at least one behavior test (or source-contract test when UI stubs are limited) per bug class.
 

@@ -4,7 +4,7 @@ _Last updated: 2026-06-04_
 
 This report is the human-readable companion to the machine-enforced dialog
 governance described in **PRD §9.13 (Dialog estate governance)** and tracked in
-`golden.md` as DLG-3.0 through DLG-3.8. It records where the dialog-unification
+`ROADMAP.md` as DLG-3.0 through DLG-3.8. It records where the dialog-unification
 work stands after the triage and Phase 3 hardening pass.
 
 ## Headline

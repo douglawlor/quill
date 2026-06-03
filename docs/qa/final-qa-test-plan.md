@@ -29,7 +29,7 @@ In scope:
 - Installer and first-run on a clean machine.
 - Performance and stability under realistic documents.
 
-Out of scope for 1.0 (deferred to 2.0, tracked in `golden.md`): axe-core / Nu
+Out of scope for 1.0 (deferred to 2.0, tracked in `ROADMAP.md`): axe-core / Nu
 Html Checker validation, BITS Whisperer, the GLOW watch-action binding
 (WATCH-8), and the Accessibility Agents workstream.
 
