@@ -721,17 +721,6 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         keywords=("transcription", "safe mode", "lock"),
     ),
     SettingSpec(
-        "dictation_sensitivity",
-        "Dictation microphone sensitivity",
-        "transcription",
-        "int",
-        "How sensitive dictation is to speech versus silence (0 to 100).",
-        feature_id="core.bw_transcription",
-        minimum=0,
-        maximum=100,
-        keywords=("dictation", "sensitivity", "microphone"),
-    ),
-    SettingSpec(
         "voice_commands_enabled",
         "Hey QUILL voice commands",
         "transcription",

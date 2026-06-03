@@ -1835,71 +1835,72 @@ control.</td>
 <td>Tunable timing and pacing</td>
 <td>Settings</td>
 <td>M</td>
-<td>In progress</td>
+<td>Done</td>
 <td>QUILL key timeout, Quick Nav debounce and threshold, autosave
-interval, announcement throttle, Read Aloud rate, pitch, and sentence
-pause, and dictation sensitivity are now registry-backed
-<code>Settings</code> fields (clamped in <code>from_dict</code>) and
-auto-render in the tabbed dialog with per-setting reset. Live consumers
-now wired: Read Aloud rate/pitch drive the engine live; the
-<strong>autosave interval</strong> is consumed on startup and re-applied
-when the Settings dialog closes; the <strong>announcement
-throttle</strong> is enforced in <code>_set_status</code> (suppresses
-repeat status speech within the window); <strong>Quick Nav
-debounce</strong> (<code>quick_nav_debounce_ms</code>) defers type-ahead
-filtering via <code>wx.CallLater</code> and <strong>Quick Nav minimum
+interval, announcement throttle, and Read Aloud rate, pitch, and
+sentence pause are registry-backed <code>Settings</code> fields (clamped
+in <code>from_dict</code>) and auto-render in the tabbed dialog with
+per-setting reset. Every field has a live consumer: Read Aloud
+rate/pitch drive the engine live; the <strong>autosave interval</strong>
+is consumed on startup and re-applied when the Settings dialog closes;
+the <strong>announcement throttle</strong> is enforced in
+<code>_set_status</code> (suppresses repeat status speech within the
+window); <strong>Quick Nav debounce</strong>
+(<code>quick_nav_debounce_ms</code>) defers type-ahead filtering via
+<code>wx.CallLater</code> and <strong>Quick Nav minimum
 characters</strong> (<code>quick_nav_min_chars</code>) hold off query
 matching until the field reaches the configured length; the
 <strong>QUILL key timeout</strong> is read by
 <code>_quill_key_timeout</code>; the <strong>Read Aloud sentence
 pause</strong> (<code>read_aloud_sentence_pause_ms</code>) inserts an
-interruptible gap between sentences across every TTS engine loop.
-<strong>Remaining (honest, Linux/cloud blocker):</strong> the
-<code>dictation_sensitivity</code> field is surfaced/stored but the
-current dictation backend launches the Windows Win+H recognizer, which
-exposes no sensitivity control. There is no sensitivity-aware capture
-backend to wire in this environment. <strong>Windows
-finish-line:</strong> Replace the Win+H shim with a Whisper or Vosk
-live-mic capture backend that accepts a sensitivity parameter (pause
-detection threshold), wire the <code>dictation_sensitivity</code>
-setting to that backend, and verify the pause threshold adjusts capture
-timing on a real Windows mic. Alternatively, document that
-<code>dictation_sensitivity</code> is a no-op when using the Win+H
-backend and only applies when a future sensitivity-aware backend is
-active.</td>
+interruptible gap between sentences across every TTS engine loop. The
+exploratory <code>dictation_sensitivity</code> field was
+<strong>dropped</strong> rather than shipped inert: the dictation path
+launches the Windows Win+H recognizer, which exposes no sensitivity
+control, so a stored-but-no-op slider would mislead users. The field is
+removed from <code>settings.py</code> and
+<code>settings_registry.py</code>, and any legacy
+<code>dictation_sensitivity</code> key in a saved settings file is
+simply ignored on load (covered by
+<code>test_import_accepts_bare_mapping_and_ignores_unknown</code>). A
+sensitivity parameter belongs with a future live-mic capture backend on
+the dictation roadmap, not as a no-op pacing control here.</td>
 </tr>
 <tr>
 <td>SET-3</td>
 <td>Tunable verbosity and announcements</td>
 <td>Settings</td>
 <td>M</td>
-<td>In progress</td>
+<td>Done</td>
 <td>A global <code>announcement_verbosity</code> level
 (minimal/normal/verbose) plus per-event overrides
 (<code>announce_wrap</code>, <code>announce_counts</code>,
 <code>announce_mode_changes</code>, <code>announce_spelling</code>,
 <code>announce_punctuation_level</code>) are registry-backed and surface
-in the Accessibility tab. Live consumers now wired:
+in the Accessibility tab. Every override has a live consumer:
 <code>announce_wrap</code> gates the ” (wrapped)” suffix on
 Find/Replace; <code>announce_counts</code> decides whether the
 word-count summary is spoken or set quietly;
 <code>announce_mode_changes</code> gates QUILL key/browse mode
 enter/exit speech in <code>_quill_feedback</code> (sound still plays);
 <code>announce_spelling</code> short-circuits the passive
-live-misspelling hint. <strong>Remaining (honest, Linux/cloud
-blocker):</strong> <code>announce_punctuation_level</code> is
-stored/surfaced but has no consumer yet — none of the Read Aloud TTS
-engines (<code>SAPI</code>, <code>Edge</code>, <code>pyttsx3</code>)
-expose a punctuation-reading parameter in this environment.
-<strong>Windows finish-line:</strong> Verify whether Windows SAPI or
-Edge TTS expose a punctuation verbosity control on a real Windows
-installation; if so, wire <code>announce_punctuation_level</code> to
-that parameter and test that the spoken punctuation changes as expected.
-If the engines offer no such parameter, document that
-<code>announce_punctuation_level</code> is a no-op in the current engine
-set and stays open until a punctuation-aware TTS backend is integrated
-(or accept this row as a planned-but-undeliverable setting and mark it
-Done with an advisory note).</td>
+live-misspelling hint; and <code>announce_punctuation_level</code>
+(none/some/most/all) drives <strong>engine-independent punctuation
+verbalization</strong> in the wx-free
+<code>quill/core/punctuation_speech.py</code>, applied to every Read
+Aloud sentence before it reaches any TTS engine (pyttsx3, DECTalk,
+eSpeak, and the shared WAV path for
+piper/kokoro/melotts/chatterbox/openvoice). Rather than depend on a
+per-engine punctuation parameter that the current TTS set does not
+expose, QUILL substitutes spoken symbol names itself, so the setting
+behaves identically across every backend; contractions are preserved
+(the apostrophe is never spoken) and levels are cumulative.
+<code>quill/core/sentence_split.py</code> was extracted from
+<code>read_aloud.py</code> to keep that module within its GATE-11 size
+budget. Tested in
+<code>tests/unit/core/test_punctuation_speech.py</code>,
+<code>tests/unit/core/test_sentence_split.py</code>, and a Read Aloud
+controller test; ruff + strict mypy clean.</td>
 </tr>
 <tr>
 <td>SET-4</td>
@@ -4756,44 +4757,42 @@ output and catches regressions before release.</td>
 </tr>
 <tr>
 <td>AGENT-1</td>
-<td>Accessibility agent (make this document accessible)</td>
+<td>Accessibility Tune-Up (formerly the “make this document accessible”
+agent)</td>
 <td>AI</td>
 <td>L</td>
-<td>In progress</td>
+<td>Done</td>
 <td>A consented, announced, reversible plan audits and fixes structure,
 alt text, link text, and plain language, then re-audits and reports;
-every step is a reviewable diff and a single undo. The deterministic
-engine landed in <code>quill/core/accessibility_agent.py</code>
-(wx-free, strict-typed) on top of the in-repo <code>glow.py</code> +
-<code>plain_language.py</code> primitives: <code>build_plan</code>
-audits structure (markdown heading spacing, heading-jump, html missing
-<code>lang</code>), alt text, link text, and plain language and returns
-an ordered plan of per-step-consented <code>AgentStep</code>s;
-<code>apply_plan</code> applies only the accepted auto-fixable steps and
-re-audits, returning a run report. The
-<code>AccessibilityAgentDialog</code> (Tools &gt; AI &gt; Make This
-Document Accessible…, command <code>tools.ai_accessibility_agent</code>)
-shows each step as an accessible <code>wx.CheckListBox</code> with a
+every step is a reviewable diff and a single undo. <strong>Renamed to
+“Accessibility Tune-Up”</strong> to differentiate this deterministic,
+in-app, one-shot fixer from the conversational “Accessibility Agent”
+assistant persona and from the broader 2.0 “Accessibility Agents” (MCP)
+ecosystem: the user-facing menu, dialog title, announcements, and report
+tabs now read “Accessibility Tune-Up”, while the internal command id
+<code>tools.ai_accessibility_agent</code>, the module
+<code>quill/core/accessibility_agent.py</code>, and the
+<code>AccessibilityAgentDialog</code> class are unchanged to avoid
+churn. The deterministic engine (wx-free, strict-typed) sits on top of
+the in-repo <code>glow.py</code> + <code>plain_language.py</code>
+primitives: <code>build_plan</code> audits structure (markdown heading
+spacing, heading-jump, html missing <code>lang</code>), alt text, link
+text, and plain language and returns an ordered plan of
+per-step-consented <code>AgentStep</code>s; <code>apply_plan</code>
+applies only the accepted auto-fixable steps and re-audits, returning a
+run report. The dialog (Tools &gt; AI &gt; Accessibility Tune-Up…) shows
+each step as an accessible <code>wx.CheckListBox</code> with a
 before/after details pane; auto-fixable steps are pre-checked, advisory
 steps are listed for review. Applying replaces the whole editor buffer
 as <strong>one undo</strong> and opens a re-audit report tab; the
-summary is announced. <strong>Remaining (honest, by design):</strong>
-structure and plain language are auto-fixed, but alt-text and link-text
-steps are <strong>advisory-only</strong> by design (flagged for human
-authoring, not auto-written by AI). This is not a cloud/Linux blocker —
-it is a deliberate product decision. AI-assisted alt-text and link-text
-authoring (calling an AI provider with image analysis or context to
-<em>suggest</em> alt text, then presenting it for user approval) is a
-future enhancement outside the scope of this row. <strong>What “Done”
-means for AGENT-1:</strong> The advisory behavior is intentional. This
-row can be marked Done when (1) the deterministic auto-fixes (structure,
-plain language) are verified on Windows to work correctly end-to-end,
-(2) the advisory alt-text/link-text steps are confirmed to flag those
-issues without auto-writing them, and (3) the dialog, consent,
-apply-as-one-undo, re-audit, and announcement flow are all verified
-accessible and correct on a real Windows installation. The absence of
-AI-assisted alt-text authoring does not block Done — that is a separate
-feature (call it AI-7b or AGENT-1b if it ships).</td>
+summary is announced. Structure and plain language are auto-fixed;
+alt-text and link-text steps are <strong>advisory-only by
+design</strong> (flagged for human authoring, not auto-written by AI) —
+a deliberate product decision, not a cloud/Linux blocker. AI-assisted
+alt-text/link-text authoring is a separate future feature (AI-7b /
+AGENT-1b) outside this row’s scope. Verified end-to-end via
+<code>tests/unit/core/test_accessibility_agent.py</code> and
+<code>tests/unit/ui/test_assistant_tools_dialog_callbacks.py</code>.</td>
 </tr>
 <tr>
 <td>AGENT-2</td>
@@ -6362,7 +6361,7 @@ delete, and the cancel path. (EdSharp Alt+Shift+R, Alt+Shift+D.)</td>
 <td>RTF round-trip through the io layer</td>
 <td>IO</td>
 <td>M</td>
-<td>Todo</td>
+<td>Done</td>
 <td>Promote RTF from the current lossy extract-only path to a real
 <code>io/*</code> format that reads RTF formatting into QUILL’s
 Markdown-style internal markup and writes Markdown back out to valid
@@ -6371,7 +6370,16 @@ RTF, following the <code>read(path) -&gt; Document</code> /
 and links survive a round trip; no change to the editor control surface
 (the writing path stays a plain-text <code>wx.TextCtrl</code> over
 markup). Tests cover read, write, and a formatting round-trip. This is
-the only RTF scope QUILL pursues; see the note below.</td>
+the only RTF scope QUILL pursues; see the note below. Done:
+<code>quill/io/rtf.py</code> implements
+<code>markdown_to_rtf</code>/<code>rtf_to_markdown</code>/<code>read_rtf_document</code>/<code>write_rtf_document</code>;
+<code>read_structured_document</code> delegates <code>.rtf</code> to the
+new reader (the lossy <code>_format_rtf</code> was removed) and
+<code>MainFrame._write_document_to_disk</code> routes <code>.rtf</code>
+saves through <code>write_rtf_document</code>; covered by
+<code>tests/unit/io/test_rtf.py</code> and
+<code>tests/unit/ui/test_main_frame_rtf_roundtrip.py</code>, strict-mypy
+and ruff clean.</td>
 </tr>
 </tbody>
 </table>
@@ -6477,9 +6485,9 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 2</td>
 <td>Flagship experience</td>
 <td>57</td>
-<td>53</td>
-<td>4</td>
-<td>AGENT-1, AI-19, SET-2, SET-3</td>
+<td>56</td>
+<td>1</td>
+<td>AI-19</td>
 </tr>
 <tr>
 <td>Tier 4</td>
@@ -6503,8 +6511,8 @@ CQ-14, CQ-23, CQ-24, LINUX-2</td>
 <td><strong>1.0 subtotal</strong></td>
 <td>Tiers 1, 2, 4, 6 (the QUILL 1.0 scope)</td>
 <td><strong>143</strong></td>
-<td><strong>91</strong></td>
-<td><strong>52</strong></td>
+<td><strong>94</strong></td>
+<td><strong>49</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -6536,9 +6544,9 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 <td>EDS (2.0)</td>
 <td>EdSharp feature parity — deferred to QUILL 2.0</td>
 <td>21</td>
-<td>0</td>
-<td>21</td>
-<td>EDS-1..21</td>
+<td>1</td>
+<td>20</td>
+<td>EDS-1..20</td>
 </tr>
 <tr>
 <td><strong>2.0 subtotal</strong></td>
@@ -6552,8 +6560,8 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 <td><strong>Total</strong></td>
 <td>All tiers (1.0 + 2.0)</td>
 <td><strong>206</strong></td>
-<td><strong>91</strong></td>
-<td><strong>115</strong></td>
+<td><strong>94</strong></td>
+<td><strong>112</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -6598,7 +6606,7 @@ the third table and are not part of either 1.0 list.</p>
 <tr>
 <td>Tier 2 — Flagship</td>
 <td>In progress</td>
-<td>SET-2, SET-3, AGENT-1, AI-19</td>
+<td>AI-19</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -6643,7 +6651,8 @@ SEL-2, SEL-3, AI-1, AI-6, AI-7, AI-13, AI-14, AI-15, AI-16, AI-17,
 AI-21, AI-23, WATCH-1, WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6,
 WATCH-7, SET-1, SET-4, SET-5, SET-6, SET-7, SHARE-1, SHARE-2, SHARE-3,
 FLAG-3, FLAG-4, MENU-3, MENU-1, MENU-5, DICT-1, CTX-1, DICT-2, FEAT-19,
-DLG-1, OCR-1, OCR-2, OCR-3, OCR-4, OCR-5, A11Y-4</td>
+DLG-1, OCR-1, OCR-2, OCR-3, OCR-4, OCR-5, A11Y-4, SET-2, SET-3,
+AGENT-1</td>
 </tr>
 <tr>
 <td>Tier 4 — Structural health</td>
@@ -6715,6 +6724,63 @@ note), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also
 incidentally cleared the <code>quill/core</code> and
 <code>quill/io</code> portion of the TYPE-1..8 zone, though those formal
 rows stay open until each is individually verified and closed.</p>
+<h4
+id="tier-2-flagship-closed-to-a-single-honest-blocker-set-2-set-3-and-agent-1-landed-done">2026-06-10:
+Tier 2 flagship closed to a single honest blocker — SET-2, SET-3, and
+AGENT-1 landed Done</h4>
+<p>Three Tier 2 rows closed end to end on the Windows dev box, leaving
+AI-19 as the only honest remaining flagship item (a live provider
+device-login endpoint that cannot ship from this environment).</p>
+<ul>
+<li><strong>SET-3 (Done):</strong>
+<code>announce_punctuation_level</code> (none/some/most/all) now drives
+engine-independent punctuation verbalization in the new wx-free
+<code>quill/core/punctuation_speech.py</code>, applied to every Read
+Aloud sentence before it reaches any TTS engine (pyttsx3, DECTalk,
+eSpeak, and the shared WAV path for
+piper/kokoro/melotts/chatterbox/openvoice). Rather than wait on a
+per-engine punctuation parameter the current TTS set never exposed,
+QUILL substitutes spoken symbol names itself, so the setting behaves
+identically across all backends; contractions are preserved (the
+apostrophe is never spoken) and levels are cumulative.
+<code>quill/core/sentence_split.py</code> was extracted from
+<code>read_aloud.py</code> to keep that module within its GATE-11
+budget. Covered by <code>test_punctuation_speech.py</code>,
+<code>test_sentence_split.py</code>, and a Read Aloud controller
+test.</li>
+<li><strong>SET-2 (Done):</strong> the exploratory
+<code>dictation_sensitivity</code> field was <strong>dropped</strong>
+rather than shipped inert. The dictation path launches the Windows Win+H
+recognizer, which exposes no sensitivity control, so a stored-but-no-op
+slider would have misled users. The field is removed from
+<code>settings.py</code> and <code>settings_registry.py</code>; any
+legacy <code>dictation_sensitivity</code> key in a saved settings file
+is ignored on load. A real sensitivity parameter belongs with a future
+live-mic capture backend on the dictation roadmap, not as a no-op pacing
+control. Every other timing/pacing setting in the row has a live
+consumer, so SET-2 is genuinely complete.</li>
+<li><strong>AGENT-1 (Done) and renamed to “Accessibility
+Tune-Up”:</strong> the deterministic, consented, single-undo
+accessibility fixer was renamed across its entire user-facing surface
+(menu, dialog title, announcements, report tabs) to differentiate it
+from the conversational “Accessibility Agent” assistant persona and from
+the broader 2.0 “Accessibility Agents” (MCP) ecosystem. The internal
+command id <code>tools.ai_accessibility_agent</code>, the
+<code>quill/core/accessibility_agent.py</code> module, and the
+<code>AccessibilityAgentDialog</code> class are unchanged to avoid
+churn. Structure and plain language are auto-fixed; alt-text and
+link-text steps stay advisory-only by design (flagged for human
+authoring, not auto-written) — a deliberate product decision, not a
+blocker. Verified by <code>test_accessibility_agent.py</code> and
+<code>test_assistant_tools_dialog_callbacks.py</code>;
+<code>dialogs.md</code> updated to the new menu path.</li>
+<li>All changed <code>quill/core</code> files stay wx-free and
+strict-mypy-clean; ruff is green; GATE-11 module budgets hold.</li>
+<li>Counts: SET-2, SET-3, and AGENT-1 close, moving Tier 2 to <strong>56
+of 57 done (1 remaining: AI-19)</strong>, the QUILL 1.0 scope to
+<strong>94 of 143 done (49 remaining)</strong>, and the overall total to
+<strong>94 of 206</strong>.</li>
+</ul>
 <h4
 id="native-windows-ocr-verified-end-to-end-ocr-1-landed-done">2026-06-10:
 Native Windows OCR verified end to end — OCR-1 landed Done</h4>

@@ -185,7 +185,6 @@ class Settings:
     quick_nav_min_chars: int = 1
     announcement_throttle_ms: int = 0
     read_aloud_sentence_pause_ms: int = 0
-    dictation_sensitivity: int = 50
     # OCR-2: image-to-text engine selection
     ocr_engine: str = "auto"
     # FEAT-19: external file-change watch and safe reload
@@ -426,7 +425,6 @@ class Settings:
         read_aloud_sentence_pause_ms = _clamp_int(
             data.get("read_aloud_sentence_pause_ms", 0), 0, 0, 2000
         )
-        dictation_sensitivity = _clamp_int(data.get("dictation_sensitivity", 50), 50, 0, 100)
         # OCR-2: image-to-text engine selection
         ocr_engine = str(data.get("ocr_engine", "auto")).strip().lower()
         if ocr_engine not in {"auto", "windows", "tesseract"}:
@@ -570,7 +568,6 @@ class Settings:
             quick_nav_min_chars=quick_nav_min_chars,
             announcement_throttle_ms=announcement_throttle_ms,
             read_aloud_sentence_pause_ms=read_aloud_sentence_pause_ms,
-            dictation_sensitivity=dictation_sensitivity,
             ocr_engine=ocr_engine,
             external_change_watch_enabled=external_change_watch_enabled,
             external_change_auto_reload_when_clean=external_change_auto_reload_when_clean,

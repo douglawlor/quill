@@ -94,6 +94,39 @@ def test_read_aloud_controller_speaks_sentences(monkeypatch) -> None:
     assert engine.spoken == ["One.", "Two!"]
 
 
+def test_read_aloud_controller_applies_punctuation_level(monkeypatch) -> None:
+    class FakeEngine:
+        def __init__(self) -> None:
+            self.spoken: list[str] = []
+
+        def getProperty(self, name: str):  # noqa: N802
+            return []
+
+        def setProperty(self, name: str, value: object) -> None:  # noqa: N802
+            return None
+
+        def say(self, text: str) -> None:
+            self.spoken.append(text)
+
+        def runAndWait(self) -> None:  # noqa: N802
+            return None
+
+        def stop(self) -> None:
+            return None
+
+    engine = FakeEngine()
+    monkeypatch.setattr(read_aloud_module, "pyttsx3", SimpleNamespace(init=lambda: engine))
+
+    controller = ReadAloudController()
+    controller.start("Cost is $5.", 0, "voice-1", punctuation_level="all")
+    assert controller._thread is not None
+    controller._thread.join(timeout=1)
+
+    spoken = " ".join(engine.spoken)
+    assert "dollar" in spoken.split()
+    assert "dot" in spoken.split()
+
+
 def test_inter_sentence_pause_zero_returns_immediately() -> None:
     import time
 

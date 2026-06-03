@@ -157,7 +157,7 @@ or the command palette (`Ctrl+Shift+P`).
 - [ ] Writing Assistant: via Tools menu
 - [ ] Prompt Studio: via Tools menu
 - [ ] Agent Center: via Tools menu
-- [ ] Make This Document Accessible: via AI menu (Tools > AI > Make This Document Accessible...)
+- [ ] Accessibility Tune-Up: via AI menu (Tools > AI > Accessibility Tune-Up...)
 - [ ] AI Hub: via Tools menu
 
 ## R. Tools: BITS Whisperer (speech)

@@ -1,7 +1,7 @@
-"""Accessibility agent: a consented, announced, reversible accessibility plan.
+"""Accessibility Tune-Up: a consented, announced, reversible accessibility plan.
 
-This module is the deterministic core of the headline "make this document
-accessible" agent (AGENT-1). It audits a document's structure, alt text, link
+This module is the deterministic core of the "Accessibility Tune-Up" feature
+(AGENT-1). It audits a document's structure, alt text, link
 text, and plain language, then proposes an ordered plan of discrete steps. Each
 step is reviewable on its own (a before/after snippet and a plain-language
 rationale) and the user accepts or skips each one before anything is applied.
@@ -242,7 +242,7 @@ def build_plan_report(plan: AccessibilityPlan) -> str:
     """Return a readable, screen-reader-pageable description of a plan."""
 
     lines = [
-        f"Accessibility agent plan for {plan.document_name}",
+        f"Accessibility Tune-Up plan for {plan.document_name}",
         "",
         f"Scope: {plan.scope_label}",
         f"Format: {plan.markup}",
@@ -275,7 +275,7 @@ def build_run_report(
     """Return a readable report of what the agent changed and what remains."""
 
     lines = [
-        f"Accessibility agent report for {plan.document_name}",
+        f"Accessibility Tune-Up report for {plan.document_name}",
         "",
         f"Scope: {plan.scope_label}",
         f"Format: {plan.markup}",

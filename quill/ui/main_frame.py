@@ -459,6 +459,7 @@ from quill.io.pandoc import (
     PandocUnavailableError,
     convert_document_with_pandoc,
 )
+from quill.io.rtf import write_rtf_document
 from quill.io.text import read_text_document, write_text_document
 from quill.platform.windows.high_contrast import is_high_contrast_enabled
 from quill.platform.windows.prism_bridge import AnnouncementEngine
@@ -1375,7 +1376,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
         )
         self.commands.register(
             "tools.ai_accessibility_agent",
-            "Make This Document Accessible",
+            "Accessibility Tune-Up",
             self.make_document_accessible,
             None,
         )
@@ -3586,7 +3587,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
         )
         ai_menu.Append(
             self._id_ai_accessibility_agent,
-            self._menu_label("Make This Document &Accessible...", "tools.ai_accessibility_agent"),
+            self._menu_label("Accessibility &Tune-Up...", "tools.ai_accessibility_agent"),
         )
         ai_menu.Append(
             self._id_ai_rewrite_selection,
@@ -9245,13 +9246,26 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
         self._tray_icon.Destroy()
         self._tray_icon = None
 
+    def _write_document_to_disk(self, document: object, target: Path | None = None) -> None:
+        """Write a document, routing .rtf through the RTF io writer.
+
+        The editor surface stores QUILL Markdown-style markup; for .rtf targets
+        that markup is rendered back to valid RTF (EDS-21), otherwise it is
+        written verbatim as text.
+        """
+        destination = target if target is not None else getattr(document, "path", None)
+        if destination is not None and Path(destination).suffix.lower() == ".rtf":
+            write_rtf_document(document, target)  # type: ignore[arg-type]
+        else:
+            write_text_document(document, target)  # type: ignore[arg-type]
+
     def save_file(self) -> None:
         if self.document.path is None:
             self.save_file_as()
             return
         if self.document.modified:
             backup_document(self.document)
-        write_text_document(self.document)
+        self._write_document_to_disk(self.document)
         self._record_persistent_undo_state(self.document.text)
         self.flush_persistent_undo()
         self._refresh_title()
@@ -9389,7 +9403,8 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
             "Save file as",
             wildcard=(
                 "Text files (*.txt)|*.txt|Markdown files (*.md)|*.md|"
-                "HTML files (*.html;*.htm;*.xhtml)|*.html;*.htm;*.xhtml|All files (*.*)|*.*"
+                "HTML files (*.html;*.htm;*.xhtml)|*.html;*.htm;*.xhtml|"
+                "Rich Text Format (*.rtf)|*.rtf|All files (*.*)|*.*"
             ),
             style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
         ) as dialog:
@@ -9406,7 +9421,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
         self.document.set_text(self.editor.GetValue())
         if self.document.modified and self.document.path is not None:
             backup_document(self.document)
-        write_text_document(self.document, target)
+        self._write_document_to_disk(self.document, target)
         self._load_persistent_undo_state(target, self.document.text)
         self._record_recent(target)
         self._refresh_title()
@@ -12345,15 +12360,15 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
             self.editor.Replace(0, last, result.text)
             self.document.set_text(self.editor.GetValue())
             self._record_notification(
-                f"Accessibility agent applied {len(result.applied)} changes "
+                f"Accessibility Tune-Up applied {len(result.applied)} changes "
                 f"to {self.document.name}",
                 "glow",
             )
             self._create_named_scratch_tab(
-                f"Accessibility Agent - {self.document.name}", result.report
+                f"Accessibility Tune-Up - {self.document.name}", result.report
             )
             self._set_status(
-                f"Accessibility agent applied {len(result.applied)} changes; "
+                f"Accessibility Tune-Up applied {len(result.applied)} changes; "
                 f"{result.findings_after} findings remain"
             )
 
@@ -14259,6 +14274,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin):
                 openvoice_rate=self.settings.read_aloud_openvoice_rate,
                 openvoice_consent=self.settings.read_aloud_openvoice_consent,
                 sentence_pause_ms=self.settings.read_aloud_sentence_pause_ms,
+                punctuation_level=self.settings.announce_punctuation_level,
                 on_progress=lambda progress_start, progress_end: self._wx.CallAfter(
                     self._on_read_aloud_progress,
                     progress_start,

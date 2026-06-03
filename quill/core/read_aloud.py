@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -12,6 +11,9 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+from quill.core.punctuation_speech import normalize_punctuation_level, verbalize_punctuation
+from quill.core.sentence_split import SentenceSpan, sentence_spans
 
 try:
     import pyttsx3  # type: ignore[import-untyped]
@@ -28,12 +30,6 @@ except ImportError:  # pragma: no cover - non-Windows
 class VoiceOption:
     id: str
     name: str
-
-
-@dataclass(frozen=True, slots=True)
-class SentenceSpan:
-    start: int
-    end: int
 
 
 DECTALK_VOICE_COMMANDS: dict[str, str] = {
@@ -608,17 +604,6 @@ def list_voices() -> list[VoiceOption]:
         engine.stop()
 
 
-def sentence_spans(text: str) -> list[SentenceSpan]:
-    spans: list[SentenceSpan] = []
-    for match in re.finditer(r".+?(?:[.!?]+(?:\s+|$)|\n+|$)", text, re.DOTALL):
-        start, end = match.span()
-        if text[start:end].strip():
-            spans.append(SentenceSpan(start=start, end=end))
-    if not spans and text.strip():
-        spans.append(SentenceSpan(0, len(text)))
-    return spans
-
-
 class ReadAloudUnavailableError(RuntimeError):
     pass
 
@@ -634,6 +619,7 @@ class ReadAloudController:
         self._pause_event = threading.Event()
         self._lock = threading.Lock()
         self._sentence_pause_ms = 0
+        self._punctuation_level = "some"
 
     @property
     def state(self) -> str:
@@ -677,6 +663,7 @@ class ReadAloudController:
         openvoice_rate: int = 180,
         openvoice_consent: bool = False,
         sentence_pause_ms: int = 0,
+        punctuation_level: str = "some",
         end: int | None = None,
         on_progress: Callable[[int, int], None] | None = None,
         on_state_change: Callable[[str], None] | None = None,
@@ -731,6 +718,7 @@ class ReadAloudController:
             raise ReadAloudUnavailableError(f"Unsupported read-aloud engine: {normalized_engine}")
         self.stop()
         self._sentence_pause_ms = max(0, int(sentence_pause_ms))
+        self._punctuation_level = normalize_punctuation_level(punctuation_level)
         spans = [span for span in sentence_spans(text) if span.end > cursor]
         if end is not None:
             spans = [span for span in spans if span.start < end]
@@ -894,6 +882,7 @@ class ReadAloudController:
                 sentence = text[span.start : span.end].strip()
                 if not sentence:
                     continue
+                sentence = verbalize_punctuation(sentence, self._punctuation_level)
                 if not first:
                     self._inter_sentence_pause()
                 first = False
@@ -926,6 +915,7 @@ class ReadAloudController:
             sentence = text[span.start : span.end].strip()
             if not sentence:
                 continue
+            sentence = verbalize_punctuation(sentence, self._punctuation_level)
             if not first:
                 self._inter_sentence_pause()
             first = False
@@ -1034,6 +1024,7 @@ class ReadAloudController:
             sentence = text[span.start : span.end].strip()
             if not sentence:
                 continue
+            sentence = verbalize_punctuation(sentence, self._punctuation_level)
             if not first:
                 self._inter_sentence_pause()
             first = False
@@ -1126,6 +1117,7 @@ class ReadAloudController:
             sentence = text[span.start : span.end].strip()
             if not sentence:
                 continue
+            sentence = verbalize_punctuation(sentence, self._punctuation_level)
             if not first:
                 self._inter_sentence_pause()
             first = False

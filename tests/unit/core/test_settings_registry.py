@@ -51,7 +51,6 @@ def test_set2_set3_set4_fields_are_registered() -> None:
         "quick_nav_min_chars",
         "announcement_throttle_ms",
         "read_aloud_sentence_pause_ms",
-        "dictation_sensitivity",
         # SET-3 verbosity and announcements
         "announcement_verbosity",
         "announce_wrap",

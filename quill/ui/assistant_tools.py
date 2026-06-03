@@ -481,7 +481,7 @@ class AccessibilityAgentDialog:
 
         self.dialog = wx.Dialog(
             parent,
-            title="Make This Document Accessible",
+            title="Accessibility Tune-Up",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
         self.dialog.SetSize((860, 620))
@@ -493,7 +493,7 @@ class AccessibilityAgentDialog:
             wx.StaticText(
                 panel,
                 label=(
-                    "The accessibility agent audited this document and proposes the "
+                    "Accessibility Tune-Up audited this document and proposes the "
                     "steps below. Checked steps are applied automatically; unchecked "
                     "steps need your review. Nothing changes until you choose Apply."
                 ),
@@ -568,7 +568,7 @@ class AccessibilityAgentDialog:
     def show_modal(self) -> None:
         self.dialog.CentreOnParent()
         try:
-            show_modal_dialog(self.dialog, "Make This Document Accessible")
+            show_modal_dialog(self.dialog, "Accessibility Tune-Up")
         finally:
             self.dialog.Destroy()
 
@@ -593,8 +593,8 @@ class AccessibilityAgentDialog:
         else:
             lines.append(f"Context: {step.before}")
             lines.append(
-                "This step needs your judgement, so the agent will not change it "
-                "automatically. Edit it in the document after closing this dialog."
+                "This step needs your judgement, so Accessibility Tune-Up will not "
+                "change it automatically. Edit it in the document after closing."
             )
         self.details.SetValue("\n".join(lines))
 
@@ -609,12 +609,12 @@ class AccessibilityAgentDialog:
             self.status.SetLabel(
                 "No automatic changes were applied. Checked steps may need your review."
             )
-            self._announce("Accessibility agent made no automatic changes")
+            self._announce("Accessibility Tune-Up made no automatic changes")
             return
         self.applied = True
         self._on_apply(result)
         self._announce(
-            f"Accessibility agent applied {len(result.applied)} "
+            f"Accessibility Tune-Up applied {len(result.applied)} "
             f"{'change' if len(result.applied) == 1 else 'changes'}"
         )
         self.dialog.EndModal(self._wx.ID_OK)
