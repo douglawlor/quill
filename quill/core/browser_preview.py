@@ -117,14 +117,36 @@ def _sanitize_preview_text(text: str) -> str:
     return text.translate(_PREVIEW_JUNK) if text else text
 
 
-def render_preview_body(text: str, kind: str) -> str:
+# Dark-theme stylesheet injected into the preview body fragment when the app is
+# in dark mode (issue #83). The preview is a separate WebView that otherwise
+# renders on a white background, so the split view ends up half dark, half
+# bright. Targeting ``html``/``body`` from a body-level <style> recolors the
+# whole pane; colors keep WCAG AA contrast (light text on a dark background).
+_PREVIEW_DARK_STYLE = (
+    "<style>"
+    "html,body{background:#1e1e1e !important;color:#e6e6e6 !important;}"
+    "a{color:#6cb6ff !important;}"
+    "pre,code{background:#2d2d2d !important;color:#e6e6e6 !important;}"
+    "blockquote{border-left:4px solid #555 !important;color:#c8c8c8 !important;}"
+    "th,td{border:1px solid #555 !important;}"
+    "th{background:#2d2d2d !important;}"
+    "hr{border-color:#555 !important;}"
+    "</style>"
+)
+
+
+def _maybe_dark(body: str, dark: bool) -> str:
+    return f"{_PREVIEW_DARK_STYLE}{body}" if dark else body
+
+
+def render_preview_body(text: str, kind: str, dark: bool = False) -> str:
     """Render just the body fragment (no <html> wrapper) for a preview surface."""
     text = _sanitize_preview_text(text)
     if kind == "markdown":
-        return _render_markdown(text)
+        return _maybe_dark(_render_markdown(text), dark)
     if kind == "html":
-        return _render_html(text)
-    return f"<pre>{html.escape(text)}</pre>"
+        return _maybe_dark(_render_html(text), dark)
+    return _maybe_dark(f"<pre>{html.escape(text)}</pre>", dark)
 
 
 def render_preview_html(title: str, text: str, kind: str, start_anchor: str | None = None) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from html import escape
 
 from quill.core.commands import Command
 from quill.core.features import FeatureManager
@@ -47,3 +48,73 @@ def build_keyboard_reference(
             lines.append(f"- `{binding}` — **{command.title}** (`{command.id}`)")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_keyboard_shortcut_html(
+    commands: list[Command], feature_manager: FeatureManager | None = None
+) -> str:
+    """Render every command and its current keybinding as an accessible HTML page.
+
+    Mirrors the grouping used by :func:`build_keyboard_reference`, but produces a
+    self-contained, screen-reader-friendly HTML table (one row per command) that
+    can be opened in a browser, similar to Reaper's keyboard shortcut export.
+    """
+
+    grouped: dict[str, list[Command]] = defaultdict(list)
+    if feature_manager is not None:
+        commands = feature_manager.visible_commands(commands)
+    for command in sorted(commands, key=lambda item: item.id):
+        section = command.id.split(".", 1)[0].capitalize()
+        grouped[section].append(command)
+
+    parts: list[str] = [
+        "<!DOCTYPE html>",
+        '<html lang="en">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<title>QUILL Keyboard Shortcuts</title>",
+        "<style>",
+        "body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:1.5rem;line-height:1.4;}",
+        "h1{font-size:1.5rem;}",
+        "h2{margin-top:1.75rem;font-size:1.2rem;}",
+        "table{border-collapse:collapse;width:100%;margin-top:0.5rem;}",
+        "caption{text-align:left;font-weight:bold;padding:0.25rem 0;}",
+        "th,td{border:1px solid #999;padding:0.4rem 0.6rem;text-align:left;vertical-align:top;}",
+        "th{background:#f0f0f0;}",
+        "tbody tr:nth-child(even){background:#f7f7f7;}",
+        "code{font-family:Consolas,Menlo,monospace;}",
+        "</style>",
+        "</head>",
+        "<body>",
+        "<h1>QUILL Keyboard Shortcuts</h1>",
+        "<p>Generated from the active command registry. "
+        "Commands without an assigned key are marked <em>Unassigned</em>.</p>",
+    ]
+    for section in sorted(grouped.keys()):
+        parts.append(f"<h2>{escape(section)}</h2>")
+        parts.append("<table>")
+        parts.append(f"<caption>{escape(section)} commands</caption>")
+        parts.append(
+            "<thead><tr>"
+            '<th scope="col">Keystroke</th>'
+            '<th scope="col">Command</th>'
+            '<th scope="col">Command ID</th>'
+            "</tr></thead>"
+        )
+        parts.append("<tbody>")
+        for command in grouped[section]:
+            binding = command.keybinding
+            keystroke = f"<code>{escape(binding)}</code>" if binding else "<em>Unassigned</em>"
+            parts.append(
+                "<tr>"
+                f"<td>{keystroke}</td>"
+                f"<td>{escape(command.title)}</td>"
+                f"<td><code>{escape(command.id)}</code></td>"
+                "</tr>"
+            )
+        parts.append("</tbody>")
+        parts.append("</table>")
+    parts.append("</body>")
+    parts.append("</html>")
+    return "\n".join(parts) + "\n"

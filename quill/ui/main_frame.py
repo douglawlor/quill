@@ -180,7 +180,10 @@ from quill.core.format_ops import (
     trim_trailing_whitespace,
 )
 from quill.core.glow import build_audit_report, build_fix_report, fix_text
-from quill.core.guides import build_keyboard_reference, build_welcome_guide
+from quill.core.guides import (
+    build_keyboard_shortcut_html,
+    build_welcome_guide,
+)
 from quill.core.heading_organizer import (
     HeadingBlock,
     apply_heading_organizer_edits,
@@ -6579,6 +6582,20 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
 
             list_box.Bind(wx.EVT_LISTBOX_DCLICK, on_insert)
 
+        def on_add_to_dictionary(_event: object) -> None:
+            self._add_word_to_dictionary_scope(word, 0)
+            dialog.Close()
+
+        # A non-standard "Add to Dictionary" action row sits above the
+        # standard dialog buttons so the looked-up word can be added to the
+        # personal dictionary directly from the results.
+        action_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        add_dict_btn = wx.Button(panel, label="Add to &Dictionary")
+        add_dict_btn.Bind(wx.EVT_BUTTON, on_add_to_dictionary)
+        action_sizer.Add(add_dict_btn, 0)
+        sizer.Add(action_sizer, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+        if items:
             btn_sizer = wx.StdDialogButtonSizer()
             insert_btn = wx.Button(panel, wx.ID_OK, "Insert")
             insert_btn.Bind(wx.EVT_BUTTON, on_insert)
@@ -9011,6 +9028,16 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
         next_state = (not current) if enabled is None else enabled
         self.settings.theme = "dark" if next_state else "system"
         self._apply_theme(self.settings.theme)
+        # Re-render an open side preview so the WebView matches the editor's
+        # theme instead of staying light in dark mode (issue #83).
+        tab = self._active_tab()
+        if (
+            tab is not None
+            and getattr(tab, "preview", None) is not None
+            and getattr(tab, "splitter", None) is not None
+            and tab.splitter.IsSplit()
+        ):
+            self._update_side_preview(tab)
         self._set_status("Dark mode on" if next_state else "Dark mode off")
 
     def toggle_persistent_undo(self, enabled: bool | None = None) -> None:
@@ -10919,52 +10946,106 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
             ("QUILL Quick Nav: Skip Forward Past Container", "quill.quick_nav.skip_forward"),
             ("QUILL Quick Nav: Skip Backward Past Container", "quill.quick_nav.skip_backward"),
         ]
-        command_choices = [
-            f"{command.title} ({command.id})"
+        entries: list[tuple[str, str]] = [
+            (command.title, command.id)
             for command in self.commands.list()
             if not command.id.startswith("tools.keymap_editor")
         ]
-        command_choices.extend(f"{title} ({command_id})" for title, command_id in quick_nav_actions)
-        if not command_choices:
+        entries.extend(quick_nav_actions)
+        if not entries:
             self._set_status("No commands available for keymap editing")
             return
-        command_ids: dict[str, str] = {
-            choice: choice.rsplit("(", 1)[1].rstrip(")") for choice in command_choices
-        }
-        with wx.SingleChoiceDialog(
-            self.frame,
-            "Choose command to rebind:",
-            "Keymap Editor",
-            choices=command_choices,
-        ) as command_dialog:
-            if self._show_modal_dialog(command_dialog, "Keymap Editor") != wx.ID_OK:
+
+        dialog = wx.Dialog(self.frame, title="Keymap Editor", size=(640, 480))
+        panel = wx.Panel(dialog)
+        root = wx.BoxSizer(wx.VERTICAL)
+        root.Add(
+            wx.StaticText(
+                panel,
+                label=(
+                    "Select a command and choose Edit to change its keybinding. "
+                    "The current key (or 'Unassigned') is shown for each command. "
+                    "Choose OK to return to the editor."
+                ),
+            ),
+            0,
+            wx.ALL | wx.EXPAND,
+            8,
+        )
+        listbox = wx.ListBox(panel, style=wx.LB_SINGLE)
+        root.Add(listbox, 1, wx.ALL | wx.EXPAND, 8)
+        controls = wx.BoxSizer(wx.HORIZONTAL)
+        edit_button = wx.Button(panel, label="&Edit Keybinding...")
+        controls.Add(edit_button, 0, wx.RIGHT, 8)
+        root.Add(controls, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+        buttons = dialog.CreateButtonSizer(wx.OK)
+        if buttons is not None:
+            ok_button = dialog.FindWindowById(wx.ID_OK)
+            if ok_button is not None:
+                ok_button.SetDefault()
+            root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+        apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+        panel.SetSizer(root)
+        outer = wx.BoxSizer(wx.VERTICAL)
+        outer.Add(panel, 1, wx.EXPAND)
+        dialog.SetSizerAndFit(outer)
+
+        def refresh_list(keep: int | None = None) -> None:
+            labels = [
+                f"{title} — {self._binding_for(command_id) or 'Unassigned'}"
+                for title, command_id in entries
+            ]
+            listbox.Set(labels)
+            if keep is not None and 0 <= keep < len(entries):
+                listbox.SetSelection(keep)
+
+        def edit_selected(_event: object = None) -> None:
+            selected = listbox.GetSelection()
+            if selected == wx.NOT_FOUND:
+                self._set_status("Select a command to edit")
                 return
-            selected = command_dialog.GetStringSelection()
-        command_id = command_ids[selected]
-        current_binding = self._binding_for(command_id) or ""
-        with wx.TextEntryDialog(
-            self.frame,
-            "Enter new keybinding (example: Ctrl+Shift+K):",
-            "Keymap Editor",
-            value=current_binding,
-        ) as binding_dialog:
-            if self._show_modal_dialog(binding_dialog, "Keymap Editor") != wx.ID_OK:
-                return
-            new_binding = binding_dialog.GetValue().strip()
+            title, command_id = entries[selected]
+            current_binding = self._binding_for(command_id) or ""
+            with wx.TextEntryDialog(
+                dialog,
+                f"Enter new keybinding for {title} (example: Ctrl+Shift+K):",
+                "Edit Keybinding",
+                value=current_binding,
+            ) as binding_dialog:
+                if self._show_modal_dialog(binding_dialog, "Edit Keybinding") != wx.ID_OK:
+                    return
+                new_binding = binding_dialog.GetValue().strip()
+            if self._apply_keymap_binding(command_id, new_binding):
+                refresh_list(keep=selected)
+
+        edit_button.Bind(wx.EVT_BUTTON, edit_selected)
+        listbox.Bind(wx.EVT_LISTBOX_DCLICK, edit_selected)
+        refresh_list(keep=0)
+
+        self._show_modal_dialog(dialog, "Keymap Editor")
+        dialog.Destroy()
+
+    def _apply_keymap_binding(self, command_id: str, new_binding: str) -> bool:
+        """Validate and persist a new keybinding. Returns True when applied.
+
+        Shared by the Keymap Editor dialog so a single edit returns to the
+        command list (issue #117) rather than dismissing the editor entirely.
+        """
+        wx = self._wx
         if not new_binding:
             self._show_message_box(
                 "Keybinding cannot be blank.",
                 "Keymap Editor",
                 wx.ICON_ERROR | wx.OK,
             )
-            return
+            return False
         if self._parse_keybinding(new_binding) is None:
             self._show_message_box(
                 "Keybinding format is invalid.",
                 "Keymap Editor",
                 wx.ICON_ERROR | wx.OK,
             )
-            return
+            return False
         if command_id.startswith("quill.quick_nav."):
             normalized = new_binding.strip().upper()
             quick_nav_valid = (len(normalized) == 1) or (normalized == "TAB")
@@ -10974,7 +11055,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
                     "Keymap Editor",
                     wx.ICON_ERROR | wx.OK,
                 )
-                return
+                return False
         conflict = find_keymap_conflict(self.keymap, command_id, new_binding)
         if conflict:
             self._show_message_box(
@@ -10983,12 +11064,13 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
                 wx.ICON_WARNING | wx.OK,
             )
             self._set_status("Keymap edit cancelled")
-            return
+            return False
         self.keymap[command_id] = new_binding
         save_keymap(self.keymap)
         self._mark_keyboard_pack_custom()
         self._reload_shortcuts_from_keymap()
         self._set_status(f"Updated keybinding for {command_id}")
+        return True
 
     def open_status_bar_settings(self) -> None:
         wx = self._wx
@@ -11385,15 +11467,27 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
         self._set_status("Opened welcome guide")
 
     def open_keyboard_reference(self) -> None:
-        reference = build_keyboard_reference(self.commands.list(), self.features)
-        self._create_document_tab(
-            Document(text=reference, path=None, modified=False),
-            select=True,
-        )
-        self._location_ring = LocationRing()
-        self._location_ring.record(0)
-        self._refresh_title()
-        self._set_status("Opened keyboard reference")
+        """Open an HTML table of every defined keyboard shortcut in the browser.
+
+        Similar to Reaper's keyboard shortcut export: because QUILL is highly
+        configurable, this renders the live keymap as a self-contained, screen
+        reader-friendly HTML table that opens in the default browser.
+        """
+        html = build_keyboard_shortcut_html(self.commands.list(), self.features)
+        target_dir = app_data_dir() / "keyboard-shortcuts"
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / "keyboard-shortcuts.html"
+            temp_path = target_path.with_suffix(".tmp")
+            temp_path.write_text(html, encoding="utf-8")
+            os.replace(temp_path, target_path)
+        except OSError as error:
+            self._set_status(f"Could not write keyboard reference: {error}")
+            return
+        if webbrowser.open(target_path.as_uri()):
+            self._set_status("Opened keyboard reference in browser")
+        else:
+            self._set_status(f"Keyboard reference saved to {target_path}")
 
     def open_user_guide(self) -> None:
         """Open the bundled user guide as a new document tab.
@@ -18788,7 +18882,7 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
         kind = guess_preview_kind(tab.document.path, text)
         anchor = preview_anchor_for_text(text, tab.editor.GetInsertionPoint(), kind)
         title = f"{tab.document.name or 'Preview'} - Preview"
-        body = render_preview_body(text, kind)
+        body = render_preview_body(text, kind, dark=self._preview_is_dark())
         from quill.ui.preview_dialog import MarkdownPreviewDialog
 
         MarkdownPreviewDialog(self.frame, title, body, anchor).show()
@@ -18866,7 +18960,16 @@ class MainFrame(ImageCaptureMixin, BrowseModeMixin, EdSharpActionsMixin, EdSharp
     def _update_side_preview(self, tab) -> None:
         text = tab.editor.GetValue()
         kind = guess_preview_kind(tab.document.path, text)
-        tab.preview.update(render_preview_body(text, kind))
+        tab.preview.update(render_preview_body(text, kind, dark=self._preview_is_dark()))
+
+    def _preview_is_dark(self) -> bool:
+        """Whether preview surfaces should render with the dark theme (issue #83).
+
+        Dark mode themes the wx editor control; the preview is a separate
+        WebView that otherwise stays light, leaving the split view half dark and
+        half bright. Mirror the editor's dark state so both panes match.
+        """
+        return getattr(self.settings, "theme", "system") == "dark"
 
     def _refresh_browser_preview(self) -> None:
         session = self._browser_preview_session

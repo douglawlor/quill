@@ -1427,12 +1427,12 @@ class AssistantConnectionDialog:
         ("off", "Off"),
         ("ollama", "Ollama (local)"),
         ("openai", "OpenAI"),
+        ("custom", "OpenAI-compatible (base URL + key + model)"),
         ("claude", "Claude"),
         ("openrouter", "OpenRouter"),
         ("gemini", "Google Gemini"),
         ("azure_openai", "Microsoft Azure OpenAI"),
         ("ollama_cloud", "Ollama Cloud (API key)"),
-        ("custom", "Custom OpenAI-compatible (advanced)"),
     )
 
     def __init__(self, parent: object) -> None:

@@ -75,6 +75,7 @@ or the command palette (`Ctrl+Shift+P`).
 - [ ] Spell Check: `F7`
 - [ ] Misspelling List: `Alt+Shift+L`
 - [ ] Thesaurus: `Shift+F7`
+- [ ] Look Up (definitions/synonyms, with Add to Dictionary): editor context menu (`Shift+F10`) > Look Up
 
 ## E. Tools: accessibility
 
@@ -118,6 +119,7 @@ or the command palette (`Ctrl+Shift+P`).
 ## K. Tools: keyboard
 
 - [ ] Keymap Editor: via Tools menu
+- [ ] Edit Keybinding (text entry, nested in Keymap Editor): Edit Keybinding... button or double-click within Keymap Editor
 - [ ] Export Keymap: via Tools menu
 - [ ] Import Keymap: via Tools menu
 
