@@ -410,7 +410,7 @@ This table is the execution source of truth. Update Status as work progresses. S
 | SEC-3 | Whitelist OCR language codes | Security | S | Done | `validate_ocr_language` enforces the Tesseract code grammar (lowercase ISO segments with optional script suffix, joined by `+`); option-injection like `--config` or `-psm` and any malformed code is rejected with a clear message before reaching the CLI; tests cover accepted and rejected shapes. |
 | SEC-5 | Explicit TLS verification on all network calls | Security | S | Done | A shared `verified_ssl_context()` (certifi-aware, `CERT_REQUIRED`, `check_hostname` on) backs AI, update, model-download, and DECTALK-download requests; HTTPS endpoints always pass it while local HTTP loopback does not; an audit test asserts no `_create_unverified_context` or `CERT_NONE` or disabled `check_hostname` anywhere in the package. |
 | SEC-6 | Verify checksums for downloaded binaries and models | Security | M | Todo | DECtalk runtime and GGUF downloads are checksum-verified before use; failure aborts with a clear message. |
-| SEC-8 | Gate plugin loading behind off-by-default experimental flag | Security | S | Todo | No third-party plugin loads in a default build; flag is documented as experimental. |
+| SEC-8 | Gate plugin loading behind off-by-default experimental flag | Security | S | Done | No third-party plugin loads in a default build; flag is documented as experimental. **Delivered:** `quill/plugins/__init__.py` exposes `third_party_plugins_enabled(features)` and `load_plugins(features)`, which return no plugins unless the `core.third_party_plugins` feature is enabled. That feature is defined `locked_off=True` (maturity `experimental`) in `quill/core/features.py`, so a default 1.0 build never loads third-party plugin code into the process. Tests in `tests/unit/core/test_plugins.py` cover the locked-off default (empty load), the gate helper, and the enabled path. |
 | SEC-9 | Resource limits for the Python sandbox | Security | M | Todo | A wall-clock and memory limit terminate runaway transforms; termination is announced; test included. |
 | CQ-7 | Scoped strict mypy in CI on every pull request | Code quality | S | Done | A `scoped-strict-typing` job in Security CI runs `mypy quill\core quill\io` on every push and PR and blocks merge on any error; the scoped command is documented in CONTRIBUTING. The full TYPE backlog was cleared so the gate currently reports zero errors across 95 source files. |
 | PERF-8 | Document and enforce scoped type-check command | Performance | S | Done | CONTRIBUTING specifies `mypy quill\core quill\io` as the only recommended type-check command and explains why the whole-tree scan is excluded; no unscoped scan is recommended anywhere. |
@@ -561,7 +561,7 @@ This table is the execution source of truth. Update Status as work progresses. S
 | FEAT-10 | Searchable Sticky Notes vault | Features | M | Todo | Vault is searchable and pageable; capture confirms. |
 | FEAT-11 | Status bar label and persistence polish | Features | S | Todo | Every cell announces; layout persists and announces. |
 | SEC-4 | Document cwd safety for safe_subprocess | Security | S | Done | Callers cannot point cwd outside expected directories; documented and tested. `run_subprocess_safely` documents the contract and validates `cwd` is an existing directory (with `args`/executable checks); covered with SEC-15. |
-| SEC-7 | Forget key command and shared-account note | Security | S | Todo | A command clears both secret stores and announces; limitation documented. |
+| SEC-7 | Forget key command and shared-account note | Security | S | Done | A command clears both secret stores and announces; limitation documented. **Delivered:** `clear_assistant_api_key()` in `quill/core/assistant_ai.py` removes the key from both persistence layers (the Windows Credential Manager entry and the DPAPI-protected fallback file) and reports whether a key was present. `MainFrame._forget_assistant_api_key` adds a **Forget API Key** item to the AI menu that confirms (`wx.YES_NO | wx.ICON_WARNING`), clears both stores, and announces the outcome ("forgotten" vs "no stored key"); the shared-account caveat is in the confirm copy. Tests: `tests/unit/core/test_assistant_ai.py` (both-store clear, present/absent) and `tests/unit/ui/test_main_frame_forget_key.py` (menu item present, bound, handler clears both stores). |
 | AI-1 | Streaming response UI | AI | M | Done | Ask Quill chat replies now stream incrementally: `generate_assistant_response_stream` (in `assistant_ai.py`) yields token deltas per provider, the `AIBackend.respond_stream` interface carries them to the UI, and the chat surface announces throttled, accessible progress through the assertive `set_status` aria-live region while building the transcript, then appends the final answer as one `append_message`. Because the external `AccessibleChatView` supports no in-place token mutation, streaming is realized as throttled status announcements plus a single final transcript append (so the screen reader hears progress without being flooded), with a clean non-streaming fallback. Covered by `tests/unit/core/ai/test_streaming.py` and `test_streaming_backend.py`. |
 | POD-3 | Podcast transcript: Reading and reviewing | Docs | S | Todo | Transcript passes lint; ships in all formats. |
 | POD-4 | Podcast transcript: On-device AI | Docs | S | Todo | As above. |
@@ -756,10 +756,10 @@ These extend the section 14 tracker. Priorities follow the same scheme. The conf
 | SEC-11 | Decompression-bomb limits for ZIP formats | Security | S | Done | A cumulative uncompressed-size cap aborts oversized archives with a clear message; test included. |
 | SEC-12 | Document and reduce PATH-hijack exposure for tool discovery | Security | S | Todo | Bundled tool paths are preferred; the residual risk is documented. |
 | SEC-13 | Broaden diagnostics secret redaction | Security | S | Done | Redaction covers token, password, and NAME_KEY assignment patterns; test asserts no secret leaks. |
-| SEC-14 | Python sandbox memory and CPU limits | Security | M | Todo | Runaway transforms are terminated by memory and wall-clock limits; payload is not exposed via the environment where avoidable; test included. (Extends SEC-9.) |
+| SEC-14 | Python sandbox memory and CPU limits | Security | M | Done | Runaway transforms are terminated by memory and wall-clock limits; payload is not exposed via the environment where avoidable; test included. (Extends SEC-9.) **Delivered:** `run_python_sandbox(...)` in `quill/core/python_sandbox.py` now delivers the user payload as a base64-encoded JSON blob over the child's stdin (`input=`) instead of an environment variable, and forwards only a minimal env allowlist. The bootstrap applies resource limits before running user code: on Windows a Job Object caps process memory (`JOBOBJECT_EXTENDED_LIMIT_INFORMATION` with `JOB_OBJECT_LIMIT_PROCESS_MEMORY`, kernel32 functions declared with explicit `restype`/`argtypes` so the 64-bit HANDLE is not truncated); on POSIX `setrlimit` caps `RLIMIT_AS` and `RLIMIT_CPU`. A new `memory_limit_mb` parameter (default 512) and a CPU budget of `timeout + 1s` are passed in the payload. Tests (6) in `tests/unit/core/test_python_sandbox.py` assert the payload is delivered via stdin (never `QUILL_SANDBOX_PAYLOAD` in env), the payload carries the resource limits, and — on Windows — a 64 MB cap actually fails a ~60 M-int allocation. |
 | SEC-15 | safe_subprocess validates cwd and wraps OSError | Security | S | Done | `cwd` and executable are validated; `OSError` and `FileNotFoundError` are caught and surfaced clearly; test included. (Extends SEC-4.) Empty args and non-directory `cwd` raise `ValueError`; launch `OSError` is logged and re-raised with the tool name; five new tests in `tests/stability/test_stability.py`. |
 | SEC-16 | Validate credential and keychain inputs | Security | S | Done | `target_name`, account, and service match a safe pattern; macOS `set_secret` checks the return code; tests included. A shared `validate_credential_identifier` (in `quill/platform/credential_validation.py`) rejects empty, over-long, control-character, and leading-dash identifiers; wired into the Windows credential manager and the macOS keychain; six new unit tests. |
-| SEC-17 | Document or escape shell-integration command | Security | S | Todo | The registry command path is documented as internal-only or escaped if user input is ever accepted. |
+| SEC-17 | Document or escape shell-integration command | Security | S | Done | The registry command path is documented as internal-only or escaped if user input is ever accepted. **Delivered:** `verb_launcher_command(action)` in `quill/platform/windows/shell_integration.py` carries a SEC-17 security contract docstring stating the returned string is written verbatim into the Windows registry as a shell command and must never embed untrusted free-form input. The executable is derived from `sys.executable` (never user-supplied), and `action` is validated against the closed `verb_actions()` registry — an unknown action raises `ValueError` rather than reaching the registry. Tests in `tests/unit/core/test_shell_integration.py` cover the validated command shape and the rejection of an unknown action. |
 
 #### P1 and P2 quality, typing, performance, IO, docs, tests (new)
 
@@ -1320,15 +1320,15 @@ This table tracks how many of the backlog IDs each tier names are still open. It
 | --- | --- | --- | --- | --- | --- |
 | Tier 1 | Protect users and unlock the team | 23 | 23 | 0 | (complete) |
 | Tier 2 | Flagship experience | 60 | 57 | 3 | AI-19, SHELL-2, SHELL-3 |
-| Tier 4 | Structural health and performance | 31 | 12 | 19 | DLG-3, CQ-16, CQ-1, DLG-2, PERF-1..3, PERF-9..14, GATE-10, SEC-6, SEC-7, SEC-8, SEC-14, SEC-17 |
+| Tier 4 | Structural health and performance | 31 | 16 | 15 | DLG-3, CQ-16, CQ-1, DLG-2, PERF-1..3, PERF-9..14, GATE-10, SEC-6 |
 | Tier 6 | Documentation and learning surface | 34 | 3 | 31 | DOC-14..18, DOC-11, DOC-12, DOC-1..8, POD-1..5, TUT-1..7, CQ-11, CQ-14, CQ-23, CQ-24, LINUX-2 |
-| **1.0 subtotal** | Tiers 1, 2, 4, 6 (the QUILL 1.0 scope) | **148** | **95** | **53** | |
+| **1.0 subtotal** | Tiers 1, 2, 4, 6 (the QUILL 1.0 scope) | **148** | **99** | **49** | |
 | Tier 3 (2.0) | GLOW accessibility engine — deferred to QUILL 2.0 | 8 | 0 | 8 | GLOW-1..7, WATCH-8 |
 | Tier 5 (2.0) | BITS Whisperer transcription — deferred to QUILL 2.0 | 28 | 0 | 28 | BW-1..10, WATCH-9, NAV-10, AI-11, AI-12, AI-18, FEAT-12..18, LINUX-1, ECO-1, L10N-1, COLLAB-1 |
 | AX (2.0) | Accessibility Agents / axe-core engine — deferred to QUILL 2.0 | 6 | 0 | 6 | AX-A..F |
 | EDS | EdSharp feature parity — delivered in QUILL 1.0 | 21 | 21 | 0 | (complete) |
 | **2.0 subtotal** | GLOW + BITS Whisperer + axe-core (EdSharp parity now delivered) | **63** | **21** | **42** | |
-| **Total** | All tiers (1.0 + 2.0) | **211** | **116** | **95** | |
+| **Total** | All tiers (1.0 + 2.0) | **211** | **120** | **91** | |
 
 > Deferral note (2026-06-02): per maintainer direction, the GLOW accessibility
 > engine (Tier 3, including the WATCH-8 GLOW watch action), the BITS Whisperer
@@ -1355,7 +1355,7 @@ list.
 | Tier | Status | Feature IDs |
 | --- | --- | --- |
 | Tier 2 — Flagship | In progress | AI-19, SHELL-2, SHELL-3 |
-| Tier 4 — Structural health | In progress / Todo | DLG-3, CQ-1 (in progress), CQ-16, DLG-2, GATE-10, PERF-1, PERF-2, PERF-3, PERF-9, PERF-10, PERF-11, PERF-12, PERF-13, PERF-14, SEC-6, SEC-7, SEC-8, SEC-14, SEC-17 |
+| Tier 4 — Structural health | In progress / Todo | DLG-3, CQ-1 (in progress), CQ-16, DLG-2, GATE-10, PERF-1, PERF-2, PERF-3, PERF-9, PERF-10, PERF-11, PERF-12, PERF-13, PERF-14, SEC-6 |
 | Tier 6 — Documentation | Todo | DOC-1, DOC-2, DOC-3, DOC-4, DOC-5, DOC-6, DOC-7, DOC-8, DOC-11, DOC-12, DOC-14, DOC-15, DOC-16, DOC-17, DOC-18, POD-1, POD-2, POD-3, POD-4, POD-5, TUT-1, TUT-2, TUT-3, TUT-4, TUT-5, TUT-6, TUT-7, CQ-11, CQ-23, CQ-24, LINUX-2 |
 
 **Completed (QUILL 1.0 — Done)**
@@ -1364,7 +1364,7 @@ list.
 | --- | --- |
 | Tier 1 — Protect users | BUG-1, BUG-2, BUG-3, BUG-4, BUG-5, BUG-6, BUG-7, SEC-1, SEC-10, SEC-11, SEC-13, GATE-1, GATE-2, GATE-3, GATE-4, GATE-5, GATE-6, GATE-7, GATE-8, GATE-9, FLAG-1, FLAG-2 |
 | Tier 2 — Flagship | QK-1, QK-2, QK-3, QK-4, QK-5, QK-9, NAV-1, NAV-4, NAV-5, SEL-1, SEL-2, SEL-3, AI-1, AI-6, AI-7, AI-13, AI-14, AI-15, AI-16, AI-17, AI-21, AI-23, WATCH-1, WATCH-2, WATCH-3, WATCH-4, WATCH-5, WATCH-6, WATCH-7, SET-1, SET-4, SET-5, SET-6, SET-7, SHARE-1, SHARE-2, SHARE-3, FLAG-3, FLAG-4, MENU-3, MENU-1, MENU-5, DICT-1, CTX-1, DICT-2, FEAT-19, DLG-1, OCR-1, OCR-2, OCR-3, OCR-4, OCR-5, A11Y-4, SET-2, SET-3, AGENT-1, SHELL-1 |
-| Tier 4 — Structural health | CQ-7, CQ-12, CQ-13, CQ-14, CQ-15, CQ-17, CQ-18, CQ-19, CQ-20, CQ-21, CQ-22, GATE-11, PERF-8, SEC-4, SEC-15, SEC-16, TYPE-1, TYPE-2, TYPE-3, TYPE-4, TYPE-5, TYPE-6, TYPE-7, TYPE-8 |
+| Tier 4 — Structural health | CQ-7, CQ-12, CQ-13, CQ-14, CQ-15, CQ-17, CQ-18, CQ-19, CQ-20, CQ-21, CQ-22, GATE-11, PERF-8, SEC-4, SEC-7, SEC-8, SEC-14, SEC-15, SEC-16, SEC-17, TYPE-1, TYPE-2, TYPE-3, TYPE-4, TYPE-5, TYPE-6, TYPE-7, TYPE-8 |
 | EdSharp parity (delivered in 1.0) | EDS-1, EDS-2, EDS-3, EDS-4, EDS-5, EDS-6, EDS-7, EDS-8, EDS-9, EDS-10, EDS-11, EDS-12, EDS-13, EDS-14, EDS-15, EDS-16, EDS-17, EDS-18, EDS-19, EDS-20, EDS-21 |
 
 **Deferred to QUILL 2.0 (not in the 1.0 lists)**
