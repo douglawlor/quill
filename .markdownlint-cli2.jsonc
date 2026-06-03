@@ -1,0 +1,53 @@
+// QUILL markdownlint configuration.
+//
+// Single source of truth for Markdown linting, read by BOTH the markdownlint
+// CLI (markdownlint-cli2) and the VS Code markdownlint extension, so the
+// Problems pane and CI agree. Rationale for each disabled rule is inline.
+{
+  "config": {
+    "default": true,
+
+    // MD013 line-length: QUILL's docs are intentionally prose-heavy with long
+    // narrative lines and wide Markdown tables (the ROADMAP backlog, the PRD
+    // spec tables). Hard-wrapping them would harm diffability and readability
+    // for no reader benefit, so line length is not enforced.
+    "MD013": false,
+
+    // MD033 no-inline-html: the docs use angle-bracket placeholder notation in
+    // prose (for example <level>, <ordinal>, <path>, <ext>) which markdownlint
+    // misreads as HTML elements. This notation is deliberate, so inline HTML is
+    // permitted.
+    "MD033": false,
+
+    // MD036 no-emphasis-as-heading: the living lists deliberately use bold text
+    // as inline sub-labels (for example **Work in progress (QUILL 1.0)**) inside
+    // a section rather than as document-outline headings. Promoting them to real
+    // headings would distort the generated table of contents.
+    "MD036": false,
+
+    // MD041 first-line-heading: the GitHub pull-request template
+    // (.github/pull_request_template.md) deliberately opens with a "## Summary"
+    // section rather than a document title, which is the conventional GitHub
+    // template shape. Requiring a top-level heading there would fight the
+    // platform convention, so the first-line-heading rule is not enforced.
+    "MD041": false,
+
+    // MD060 table-column-style: a newer, purely cosmetic rule about pipe
+    // spacing ("compact" vs padded). QUILL tables are pandoc-rendered and the
+    // spacing carries no semantic meaning, so it is not enforced.
+    "MD060": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [
+    ".history",
+    "node_modules",
+    ".venv",
+    "build",
+    "release-dist-*",
+    "release-artifacts*",
+    "installer-smoke*",
+    "windows-distribution",
+    "kokoro",
+    "docs/site"
+  ]
+}

@@ -240,9 +240,9 @@
 <h1 id="quill-product-requirements-document">Quill: Product Requirements
 Document</h1>
 <h2
-id="a-magical-screen-reader-first-writing-and-document-environment-built-in-wxpython.">A
+id="a-magical-screen-reader-first-writing-and-document-environment-built-in-wxpython">A
 magical, screen-reader-first writing and document environment, built in
-wxPython.</h2>
+wxPython</h2>
 <p>Status: This document specifies Quill <strong>1.0</strong>. The
 current shipping build is <strong>0.1.5 Beta</strong>, which implements
 the v1.0 checklist (section 21.1–21.16) plus the post-1.0 foundation
@@ -1105,9 +1105,9 @@ navigates by column, <code>Ctrl+Shift+Down</code> summarises totals</td>
 <td><strong>OpenDocument</strong></td>
 <td><code>odt</code>, <code>odp</code>, <code>odg</code>,
 <code>ods</code></td>
-<td>Common in EU public sector and academia; Direct extractor via
-<code>odfpy</code>; structure preserved as headings, lists, tables</td>
-<td></td>
+<td>Common in EU public sector and academia</td>
+<td>Direct extractor via <code>odfpy</code>; structure preserved as
+headings, lists, tables</td>
 </tr>
 <tr>
 <td><strong>Apple iWork</strong></td>
@@ -1122,10 +1122,9 @@ complex layouts</td>
 <td><code>ppt</code>, <code>xls</code>, <code>wpd</code>,
 <code>wps</code>, <code>wri</code>,
 <code>sxw</code>/<code>sxc</code>/<code>sxi</code></td>
-<td>Older institutional archives still circulate; Best-effort local
-readers; AI escalation by sending the original file when local reading
-fails</td>
-<td></td>
+<td>Older institutional archives still circulate</td>
+<td>Best-effort local readers; AI escalation by sending the original
+file when local reading fails</td>
 </tr>
 <tr>
 <td><strong>E-books (proprietary)</strong></td>
@@ -1140,9 +1139,9 @@ bundled minimal readers for the open formats</td>
 <tr>
 <td><strong>Comics with text</strong></td>
 <td><code>cbz</code>, <code>cbr</code></td>
-<td>Educational comics and graphic textbooks ship in CBZ; Extract pages,
-OCR each, present per-page text with page navigation</td>
-<td></td>
+<td>Educational comics and graphic textbooks ship in CBZ</td>
+<td>Extract pages, OCR each, present per-page text with page
+navigation</td>
 </tr>
 <tr>
 <td><strong>DjVu and XPS</strong></td>
@@ -1387,53 +1386,86 @@ linear text in <code>wx.TextCtrl</code> for guaranteed screen-reader
 compatibility with NVDA, JAWS, and Narrator.</p>
 <h4 id="b.2-supported-features-what-gets-extracted">5.3b.2 Supported
 Features (What Gets Extracted)</h4>
-<p><strong>Core content (via Pandoc extraction):</strong> - ✅ Body text
-and paragraphs - ✅ Headings (levels 1–6) → rendered as Markdown
-<code>#</code>, <code>##</code>, <code>###</code>, etc. - ✅ Bullet and
-numbered lists (nested up to 3 levels) - ✅ Hyperlinks → preserved as
-plain-text URLs or Markdown links - ✅ Comments and tracked changes →
-extracted as plain text with attributions - ✅ Footnotes and endnotes →
-appended as footnote text - ✅ Tables → converted to plain-text table
-representation (Markdown or ASCII) - ✅ Page breaks → rendered as visual
-markers <code>--- Page Break ---</code> - ✅ Basic structural integrity:
-proper paragraph separation, list context</p>
-<p><strong>Conversion support (via Pandoc bridge):</strong> - ✅ Word →
-Markdown (for universal editing) - ✅ Word → HTML (for preview/export) -
-✅ Word → Plain text - ✅ Word → RTF (via Pandoc if needed) - ✅
-Cross-format roundtrip: Markdown ↔︎ Word, HTML ↔︎ Word</p>
+<p><strong>Core content (via Pandoc extraction):</strong></p>
+<ul>
+<li>✅ Body text and paragraphs</li>
+<li>✅ Headings (levels 1–6) → rendered as Markdown <code>#</code>,
+<code>##</code>, <code>###</code>, etc.</li>
+<li>✅ Bullet and numbered lists (nested up to 3 levels)</li>
+<li>✅ Hyperlinks → preserved as plain-text URLs or Markdown links</li>
+<li>✅ Comments and tracked changes → extracted as plain text with
+attributions</li>
+<li>✅ Footnotes and endnotes → appended as footnote text</li>
+<li>✅ Tables → converted to plain-text table representation (Markdown
+or ASCII)</li>
+<li>✅ Page breaks → rendered as visual markers
+<code>--- Page Break ---</code></li>
+<li>✅ Basic structural integrity: proper paragraph separation, list
+context</li>
+</ul>
+<p><strong>Conversion support (via Pandoc bridge):</strong></p>
+<ul>
+<li>✅ Word → Markdown (for universal editing)</li>
+<li>✅ Word → HTML (for preview/export)</li>
+<li>✅ Word → Plain text</li>
+<li>✅ Word → RTF (via Pandoc if needed)</li>
+<li>✅ Cross-format roundtrip: Markdown ↔︎ Word, HTML ↔︎ Word</li>
+</ul>
 <p><strong>Metadata (stored in
-<code>Document.source_metadata</code>):</strong> - ✅ Document title,
-author, subject - ✅ Creation/modification dates - ✅ Word count, page
-count (if available) - ✅ Character encoding detection and preservation
-- ✅ Extraction engine name and version (Pandoc 3.1+) - ✅ Quality score
-(0–100) quantifying extraction fidelity</p>
+<code>Document.source_metadata</code>):</strong></p>
+<ul>
+<li>✅ Document title, author, subject</li>
+<li>✅ Creation/modification dates</li>
+<li>✅ Word count, page count (if available)</li>
+<li>✅ Character encoding detection and preservation</li>
+<li>✅ Extraction engine name and version (Pandoc 3.1+)</li>
+<li>✅ Quality score (0–100) quantifying extraction fidelity</li>
+</ul>
 <h4 id="b.3-unsupported-features-not-extracted-user-warned">5.3b.3
 Unsupported Features (Not Extracted, User Warned)</h4>
 <p><strong>Formatting (intentionally dropped for v1.0
-compatibility):</strong> - ❌ Font names, sizes, colors,
-bold/italic/underline - ❌ Paragraph alignment (left, center, right,
-justify) - ❌ Line spacing, paragraph spacing, indentation - ❌ Themes,
-master pages, custom styles - ❌ Watermarks, page backgrounds</p>
+compatibility):</strong></p>
+<ul>
+<li>❌ Font names, sizes, colors, bold/italic/underline</li>
+<li>❌ Paragraph alignment (left, center, right, justify)</li>
+<li>❌ Line spacing, paragraph spacing, indentation</li>
+<li>❌ Themes, master pages, custom styles</li>
+<li>❌ Watermarks, page backgrounds</li>
+</ul>
 <p><strong>Advanced structures (extracted with limitations or
-skipped):</strong> - ⚠️ <strong>Images</strong>: Filenames and captions
-only; image content is NOT OCR’d unless user opts in v1.1+ - ⚠️
-<strong>Charts</strong>: Extracted as text labels only; visual data is
-lost - ⚠️ <strong>Text boxes and shapes</strong>: Attempted extraction;
-may appear out of order or be skipped - ⚠️ <strong>Headers and
-footers</strong>: Extracted, appended as a section at end of document -
-⚠️ <strong>Columns</strong>: Flattened to single column; reading order
-may be unpredictable</p>
+skipped):</strong></p>
+<ul>
+<li>⚠️ <strong>Images</strong>: Filenames and captions only; image
+content is NOT OCR’d unless user opts in v1.1+</li>
+<li>⚠️ <strong>Charts</strong>: Extracted as text labels only; visual
+data is lost</li>
+<li>⚠️ <strong>Text boxes and shapes</strong>: Attempted extraction; may
+appear out of order or be skipped</li>
+<li>⚠️ <strong>Headers and footers</strong>: Extracted, appended as a
+section at end of document</li>
+<li>⚠️ <strong>Columns</strong>: Flattened to single column; reading
+order may be unpredictable</li>
+</ul>
 <p><strong>Security-sensitive (explicitly blocked or
-sanitized):</strong> - ❌ <strong>VBA macros</strong>: Silently ignored;
-Pandoc subprocess does not execute any code - ❌ Embedded executables or
-ActiveX controls - ❌ External links to remote templates or resources
-(not followed) - ❌ OLE embedded objects (attempted extraction of
-embedded text only)</p>
-<p><strong>Deferred to v1.1+ (not attempted in v1.0):</strong> - ❌
-Revision history or multi-user collaboration metadata - ❌ Form fields
-and fillable controls - ❌ Custom numbering or multi-level list hacks -
-❌ Mail merge fields - ❌ Document protection or permissions (file
-access checked by OS only)</p>
+sanitized):</strong></p>
+<ul>
+<li>❌ <strong>VBA macros</strong>: Silently ignored; Pandoc subprocess
+does not execute any code</li>
+<li>❌ Embedded executables or ActiveX controls</li>
+<li>❌ External links to remote templates or resources (not
+followed)</li>
+<li>❌ OLE embedded objects (attempted extraction of embedded text
+only)</li>
+</ul>
+<p><strong>Deferred to v1.1+ (not attempted in v1.0):</strong></p>
+<ul>
+<li>❌ Revision history or multi-user collaboration metadata</li>
+<li>❌ Form fields and fillable controls</li>
+<li>❌ Custom numbering or multi-level list hacks</li>
+<li>❌ Mail merge fields</li>
+<li>❌ Document protection or permissions (file access checked by OS
+only)</li>
+</ul>
 <h4 id="b.4-architecture-io-module-design">5.3b.4 Architecture: I/O
 Module Design</h4>
 <p><strong>New module: <code>quill/io/word.py</code></strong></p>
@@ -1502,23 +1534,35 @@ class="sourceCode python"><code class="sourceCode python"><span id="cb2-1"><a hr
 Graceful Cascade</h4>
 <p>Word extraction implements a three-tier fallback strategy to ensure
 the app never crashes on corrupted, malicious, or malformed files:</p>
-<p><strong>Tier 1: Pandoc (primary path)</strong> - Subprocess-isolated
-extraction via Pandoc 3.1+ - Timeout: 60 seconds (hard limit) - Success:
-<code>quality_score ≥ 60</code> - On failure → Tier 2</p>
-<p><strong>Tier 2: python-docx (fallback)</strong> - Basic
-paragraph/heading extraction only - No Pandoc dependency required -
-<code>quality_score ~40</code> (limited feature set) - Errors logged;
-user sees warning banner - On failure → Tier 3</p>
-<p><strong>Tier 3: Emergency UTF-8 read</strong> - Last-resort: read
-file as text - Returns garbled but won’t crash -
-<code>quality_score 0</code> - Clear error message: “Document could not
-be fully read. Try opening in Microsoft Word first.”</p>
+<p><strong>Tier 1: Pandoc (primary path)</strong></p>
+<ul>
+<li>Subprocess-isolated extraction via Pandoc 3.1+</li>
+<li>Timeout: 60 seconds (hard limit)</li>
+<li>Success: <code>quality_score ≥ 60</code></li>
+<li>On failure → Tier 2</li>
+</ul>
+<p><strong>Tier 2: python-docx (fallback)</strong></p>
+<ul>
+<li>Basic paragraph/heading extraction only</li>
+<li>No Pandoc dependency required</li>
+<li><code>quality_score ~40</code> (limited feature set)</li>
+<li>Errors logged; user sees warning banner</li>
+<li>On failure → Tier 3</li>
+</ul>
+<p><strong>Tier 3: Emergency UTF-8 read</strong></p>
+<ul>
+<li>Last-resort: read file as text</li>
+<li>Returns garbled but won’t crash</li>
+<li><code>quality_score 0</code></li>
+<li>Clear error message: “Document could not be fully read. Try opening
+in Microsoft Word first.”</li>
+</ul>
 <h4 id="b.6-user-facing-messaging-document-intake-report">5.3b.6
 User-Facing Messaging (Document Intake Report)</h4>
 <p>When opening a .docx or .doc file, Quill displays an in-app banner
 (stored in <code>source_metadata</code>, displayed by
 <code>main_frame.py</code>):</p>
-<pre><code>📄 Word Document Opened
+<pre class="text"><code>📄 Word Document Opened
 This document has been converted to plain text for editing in Quill.
 • Formatting (fonts, colors, styles) has been removed.
 • Tables and lists have been simplified for readability.
@@ -1541,25 +1585,39 @@ Formatting not preserved.”</p>
 Integration and Format Bridge</h4>
 <p>Pandoc is a universal document converter supporting 30+ input and
 output formats. Full integration enables:</p>
-<p><strong>Phase 1 (v1.0 — this release):</strong> - Pandoc reads .docx
-and .doc files - Export to Markdown, HTML, RTF via
-<code>File &gt; Save As</code> - Metadata extraction for document
-properties - Fallback pipeline: Pandoc → python-docx → plaintext</p>
-<p><strong>Phase 2 (v1.1):</strong> - Pandoc template engine for styled
-exports - Batch conversion: <code>Tools &gt; Convert Document</code> -
-Support for .odt (LibreOffice), .tex (LaTeX) - Optional: OCR images in
-Word documents (cloud service or local Tesseract)</p>
-<p><strong>Phase 3 (v1.2+):</strong> - Pandoc filters for custom
-transformations - Plugin API for format extension</p>
-<p><strong>Installation and resource limits:</strong> - Pandoc is
-bundled with Quill on Windows (or installed via
-<code>choco install pandoc</code>) - Subprocess isolation: Pandoc runs
-out-of-process; malicious code cannot harm Quill -
-<strong>Timeout</strong>: 60 seconds per document (hard limit) -
-<strong>Memory</strong>: Monitored via <code>psutil</code>; warns if
-&gt; 500 MB used during extraction - <strong>File size</strong>:
-Pre-check before extraction; if &gt; 100 MB, warn and offer async
-extraction</p>
+<p><strong>Phase 1 (v1.0 — this release):</strong></p>
+<ul>
+<li>Pandoc reads .docx and .doc files</li>
+<li>Export to Markdown, HTML, RTF via
+<code>File &gt; Save As</code></li>
+<li>Metadata extraction for document properties</li>
+<li>Fallback pipeline: Pandoc → python-docx → plaintext</li>
+</ul>
+<p><strong>Phase 2 (v1.1):</strong></p>
+<ul>
+<li>Pandoc template engine for styled exports</li>
+<li>Batch conversion: <code>Tools &gt; Convert Document</code></li>
+<li>Support for .odt (LibreOffice), .tex (LaTeX)</li>
+<li>Optional: OCR images in Word documents (cloud service or local
+Tesseract)</li>
+</ul>
+<p><strong>Phase 3 (v1.2+):</strong></p>
+<ul>
+<li>Pandoc filters for custom transformations</li>
+<li>Plugin API for format extension</li>
+</ul>
+<p><strong>Installation and resource limits:</strong></p>
+<ul>
+<li>Pandoc is bundled with Quill on Windows (or installed via
+<code>choco install pandoc</code>)</li>
+<li>Subprocess isolation: Pandoc runs out-of-process; malicious code
+cannot harm Quill</li>
+<li><strong>Timeout</strong>: 60 seconds per document (hard limit)</li>
+<li><strong>Memory</strong>: Monitored via <code>psutil</code>; warns if
+&gt; 500 MB used during extraction</li>
+<li><strong>File size</strong>: Pre-check before extraction; if &gt; 100
+MB, warn and offer async extraction</li>
+</ul>
 <h4 id="b.8-editable-rendering-protected-original">5.3b.8 Editable
 Rendering, Protected Original</h4>
 <p>Word files follow Quill’s principle: <strong>originals are read-only
@@ -1602,11 +1660,15 @@ class="sourceCode python"><code class="sourceCode python"><span id="cb4-1"><a hr
 <span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>        <span class="st">&quot;page_count&quot;</span>: <span class="dv">8</span>,</span>
 <span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>    },</span>
 <span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div>
-<p><strong>Quality score calculation (0–100):</strong> - Start at 100 -
-Subtract 5 per non-extracted image - Subtract 10 per text box with
-suspected out-of-order content - Subtract 15 if complex shapes or
-columns detected - Subtract 20 if corrupted sections skipped - Floor at
-0, never negative</p>
+<p><strong>Quality score calculation (0–100):</strong></p>
+<ul>
+<li>Start at 100</li>
+<li>Subtract 5 per non-extracted image</li>
+<li>Subtract 10 per text box with suspected out-of-order content</li>
+<li>Subtract 15 if complex shapes or columns detected</li>
+<li>Subtract 20 if corrupted sections skipped</li>
+<li>Floor at 0, never negative</li>
+</ul>
 <h4 id="b.10-risk-mitigation-and-safety">5.3b.10 Risk Mitigation and
 Safety</h4>
 <table>
@@ -1685,9 +1747,9 @@ heading that should be restyles</li>
 paragraphs appear without a heading, flag as “Consider adding structure”
 in extraction warnings</li>
 <li><strong>Repeated spaces for layout</strong>: Detect runs of 3+
-consecutive spaces used for visual alignment (e.g., “Qty: ___ Price:
-___“); flag as”Document uses spaces for layout, which may reflow
-unexpectedly in Quill”</li>
+consecutive spaces used for visual alignment (e.g.,
+<code>Qty: ___Price:___</code>); flag as “Document uses spaces for
+layout, which may reflow unexpectedly in Quill”</li>
 <li><strong>Repeated font families in paragraph</strong>: Track
 non-Arial fonts per paragraph; cap reporting at 3 example locations +
 summary count to avoid spam</li>
@@ -1783,7 +1845,7 @@ class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a hr
 <p><strong>User experience enhancement:</strong></p>
 <p>Instead of a flat banner, Quill displays diagnostics with
 context:</p>
-<pre><code>📄 Word Document Opened
+<pre class="text"><code>📄 Word Document Opened
 Extracted via Pandoc 3.1.0 | Quality: 78/100 (down from 85 due to structural issues)
 
 ✓ 8 pages extracted, 2,451 words
@@ -1891,21 +1953,30 @@ class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a hr
 <span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>    doc <span class="op">=</span> read_word_document(Path(<span class="st">&quot;tests/fixtures/word/malicious_macros.docx&quot;</span>))</span>
 <span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>    <span class="cf">assert</span> <span class="st">&quot;VBA&quot;</span> <span class="kw">not</span> <span class="kw">in</span> doc.text <span class="kw">and</span> <span class="st">&quot;Sub &quot;</span> <span class="kw">not</span> <span class="kw">in</span> doc.text</span></code></pre></div>
 <p><strong>Integration tests
-(<code>tests/integration/test_word_open.py</code>):</strong> - Open
-.docx via UI; verify text loads, no crash - Check source_metadata banner
-appears - Verify status bar shows correct word count, page count - Save
-extracted text back to .docx; verify roundtrip produces sensible output
-- Verify warning dialog appears before save</p>
+(<code>tests/integration/test_word_open.py</code>):</strong></p>
+<ul>
+<li>Open .docx via UI; verify text loads, no crash</li>
+<li>Check source_metadata banner appears</li>
+<li>Verify status bar shows correct word count, page count</li>
+<li>Save extracted text back to .docx; verify roundtrip produces
+sensible output</li>
+<li>Verify warning dialog appears before save</li>
+</ul>
 <p><strong>Accessibility tests
-(<code>tests/a11y/test_word_screen_reader.py</code>):</strong> -
-NVDA/JAWS reading of extracted text - Verify metadata banner is
-announced properly - Keyboard-only workflow: open → read → navigate →
-save</p>
+(<code>tests/a11y/test_word_screen_reader.py</code>):</strong></p>
+<ul>
+<li>NVDA/JAWS reading of extracted text</li>
+<li>Verify metadata banner is announced properly</li>
+<li>Keyboard-only workflow: open → read → navigate → save</li>
+</ul>
 <p><strong>Performance tests
-(<code>tests/perf/test_word_extraction_speed.py</code>):</strong> - Load
-5, 50, 500-page documents; measure extraction time and memory - Confirm
-60-second timeout stops runaway conversions - Verify UI remains
-responsive during extraction</p>
+(<code>tests/perf/test_word_extraction_speed.py</code>):</strong></p>
+<ul>
+<li>Load 5, 50, 500-page documents; measure extraction time and
+memory</li>
+<li>Confirm 60-second timeout stops runaway conversions</li>
+<li>Verify UI remains responsive during extraction</li>
+</ul>
 <h4 id="b.12-rollout-and-communication">5.3b.12 Rollout and
 Communication</h4>
 <p>Word documents should open through a direct/native Word-document path
@@ -1913,23 +1984,32 @@ by default when the local engine can handle them. If that path is
 unavailable or fails on a particular file, Quill should offer an
 explicit choice to fall back to extracted-text import so the user always
 knows which mode they are entering.</p>
-<p><strong>Pre-release (release notes):</strong> - Announce: “New:
-Microsoft Word support (v1.0)” - Link to knowledge base: “Opening Word
-Documents in Quill” - Highlight limitations: “Formatting is not
-preserved; use Save As for best results”</p>
-<p><strong>In-app messaging (on first Word document open):</strong> -
-Display metadata banner with quality score - Offer
-<code>[📖 Learn more]</code>, <code>[💾 Save as .txt]</code>,
+<p><strong>Pre-release (release notes):</strong></p>
+<ul>
+<li>Announce: “New: Microsoft Word support (v1.0)”</li>
+<li>Link to knowledge base: “Opening Word Documents in Quill”</li>
+<li>Highlight limitations: “Formatting is not preserved; use Save As for
+best results”</li>
+</ul>
+<p><strong>In-app messaging (on first Word document open):</strong></p>
+<ul>
+<li>Display metadata banner with quality score</li>
+<li>Offer <code>[📖 Learn more]</code>, <code>[💾 Save as .txt]</code>,
 <code>[📝 Open as extracted text]</code>, <code>[❌ Close]</code>
-actions when the direct/native path is not available - Help menu entry:
-“Opening Word Documents in Quill”</p>
-<p><strong>Documentation:</strong> - <strong>README</strong>: “Supported
-Formats” section lists .docx/.doc with caveats - <strong>Knowledge
-base</strong>: Step-by-step guide for opening, extracting, saving Word
-documents - <strong>Command palette</strong>: “Open Word Document”
-command has full description - <strong>FAQ</strong>: Proactive entries
-for “What happens to my formatting?” and “Can I edit the original Word
-file?”</p>
+actions when the direct/native path is not available</li>
+<li>Help menu entry: “Opening Word Documents in Quill”</li>
+</ul>
+<p><strong>Documentation:</strong></p>
+<ul>
+<li><strong>README</strong>: “Supported Formats” section lists
+.docx/.doc with caveats</li>
+<li><strong>Knowledge base</strong>: Step-by-step guide for opening,
+extracting, saving Word documents</li>
+<li><strong>Command palette</strong>: “Open Word Document” command has
+full description</li>
+<li><strong>FAQ</strong>: Proactive entries for “What happens to my
+formatting?” and “Can I edit the original Word file?”</li>
+</ul>
 <h4 id="b.13-success-criteria">5.3b.13 Success Criteria</h4>
 <p>By end of v1.0:</p>
 <ol type="1">
@@ -2012,51 +2092,80 @@ over slide visual preservation</strong>. The design principle (“The edit
 field is sacred”) prevents visual formatting preservation in v1.0.</p>
 <h4 id="c.2-supported-features-what-gets-extracted">5.3c.2 Supported
 Features (What Gets Extracted)</h4>
-<p><strong>Read (Pandoc extraction):</strong> - ✅ Slide titles - ✅
-Body text and bullet points (nested up to 3 levels) - ✅ Text from text
-boxes (best-effort reading order) - ✅ Speaker notes (always extracted,
-separately indexed) - ✅ Hyperlinks → preserved as plain-text URLs or
-Markdown links - ✅ Slide numbers and slide count - ✅ Presentation
-metadata: title, author, subject, creation date - ✅ Basic slide
-structure: explicit slide markers for boundary detection - ✅ Chart and
-SmartArt labels (text-only; visual data is lost)</p>
-<p><strong>Conversion support (via Pandoc bridge):</strong> - ✅
-PowerPoint → Markdown (slide-by-slide structure) - ✅ PowerPoint → HTML
-(presentation as linear HTML document) - ✅ PowerPoint → Plain text</p>
-<p><strong>Metadata:</strong> - ✅ Presentation title, author, subject,
-keywords - ✅ Creation/modification dates - ✅ Slide count, speaker
-notes count - ✅ Character encoding detection and preservation</p>
+<p><strong>Read (Pandoc extraction):</strong></p>
+<ul>
+<li>✅ Slide titles</li>
+<li>✅ Body text and bullet points (nested up to 3 levels)</li>
+<li>✅ Text from text boxes (best-effort reading order)</li>
+<li>✅ Speaker notes (always extracted, separately indexed)</li>
+<li>✅ Hyperlinks → preserved as plain-text URLs or Markdown links</li>
+<li>✅ Slide numbers and slide count</li>
+<li>✅ Presentation metadata: title, author, subject, creation date</li>
+<li>✅ Basic slide structure: explicit slide markers for boundary
+detection</li>
+<li>✅ Chart and SmartArt labels (text-only; visual data is lost)</li>
+</ul>
+<p><strong>Conversion support (via Pandoc bridge):</strong></p>
+<ul>
+<li>✅ PowerPoint → Markdown (slide-by-slide structure)</li>
+<li>✅ PowerPoint → HTML (presentation as linear HTML document)</li>
+<li>✅ PowerPoint → Plain text</li>
+</ul>
+<p><strong>Metadata:</strong></p>
+<ul>
+<li>✅ Presentation title, author, subject, keywords</li>
+<li>✅ Creation/modification dates</li>
+<li>✅ Slide count, speaker notes count</li>
+<li>✅ Character encoding detection and preservation</li>
+</ul>
 <h4
 id="c.3-unsupported-features-not-extracted-logged-user-warned">5.3c.3
 Unsupported Features (Not Extracted, Logged, User Warned)</h4>
 <p><strong>Visual design (intentionally dropped for v1.0
-compatibility):</strong> - ❌ Slide backgrounds, themes, custom
-templates - ❌ Font names, sizes, colors, bold/italic/underline - ❌
-Slide transitions and animations (detected but not played) - ❌ Master
-slides and slide layouts (flattened to content only) - ❌ Alignment,
-positioning, spacing of text boxes - ❌ Watermarks, headers, footers</p>
+compatibility):</strong></p>
+<ul>
+<li>❌ Slide backgrounds, themes, custom templates</li>
+<li>❌ Font names, sizes, colors, bold/italic/underline</li>
+<li>❌ Slide transitions and animations (detected but not played)</li>
+<li>❌ Master slides and slide layouts (flattened to content only)</li>
+<li>❌ Alignment, positioning, spacing of text boxes</li>
+<li>❌ Watermarks, headers, footers</li>
+</ul>
 <p><strong>Advanced structures (extracted with limitations or
-skipped):</strong> - ⚠️ <strong>Images and pictures</strong>: Filenames
-and captions only; image content is NOT OCR’d unless user opts in v1.1+
-- ⚠️ <strong>Charts</strong>: Extracted as text labels only; visual data
-is lost; title and data labels if readable - ⚠️
-<strong>SmartArt</strong>: Converted to bullet-point approximation;
-visual hierarchy is lost - ⚠️ <strong>Embedded video/audio</strong>: NOT
-extracted; presence flagged with duration if available - ⚠️ <strong>Text
-boxes and shapes</strong>: Attempted extraction; may appear out of slide
-reading order - ⚠️ <strong>Slide layouts and masters</strong>: Flattened
-to content only; layout structure is not preserved - ⚠️
-<strong>Animations and timing</strong>: Detected and reported but not
-executed; all animated content extracted</p>
+skipped):</strong></p>
+<ul>
+<li>⚠️ <strong>Images and pictures</strong>: Filenames and captions
+only; image content is NOT OCR’d unless user opts in v1.1+</li>
+<li>⚠️ <strong>Charts</strong>: Extracted as text labels only; visual
+data is lost; title and data labels if readable</li>
+<li>⚠️ <strong>SmartArt</strong>: Converted to bullet-point
+approximation; visual hierarchy is lost</li>
+<li>⚠️ <strong>Embedded video/audio</strong>: NOT extracted; presence
+flagged with duration if available</li>
+<li>⚠️ <strong>Text boxes and shapes</strong>: Attempted extraction; may
+appear out of slide reading order</li>
+<li>⚠️ <strong>Slide layouts and masters</strong>: Flattened to content
+only; layout structure is not preserved</li>
+<li>⚠️ <strong>Animations and timing</strong>: Detected and reported but
+not executed; all animated content extracted</li>
+</ul>
 <p><strong>Security-sensitive (explicitly blocked or
-sanitized):</strong> - ❌ Embedded ActiveX controls or macros (VBA) —
-silently ignored; Pandoc does not execute - ❌ External links to remote
-templates or resources (not followed) - ❌ OLE embedded objects</p>
-<p><strong>Deferred to v1.1+ (not attempted in v1.0):</strong> - ❌
-Presentation handout mode or notes pages export - ❌ Custom animations
-or presentation sequences (click-through, auto-play) - ❌ Form controls
-or interactive content - ❌ Presenter view or presenter notes as a
-separate stream</p>
+sanitized):</strong></p>
+<ul>
+<li>❌ Embedded ActiveX controls or macros (VBA) — silently ignored;
+Pandoc does not execute</li>
+<li>❌ External links to remote templates or resources (not
+followed)</li>
+<li>❌ OLE embedded objects</li>
+</ul>
+<p><strong>Deferred to v1.1+ (not attempted in v1.0):</strong></p>
+<ul>
+<li>❌ Presentation handout mode or notes pages export</li>
+<li>❌ Custom animations or presentation sequences (click-through,
+auto-play)</li>
+<li>❌ Form controls or interactive content</li>
+<li>❌ Presenter view or presenter notes as a separate stream</li>
+</ul>
 <h4
 id="c.4-slide-linearization-with-reading-order-detection-glow-inspired">5.3c.4
 Slide Linearization with Reading-Order Detection (GLOW-Inspired)</h4>
@@ -2070,7 +2179,7 @@ in visual order (what user sees) while flagging reading-order mismatches
 to the user.</p>
 <p><strong>Output: Intelligent slide extraction with reading-order
 diagnostics</strong></p>
-<pre><code>--- Slide 2: Agenda ---
+<pre class="text"><code>--- Slide 2: Agenda ---
 [Title appears first - reading order verified]
 Agenda
 
@@ -2135,7 +2244,7 @@ categorized</li>
 potentially hidden</li>
 </ul>
 <p>Example output:</p>
-<pre><code>⏱ Animation Timing Analysis:
+<pre class="text"><code>⏱ Animation Timing Analysis:
   • Title: &quot;Fade in&quot; (0.5s, starts with slide)
   • Content: &quot;Fly in&quot; (1.0s, appears on click)
 
@@ -2202,7 +2311,7 @@ audit approach:</p>
 correct reading order: +1)</li>
 </ul>
 <p>Example breakdown:</p>
-<pre><code>Quality Score: 78/100
+<pre class="text"><code>Quality Score: 78/100
 
 Baseline:                                          100
 -5 (Images without alt text)                        -5
@@ -2213,7 +2322,7 @@ Baseline:                                          100
 ___________________________________________
 Quality:                                            78</code></pre>
 <p><strong>In-app quality dashboard:</strong></p>
-<pre><code>📊 PowerPoint Presentation Opened
+<pre class="text"><code>📊 PowerPoint Presentation Opened
 Quality Score: 78/100
 
 Extraction Summary:
@@ -2231,7 +2340,7 @@ Extraction Summary:
 ✓ All text extracted successfully (no content lost)</code></pre>
 <h4 id="c.11-user-facing-messaging">5.3c.11 User-Facing Messaging</h4>
 <p>When opening a .pptx or .ppt file, Quill displays:</p>
-<pre><code>📊 PowerPoint Presentation Opened
+<pre class="text"><code>📊 PowerPoint Presentation Opened
 This presentation has been converted to plain text for editing in Quill.
 • Slide structure, formatting, and animations are not preserved.
 • Text boxes and shapes have been simplified to plain text.
@@ -2436,48 +2545,81 @@ tables, transpose, statistics available without leaving CSV Mode</li>
 </ul>
 <h4 id="scope-csv-mode-as-universal-tabular-editor">5.4.2 Scope: CSV
 Mode as Universal Tabular Editor</h4>
-<p><strong>CSV files (native support):</strong> - Open directly in CSV
-Mode - Auto-detect delimiters (comma, semicolon, tab, pipe) -
-Auto-detect column types (text, integer, float, date, currency, boolean)
-- User can toggle first row as column headers - Full grid editing
-capabilities (add/delete rows/columns, sort, filter) - Save back to CSV
-(or export to Excel, TSV, JSON, SQL, HTML, Markdown)</p>
-<p><strong>Excel files (.xlsx / .xls) - via MarkItDown bridge:</strong>
-- Detect format on open - Auto-convert to CSV using MarkItDown (primary)
-or openpyxl (fallback) - Multi-sheet support: user prompted to load
-sheet, combine all, or create separate documents - All CSV Mode features
-work on converted Excel data - Save options: back to CSV, new Excel
-file, or export to original Excel format - Legacy .xls (binary) support
-via openpyxl fallback</p>
-<p><strong>Why CSV as universal format:</strong> - Plain-text,
-version-control friendly, universally accessible - No hidden metadata,
-macro viruses, or formatting complexity - MarkItDown converts any table
-→ CSV automatically - Screen-reader friendly; structure is explicit
-(headers, rows, columns) - Easy to validate, transform, and audit</p>
+<p><strong>CSV files (native support):</strong></p>
+<ul>
+<li>Open directly in CSV Mode</li>
+<li>Auto-detect delimiters (comma, semicolon, tab, pipe)</li>
+<li>Auto-detect column types (text, integer, float, date, currency,
+boolean)</li>
+<li>User can toggle first row as column headers</li>
+<li>Full grid editing capabilities (add/delete rows/columns, sort,
+filter)</li>
+<li>Save back to CSV (or export to Excel, TSV, JSON, SQL, HTML,
+Markdown)</li>
+</ul>
+<p><strong>Excel files (.xlsx / .xls) - via MarkItDown
+bridge:</strong></p>
+<ul>
+<li>Detect format on open</li>
+<li>Auto-convert to CSV using MarkItDown (primary) or openpyxl
+(fallback)</li>
+<li>Multi-sheet support: user prompted to load sheet, combine all, or
+create separate documents</li>
+<li>All CSV Mode features work on converted Excel data</li>
+<li>Save options: back to CSV, new Excel file, or export to original
+Excel format</li>
+<li>Legacy .xls (binary) support via openpyxl fallback</li>
+</ul>
+<p><strong>Why CSV as universal format:</strong></p>
+<ul>
+<li>Plain-text, version-control friendly, universally accessible</li>
+<li>No hidden metadata, macro viruses, or formatting complexity</li>
+<li>MarkItDown converts any table → CSV automatically</li>
+<li>Screen-reader friendly; structure is explicit (headers, rows,
+columns)</li>
+<li>Easy to validate, transform, and audit</li>
+</ul>
 <h4 id="csv-mode-ui-and-keyboard-shortcuts">5.4.3 CSV Mode UI and
 Keyboard Shortcuts</h4>
 <p><strong>Status bar in CSV Mode shows:</strong></p>
-<pre><code>📊 CSV Mode (15 rows × 4 columns) | Headers: ✓ | Delimiter: Comma</code></pre>
-<p><strong>Navigation (arrow keys):</strong> - Arrow keys: Move to
-adjacent cell (up/down/left/right) - Ctrl+Home: Go to cell A1 (first
-cell) - Ctrl+End: Go to last cell with data - Ctrl+Right/Left: Jump to
-next/previous non-empty cell in row - Ctrl+Down/Up: Jump to
-next/previous non-empty cell in column - Page Up / Page Down: Move
-up/down by 10 rows</p>
-<p><strong>Cell editing (F2 mode):</strong> - Press F2 to enter edit
-mode for current cell - Cursor restricted to cell content only; cannot
-move to adjacent cells - Backspace/Delete/Ctrl+A work as expected within
-the cell - Escape cancels edit without saving - Enter commits and moves
-to next row - Shift+Enter commits and moves to previous row</p>
-<p><strong>Sorting and filtering (Shift+F10 / Right-click):</strong> -
-Shift+F10 or right-click to open column context menu - “Sort Ascending”
-(A→Z, 0→9, empty at bottom) - “Sort Descending” (Z→A, 9→0, empty at top)
-- “Move Column Left / Right” - “Delete Column / Insert Column” - “Filter
-by Value” (if headers present) - Ctrl+Shift+L: Toggle filter row (when
-headers present)</p>
-<p><strong>Selection (Shift+arrows):</strong> - Shift+Arrow keys: Extend
-selection to adjacent cells - Shift+Spacebar: Select entire row -
-Ctrl+A: Select all cells</p>
+<pre class="text"><code>📊 CSV Mode (15 rows × 4 columns) | Headers: ✓ | Delimiter: Comma</code></pre>
+<p><strong>Navigation (arrow keys):</strong></p>
+<ul>
+<li>Arrow keys: Move to adjacent cell (up/down/left/right)</li>
+<li>Ctrl+Home: Go to cell A1 (first cell)</li>
+<li>Ctrl+End: Go to last cell with data</li>
+<li>Ctrl+Right/Left: Jump to next/previous non-empty cell in row</li>
+<li>Ctrl+Down/Up: Jump to next/previous non-empty cell in column</li>
+<li>Page Up / Page Down: Move up/down by 10 rows</li>
+</ul>
+<p><strong>Cell editing (F2 mode):</strong></p>
+<ul>
+<li>Press F2 to enter edit mode for current cell</li>
+<li>Cursor restricted to cell content only; cannot move to adjacent
+cells</li>
+<li>Backspace/Delete/Ctrl+A work as expected within the cell</li>
+<li>Escape cancels edit without saving</li>
+<li>Enter commits and moves to next row</li>
+<li>Shift+Enter commits and moves to previous row</li>
+</ul>
+<p><strong>Sorting and filtering (Shift+F10 / Right-click):</strong></p>
+<ul>
+<li>Shift+F10 or right-click to open column context menu
+<ul>
+<li>“Sort Ascending” (A→Z, 0→9, empty at bottom)</li>
+<li>“Sort Descending” (Z→A, 9→0, empty at top)</li>
+<li>“Move Column Left / Right”</li>
+<li>“Delete Column / Insert Column”</li>
+<li>“Filter by Value” (if headers present)</li>
+</ul></li>
+<li>Ctrl+Shift+L: Toggle filter row (when headers present)</li>
+</ul>
+<p><strong>Selection (Shift+arrows):</strong></p>
+<ul>
+<li>Shift+Arrow keys: Extend selection to adjacent cells</li>
+<li>Shift+Spacebar: Select entire row</li>
+<li>Ctrl+A: Select all cells</li>
+</ul>
 <h4 id="transformational-features-glow-inspired-data-analysis">5.4.4
 Transformational Features (GLOW-Inspired Data Analysis)</h4>
 <p><strong>Quick stats (Ctrl+Alt+S):</strong> When a numeric column is
@@ -3571,7 +3713,7 @@ line numbers</h3>
 <ul>
 <li><code>Tools → Number Lines…</code> opens a dialog with format
 options: <code>1.</code>, <code>[1]</code>, <code>1:</code>,
-<code>1)</code>, <code>001 </code>, and a custom Python
+<code>1)</code>, <code>001</code>, and a custom Python
 <code>str.format</code> template using <code>{n}</code>.</li>
 <li>Start index, increment, zero-padding, and “only number non-blank
 lines” options.</li>
@@ -4800,9 +4942,9 @@ word-boundary bonus, recency, frequency.</li>
 <p>Each row in command mode shows three regions, all announced as one
 string by the screen reader (with internal punctuation chosen to read
 well):</p>
-<pre><code>&lt;Command title&gt; — &lt;current keybinding or &quot;unassigned&quot;&gt; — &lt;source&gt;</code></pre>
+<pre class="text"><code>&lt;Command title&gt; — &lt;current keybinding or &quot;unassigned&quot;&gt; — &lt;source&gt;</code></pre>
 <p>For example:</p>
-<pre><code>Improve Reading Order with AI — unassigned — Quill
+<pre class="text"><code>Improve Reading Order with AI — unassigned — Quill
 Spell Check Document — F7 — Quill
 Find Next — F3 — Quill
 Pandoc: Convert to DOCX — Ctrl+Alt+P — Plugin: Pandoc Bridge</code></pre>
@@ -6037,7 +6179,7 @@ mechanism, the security architecture, the development workflow, and the
 coding standards.</p>
 <h3 id="module-map-and-responsibilities">10.1 Module map and
 responsibilities</h3>
-<pre><code>quill/
+<pre class="text"><code>quill/
   core/                       Pure-Python; no UI imports
     document.py               Document model: text buffer, line index, encoding, line endings, dirty state
     history.py                Undo/redo coalescing; persistent-undo serialisation
@@ -6584,7 +6726,7 @@ is the v1.0 commitment.</p>
 <td>Editor surface (5.2)</td>
 <td><code>ui.editor</code></td>
 <td><code>wx.TextCtrl</code> with
-<code>wx.TE_MULTILINE | wx.TE_RICH2 | wx.TE_NOHIDESEL | wx.TE_AUTO_URL</code></td>
+<code>wx.TE_MULTILINE \| wx.TE_RICH2 \| wx.TE_NOHIDESEL \| wx.TE_AUTO_URL</code></td>
 <td>UI thread</td>
 <td>In-memory document buffer</td>
 <td>Native stock control; MSAA edit role</td>
@@ -6840,7 +6982,7 @@ thread; workers receive snapshots and return new snapshots;
 outside <code>platform/</code>.</li>
 </ul>
 <h3 id="data-layout-canonical">10.5 Data layout (canonical)</h3>
-<pre><code>%APPDATA%\Quill\
+<pre class="text"><code>%APPDATA%\Quill\
   settings.json             Validated by jsonschema; .bak kept
   keymap.json               Validated; .bak kept; quarantine on corrupt
   recent.json               Last N files; default 10

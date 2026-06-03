@@ -320,9 +320,13 @@ declarative-only) is retained in Appendix A.</p>
 <p>A static, schema-validated manifest (JSON, validated like every other
 QUILL store under <code>quill/core/schemas/</code>) that
 <strong>maps</strong> menu items, context-menu entries, and hotkeys
-onto: - existing built-in QUILL command IDs (the same IDs used in
-<code>quill/core/keymap.py</code>), and/or - text <strong>snippets /
-templates</strong> (no executable code).</p>
+onto:</p>
+<ul>
+<li>existing built-in QUILL command IDs (the same IDs used in
+<code>quill/core/keymap.py</code>), and/or</li>
+<li>text <strong>snippets / templates</strong> (no executable
+code).</li>
+</ul>
 <p>This layer is <strong>non-Turing-complete and fully
 sandboxable</strong> — it can do nothing except invoke commands QUILL
 already trusts and insert literal text. Most real “add a menu item /
@@ -337,7 +341,7 @@ OCR worker-process precedent in the concurrency model) behind a
 imports <code>wx</code> and never touches the editor widget directly; it
 talks to a narrow, versioned API object and all UI effects are
 marshalled back onto the UI thread via <code>wx.CallAfter</code>.</p>
-<pre><code>+------------------+        capability-gated RPC         +-----------------------+
+<pre class="text"><code>+------------------+        capability-gated RPC         +-----------------------+
 |  QUILL UI thread | &lt;--------------------------------&gt; | Extension host worker |
 |  (wx, main_frame)|   (stdio/pipe, JSON messages)      |  (sandboxed Python)   |
 +------------------+                                     +-----------------------+
@@ -376,17 +380,21 @@ other stores.</p>
   },
   &quot;main&quot;: &quot;extension.py&quot;   // optional; presence triggers Layer 2 host
 }</code></pre>
-<p>Notes: - <code>hotkeys[].binding</code> reuses QUILL’s existing
-binding grammar, including the <strong>QUILL Key</strong> chord prefix
+<p>Notes:</p>
+<ul>
+<li><code>hotkeys[].binding</code> reuses QUILL’s existing binding
+grammar, including the <strong>QUILL Key</strong> chord prefix
 (<code>Ctrl+Shift+Grave, …</code>). Conflicts are detected with the
 existing <code>find_keymap_conflict</code> logic and reported to the
-user; extension bindings never silently override user/default bindings.
-- <code>menus[].parent</code> / <code>context_menu[]</code> register
+user; extension bindings never silently override user/default
+bindings.</li>
+<li><code>menus[].parent</code> / <code>context_menu[]</code> register
 through the existing menu and context-menu construction paths in
 <code>quill/ui</code>, honouring the project rule to <strong>defer menu
-mutations until menus are closed</strong>. - A
-<code>command.run.snippet</code> with no <code>main</code> is pure Layer
-1 (no code execution).</p>
+mutations until menus are closed</strong>.</li>
+<li>A <code>command.run.snippet</code> with no <code>main</code> is pure
+Layer 1 (no code execution).</li>
+</ul>
 <h2 id="the-python-extension-api-layer-2-sketch">5. The Python extension
 API (Layer 2 sketch)</h2>
 <p>A single, versioned, capability-checked facade — no direct widget
@@ -406,15 +414,19 @@ class="sourceCode python"><code class="sourceCode python"><span id="cb3-1"><a hr
 <span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>    <span class="co"># fs / net only if capability granted + user-consented at install/run</span></span>
 <span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> read_file(<span class="va">self</span>, path: <span class="bu">str</span>) <span class="op">-&gt;</span> <span class="bu">str</span>: ...     <span class="co"># requires &quot;fs.read&quot;</span></span>
 <span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> fetch(<span class="va">self</span>, url: <span class="bu">str</span>) <span class="op">-&gt;</span> Response: ...      <span class="co"># requires &quot;net&quot; + consent gate</span></span></code></pre></div>
-<p>Design rules: - Every method maps to an existing core operation so
-extension edits flow through <strong>command + history</strong>
-(undoable) and through the <strong>announcement engine</strong> for
-consistent NVDA/JAWS/Narrator output. - All editor mutations go through
-<code>quill/core</code>; the extension process holds <strong>no</strong>
-<code>wx</code> reference and <strong>no</strong> direct buffer handle.
-- The API is <strong>versioned</strong> (<code>v1</code>); breaking
+<p>Design rules:</p>
+<ul>
+<li>Every method maps to an existing core operation so extension edits
+flow through <strong>command + history</strong> (undoable) and through
+the <strong>announcement engine</strong> for consistent
+NVDA/JAWS/Narrator output.</li>
+<li>All editor mutations go through <code>quill/core</code>; the
+extension process holds <strong>no</strong> <code>wx</code> reference
+and <strong>no</strong> direct buffer handle.</li>
+<li>The API is <strong>versioned</strong> (<code>v1</code>); breaking
 changes ship a new version while old extensions keep working against the
-old facade.</p>
+old facade.</li>
+</ul>
 <h2 id="security-consent-model">6. Security &amp; consent model</h2>
 <ul>
 <li><strong>Default deny.</strong> No capability ⇒ no filesystem, no
@@ -973,28 +985,35 @@ authoring guide — deterministic generation contract</h2>
 <p>This section gives an AI agent an unambiguous procedure to generate a
 valid extension. Following it should yield a manifest that passes §13
 and an entry module that loads under §14.4.</p>
-<p><strong>Generation checklist (must all hold):</strong> 1.
-<code>schema</code> is exactly <code>"quill.extension/1"</code>. 2.
-<code>id</code> is reverse-DNS, lowercase, matches the §13 pattern, and
-is globally unique. 3. <code>version</code> is
-<code>MAJOR.MINOR.PATCH</code>. 4. Every contributed command
-<code>id</code> starts with <code>ext.</code> and is unique within the
-file. 5. Every <code>menus[].command</code>,
+<p><strong>Generation checklist (must all hold):</strong></p>
+<ol type="1">
+<li><code>schema</code> is exactly
+<code>"quill.extension/1"</code>.</li>
+<li><code>id</code> is reverse-DNS, lowercase, matches the §13 pattern,
+and is globally unique.</li>
+<li><code>version</code> is <code>MAJOR.MINOR.PATCH</code>.</li>
+<li>Every contributed command <code>id</code> starts with
+<code>ext.</code> and is unique within the file.</li>
+<li>Every <code>menus[].command</code>,
 <code>context_menu[].command</code>, and <code>hotkeys[].command</code>
-references either a contributed command id or a documented built-in id.
-6. If <strong>any</strong> command uses <code>run.handler</code>, then
+references either a contributed command id or a documented built-in
+id.</li>
+<li>If <strong>any</strong> command uses <code>run.handler</code>, then
 <code>main</code> is present <strong>and</strong>
-<code>capabilities</code> includes <code>ui.command</code>. 7.
-<code>capabilities</code> is the minimal set: include a capability
+<code>capabilities</code> includes <code>ui.command</code>.</li>
+<li><code>capabilities</code> is the minimal set: include a capability
 <strong>iff</strong> an API method or placeholder in the extension
-requires it (see §14.1, §14.3, §14.4). 8. Hotkey <code>binding</code>
-uses the QUILL grammar; prefer the QUILL Key prefix
-(<code>Ctrl+Shift+Grave, &lt;letter&gt;</code>) to avoid clashing with
-built-ins. 9. The Python entry module defines exactly one top-level
+requires it (see §14.1, §14.3, §14.4).</li>
+<li>Hotkey <code>binding</code> uses the QUILL grammar; prefer the QUILL
+Key prefix (<code>Ctrl+Shift+Grave, &lt;letter&gt;</code>) to avoid
+clashing with built-ins.</li>
+<li>The Python entry module defines exactly one top-level
 <code>register(api)</code> and registers every <code>handler</code> name
-referenced by the manifest. 10. No <code>wx</code> import, no direct
+referenced by the manifest.</li>
+<li>No <code>wx</code> import, no direct
 filesystem/network/subprocess/clipboard access except through the
-granted <code>api</code> methods.</p>
+granted <code>api</code> methods.</li>
+</ol>
 <p><strong>Minimal-capability decision table:</strong></p>
 <table>
 <thead>
@@ -1040,7 +1059,7 @@ granted <code>api</code> methods.</p>
 </table>
 <p><strong>Machine-readable contract summary (for prompt
 embedding):</strong></p>
-<pre><code>ENTRYPOINT: register(api) -&gt; None              # exactly one, top-level
+<pre class="text"><code>ENTRYPOINT: register(api) -&gt; None              # exactly one, top-level
 HANDLER:    handler(ctx) -&gt; None               # ctx mirrors api read/write/announce
 WRITES:     undoable, via core commands only
 THREADING:  api is sync; UI effects marshalled by host (never call wx)

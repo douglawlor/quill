@@ -961,7 +961,7 @@ high-quality bar. This is the work that makes documentation greatness
 real rather than aspirational.</p>
 <ul>
 <li>Full docs audit and inventory. Catalog every file under <a
-href="docs/">docs/</a> (PRD, user guide, engineering docs, accessibility
+href="../">docs/</a> (PRD, user guide, engineering docs, accessibility
 ACR and VPAT, localization, announcements, and the generated HTML and
 EPUB), note status (current, stub, stale, duplicate), and record the
 result so nothing is missed. See DOC-14.</li>
@@ -1573,7 +1573,7 @@ CQ-1 decomposition.</td>
 <td>Full source-tree organizational review and cleanup</td>
 <td>Code quality</td>
 <td>L</td>
-<td>Todo</td>
+<td>Done</td>
 <td>The last Tier 4 code item, sequenced <strong>after</strong> every
 other Tier 4 refactor and <strong>before</strong> the Tier 6
 documentation work, because it carries the widest blast radius (imports,
@@ -1594,7 +1594,35 @@ Every move is mechanical and behavior-preserving: imports and
 CI/installer paths are updated in the same change, the public-surface
 (GATE-6), module-size (GATE-11), banned-pattern (A11Y-4), and full test
 gates stay green, and no <code>quill/core</code>/<code>quill/io</code>
-wx-freedom or layering rule is weakened.</td>
+wx-freedom or layering rule is weakened. <strong>Delivered:</strong>
+<code>macos_app.py</code> →
+<code>quill/platform/macos/macos_app.py</code> (a thin
+<code>from quill.__main__ import main</code> re-export behind the
+<code>quill/platform/*</code> contract) and <code>setup_macos.py</code>
+→ <code>scripts/setup_macos.py</code> (py2app config repathed to the new
+app entry), with <code>pyproject.toml</code> and
+<code>scripts/build_macos.sh</code> updated in the same change. The root
+design docs <code>aa</code>, <code>glow</code>, <code>pi</code>, and the
+project hub <code>ROADMAP</code> (<code>.md</code> + regenerated
+<code>.html</code>/<code>.epub</code>) moved into
+<code>docs/planning/</code>; every internal relative link in
+<code>ROADMAP.md</code> (55 links) and all external references (the
+copilot instructions, two engineering docs, and the structure guard)
+were repointed in step. The build/dist scratch folders
+(<code>build/</code>, <code>release-dist-*</code>,
+<code>installer-smoke*</code>, <code>windows-distribution</code>,
+<code>release-artifacts*</code>) are all covered by
+<code>.gitignore</code> with <strong>zero tracked files</strong>, giving
+the single ignored-output convention; no dead or duplicated tracked
+artifacts remain. A repo-wide <code>.markdownlint-cli2.jsonc</code>
+(read by both the CLI and the VS Code extension) plus a full Markdown
+cleanup brings every tracked <code>.md</code> to <strong>0 lint
+errors</strong> in the Problems pane. The new structure guard
+<code>tests/unit/structure/test_repo_layout.py</code> mechanically
+enforces the sanctioned layout (no loose root Python, the limited
+root-Markdown allowlist, the relocated planning-doc triples, and the
+macOS file homes); the public-surface, module-size, banned-pattern,
+docs-artifact, and full test gates stay green.</td>
 </tr>
 <tr>
 <td>DLG-1</td>
@@ -2023,7 +2051,7 @@ round-trip through the writer.</td>
 <td>Thesaurus/spell-check/watch-folder locks are confirmed present; a
 concurrency test exercises them and a short note records the invariants.
 The note is <a
-href="docs/engineering/thread-safety.md">docs/engineering/thread-safety.md</a>
+href="../engineering/thread-safety.md">docs/engineering/thread-safety.md</a>
 (shared with CQ-17), and
 <code>tests/unit/core/test_cache_concurrency.py</code> hammers the
 thesaurus index and spell-check wordlist from sixteen threads against a
@@ -2301,7 +2329,7 @@ the engine/language/low-confidence header and flags low-confidence lines
 <code>OcrLine.is_low_confidence</code>). The live review dialog
 (<code>OcrReviewDialog</code>, wired in
 <code>main_frame.ocr_image_file</code>) shows the recognized text in a
-stock <code>wx.TextCtrl(... TE_MULTILINE | TE_READONLY)</code> with
+stock <code>wx.TextCtrl(... TE_MULTILINE \| TE_READONLY)</code> with
 Insert/Copy/Discard actions in a <code>wx.StdDialogButtonSizer</code>
 (buttons carry standard wx ids so they realize natively; Insert is the
 default, Discard is the escape id) and returns focus to the editor on
@@ -3341,7 +3369,7 @@ SEC-2.)</td>
 <td>S</td>
 <td>Done</td>
 <td>A short engineering note documents cache locking rules. <a
-href="docs/engineering/thread-safety.md">docs/engineering/thread-safety.md</a>
+href="../engineering/thread-safety.md">docs/engineering/thread-safety.md</a>
 documents the double-checked module-level cache pattern (spellcheck
 wordlist/enchant, thesaurus index) and the per-instance mutable-set
 pattern (watch-folder seen-set), plus the rule for new caches.</td>
@@ -3663,11 +3691,11 @@ persistence layers (the Windows Credential Manager entry and the
 DPAPI-protected fallback file) and reports whether a key was present.
 <code>MainFrame._forget_assistant_api_key</code> adds a <strong>Forget
 API Key</strong> item to the AI menu that confirms
-(<code>wx.YES_NO | wx.ICON_WARNING</code>), clears both stores, and
+(<code>wx.YES_NO \| wx.ICON_WARNING</code>), clears both stores, and
 announces the outcome (“forgotten” vs “no stored key”); the
-shared-account caveat is in the confirm copy. Tests:
-<code>tests/unit/core/test_assistant_ai.py</code> (both-store clear,
-present/absent) and
+shared-account caveat is in the confirm copy.
+Tests:<code>tests/unit/core/test_assistant_ai.py</code> (both-store
+clear, present/absent) and
 <code>tests/unit/ui/test_main_frame_forget_key.py</code> (menu item
 present, bound, handler clears both stores).</td>
 </tr>
@@ -4070,52 +4098,52 @@ Confirmed correctness bugs (latent crashes), highest priority</h3>
 by ruff undefined-name analysis. They should be fixed before 1.0.</p>
 <ol type="1">
 <li>Corrupted method <code>_show_bw_onboarding</code> in <a
-href="quill/ui/main_frame.py#L19426">quill/ui/main_frame.py</a> (lines
-19426 to 19470). The method body contains copy-pasted “Insert Link”
-dialog code and references undefined names <code>selected_text</code>
-(line 19442), <code>dialog</code> (line 19463), and
-<code>profiles</code> (line 19470), plus assigns
+href="../../quill/ui/main_frame.py#L19426">quill/ui/main_frame.py</a>
+(lines 19426 to 19470). The method body contains copy-pasted “Insert
+Link” dialog code and references undefined names
+<code>selected_text</code> (line 19442), <code>dialog</code> (line
+19463), and <code>profiles</code> (line 19470), plus assigns
 <code>display_text</code> and <code>url</code> that are never used. If
 this onboarding path is reached it raises <code>NameError</code>. The
 intended behavior is to confirm the BITS Whisperer rollout and then
 present a profile choice. This is a P0 crash. See BUG-1.</li>
 <li>Four bare <code>wx.</code> calls that should be
 <code>self._wx.</code> in <a
-href="quill/ui/main_frame.py#L16983">quill/ui/main_frame.py</a> at lines
-16983, 17015, 17022, and 17042 (<code>wx.GetSingleChoice</code> and
-<code>wx.GetTextFromUser</code> in the heading-style prompts).
+href="../../quill/ui/main_frame.py#L16983">quill/ui/main_frame.py</a> at
+lines 16983, 17015, 17022, and 17042 (<code>wx.GetSingleChoice</code>
+and <code>wx.GetTextFromUser</code> in the heading-style prompts).
 Module-level <code>wx</code> is not imported; it is only stored as
 <code>self._wx</code> (assigned around line 683). These four call sites
 raise <code>NameError</code> at runtime when the heading-style flow
 executes. This is a P0 crash on a real user path. See BUG-2.</li>
 <li>Undefined type annotation <code>VoiceOption</code> in <a
-href="quill/ui/main_frame.py#L12503">quill/ui/main_frame.py</a> at lines
-12503 and 12532. The symbol is imported as
+href="../../quill/ui/main_frame.py#L12503">quill/ui/main_frame.py</a> at
+lines 12503 and 12532. The symbol is imported as
 <code>ReadAloudVoiceOption</code> (around line 240) but the annotations
 use the bare name. With <code>from __future__ import annotations</code>
 this does not crash at call time, but it breaks
 <code>typing.get_type_hints</code> and static analysis. Fix by using the
 imported alias. See BUG-3.</li>
 <li>Redefinition of <code>URLError</code> in <a
-href="quill/ui/main_frame.py#L339">quill/ui/main_frame.py</a>: imported
-first from <code>urllib.error</code> (line 15) and again from
+href="../../quill/ui/main_frame.py#L339">quill/ui/main_frame.py</a>:
+imported first from <code>urllib.error</code> (line 15) and again from
 <code>quill.core.updates</code> (line 339). The second import shadows
 the first. Pick one source. See BUG-4.</li>
 <li>Unchecked llama.cpp response shape in <a
-href="quill/core/ai/llama_cpp_backend.py#L113">quill/core/ai/llama_cpp_backend.py</a>
+href="../../quill/core/ai/llama_cpp_backend.py#L113">quill/core/ai/llama_cpp_backend.py</a>
 (lines 113 to 117): <code>out["choices"][0]["message"]["content"]</code>
 will raise <code>KeyError</code> or <code>IndexError</code> on a
 malformed or version-mismatched response. Add validation and a friendly
 error. See BUG-5.</li>
 <li>XML element handling bug in <a
-href="quill/io/structured.py#L614">quill/io/structured.py</a> (lines 614
-and 615): a <code>list[str]</code> is assigned where an
+href="../../quill/io/structured.py#L614">quill/io/structured.py</a>
+(lines 614 and 615): a <code>list[str]</code> is assigned where an
 <code>Element</code> is expected and then passed to
 <code>str.join</code>, which mypy flags as an assignment and arg-type
 error. This is a real type-level defect in the DOCX path. See
 BUG-6.</li>
 <li>Potential infinite loop in <a
-href="quill/core/ai/assistant.py#L196">quill/core/ai/assistant.py</a>
+href="../../quill/core/ai/assistant.py#L196">quill/core/ai/assistant.py</a>
 chunk splitting if <code>max_chars &lt;= 0</code> is ever passed; add a
 guard. See BUG-7.</li>
 </ol>
@@ -4126,21 +4154,21 @@ per-user app data directory, so the focus is tampered configuration,
 untrusted document inputs, and supply chain.</p>
 <ol type="1">
 <li>XML entity expansion (billion laughs) in document parsing. <a
-href="quill/io/structured.py#L416">quill/io/structured.py</a> uses
+href="../../quill/io/structured.py#L416">quill/io/structured.py</a> uses
 <code>ET.fromstring</code> for XML (line 416), DOCX
 <code>word/document.xml</code> (around line 408), and PPTX slide XML; <a
-href="quill/io/pages.py#L107">quill/io/pages.py</a> parses PPTX XML
-similarly. None disable entity expansion, so a crafted file can cause
-memory and CPU exhaustion. Fix by switching to <code>defusedxml</code>
-or a hardened parser for all untrusted XML. P0 hardening. See
-SEC-10.</li>
+href="../../quill/io/pages.py#L107">quill/io/pages.py</a> parses PPTX
+XML similarly. None disable entity expansion, so a crafted file can
+cause memory and CPU exhaustion. Fix by switching to
+<code>defusedxml</code> or a hardened parser for all untrusted XML. P0
+hardening. See SEC-10.</li>
 <li>Decompression bombs in ZIP-based formats (DOCX, XLSX, ODT, PPTX) in
-<a href="quill/io/structured.py#L604">quill/io/structured.py</a> (around
-lines 604, 683, 717). The archives are read without checking total
-uncompressed size. Add a cumulative size limit before reading entries.
-See SEC-11.</li>
+<a href="../../quill/io/structured.py#L604">quill/io/structured.py</a>
+(around lines 604, 683, 717). The archives are read without checking
+total uncompressed size. Add a cumulative size limit before reading
+entries. See SEC-11.</li>
 <li>Subprocess executable paths sourced from settings. <a
-href="quill/core/external_tools.py#L132">quill/core/external_tools.py</a>
+href="../../quill/core/external_tools.py#L132">quill/core/external_tools.py</a>
 (around line 132) expands and runs configured executable paths (for
 example the DECtalk executable and other engines) without validating
 they live in a trusted location. If <code>settings.json</code> is
@@ -4148,25 +4176,25 @@ tampered, this is arbitrary code execution. Validate against an
 allowlist or bundled or <code>shutil.which</code>-resolved path. This
 pairs with the earlier SEC-1. See SEC-1.</li>
 <li>PATH hijacking via tool discovery in <a
-href="quill/core/external_tools.py#L102">quill/core/external_tools.py</a>
+href="../../quill/core/external_tools.py#L102">quill/core/external_tools.py</a>
 (around lines 102 to 115): <code>shutil.which</code> trusts the process
 PATH. Document the risk and prefer bundled tool paths where available.
 See SEC-12.</li>
 <li>Update download without binary checksum or signature verification in
-<a href="quill/core/updates.py#L249">quill/core/updates.py</a> (around
-line 249). The manifest signature is verified, but the downloaded asset
-itself is not checksum-verified before use. Verify a hash from the
-signed manifest against the downloaded bytes. This pairs with SEC-6. See
-SEC-6.</li>
+<a href="../../quill/core/updates.py#L249">quill/core/updates.py</a>
+(around line 249). The manifest signature is verified, but the
+downloaded asset itself is not checksum-verified before use. Verify a
+hash from the signed manifest against the downloaded bytes. This pairs
+with SEC-6. See SEC-6.</li>
 <li>Incomplete secret redaction in diagnostics. <a
-href="quill/core/diagnostics.py#L20">quill/core/diagnostics.py</a>
+href="../../quill/core/diagnostics.py#L20">quill/core/diagnostics.py</a>
 (around lines 20 to 29) redacts <code>Authorization: Bearer</code> style
 tokens but misses patterns like <code>token:</code>,
 <code>password:</code>, and <code>NAME_KEY=</code> environment
 assignments. Broaden the redaction patterns so diagnostic bundles never
 leak partial secrets. See SEC-13.</li>
 <li>Python sandbox environment and resource limits. <a
-href="quill/core/python_sandbox.py#L143">quill/core/python_sandbox.py</a>
+href="../../quill/core/python_sandbox.py#L143">quill/core/python_sandbox.py</a>
 inherits <code>PATH</code> into the subprocess (around line 143) and
 passes the user code as a base64 environment variable (around line 145),
 which can appear in a process list on shared systems; there is also no
@@ -4175,21 +4203,21 @@ and avoid leaking the payload via the environment where possible. This
 refines SEC-9. See SEC-9, SEC-14.</li>
 <li><code>run_subprocess_safely</code> does not validate
 <code>cwd</code> or the executable in <a
-href="quill/stability/safe_subprocess.py#L11">quill/stability/safe_subprocess.py</a>
+href="../../quill/stability/safe_subprocess.py#L11">quill/stability/safe_subprocess.py</a>
 (around lines 11 to 26), and only catches <code>TimeoutExpired</code>,
 not <code>OSError</code> or <code>FileNotFoundError</code>. Add
 validation and wrap the missing exception. This refines SEC-4. See
 SEC-4, SEC-15.</li>
 <li>Credential and Keychain input validation. <a
-href="quill/platform/windows/credential_manager.py#L73">quill/platform/windows/credential_manager.py</a>
+href="../../quill/platform/windows/credential_manager.py#L73">quill/platform/windows/credential_manager.py</a>
 does not validate <code>target_name</code> (around lines 73 to 99), and
 <a
-href="quill/platform/macos/keychain.py#L30">quill/platform/macos/keychain.py</a>
+href="../../quill/platform/macos/keychain.py#L30">quill/platform/macos/keychain.py</a>
 does not check the <code>security</code> subprocess return code in
 <code>set_secret</code> (around lines 30 to 50). Validate names against
 a safe pattern and check return codes. See SEC-16.</li>
 <li>Shell integration registry command in <a
-href="quill/platform/windows/shell_integration.py#L35">quill/platform/windows/shell_integration.py</a>
+href="../../quill/platform/windows/shell_integration.py#L35">quill/platform/windows/shell_integration.py</a>
 is safe today because it derives from <code>launcher_command()</code>,
 but it is not escaped; document that it must never accept user input, or
 escape it if that changes. See SEC-17.</li>
@@ -4198,26 +4226,27 @@ escape it if that changes. See SEC-17.</li>
 Correctness and robustness (non-crashing) findings</h3>
 <ol type="1">
 <li>Windows atomic write is not guaranteed. <a
-href="quill/core/storage.py#L16">quill/core/storage.py</a> uses temp
-file plus <code>replace</code> (around line 16). On Windows this can be
-a two-step operation under contention. Confirm <code>os.replace</code>
-semantics and, where needed, add retry-on-<code>PermissionError</code>
-so a concurrent reader cannot cause data loss. See CQ-19.</li>
+href="../../quill/core/storage.py#L16">quill/core/storage.py</a> uses
+temp file plus <code>replace</code> (around line 16). On Windows this
+can be a two-step operation under contention. Confirm
+<code>os.replace</code> semantics and, where needed, add
+retry-on-<code>PermissionError</code> so a concurrent reader cannot
+cause data loss. See CQ-19.</li>
 <li>Version comparison ignores pre-release suffixes in <a
-href="quill/core/updates.py#L136">quill/core/updates.py</a> (around line
-136): <code>1.2.0-rc1</code> parses as <code>1.2.0</code>, so a release
-candidate sorts equal to the stable. Decide and document the intended
-ordering. See CQ-20.</li>
+href="../../quill/core/updates.py#L136">quill/core/updates.py</a>
+(around line 136): <code>1.2.0-rc1</code> parses as <code>1.2.0</code>,
+so a release candidate sorts equal to the stable. Decide and document
+the intended ordering. See CQ-20.</li>
 <li>Snippet placeholder regex does not handle nested braces in <a
-href="quill/core/snippets.py#L90">quill/core/snippets.py</a> (around
-lines 90 to 120). Document the limitation or support nesting. See
-FEAT-5.</li>
+href="../../quill/core/snippets.py#L90">quill/core/snippets.py</a>
+(around lines 90 to 120). Document the limitation or support nesting.
+See FEAT-5.</li>
 <li>TOML parse has no guard in <a
-href="quill/core/compliance.py#L142">quill/core/compliance.py</a>
+href="../../quill/core/compliance.py#L142">quill/core/compliance.py</a>
 (around lines 142 to 160): a corrupted <code>pyproject.toml</code>
 aborts the dependency audit. Wrap and report. See CQ-21.</li>
 <li>Credential empty-blob path in <a
-href="quill/platform/windows/credential_manager.py#L68">quill/platform/windows/credential_manager.py</a>
+href="../../quill/platform/windows/credential_manager.py#L68">quill/platform/windows/credential_manager.py</a>
 returns an empty secret indistinguishable from absent; log and document.
 See CQ-22.</li>
 </ol>
@@ -4228,39 +4257,43 @@ currently reports 44 errors in 14 files. Representative clusters, all to
 be driven to zero and then kept green in continuous integration (see
 CQ-7):</p>
 <ul>
-<li><a href="quill/core/ipc.py#L75">quill/core/ipc.py</a>: six errors
-from a <code>handle: object</code> annotation that is then used as a
-file object, plus <code>fcntl</code> attributes that are POSIX-only. The
-cross-platform branch on <code>os.name</code> is logically sound;
-annotate the handle as <code>IO[bytes]</code> or <code>Any</code> and
-guard the <code>fcntl</code> import for type-checkers. See TYPE-1.</li>
-<li><a href="quill/core/bw_speech.py#L169">quill/core/bw_speech.py</a>:
+<li><a href="../../quill/core/ipc.py#L75">quill/core/ipc.py</a>: six
+errors from a <code>handle: object</code> annotation that is then used
+as a file object, plus <code>fcntl</code> attributes that are
+POSIX-only. The cross-platform branch on <code>os.name</code> is
+logically sound; annotate the handle as <code>IO[bytes]</code> or
+<code>Any</code> and guard the <code>fcntl</code> import for
+type-checkers. See TYPE-1.</li>
+<li><a
+href="../../quill/core/bw_speech.py#L169">quill/core/bw_speech.py</a>:
 an <code>Any</code> returned where <code>float</code> is declared (line
 169), missing parameter annotations (lines 223, 255), and the optional
 <code>faster_whisper</code> import. See TYPE-2.</li>
 <li><a
-href="quill/core/read_aloud.py#L298">quill/core/read_aloud.py</a>: the
-<code>kokoro.KPipeline</code> attribute is not visible to mypy (line
+href="../../quill/core/read_aloud.py#L298">quill/core/read_aloud.py</a>:
+the <code>kokoro.KPipeline</code> attribute is not visible to mypy (line
 298); fix the ignore code. See TYPE-3.</li>
-<li><a href="quill/core/dictation.py#L10">quill/core/dictation.py</a>:
+<li><a
+href="../../quill/core/dictation.py#L10">quill/core/dictation.py</a>:
 <code>None</code> assigned to a <code>Callable</code>-typed name (line
 10), and <code>recognize_whisper</code> and <code>recognize_vosk</code>
 on an untyped recognizer (lines 71, 78). See TYPE-4.</li>
-<li><a href="quill/io/pages.py#L73">quill/io/pages.py</a>: missing
+<li><a href="../../quill/io/pages.py#L73">quill/io/pages.py</a>: missing
 return and parameter annotations (lines 73, 78, 91), untyped third-party
 <code>keynote_parser</code>, and an <code>Any</code> returned as
 <code>str</code> (line 238). See TYPE-5.</li>
-<li><a href="quill/io/structured.py#L173">quill/io/structured.py</a>:
+<li><a
+href="../../quill/io/structured.py#L173">quill/io/structured.py</a>:
 untyped <code>openpyxl</code> import (line 173), a missing annotation
 (line 249), and the Element bug from 16.1 item 6 (lines 614, 615). See
 TYPE-6, BUG-6.</li>
 <li><a
-href="quill/core/ai/llama_cpp_backend.py#L65">quill/core/ai/llama_cpp_backend.py</a>:
+href="../../quill/core/ai/llama_cpp_backend.py#L65">quill/core/ai/llama_cpp_backend.py</a>:
 missing annotations (lines 65, 71), a <code>None</code>-typed attribute
 later assigned a <code>Llama</code> (line 82), and an <code>Any</code>
 returned as <code>str</code> (line 118). See TYPE-7.</li>
 <li><a
-href="quill/core/ai/assistant.py#L130">quill/core/ai/assistant.py</a>:
+href="../../quill/core/ai/assistant.py#L130">quill/core/ai/assistant.py</a>:
 missing annotations (lines 130, 200). See TYPE-8.</li>
 </ul>
 <p>Where third-party stubs are missing (<code>openpyxl</code>,
@@ -4273,31 +4306,31 @@ Protocols for the SDK handles so the strict zone stays honest.</p>
 (verified)</h3>
 <ol type="1">
 <li>Spell-check wordlist loads synchronously (about 370,000 words) in <a
-href="quill/core/spellcheck.py#L100">quill/core/spellcheck.py</a>
+href="../../quill/core/spellcheck.py#L100">quill/core/spellcheck.py</a>
 (around lines 100 to 115), under the backend lock, stalling the first
 check. Background preload at startup. Pairs with PERF-1. See
 PERF-1.</li>
 <li>Thesaurus index loads synchronously (a large data file) in <a
-href="quill/core/thesaurus.py#L52">quill/core/thesaurus.py</a> (around
-lines 52 to 60) on first lookup. Background preload. Pairs with PERF-2.
-See PERF-2.</li>
+href="../../quill/core/thesaurus.py#L52">quill/core/thesaurus.py</a>
+(around lines 52 to 60) on first lookup. Background preload. Pairs with
+PERF-2. See PERF-2.</li>
 <li>Read Aloud accumulates uncompressed audio arrays in memory in <a
-href="quill/core/read_aloud.py#L295">quill/core/read_aloud.py</a>
+href="../../quill/core/read_aloud.py#L295">quill/core/read_aloud.py</a>
 (around lines 295 to 325); stream to file for long documents, and cache
 identical sentences. Pairs with PERF-3. See PERF-3, PERF-10.</li>
 <li>Spreadsheet reading loads entire worksheets into memory in <a
-href="quill/io/structured.py#L193">quill/io/structured.py</a> (around
-lines 193 to 199); cap rows or stream. See PERF-11.</li>
+href="../../quill/io/structured.py#L193">quill/io/structured.py</a>
+(around lines 193 to 199); cap rows or stream. See PERF-11.</li>
 <li>DOCX and PPTX load whole XML payloads and build full in-memory
 documents in <a
-href="quill/io/structured.py#L604">quill/io/structured.py</a> (around
-lines 604 and 637); consider streaming and run these off the UI thread.
-See PERF-12.</li>
+href="../../quill/io/structured.py#L604">quill/io/structured.py</a>
+(around lines 604 and 637); consider streaming and run these off the UI
+thread. See PERF-12.</li>
 <li>PDF extraction materializes all pages in <a
-href="quill/io/pdf.py#L58">quill/io/pdf.py</a> (around line 58);
+href="../../quill/io/pdf.py#L58">quill/io/pdf.py</a> (around line 58);
 page-stream for very large PDFs. See PERF-13.</li>
 <li>File search scans whole documents with no chunking in <a
-href="quill/core/file_search.py#L48">quill/core/file_search.py</a>
+href="../../quill/core/file_search.py#L48">quill/core/file_search.py</a>
 (around lines 48 to 70); stream large corpora. See PERF-14.</li>
 </ol>
 <p>Concurrency note (correction): the spell-check wordlist cache, the
@@ -4308,9 +4341,9 @@ the Windows atomic-write behavior (CQ-19).</p>
 <h3 id="main_frame.py-decomposition-map-verified-seams">16.6
 main_frame.py decomposition map (verified seams)</h3>
 <p>The 18,748-line <a
-href="quill/ui/main_frame.py">quill/ui/main_frame.py</a> divides cleanly
-into roughly 22 subsystems. This map is the basis for CQ-1 (extract
-behind characterization tests, CQ-16):</p>
+href="../../quill/ui/main_frame.py">quill/ui/main_frame.py</a> divides
+cleanly into roughly 22 subsystems. This map is the basis for CQ-1
+(extract behind characterization tests, CQ-16):</p>
 <ul>
 <li>Initialization and setup: lines 678 to 860.</li>
 <li>Command registry and keybinding: lines 971 to 4975.</li>
@@ -4362,13 +4395,13 @@ configuration schema reference, a troubleshooting guide, and any podcast
 transcripts or tutorial or video scripts. See DOC-1 through DOC-6,
 DOC-7, DOC-8, and the POD and TUT items.</li>
 <li>The accessibility conformance report at <a
-href="docs/accessibility/acr-vpat.md">docs/accessibility/acr-vpat.md</a>
+href="../accessibility/acr-vpat.md">docs/accessibility/acr-vpat.md</a>
 is a template with placeholder evidence. It must be either filled in
 with a real 0.1.5 assessment or clearly labeled as not yet assessed. See
 DOC-9.</li>
-<li>The PRD at <a href="docs/QUILL-PRD.md">docs/QUILL-PRD.md</a> mixes
-1.0 specification with 0.1.5 reality; its header should state plainly
-that it specifies 1.0 and that 0.1.5 implements the subset marked in the
+<li>The PRD at <a href="../QUILL-PRD.md">docs/QUILL-PRD.md</a> mixes 1.0
+specification with 0.1.5 reality; its header should state plainly that
+it specifies 1.0 and that 0.1.5 implements the subset marked in the
 roadmap mapping. See DOC-10.</li>
 <li>Documentation accessibility: the PRD uses emoji (check marks,
 warning and cross symbols, and others) and em-dashes throughout. Per the
@@ -4404,7 +4437,7 @@ with real fixtures. See CQ-11, CQ-13, CQ-23, CQ-24.</li>
 <li>Performance tests are smoke-level only; add the budget suite
 (PERF-9).</li>
 <li>Scripts: the release orchestrator <a
-href="scripts/release_readiness.py">scripts/release_readiness.py</a>
+href="../../scripts/release_readiness.py">scripts/release_readiness.py</a>
 runs ruff, pip-audit strict, pytest, docs build, and corpus
 verification, but there is no dependency lockfile and no timeouts on
 long commands; the Windows build pins an embeddable Python by a
@@ -5876,25 +5909,25 @@ Not required for 1.0.</td>
 <td>AI</td>
 <td>M</td>
 <td>In progress</td>
-<td>Derived from the Pi research (see <code>pi.md</code>). Add a guided,
-fully keyboard-and-screen-reader login that lets a user authenticate
-with an existing provider subscription via an interactive flow (for
-example OAuth device flow) instead of pasting an unreadable API key,
-alongside the current key path. The most user-facing accessibility win
-from Pi: “sign in with the subscription you already have” rather than
-“paste a 51-character secret you cannot see.” Credentials in DPAPI,
-explicit consent, no silent network, registered in the GATE-9 egress
-audit. Sits behind the AIBackend boundary (AI-13) and reuses the
-connection error taxonomy (AI-17). <strong>Delivered:</strong>
-<code>quill/core/ai/device_login.py</code> is a complete, wx-free,
-strict-typed OAuth 2.0 Device Authorization Grant (RFC 8628) state
-machine. <code>request_device_code</code> starts the flow;
-<code>announce_device_code</code> speaks the screen-reader instruction
-(“open <url> in your browser and enter the code WDJB-MJHT; this code
-expires in about 15 minutes.”); <code>poll_once</code> classifies the
-provider’s reply into pending / slow_down / authorized / denied /
-expired / error; <code>run_device_login</code> drives the full polling
-loop honoring the provider <code>interval</code>, backing off on
+<td>Derived from the Pi research (see <code>docs/planning/pi.md</code>).
+Add a guided, fully keyboard-and-screen-reader login that lets a user
+authenticate with an existing provider subscription via an interactive
+flow (for example OAuth device flow) instead of pasting an unreadable
+API key, alongside the current key path. The most user-facing
+accessibility win from Pi: “sign in with the subscription you already
+have” rather than “paste a 51-character secret you cannot see.”
+Credentials in DPAPI, explicit consent, no silent network, registered in
+the GATE-9 egress audit. Sits behind the AIBackend boundary (AI-13) and
+reuses the connection error taxonomy (AI-17).
+<strong>Delivered:</strong> <code>quill/core/ai/device_login.py</code>
+is a complete, wx-free, strict-typed OAuth 2.0 Device Authorization
+Grant (RFC 8628) state machine. <code>request_device_code</code> starts
+the flow; <code>announce_device_code</code> speaks the screen-reader
+instruction (“open <url> in your browser and enter the code WDJB-MJHT;
+this code expires in about 15 minutes.”); <code>poll_once</code>
+classifies the provider’s reply into pending / slow_down / authorized /
+denied / expired / error; <code>run_device_login</code> drives the full
+polling loop honoring the provider <code>interval</code>, backing off on
 <code>slow_down</code>, and stopping at <code>expires_in</code>,
 returning the terminal result; <code>describe_login_result</code> speaks
 the outcome. Every network exchange is an <strong>injected</strong>
@@ -5932,14 +5965,15 @@ fully keyboard and screen-reader accessible at every step.</td>
 <td>AI</td>
 <td>L</td>
 <td>Done</td>
-<td>Derived from Pi’s session tree (see <code>pi.md</code>). Elevate the
-existing assistant transcript and Save/Open Session into a durable,
-navigable history: auto-saved sessions, continue-most-recent,
-browse-past, and fork/branch so a writer can try two rewrites of a
-section without losing state, then compare and resume. The surface is an
-accessible list or tree of branches, each announced, with one-key jump
-and compare; no redraw-heavy TUI. Honors FeatureManager (FLAG-1) and the
-shared announcement grammar (A11Y-1). <strong>Delivered:</strong>
+<td>Derived from Pi’s session tree (see
+<code>docs/planning/pi.md</code>). Elevate the existing assistant
+transcript and Save/Open Session into a durable, navigable history:
+auto-saved sessions, continue-most-recent, browse-past, and fork/branch
+so a writer can try two rewrites of a section without losing state, then
+compare and resume. The surface is an accessible list or tree of
+branches, each announced, with one-key jump and compare; no redraw-heavy
+TUI. Honors FeatureManager (FLAG-1) and the shared announcement grammar
+(A11Y-1). <strong>Delivered:</strong>
 <code>quill/core/ai/sessions.py</code> is a complete, wx-free,
 strict-typed session-<em>tree</em> engine. Turns form a tree by
 <code>parent_id</code>; the active branch tip is
@@ -5966,7 +6000,27 @@ continue-most-recent, and the unsafe-id guard (10 tests). <strong>In
 progress (honest):</strong> the engine and persistence are complete and
 tested, but the accessible branch-browser/compare UI surface and the
 wiring that records the live assistant transcript into the tree are not
-yet built, so this row stays In progress.</td>
+yet built, so this row stays In progress. <strong>UI wired:</strong>
+<code>quill/ui/session_browser.py</code>
+(<code>SessionBrowserDialog</code>) is the accessible surface over the
+engine — a stock <code>wx.ListBox</code> named “Session branches”
+listing every branch tip (one announced row per branch, the active
+branch pre-selected and marked “(current)” via the new wx-free
+<code>branch_rows</code> helper), a “Jump to branch” button that calls
+<code>resume</code> + <code>save_session</code> and announces the move,
+and a “Compare with current” button that fills a read-only multiline
+<code>wx.TextCtrl</code> from the new wx-free
+<code>format_comparison</code> helper (common ancestor + turns unique to
+each side, as pageable text). It honors the A11Y-4 dialog contract
+(<code>apply_modal_ids</code>/<code>show_modal_dialog</code>). Reachable
+from the AI menu (“Session &amp;Branches…”,
+<code>tools.ai_session_browser</code>) via
+<code>MainFrame.open_ai_session_browser</code>, which loads
+<code>most_recent_session</code> and reports gracefully when no sessions
+exist. Tested: two wx-free engine tests (current-branch marking,
+pageable comparison text) plus a five-assertion source-contract test for
+the dialog wiring, with the public-surface fixture and dialog-contract
+guard updated.</td>
 </tr>
 <tr>
 <td>AI-21</td>
@@ -6000,10 +6054,10 @@ instructions-then-style-then-prompt ordering.</td>
 <td>S</td>
 <td>Done</td>
 <td>Derived from Pi’s mid-session model switching (see
-<code>pi.md</code>). Let the user pick a fast or local model for quick
-edits and a stronger model for a careful rewrite, switchable mid-task
-with an announced change, surfaced in the existing AI model panel.
-Local-first: the fast tier can be an on-device model.
+<code>docs/planning/pi.md</code>). Let the user pick a fast or local
+model for quick edits and a stronger model for a careful rewrite,
+switchable mid-task with an announced change, surfaced in the existing
+AI model panel. Local-first: the fast tier can be an on-device model.
 <strong>Delivered:</strong> <code>quill/core/ai/model_tiers.py</code> is
 a complete, wx-free, strict-typed tier engine over the existing
 <code>model_manager</code> registry. Two named tiers — <code>Fast</code>
@@ -6063,14 +6117,15 @@ the too-few-turns and failed/blank-summary no-op paths.</td>
 <td>M</td>
 <td>Done</td>
 <td>Derived from Pi’s RPC/JSON integration design (see
-<code>pi.md</code>), and the architectural keystone for adopting any
-non-Python engine from a Python app. Define one consented,
+<code>docs/planning/pi.md</code>), and the architectural keystone for
+adopting any non-Python engine from a Python app. Define one consented,
 off-by-default pattern for QUILL to drive an external engine over a
 local subprocess speaking JSONL or MCP on stdio — spawned on demand,
 covered by the GATE-9 egress audit, with a clean unavailable path. This
-is the same boundary the Accessibility Agents work (<code>aa.md</code>)
-needs for its optional Node backend, so building it once de-risks both.
-Adopt the pattern, not the package. <strong>Delivered:</strong>
+is the same boundary the Accessibility Agents work
+(<code>docs/planning/aa.md</code>) needs for its optional Node backend,
+so building it once de-risks both. Adopt the pattern, not the package.
+<strong>Delivered:</strong>
 <code>quill/core/ai/external_engine.py</code> is a complete, wx-free,
 strict-typed boundary. A master consent switch and a per-engine
 <code>enabled</code> flag are both <strong>off by default</strong> and
@@ -6137,9 +6192,10 @@ integration: make QUILL accessibility-native</h3>
 scope, sequenced after Tier 4) — the three-repo layout
 (<code>s:\code\quill-glow-core</code>, <code>s:\code\glow</code>, and
 QUILL), the ordered GLOW-0 through GLOW-7 work, the definition of done,
-and the risk register — lives in <a href="glow.md">glow.md</a> at the
-repo root. This section is the narrative; <a href="glow.md">glow.md</a>
-is the build sheet, and the two must stay in step.</p>
+and the risk register — lives in <a href="glow.md">glow.md</a> under
+<code>docs/planning/</code>. This section is the narrative; <a
+href="glow.md">glow.md</a> is the build sheet, and the two must stay in
+step.</p>
 </blockquote>
 <p>QUILL already contains <code>quill/core/glow.py</code>, a text-level
 GLOW audit and fix surface (generic link text, plain-language lint,
@@ -6554,7 +6610,7 @@ Packaging and freezing: the Nuitka evaluation (deferred to QUILL
 a packaging <em>decision</em>, not a feature, and it does not advance
 any open 1.0 acceptance criterion. Shipping 1.0 stays on the working
 embeddable-Python bundle (<a
-href="scripts/build_windows_distribution.py">scripts/build_windows_distribution.py</a>),
+href="../../scripts/build_windows_distribution.py">scripts/build_windows_distribution.py</a>),
 which also keeps the v1.1 plugin path trivial. The section below is the
 full analysis and the go/no-go gate for revisiting freezing in 2.0.</p>
 </blockquote>
@@ -7913,9 +7969,9 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 4</td>
 <td>Structural health and performance</td>
 <td>32</td>
-<td>31</td>
-<td>1</td>
-<td>ORG-1</td>
+<td>32</td>
+<td>0</td>
+<td>(complete)</td>
 </tr>
 <tr>
 <td>Tier 6</td>
@@ -7930,8 +7986,8 @@ CQ-11, CQ-14, CQ-23, CQ-24, LINUX-2</td>
 <td><strong>1.0 subtotal</strong></td>
 <td>Tiers 1, 2, 4, 6 (the QUILL 1.0 scope)</td>
 <td><strong>157</strong></td>
-<td><strong>114</strong></td>
-<td><strong>43</strong></td>
+<td><strong>115</strong></td>
+<td><strong>42</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -7988,8 +8044,8 @@ delivered; GLOW engine now in 1.0)</td>
 <td><strong>Total</strong></td>
 <td>All tiers (1.0 + 2.0)</td>
 <td><strong>213</strong></td>
-<td><strong>133</strong></td>
-<td><strong>80</strong></td>
+<td><strong>134</strong></td>
+<td><strong>79</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -8004,8 +8060,6 @@ and into <strong>QUILL 2.0</strong>. The Done/Remaining columns were
 reconciled to the per-tier sums (the previous Total of 55/125 did not
 match the rows); going forward the totals are internally consistent.
 QUILL 1.0 ships when the 1.0 subtotal reaches zero remaining.</p>
-</blockquote>
-<blockquote>
 <p>Scope move (2026-06-03): per maintainer direction, the GLOW
 accessibility engine family (<strong>GLOW-1 through GLOW-7</strong>)
 returns from QUILL 2.0 into the <strong>1.0</strong> milestone now that
@@ -8054,11 +8108,6 @@ list. The GLOW engine family (GLOW-1..7) is in the 1.0 lists under Tier
 GLOW-6, GLOW-7 (GLOW family sequenced after Tier 4)</td>
 </tr>
 <tr>
-<td>Tier 4 — Structural health</td>
-<td>Todo</td>
-<td>ORG-1</td>
-</tr>
-<tr>
 <td>Tier 6 — Documentation</td>
 <td>In progress / Todo</td>
 <td>DLG-3.8 (SR sign-off, maintainer), DOC-1, DOC-2, DOC-3, DOC-4,
@@ -8103,7 +8152,7 @@ SHELL-1</td>
 CQ-21, CQ-22, GATE-10, GATE-11, PERF-1, PERF-2, PERF-3, PERF-8, PERF-9,
 PERF-10, PERF-11, PERF-12, PERF-13, PERF-14, SEC-4, SEC-6, SEC-7, SEC-8,
 SEC-14, SEC-15, SEC-16, SEC-17, TYPE-1, TYPE-2, TYPE-3, TYPE-4, TYPE-5,
-TYPE-6, TYPE-7, TYPE-8, CQ-1, DLG-2, DLG-3</td>
+TYPE-6, TYPE-7, TYPE-8, CQ-1, DLG-2, DLG-3, ORG-1</td>
 </tr>
 <tr>
 <td>EdSharp parity (delivered in 1.0)</td>
@@ -8175,6 +8224,61 @@ note), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also
 incidentally cleared the <code>quill/core</code> and
 <code>quill/io</code> portion of the TYPE-1..8 zone, though those formal
 rows stay open until each is individually verified and closed.</p>
+<h4
+id="org-1-closed-source-tree-reorganization-and-repo-wide-markdown-health">2026-06-12:
+ORG-1 closed — source-tree reorganization and repo-wide Markdown
+health</h4>
+<p>ORG-1 (the last open Tier 4 code item) is <strong>Done</strong>. The
+full source-tree organizational review landed as a sequence of
+mechanical, behavior-preserving moves with every gate green:</p>
+<ul>
+<li><p><strong>Platform files relocated.</strong>
+<code>macos_app.py</code> →
+<code>quill/platform/macos/macos_app.py</code> (a thin
+<code>from quill.__main__ import main</code> re-export behind the
+existing <code>quill/platform/*</code> contract, mirroring
+<code>quill/platform/windows/*</code>) and <code>setup_macos.py</code> →
+<code>scripts/setup_macos.py</code>. <code>pyproject.toml</code> and
+<code>scripts/build_macos.sh</code> were repathed in the same change,
+and <code>docs/engineering/macos-build.{md,html,epub}</code> documents
+the new layout.</p></li>
+<li><p><strong>Root design docs consolidated.</strong> <code>aa</code>,
+<code>glow</code>, <code>pi</code>, and the project hub
+<code>ROADMAP</code> (<code>.md</code> plus regenerated
+<code>.html</code>/<code>.epub</code>) moved into
+<code>docs/planning/</code>. All 55 internal relative links in
+<code>ROADMAP.md</code> and every external reference (the copilot
+instructions, the blocked-items and dialog-estate engineering docs, and
+the structure guard) were repointed in step; the docs-artifact gate
+stays green.</p></li>
+<li><p><strong>Single ignored-output convention.</strong>
+<code>build/</code>, <code>release-dist-*</code>,
+<code>installer-smoke*</code>, <code>windows-distribution</code>, and
+<code>release-artifacts*</code> are all covered by
+<code>.gitignore</code> with <strong>zero tracked files</strong> — no
+dead or duplicated tracked scratch artifacts remain.</p></li>
+<li><p><strong>Repo-wide Markdown health.</strong> A new root
+<code>.markdownlint-cli2.jsonc</code> (read by both
+<code>markdownlint-cli2</code> and the VS Code Problems pane) plus a
+full cleanup brings every tracked <code>.md</code> to <strong>0 lint
+errors</strong>: MD040 fenced-code languages, MD049/MD050 emphasis
+style, MD056 table-column counts, MD010 hard tabs, MD005/MD007 list
+indentation, MD022/MD025/MD028/MD032 spacing, and MD012/MD047
+trailing-newline fixes across the PRD, scripting, accessibility, and QA
+docs and the contributor instructions. A <code>--fix</code>
+prose-corruption hazard was caught and reverted (a wrapped
+<code>+</code> conjunction misread as a list bullet). The 10 workflow
+files were reviewed; no references to moved paths exist.</p></li>
+<li><p><strong>Mechanical guard.</strong>
+<code>tests/unit/structure/test_repo_layout.py</code> enforces the
+sanctioned layout (no loose root Python, the limited root-Markdown
+allowlist, the relocated planning-doc triples, the macOS file homes) so
+the tree cannot drift.</p></li>
+<li><p><strong>Counts:</strong> ORG-1 closes, moving <strong>Tier 4 to
+32 of 32 done (0 remaining)</strong> — Tier 4 is now complete. The QUILL
+1.0 scope moves to <strong>115 of 157 done (42 remaining)</strong> and
+the overall total to <strong>134 of 213</strong>.</p></li>
+</ul>
 <h4
 id="send-to-quill-classic-explorer-menu-made-drift-proof-installerregistry-sync-guarded-issue-114">2026-06-11:
 “Send to Quill” classic Explorer menu made drift-proof —
@@ -9331,7 +9435,7 @@ then None, empty then <code>""</code>, deleted then None again) and that
 identifier validation still rejects a leading-dash target. Cross-cutting
 code quality, so the tier counts are unchanged.</li>
 <li>CQ-17 closed as a pure-documentation win: a new engineering note, <a
-href="docs/engineering/thread-safety.md">docs/engineering/thread-safety.md</a>,
+href="../engineering/thread-safety.md">docs/engineering/thread-safety.md</a>,
 captures the cache-locking invariants that were previously only implied
 by the code. It records the two patterns Quill uses — double-checked
 module-level locking with an immutable published snapshot for
@@ -9490,11 +9594,12 @@ tier-renumbering it describes does not apply to 1.0.</p>
 </blockquote>
 <p>A research evaluation of the Community Access “Accessibility Agents”
 project (<code>s:\code\agents</code>, MIT-licensed) is written up in
-full in <a href="aa.md">aa.md</a> at the repo root. The maintainer is
-inclined to adopt it. If approved, it becomes a NEW Tier 4 inserted
-immediately after Tier 3 (GLOW), which renumbers the current tiers: Tier
-4 (structural health and performance) -&gt; Tier 5, Tier 5 (BITS
-Whisperer) -&gt; Tier 6, and Tier 6 (documentation) -&gt; Tier 7.</p>
+full in <a href="aa.md">aa.md</a> under <code>docs/planning/</code>. The
+maintainer is inclined to adopt it. If approved, it becomes a NEW Tier 4
+inserted immediately after Tier 3 (GLOW), which renumbers the current
+tiers: Tier 4 (structural health and performance) -&gt; Tier 5, Tier 5
+(BITS Whisperer) -&gt; Tier 6, and Tier 6 (documentation) -&gt; Tier
+7.</p>
 <p>The project is about 80 LLM-driven accessibility agents across five
 host platforms (Claude Code, Copilot, Gemini, Codex, and a Node.js MCP
 server with 24 scanning tools). Most of it targets web developers and CI

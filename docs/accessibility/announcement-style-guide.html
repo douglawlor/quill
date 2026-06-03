@@ -183,16 +183,16 @@ href="../../quill/core/announcements.py">quill/core/announcements.py</a>
 <code>pluralize</code>). Use those helpers rather than hand-building
 strings, and keep this document in sync with them.</p>
 <h2 id="the-grammar">The grammar</h2>
-<pre><code>&lt;Verb&gt; &lt;object&gt;[, &lt;count&gt; &lt;unit&gt;(s)][, &lt;detail&gt;].</code></pre>
+<pre class="text"><code>&lt;Verb&gt; &lt;object&gt;[, &lt;count&gt; &lt;unit&gt;(s)][, &lt;detail&gt;].</code></pre>
 <ul>
 <li><strong>Verb.</strong> The action. Use past tense for outcomes
-("Rewrote", "Saved", "Replaced") and present participle for progress
-that precedes a slow action ("Rewriting", "Summarizing").</li>
-<li><strong>Object.</strong> What was acted on: "paragraph", "document",
-"selection". Optional for verb-only outcomes such as "Copied".</li>
+(“Rewrote”, “Saved”, “Replaced”) and present participle for progress
+that precedes a slow action (“Rewriting”, “Summarizing”).</li>
+<li><strong>Object.</strong> What was acted on: “paragraph”, “document”,
+“selection”. Optional for verb-only outcomes such as “Copied”.</li>
 <li><strong>Count and unit.</strong> An optional quantity with an
-automatically pluralized unit and a thousands separator: "42 words", "1
-word", "1,200 words", "2 matches".</li>
+automatically pluralized unit and a thousands separator: “42 words”, “1
+word”, “1,200 words”, “2 matches”.</li>
 <li><strong>Detail.</strong> An optional trailing clause, its own comma
 segment.</li>
 <li>The sentence is capitalized and ends with a period (unless it
@@ -247,7 +247,7 @@ the whole document).</li>
 an action operates on a body of text, include the object and the word
 count so the user knows the size of what changed.</li>
 <li><strong>Say so when nothing happened.</strong> If there is nothing
-to act on, announce it ("Nothing to rewrite.") instead of staying silent
+to act on, announce it (“Nothing to rewrite.”) instead of staying silent
 or sending an empty request.</li>
 <li><strong>Keep it one short sentence.</strong> No nested clauses
 beyond a single optional detail segment. Screen-reader users should not

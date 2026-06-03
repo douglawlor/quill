@@ -3,12 +3,12 @@
 This document is the full, reviewable plan for Tier 3 of QUILL: making QUILL
 accessibility-native by adopting GLOW as its shared accessibility engine. It is
 written so you can review the intent and the cross-repo coordination while the
-work is in progress. It expands on section 19 and section 21 of `golden.md` and
+work is in progress. It expands on section 19 and section 21 of `ROADMAP.md` and
 the GLOW-1 through GLOW-7 and WATCH-8 backlog rows, and it is the source of truth
 for what changes land in each of the three repositories.
 
 This is a planning document. Nothing here is built yet. Items are tracked in
-`golden.md` under the GLOW IDs.
+`ROADMAP.md` under the GLOW IDs.
 
 ## 1. The goal in one sentence
 
@@ -194,6 +194,6 @@ Tier 3 is done when:
 
 ## Maintenance note
 
-Keep this document in step with the GLOW backlog rows in `golden.md`. When a
-GLOW item changes scope or status, update both this file and `golden.md` in the
+Keep this document in step with the GLOW backlog rows in `ROADMAP.md`. When a
+GLOW item changes scope or status, update both this file and `ROADMAP.md` in the
 same change.

@@ -1,4 +1,4 @@
-"""Entry point for the macOS .app bundle (used by setup_macos.py / py2app)."""
+"""Entry point for the macOS .app bundle (used by scripts/setup_macos.py / py2app)."""
 
 from quill.__main__ import main
 

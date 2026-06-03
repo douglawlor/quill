@@ -11,7 +11,7 @@ rather than hand-building strings, and keep this document in sync with them.
 
 ## The grammar
 
-```
+```text
 <Verb> <object>[, <count> <unit>(s)][, <detail>].
 ```
 

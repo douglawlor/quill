@@ -14,7 +14,7 @@ Security fixes are prioritized on the latest release line in `main`.
 Please report suspected vulnerabilities privately. Do **not** open a public
 issue for security problems.
 
-- Email: support@communityaccess.org
+- Email: <support@communityaccess.org>
 - Subject: `QUILL security report`
 
 If your report includes sensitive details, note that in the subject/body and we

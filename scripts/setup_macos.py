@@ -1,12 +1,25 @@
 """py2app build configuration for the macOS Quill app.
 
-Usage:
+Usage (run from the repository root):
     pip install -e ".[ui,macos]"
-    python setup_macos.py py2app
+    python scripts/setup_macos.py py2app
     ./scripts/build_macos.sh          # sign + notarize + DMG
 
 Produces dist/Quill.app.
 """
+
+import sys
+from pathlib import Path
+
+# This build script lives in scripts/ (build tooling, deliberately outside the
+# bundled `quill` package), yet it imports the first-party `quill` package and
+# points py2app at the in-package macOS entry point. Running it as
+# `python scripts/setup_macos.py py2app` puts scripts/ — not the repo root — on
+# sys.path[0], so add the repo root explicitly to keep `import quill` resolving
+# regardless of the working directory.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # py2app's finalize_options aborts the build if the distribution carries
 # install_requires, which modern setuptools auto-populates from pyproject.toml's
@@ -33,7 +46,7 @@ from quill.platform.macos.shell_integration import (
     document_types_plist,
 )
 
-APP = ["macos_app.py"]
+APP = [str(_REPO_ROOT / "quill" / "platform" / "macos" / "macos_app.py")]
 
 OPTIONS = {
     "argv_emulation": False,

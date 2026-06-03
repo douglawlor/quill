@@ -1,7 +1,7 @@
 # Blocked-items completion guide — the exact path to Done on the environment-gated 1.0 features
 
 Status as of 2026-06-03. A small set of QUILL 1.0 items are honestly "In progress"
-or "Todo" in `ROADMAP.md` because they are genuinely blocked on something that cannot
+or "Todo" in `docs/planning/ROADMAP.md` because they are genuinely blocked on something that cannot
 be produced or verified from a non-live development environment: there is no live AI
 provider endpoint and no Windows 11 packaged-install cycle available here. None is
 faked Done.
@@ -9,7 +9,7 @@ faked Done.
 This document is the precise, file-by-file runbook for what a maintainer (on a real
 Windows 11 machine with live provider credentials) must do to drive each remaining
 item to verified Done. Nothing here is hand-waving: every step names the file,
-function, and acceptance test. It is the operational companion to the `ROADMAP.md`
+function, and acceptance test. It is the operational companion to the `docs/planning/ROADMAP.md`
 tracker — the tracker records *what* remains; this guide records *exactly how* to
 finish it.
 
@@ -162,7 +162,8 @@ accessible and registered in the GATE-9 egress audit.
 The structured verb produces faithful structured Markdown from real OCR output on a
 live backend, with no content loss, responsive UI, and accessible status
 announcements. Then flip SHELL-2 to Done in `ROADMAP.md` (tracker + both living
-lists + a dated activity-log entry) and regenerate `ROADMAP.html`.
+lists + a dated activity-log entry) and regenerate `docs/planning/ROADMAP.html` and
+`docs/planning/ROADMAP.epub`.
 
 ---
 
@@ -218,7 +219,8 @@ environment.
 QUILL's "Send to Quill" verbs appear in the Windows 11 primary context menu via a
 registered `IExplorerCommand`, driven by the same `shell_verbs.py` registry,
 installed and removed cleanly by the installer, and verified on a real Win11 box.
-Then flip SHELL-3 to Done in `ROADMAP.md` and regenerate `ROADMAP.html`.
+Then flip SHELL-3 to Done in `docs/planning/ROADMAP.md` and regenerate
+`docs/planning/ROADMAP.html` and `docs/planning/ROADMAP.epub`.
 
 ---
 
@@ -230,9 +232,10 @@ Then flip SHELL-3 to Done in `ROADMAP.md` and regenerate `ROADMAP.html`.
   "Success: no issues found"; those layers stay wx-free.
 - Add at least one behavior test (or source-contract test where wx can't load) per
   change; keep the targeted `pytest` green.
-- After editing `ROADMAP.md`: update the **tracker totals**, **both living lists**,
-  and add a **dated activity-log entry**, then regenerate `ROADMAP.html` with
-  `pandoc -s ROADMAP.md -o ROADMAP.html` and commit both together.
+- After editing `docs/planning/ROADMAP.md`: update the **tracker totals**, **both living lists**,
+  and add a **dated activity-log entry**, then regenerate the artifacts with
+  `pandoc -s docs/planning/ROADMAP.md -o docs/planning/ROADMAP.html` and
+  `pandoc -s docs/planning/ROADMAP.md -o docs/planning/ROADMAP.epub`, committing all three together.
 - New user-facing dialog (e.g. `DeviceLoginDialog`) → add a row to `dialogs.md`.
 - New public `MainFrame` method → regenerate the surface fixture with
   `python -m quill.tools.ui_surface --write`.
@@ -362,14 +365,15 @@ The `\command` default value should be:
 
 Once Steps 1–5 pass on real hardware:
 
-- In `ROADMAP.md`: change the **SHELL-3** row Status from `In progress` to
+- In `docs/planning/ROADMAP.md`: change the **SHELL-3** row Status from `In progress` to
   `Done`, move `SHELL-3` out of the two living *Work-in-progress* lists into
   the *Completed* Tier 2 list, and update the tracker totals
   (Tier 2 becomes `60 | 58 | 2 | AI-19, SHELL-2`; bump the 1.0 subtotal and
   grand total Done counts by 1).
 - Add a dated activity-log entry recording the live verification pass.
-- Regenerate the HTML: `pandoc -s ROADMAP.md -o ROADMAP.html`.
-- Stage `ROADMAP.md` + `ROADMAP.html` only and commit.
+- Regenerate the artifacts: `pandoc -s docs/planning/ROADMAP.md -o docs/planning/ROADMAP.html`
+  and `pandoc -s docs/planning/ROADMAP.md -o docs/planning/ROADMAP.epub`.
+- Stage `docs/planning/ROADMAP.md` + `docs/planning/ROADMAP.html` + `docs/planning/ROADMAP.epub` only and commit.
 
 ### Part 2 — What's left, issue by issue
 

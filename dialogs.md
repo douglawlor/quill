@@ -25,7 +25,6 @@ unregistered, unclassified, or on a bespoke surface. Regenerate the snapshot wit
 `python -m quill.tools.dialog_inventory --write` whenever you add, move, or
 remove a dialog. See "Dialog Excellence Mandates" in the copilot instructions.
 
-
 What "passes" means for every dialog (the A11Y-4 contract):
 
 1. It opens from the listed command or menu path.

@@ -5,7 +5,7 @@
 - Product: **Quill**
 - Version: **1.0.0**
 - Report date: **2026-05-28**
-- Contact: **accessibility@quill.local**
+- Contact: **<accessibility@quill.local>**
 
 ## Standards and guidelines
 

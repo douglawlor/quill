@@ -5,7 +5,7 @@
 set -euo pipefail
 
 echo "==> Building .app with py2app"
-python setup_macos.py py2app
+python scripts/setup_macos.py py2app
 
 APP="dist/Quill.app"
 DMG="dist/Quill.dmg"

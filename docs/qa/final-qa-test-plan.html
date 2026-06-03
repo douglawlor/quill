@@ -267,11 +267,8 @@ the commit SHA. A pass is only valid against a single, named build.</p>
 <ul>
 <li>All required CI gates are green on <code>main</code>: PR CI,
 Security CI, Accessibility CI, GATE-6 (public surface), GATE-11 (module
-size), A11Y-4 (banned patterns
-<ul>
-<li>dialog registry), and the DLG-3 <code>dialog_inventory.json</code>
-snapshot.</li>
-</ul></li>
+size), A11Y-4 (banned patterns and dialog registry), and the DLG-3
+<code>dialog_inventory.json</code> snapshot.</li>
 <li><code>dialogs.md</code> and the <code>dialog_inventory.json</code>
 snapshot agree with the source (run
 <code>python -m quill.tools.dialog_inventory</code> and confirm no

@@ -27,6 +27,7 @@ which is **Python** — see the language decision below.
 ## 1. Goals and non-goals
 
 ### Goals
+
 - Let power users add **menu items**, **context-menu entries**, and **hotkeys**
   that run custom actions, without rebuilding QUILL.
 - Keep the **writing path plain-text-first** and the **screen-reader-first**
@@ -41,6 +42,7 @@ which is **Python** — see the language decision below.
   UI-framework-agnostic; only `quill/ui` and `quill/platform/windows` touch `wx`.
 
 ### Non-goals (explicitly out of scope for the first iteration)
+
 - A live rich-text/RTF editing surface (a standing QUILL design exclusion).
 - Arbitrary native code plugins or replacing core UI widgets.
 - A general-purpose marketplace / auto-update of third-party extensions (later).
@@ -66,9 +68,11 @@ Appendix A.
 ## 3. Architecture: two layers
 
 ### Layer 1 — Declarative manifest (safe, covers the common ~70%)
+
 A static, schema-validated manifest (JSON, validated like every other QUILL
 store under `quill/core/schemas/`) that **maps** menu items, context-menu
 entries, and hotkeys onto:
+
 - existing built-in QUILL command IDs (the same IDs used in
   `quill/core/keymap.py`), and/or
 - text **snippets / templates** (no executable code).
@@ -79,6 +83,7 @@ except invoke commands QUILL already trusts and insert literal text. Most real
 here with effectively zero risk.
 
 ### Layer 2 — Python extension API (real logic, isolated)
+
 For genuine custom logic, an extension ships a Python entry point that QUILL runs
 **out-of-process** (mirroring the existing OCR worker-process precedent in the
 concurrency model) behind a **capability-gated RPC bridge**. The extension never
@@ -86,7 +91,7 @@ imports `wx` and never touches the editor widget directly; it talks to a narrow,
 versioned API object and all UI effects are marshalled back onto the UI thread
 via `wx.CallAfter`.
 
-```
+```text
 +------------------+        capability-gated RPC         +-----------------------+
 |  QUILL UI thread | <--------------------------------> | Extension host worker |
 |  (wx, main_frame)|   (stdio/pipe, JSON messages)      |  (sandboxed Python)   |
@@ -131,6 +136,7 @@ schema-validated, atomic-written, with `.bak`/recovery like other stores.
 ```
 
 Notes:
+
 - `hotkeys[].binding` reuses QUILL's existing binding grammar, including the
   **QUILL Key** chord prefix (`Ctrl+Shift+Grave, …`). Conflicts are detected with
   the existing `find_keymap_conflict` logic and reported to the user; extension
@@ -162,6 +168,7 @@ class QuillExtensionApi:        # v1, passed to the extension's register()
 ```
 
 Design rules:
+
 - Every method maps to an existing core operation so extension edits flow through
   **command + history** (undoable) and through the **announcement engine** for
   consistent NVDA/JAWS/Narrator output.
@@ -563,6 +570,7 @@ extension. Following it should yield a manifest that passes §13 and an entry
 module that loads under §14.4.
 
 **Generation checklist (must all hold):**
+
 1. `schema` is exactly `"quill.extension/1"`.
 2. `id` is reverse-DNS, lowercase, matches the §13 pattern, and is globally unique.
 3. `version` is `MAJOR.MINOR.PATCH`.
@@ -595,7 +603,7 @@ module that loads under §14.4.
 
 **Machine-readable contract summary (for prompt embedding):**
 
-```
+```text
 ENTRYPOINT: register(api) -> None              # exactly one, top-level
 HANDLER:    handler(ctx) -> None               # ctx mirrors api read/write/announce
 WRITES:     undoable, via core commands only

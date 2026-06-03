@@ -248,25 +248,25 @@ Voice support includes:
 BITS Whisperer phased rollout note:
 
 - Dictation and watch-folder controls are now surfaced under the top-level **BITS Whisperer** menu
-	to align migration work from BITS Whisperer into Quill.
+ to align migration work from BITS Whisperer into Quill.
 - Quill now includes a **Speech Models** manager under **BITS Whisperer** with machine-aware
-	recommendations and phased model visibility.
+ recommendations and phased model visibility.
 - Speech model setup now supports a guided **Recommended** mode plus a **Manual** model-selection mode,
-	while keeping runtime behavior stable during this phase.
+ while keeping runtime behavior stable during this phase.
 - Provider onboarding now includes a guided **Provider Center** under **BITS Whisperer** with local-first
-	and cloud-first planning flows, readiness checks, and staged provider selection.
+ and cloud-first planning flows, readiness checks, and staged provider selection.
 - **Help -> Status Page (HTML Preview)** now refreshes live while open, including BITS Whisperer model
-	download state and broader asynchronous speech/task status.
+ download state and broader asynchronous speech/task status.
 - Users can keep auto-open status behavior off by default and opt in from Preferences, plus tune
-	screen-reader refresh cadence with Quiet/Normal/Verbose announcement modes.
+ screen-reader refresh cadence with Quiet/Normal/Verbose announcement modes.
 - BITS Whisperer now includes rollout-safe insight tools: **Readiness Check**, **Capability Matrix**,
-	and **Download Queue** controls for retry/cleanup/status workflows.
+ and **Download Queue** controls for retry/cleanup/status workflows.
 - General Preferences now includes a **Use Artificial Intelligence** toggle (mirrors the AI menu)
-	and a **BITS Whisperer safe mode lock** option for guarded rollout operation.
+ and a **BITS Whisperer safe mode lock** option for guarded rollout operation.
 - QUILL now ships robust command-line startup options, including `--help`, `--version`,
-	`--line`, `--column`, `--new-window`, and `--wait`.
+ `--line`, `--column`, `--new-window`, and `--wait`.
 - The first phase focuses on safe model management and guidance, including faster-whisper engine
-	checks, while deeper transcription runtime behavior will roll out gradually.
+ checks, while deeper transcription runtime behavior will roll out gradually.
 
 ### External tools and conversion workflows
 

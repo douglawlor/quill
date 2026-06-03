@@ -1,6 +1,6 @@
 # Quill: Product Requirements Document
 
-## A magical, screen-reader-first writing and document environment, built in wxPython.
+## A magical, screen-reader-first writing and document environment, built in wxPython
 
 Status: This document specifies Quill **1.0**. The current shipping build is **0.1.5 Beta**, which implements the v1.0 checklist (section 21.1–21.16) plus the post-1.0 foundation work in section 21.17 and later. Section 21 is the living implementation map and is kept current as features land.
 Owner: Blind Information Technology Solutions (BITS) and Community Access
@@ -354,11 +354,11 @@ The table below lists every format family Quill adds, why each matters, and how 
 | Format family | Specific formats added | Why it matters | How Quill renders it |
 | --- | --- | --- | --- |
 | **Spreadsheets** | `xlsx`, `xlsm`, `xls`, `ods`, `numbers`, `csv`, `tsv` | Blind users routinely receive spreadsheet attachments; current accessible tooling forces Excel | Each sheet becomes a section. Tables are emitted as accessible plain-text columns with header row, `Ctrl+Shift+Right/Left` navigates by column, `Ctrl+Shift+Down` summarises totals |
-| **OpenDocument** | `odt`, `odp`, `odg`, `ods` | Common in EU public sector and academia; Direct extractor via `odfpy`; structure preserved as headings, lists, tables |
+| **OpenDocument** | `odt`, `odp`, `odg`, `ods` | Common in EU public sector and academia | Direct extractor via `odfpy`; structure preserved as headings, lists, tables |
 | **Apple iWork** | `pages`, `key`, `numbers` | Cross-platform collaboration is increasingly common; iWork files arrive in email frequently | Local extractor via the iWork archive format; AI escalation for complex layouts |
-| **Legacy office** | `ppt`, `xls`, `wpd`, `wps`, `wri`, `sxw`/`sxc`/`sxi` | Older institutional archives still circulate; Best-effort local readers; AI escalation by sending the original file when local reading fails |
+| **Legacy office** | `ppt`, `xls`, `wpd`, `wps`, `wri`, `sxw`/`sxc`/`sxi` | Older institutional archives still circulate | Best-effort local readers; AI escalation by sending the original file when local reading fails |
 | **E-books (proprietary)** | `azw`, `azw3`, `mobi`, `kfx`, `fb2`, `lit`, `lrf`, `prc`, `pdb`, `tcr` | EPUB-only support excludes most Kindle and older e-book libraries | Reuse Calibre's conversion engine where present (plugin in v1.1) or bundled minimal readers for the open formats |
-| **Comics with text** | `cbz`, `cbr` | Educational comics and graphic textbooks ship in CBZ; Extract pages, OCR each, present per-page text with page navigation |
+| **Comics with text** | `cbz`, `cbr` | Educational comics and graphic textbooks ship in CBZ | Extract pages, OCR each, present per-page text with page navigation |
 | **DjVu and XPS** | `djvu`, `xps`, `oxps` | Academic scans (DjVu) and Microsoft alternatives to PDF (XPS) are common in research | Local extractors; PDF-style page navigation |
 | **PostScript** | `ps`, `eps` | Academic preprints and older typeset documents | Convert via Ghostscript to text + page markers |
 | **TeX and Typst** | `tex`, `latex`, `bib`, `bibtex`, `typ` | Academic and scientific writing community is largely TeX-based; no accessible plain editor handles it gracefully | Plain-text editing with optional rendered preview to PDF/HTML via local engines; bibtex entries readable as structured records |
@@ -416,6 +416,7 @@ Quill's design principle ("The edit field is sacred") prevents visual formatting
 #### 5.3b.2 Supported Features (What Gets Extracted)
 
 **Core content (via Pandoc extraction):**
+
 - ✅ Body text and paragraphs
 - ✅ Headings (levels 1–6) → rendered as Markdown `#`, `##`, `###`, etc.
 - ✅ Bullet and numbered lists (nested up to 3 levels)
@@ -427,6 +428,7 @@ Quill's design principle ("The edit field is sacred") prevents visual formatting
 - ✅ Basic structural integrity: proper paragraph separation, list context
 
 **Conversion support (via Pandoc bridge):**
+
 - ✅ Word → Markdown (for universal editing)
 - ✅ Word → HTML (for preview/export)
 - ✅ Word → Plain text
@@ -434,6 +436,7 @@ Quill's design principle ("The edit field is sacred") prevents visual formatting
 - ✅ Cross-format roundtrip: Markdown ↔ Word, HTML ↔ Word
 
 **Metadata (stored in `Document.source_metadata`):**
+
 - ✅ Document title, author, subject
 - ✅ Creation/modification dates
 - ✅ Word count, page count (if available)
@@ -444,6 +447,7 @@ Quill's design principle ("The edit field is sacred") prevents visual formatting
 #### 5.3b.3 Unsupported Features (Not Extracted, User Warned)
 
 **Formatting (intentionally dropped for v1.0 compatibility):**
+
 - ❌ Font names, sizes, colors, bold/italic/underline
 - ❌ Paragraph alignment (left, center, right, justify)
 - ❌ Line spacing, paragraph spacing, indentation
@@ -451,6 +455,7 @@ Quill's design principle ("The edit field is sacred") prevents visual formatting
 - ❌ Watermarks, page backgrounds
 
 **Advanced structures (extracted with limitations or skipped):**
+
 - ⚠️ **Images**: Filenames and captions only; image content is NOT OCR'd unless user opts in v1.1+
 - ⚠️ **Charts**: Extracted as text labels only; visual data is lost
 - ⚠️ **Text boxes and shapes**: Attempted extraction; may appear out of order or be skipped
@@ -458,12 +463,14 @@ Quill's design principle ("The edit field is sacred") prevents visual formatting
 - ⚠️ **Columns**: Flattened to single column; reading order may be unpredictable
 
 **Security-sensitive (explicitly blocked or sanitized):**
+
 - ❌ **VBA macros**: Silently ignored; Pandoc subprocess does not execute any code
 - ❌ Embedded executables or ActiveX controls
 - ❌ External links to remote templates or resources (not followed)
 - ❌ OLE embedded objects (attempted extraction of embedded text only)
 
 **Deferred to v1.1+ (not attempted in v1.0):**
+
 - ❌ Revision history or multi-user collaboration metadata
 - ❌ Form fields and fillable controls
 - ❌ Custom numbering or multi-level list hacks
@@ -537,12 +544,14 @@ def looks_like_word_document(path: Path) -> bool:
 Word extraction implements a three-tier fallback strategy to ensure the app never crashes on corrupted, malicious, or malformed files:
 
 **Tier 1: Pandoc (primary path)**
+
 - Subprocess-isolated extraction via Pandoc 3.1+
 - Timeout: 60 seconds (hard limit)
 - Success: `quality_score ≥ 60`
 - On failure → Tier 2
 
 **Tier 2: python-docx (fallback)**
+
 - Basic paragraph/heading extraction only
 - No Pandoc dependency required
 - `quality_score ~40` (limited feature set)
@@ -550,6 +559,7 @@ Word extraction implements a three-tier fallback strategy to ensure the app neve
 - On failure → Tier 3
 
 **Tier 3: Emergency UTF-8 read**
+
 - Last-resort: read file as text
 - Returns garbled but won't crash
 - `quality_score 0`
@@ -559,7 +569,7 @@ Word extraction implements a three-tier fallback strategy to ensure the app neve
 
 When opening a .docx or .doc file, Quill displays an in-app banner (stored in `source_metadata`, displayed by `main_frame.py`):
 
-```
+```text
 📄 Word Document Opened
 This document has been converted to plain text for editing in Quill.
 • Formatting (fonts, colors, styles) has been removed.
@@ -583,22 +593,26 @@ The banner is concise and accessible: each item is announced separately via scre
 Pandoc is a universal document converter supporting 30+ input and output formats. Full integration enables:
 
 **Phase 1 (v1.0 — this release):**
+
 - Pandoc reads .docx and .doc files
 - Export to Markdown, HTML, RTF via `File > Save As`
 - Metadata extraction for document properties
 - Fallback pipeline: Pandoc → python-docx → plaintext
 
 **Phase 2 (v1.1):**
+
 - Pandoc template engine for styled exports
 - Batch conversion: `Tools > Convert Document`
 - Support for .odt (LibreOffice), .tex (LaTeX)
 - Optional: OCR images in Word documents (cloud service or local Tesseract)
 
 **Phase 3 (v1.2+):**
+
 - Pandoc filters for custom transformations
 - Plugin API for format extension
 
 **Installation and resource limits:**
+
 - Pandoc is bundled with Quill on Windows (or installed via `choco install pandoc`)
 - Subprocess isolation: Pandoc runs out-of-process; malicious code cannot harm Quill
 - **Timeout**: 60 seconds per document (hard limit)
@@ -645,6 +659,7 @@ source_metadata = {
 ```
 
 **Quality score calculation (0–100):**
+
 - Start at 100
 - Subtract 5 per non-extracted image
 - Subtract 10 per text box with suspected out-of-order content
@@ -673,7 +688,7 @@ GLOW's document auditor and fixer provide patterns for deeply analyzing Word doc
 - **Fake lists detection**: Scan paragraphs for manually typed bullet characters (•, ‣, ◯, ◯, ◦, ⁃) or numbered patterns ("1.", "a)") instead of built-in list styles; flag as "Potential fake list" in `source_metadata`
 - **All-caps content**: Detect paragraphs in ALL CAPS (not formatting, but typed caps); if > 3 words, flag as potential heading that should be restyles
 - **Long sections without headings**: If > 20 paragraphs appear without a heading, flag as "Consider adding structure" in extraction warnings
-- **Repeated spaces for layout**: Detect runs of 3+ consecutive spaces used for visual alignment (e.g., "Qty: ___  Price: ___"); flag as "Document uses spaces for layout, which may reflow unexpectedly in Quill"
+- **Repeated spaces for layout**: Detect runs of 3+ consecutive spaces used for visual alignment (e.g., `Qty: ___Price:___`); flag as "Document uses spaces for layout, which may reflow unexpectedly in Quill"
 - **Repeated font families in paragraph**: Track non-Arial fonts per paragraph; cap reporting at 3 example locations + summary count to avoid spam
 
 **Document-level diagnostics:**
@@ -758,7 +773,7 @@ source_metadata = {
 
 Instead of a flat banner, Quill displays diagnostics with context:
 
-```
+```text
 📄 Word Document Opened
 Extracted via Pandoc 3.1.0 | Quality: 78/100 (down from 85 due to structural issues)
 
@@ -828,6 +843,7 @@ def test_macros_not_executed():
 ```
 
 **Integration tests (`tests/integration/test_word_open.py`):**
+
 - Open .docx via UI; verify text loads, no crash
 - Check source_metadata banner appears
 - Verify status bar shows correct word count, page count
@@ -835,11 +851,13 @@ def test_macros_not_executed():
 - Verify warning dialog appears before save
 
 **Accessibility tests (`tests/a11y/test_word_screen_reader.py`):**
+
 - NVDA/JAWS reading of extracted text
 - Verify metadata banner is announced properly
 - Keyboard-only workflow: open → read → navigate → save
 
 **Performance tests (`tests/perf/test_word_extraction_speed.py`):**
+
 - Load 5, 50, 500-page documents; measure extraction time and memory
 - Confirm 60-second timeout stops runaway conversions
 - Verify UI remains responsive during extraction
@@ -849,16 +867,19 @@ def test_macros_not_executed():
 Word documents should open through a direct/native Word-document path by default when the local engine can handle them. If that path is unavailable or fails on a particular file, Quill should offer an explicit choice to fall back to extracted-text import so the user always knows which mode they are entering.
 
 **Pre-release (release notes):**
+
 - Announce: "New: Microsoft Word support (v1.0)"
 - Link to knowledge base: "Opening Word Documents in Quill"
 - Highlight limitations: "Formatting is not preserved; use Save As for best results"
 
 **In-app messaging (on first Word document open):**
+
 - Display metadata banner with quality score
 - Offer `[📖 Learn more]`, `[💾 Save as .txt]`, `[📝 Open as extracted text]`, `[❌ Close]` actions when the direct/native path is not available
 - Help menu entry: "Opening Word Documents in Quill"
 
 **Documentation:**
+
 - **README**: "Supported Formats" section lists .docx/.doc with caveats
 - **Knowledge base**: Step-by-step guide for opening, extracting, saving Word documents
 - **Command palette**: "Open Word Document" command has full description
@@ -910,6 +931,7 @@ Quill prioritizes **linear text extraction and speaker notes over slide visual p
 #### 5.3c.2 Supported Features (What Gets Extracted)
 
 **Read (Pandoc extraction):**
+
 - ✅ Slide titles
 - ✅ Body text and bullet points (nested up to 3 levels)
 - ✅ Text from text boxes (best-effort reading order)
@@ -921,11 +943,13 @@ Quill prioritizes **linear text extraction and speaker notes over slide visual p
 - ✅ Chart and SmartArt labels (text-only; visual data is lost)
 
 **Conversion support (via Pandoc bridge):**
+
 - ✅ PowerPoint → Markdown (slide-by-slide structure)
 - ✅ PowerPoint → HTML (presentation as linear HTML document)
 - ✅ PowerPoint → Plain text
 
 **Metadata:**
+
 - ✅ Presentation title, author, subject, keywords
 - ✅ Creation/modification dates
 - ✅ Slide count, speaker notes count
@@ -934,6 +958,7 @@ Quill prioritizes **linear text extraction and speaker notes over slide visual p
 #### 5.3c.3 Unsupported Features (Not Extracted, Logged, User Warned)
 
 **Visual design (intentionally dropped for v1.0 compatibility):**
+
 - ❌ Slide backgrounds, themes, custom templates
 - ❌ Font names, sizes, colors, bold/italic/underline
 - ❌ Slide transitions and animations (detected but not played)
@@ -942,6 +967,7 @@ Quill prioritizes **linear text extraction and speaker notes over slide visual p
 - ❌ Watermarks, headers, footers
 
 **Advanced structures (extracted with limitations or skipped):**
+
 - ⚠️ **Images and pictures**: Filenames and captions only; image content is NOT OCR'd unless user opts in v1.1+
 - ⚠️ **Charts**: Extracted as text labels only; visual data is lost; title and data labels if readable
 - ⚠️ **SmartArt**: Converted to bullet-point approximation; visual hierarchy is lost
@@ -951,11 +977,13 @@ Quill prioritizes **linear text extraction and speaker notes over slide visual p
 - ⚠️ **Animations and timing**: Detected and reported but not executed; all animated content extracted
 
 **Security-sensitive (explicitly blocked or sanitized):**
+
 - ❌ Embedded ActiveX controls or macros (VBA) — silently ignored; Pandoc does not execute
 - ❌ External links to remote templates or resources (not followed)
 - ❌ OLE embedded objects
 
 **Deferred to v1.1+ (not attempted in v1.0):**
+
 - ❌ Presentation handout mode or notes pages export
 - ❌ Custom animations or presentation sequences (click-through, auto-play)
 - ❌ Form controls or interactive content
@@ -969,7 +997,7 @@ GLOW discovered that screen readers follow the XML tree order of shapes, not the
 
 **Output: Intelligent slide extraction with reading-order diagnostics**
 
-```
+```text
 --- Slide 2: Agenda ---
 [Title appears first - reading order verified]
 Agenda
@@ -1030,7 +1058,7 @@ Animations are **detected, categorized, and intelligently reported** using GLOW'
 
 Example output:
 
-```
+```text
 ⏱ Animation Timing Analysis:
   • Title: "Fade in" (0.5s, starts with slide)
   • Content: "Fly in" (1.0s, appears on click)
@@ -1092,7 +1120,7 @@ Instead of simple text-density scoring, Quill implements **findings-based qualit
 
 Example breakdown:
 
-```
+```text
 Quality Score: 78/100
 
 Baseline:                                          100
@@ -1107,7 +1135,7 @@ Quality:                                            78
 
 **In-app quality dashboard:**
 
-```
+```text
 📊 PowerPoint Presentation Opened
 Quality Score: 78/100
 
@@ -1130,7 +1158,7 @@ Extraction Summary:
 
 When opening a .pptx or .ppt file, Quill displays:
 
-```
+```text
 📊 PowerPoint Presentation Opened
 This presentation has been converted to plain text for editing in Quill.
 • Slide structure, formatting, and animations are not preserved.
@@ -1272,6 +1300,7 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 #### 5.4.2 Scope: CSV Mode as Universal Tabular Editor
 
 **CSV files (native support):**
+
 - Open directly in CSV Mode
 - Auto-detect delimiters (comma, semicolon, tab, pipe)
 - Auto-detect column types (text, integer, float, date, currency, boolean)
@@ -1280,6 +1309,7 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 - Save back to CSV (or export to Excel, TSV, JSON, SQL, HTML, Markdown)
 
 **Excel files (.xlsx / .xls) - via MarkItDown bridge:**
+
 - Detect format on open
 - Auto-convert to CSV using MarkItDown (primary) or openpyxl (fallback)
 - Multi-sheet support: user prompted to load sheet, combine all, or create separate documents
@@ -1288,6 +1318,7 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 - Legacy .xls (binary) support via openpyxl fallback
 
 **Why CSV as universal format:**
+
 - Plain-text, version-control friendly, universally accessible
 - No hidden metadata, macro viruses, or formatting complexity
 - MarkItDown converts any table → CSV automatically
@@ -1297,11 +1328,13 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 #### 5.4.3 CSV Mode UI and Keyboard Shortcuts
 
 **Status bar in CSV Mode shows:**
-```
+
+```text
 📊 CSV Mode (15 rows × 4 columns) | Headers: ✓ | Delimiter: Comma
 ```
 
 **Navigation (arrow keys):**
+
 - Arrow keys: Move to adjacent cell (up/down/left/right)
 - Ctrl+Home: Go to cell A1 (first cell)
 - Ctrl+End: Go to last cell with data
@@ -1310,6 +1343,7 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 - Page Up / Page Down: Move up/down by 10 rows
 
 **Cell editing (F2 mode):**
+
 - Press F2 to enter edit mode for current cell
 - Cursor restricted to cell content only; cannot move to adjacent cells
 - Backspace/Delete/Ctrl+A work as expected within the cell
@@ -1318,6 +1352,7 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 - Shift+Enter commits and moves to previous row
 
 **Sorting and filtering (Shift+F10 / Right-click):**
+
 - Shift+F10 or right-click to open column context menu
   - "Sort Ascending" (A→Z, 0→9, empty at bottom)
   - "Sort Descending" (Z→A, 9→0, empty at top)
@@ -1327,6 +1362,7 @@ Traditional spreadsheets (Excel, LibreOffice Calc) are visual-first and mouse-or
 - Ctrl+Shift+L: Toggle filter row (when headers present)
 
 **Selection (Shift+arrows):**
+
 - Shift+Arrow keys: Extend selection to adjacent cells
 - Shift+Spacebar: Select entire row
 - Ctrl+A: Select all cells
@@ -1633,7 +1669,7 @@ VS Code-style editor productivity, all standard text-control operations:
 - `Ctrl+/`: toggle line comment using the current document's comment marker (`#`, `//`, `<!-- -->`, etc.).
 - `Ctrl+Shift+/`: toggle block comment where supported.
 - **Tools menu**: Sort Selected Lines (ascending/descending, case-sensitive option, natural-numeric option), Remove Duplicate Lines, Reverse Lines, Trim Trailing Whitespace, Convert Indent (tabs↔spaces), Normalize Whitespace, Wrap to Column N.
-- **Smart list continuation** (Markdown, opt-in): pressing Enter on a `- `, `* `, or `1. ` line continues the list and increments numeric markers; pressing Enter on an empty list item ends the list.
+- **Smart list continuation** (Markdown, opt-in): pressing Enter on a `-`, `*`, or `1.` line continues the list and increments numeric markers; pressing Enter on an empty list item ends the list.
 - **Bracket and quote auto-pair** (off by default; per-format toggle in Settings). Never enabled in plain text.
 
 ### 5.19 Document statistics and reading metrics
@@ -1650,7 +1686,7 @@ Local, instant, never sends content anywhere.
 
 ### 5.20 Accessibility auditor
 
-Quill's audience is exactly the audience that needs to *produce* accessible documents. v1.0 ships a first-class auditor.
+Quill's audience is exactly the audience that needs to _produce_ accessible documents. v1.0 ships a first-class auditor.
 
 - `Ctrl+Alt+A` runs an Accessibility Audit on the current document and opens the Issues dialog. (The same list is reachable via the command palette `!` prefix.)
 - **Markdown and HTML** checks: heading-level skips (h2 to h4), missing or empty `alt` text on images, `alt` text equal to the filename, generic link text (`click here`, `here`, `read more`, `link`), empty links, duplicate link text pointing to different targets, tables without header rows, deeply nested lists (>5), paragraphs longer than 500 words, missing `lang` attribute on `<html>`, missing page title.
@@ -1987,7 +2023,7 @@ Positioning:
 
 A small tool that addresses a real recurring user request.
 
-- `Tools → Number Lines…` opens a dialog with format options: `1.`, `[1]`, `1:`, `1)`, `001 `, and a custom Python `str.format` template using `{n}`.
+- `Tools → Number Lines…` opens a dialog with format options: `1.`, `[1]`, `1:`, `1)`, `001`, and a custom Python `str.format` template using `{n}`.
 - Start index, increment, zero-padding, and "only number non-blank lines" options.
 - Applies to the whole document or selection.
 - `Tools → Strip Line Numbers` reverses by regex; the regex used to add numbers is also the regex used to strip them.
@@ -2133,7 +2169,7 @@ A small family of related commands that make working with links comfortable for 
 - **Move line preserves selection**: `Alt+Up` / `Alt+Down` (line move, 5.18) keep the same logical selection range so the user does not lose context after moving.
 - **Markdown heading auto-numbering** (`Tools → Toggle Heading Numbers`): adds `1.`, `1.1`, `1.1.1` prefixes across all headings, re-numbering in document order. Re-running removes them. Idempotent. Works in HTML, AsciiDoc, reStructuredText, Org, Typst as well.
 - **Footnote helper**:
-  - `Ctrl+Alt+. ` (period) inserts a Markdown footnote pair at the cursor and jumps the cursor into the definition block; pressing `Ctrl+Alt+.` again returns to the reference site.
+  - `Ctrl+Alt+.` (period) inserts a Markdown footnote pair at the cursor and jumps the cursor into the definition block; pressing `Ctrl+Alt+.` again returns to the reference site.
   - `Tools → Renumber Footnotes` reorders footnote labels into document order (1, 2, 3…), updating both references and definitions.
   - The same command works for reStructuredText auto-numbered footnotes (`[#]_`) and Pandoc-style inline notes.
 
@@ -2419,7 +2455,7 @@ Ask Quill is a conversational assistant that runs entirely on the user's machine
 - **Model is a setting, not a chore.** The model choice is exposed in the AI Model settings dialog (dropdown + Download Now) and during onboarding — users are never asked to "drop a GGUF." Onboarding first asks **"Do you want to use AI?"**; the model controls only appear if they say yes. Model descriptions avoid em-dashes.
 - **Graceful CPU fallback.** If the prebuilt llama.cpp hits an unsupported CPU instruction (`STATUS_ILLEGAL_INSTRUCTION 0xC000001D` — e.g. AVX2 missing under x64-on-ARM emulation such as Parallels on Apple Silicon), the backend converts the `OSError` into a plain-language message explaining that the CPU lacks AVX2 and suggesting a no-AVX / native build, instead of crashing.
 
-**The whole chat lives in a WebView (Edge WebView2 on Windows).** Transcript, suggestions, *and the message edit field* are all rendered as HTML in `wx.html2.WebView` — which is **Edge WebView2** on Windows (WKWebView on macOS, WebKitGTK on Linux). We deliberately render in the WebView rather than a plain list box + separate text field because it gives us formatted Markdown (the assistant's headings, lists, and code render properly) together with the browser engine's native, mature accessibility, and keeps the user in one place. `wx.html2.WebView` is a factory-created native control and cannot be meaningfully subclassed, so accessibility is driven by the **HTML we render**, via a thin wrapper (`AccessibleWebView`):
+**The whole chat lives in a WebView (Edge WebView2 on Windows).** Transcript, suggestions, _and the message edit field_ are all rendered as HTML in `wx.html2.WebView` — which is **Edge WebView2** on Windows (WKWebView on macOS, WebKitGTK on Linux). We deliberately render in the WebView rather than a plain list box + separate text field because it gives us formatted Markdown (the assistant's headings, lists, and code render properly) together with the browser engine's native, mature accessibility, and keeps the user in one place. `wx.html2.WebView` is a factory-created native control and cannot be meaningfully subclassed, so accessibility is driven by the **HTML we render**, via a thin wrapper (`AccessibleWebView`):
 
 - An **ARIA live region** (`<main role="log" aria-live="polite">`) so each new message is announced automatically by NVDA / JAWS / Narrator without the user moving focus.
 - An assertive `role="status"` region for transient state ("Quill is responding", "Quill responded").
@@ -2433,7 +2469,7 @@ Ask Quill is a conversational assistant that runs entirely on the user's machine
 
 **Prism announcements (screen-reader-first).** In addition to the WebView's ARIA live region, Quill uses the **Prism (`prismatoid`) bridge on Windows** to send response text straight to the active screen reader, so the user hears new replies even without alt-tabbing to the chat. Prism never speaks over a running screen reader — its SAPI / pyttsx3 fallback is suppressed whenever a screen reader is detected.
 
-**Approval before anything is applied.** Each turn the assistant *decides* (`answer` / `insert` / `replace` / `run`) but never edits the document automatically. Insert/replace text and command runs are shown as a proposal with an Approve / Discard bar; focus moves to **Approve** and the screen reader is told a change is proposed. Only on Approve does Quill insert, replace the selection, or run the command. There is also Copy Last Response and labeled suggestion prompts.
+**Approval before anything is applied.** Each turn the assistant _decides_ (`answer` / `insert` / `replace` / `run`) but never edits the document automatically. Insert/replace text and command runs are shown as a proposal with an Approve / Discard bar; focus moves to **Approve** and the screen reader is told a change is proposed. Only on Approve does Quill insert, replace the selection, or run the command. There is also Copy Last Response and labeled suggestion prompts.
 
 **Discoverability and reliability.** Ask Quill lives under a top-level **AI** menu (Alt+I) alongside the "Use Artificial Intelligence" toggle and AI Model settings. Generation runs off the UI thread. The single-instance lock self-heals (PID + creation-time identity) so a stale lock from a crash never blocks launch.
 
@@ -2526,13 +2562,13 @@ These prefixes are themselves reassignable (see [section 8](#8-keymap-and-keystr
 
 Each row in command mode shows three regions, all announced as one string by the screen reader (with internal punctuation chosen to read well):
 
-```
+```text
 <Command title> — <current keybinding or "unassigned"> — <source>
 ```
 
 For example:
 
-```
+```text
 Improve Reading Order with AI — unassigned — Quill
 Spell Check Document — F7 — Quill
 Find Next — F3 — Quill
@@ -2890,7 +2926,7 @@ Every dialog in Quill is the single highest-risk accessibility surface in the UI
 
 1. **`native`** — stock wx one-shot dialogs (`wx.MessageDialog`, `wx.RichMessageDialog`, `wx.MessageBox`, `wx.SingleChoiceDialog`, `wx.MultiChoiceDialog`, `wx.TextEntryDialog`, `wx.FileDialog`, `wx.DirDialog`, `wx.FindReplaceDialog`, `wx.ProgressDialog`, About). Native-first is the default for confirms, choices, simple text input, and file/folder selection.
 2. **`web`** — sanctioned accessible web surfaces (`show_web_form`, the markdown/HTML preview dialog, the accessible chat view) used only where rich rendering, chat interaction, or dynamic multi-field forms are genuinely required, always with a native fallback.
-3. **`hardened_custom`** — a `wx.Dialog` container composed *only* of stock native controls (`wx.ListBox`, `wx.TextCtrl`, `wx.SearchCtrl`, `wx.CheckListBox`, `wx.Notebook`, `wx.Button`, …). These are "enhanced-native": real OS widgets in a dialog frame. No custom-drawn or owner-drawn controls are permitted in any dialog.
+3. **`hardened_custom`** — a `wx.Dialog` container composed _only_ of stock native controls (`wx.ListBox`, `wx.TextCtrl`, `wx.SearchCtrl`, `wx.CheckListBox`, `wx.Notebook`, `wx.Button`, …). These are "enhanced-native": real OS widgets in a dialog frame. No custom-drawn or owner-drawn controls are permitted in any dialog.
 
 **Source-of-truth inventory.** The authoritative dialog inventory is generated from source, not from a checklist. `quill/tools/dialog_inventory.py` AST-scans all of `quill/**/*.py` and records every dialog surface under a stable, line-independent key (`<module>::<enclosing_qualname>::<kind>`) with its sanctioned classification. The committed snapshot is `tests/unit/ui/fixtures/dialog_inventory.json`, and two gates enforce it: `tests/unit/ui/test_dialog_inventory.py` fails on any new, moved, removed, or reclassified dialog or unsanctioned surface; and a registry cross-check inside the A11Y-4 banned-pattern gate fails the build on any unregistered or misclassified dialog. Adding a dialog forces a deliberate `python -m quill.tools.dialog_inventory --write` whose classification is reviewed in the diff. The manual companion checklist `dialogs.md` maps each shipped dialog to its keyboard command or menu path and is kept in sync, but it is not the inventory authority.
 
@@ -2922,7 +2958,7 @@ This section is the canonical engineering blueprint for Quill. It defines the mo
 
 ### 10.1 Module map and responsibilities
 
-```
+```text
 quill/
   core/                       Pure-Python; no UI imports
     document.py               Document model: text buffer, line index, encoding, line endings, dirty state
@@ -3093,7 +3129,7 @@ Each feature in section 5 has an engineering spec here. The full table is large;
 
 | Feature | Module(s) | Key APIs / Libraries | Threading | Storage | A11y wiring |
 | --- | --- | --- | --- | --- | --- |
-| Editor surface (5.2) | `ui.editor` | `wx.TextCtrl` with `wx.TE_MULTILINE | wx.TE_RICH2 | wx.TE_NOHIDESEL | wx.TE_AUTO_URL` | UI thread | In-memory document buffer | Native stock control; MSAA edit role |
+| Editor surface (5.2) | `ui.editor` | `wx.TextCtrl` with `wx.TE_MULTILINE \| wx.TE_RICH2 \| wx.TE_NOHIDESEL \| wx.TE_AUTO_URL` | UI thread | In-memory document buffer | Native stock control; MSAA edit role |
 | Outline Navigator (5.16) | `ui.outline`, `io.*` outline emitters | `wx.TreeCtrl`, `markdown-it-py`, `beautifulsoup4`, `docutils`, `python-docx`, `pdfplumber` outline, `ebooklib` nav, `pikepdf` outlines | Outline build on worker; `wx.CallAfter` to populate | Per-document outline cache `outline_cache/<hash>.json` | TreeCtrl exposes hierarchical structure to AT |
 | Jump-by-structure (5.17) | `ui.editor`, `core.commands` | Same outline producers | UI thread (cheap) | n/a | Announces via `a11y.announce` |
 | Line/block ops (5.18) | `ui.editor`, `core.history` | wx editor primitives | UI thread | Undo via `core.history` | Announcements per action |
@@ -3109,7 +3145,7 @@ Each feature in section 5 has an engineering spec here. The full table is large;
 | Find/Replace (5.7) | `ui.dialogs.find`, `core.document` | `regex` module | Worker for very large docs | `search-history.json` | Announces structured one-liner per match |
 | Bookmarks (5.10) | `core.bookmarks` | pure Python; SHA-1 of path | UI thread | `bookmarks/<hash>.json` | List dialog; re-anchor on jump |
 | Backups + autosave (5.13, 5.39) | `core.backups` | stdlib | I/O thread; debounced | `backups/`, `autosave/`, `.tmp`+rename | Recovery prompt at launch |
-| Read Aloud (5.25) | `platform.windows.tts`, `ui.read_aloud` | SAPI 5 via `comtypes`; OneCore via Windows.Media.SpeechSynthesis WinRT | Background voice thread | n/a | Uses a *secondary* voice; never blocks SR |
+| Read Aloud (5.25) | `platform.windows.tts`, `ui.read_aloud` | SAPI 5 via `comtypes`; OneCore via Windows.Media.SpeechSynthesis WinRT | Background voice thread | n/a | Uses a _secondary_ voice; never blocks SR |
 | Open from URL (5.27) | `ui.dialogs.open_url`, `ai.safety` | `httpx` async | asyncio via `wxasync` | Temp file | Consent dialog announces host + size |
 | AI reading-order (5.5, 5.4 tier 3) | `ai.pipeline`, `ai.openai/azure/anthropic/ollama`, `ai.safety` | `httpx` async; per-provider SDK shapes | asyncio via `wxasync` | Nothing stored | Progress announced every 20 s |
 | OCR (5.4) | `io.ocr`, `pytesseract` | Tesseract binary | Worker process per page | n/a | Progress announced |
@@ -3134,7 +3170,7 @@ Each feature in section 5 has an engineering spec here. The full table is large;
 
 ### 10.5 Data layout (canonical)
 
-```
+```text
 %APPDATA%\Quill\
   settings.json             Validated by jsonschema; .bak kept
   keymap.json               Validated; .bak kept; quarantine on corrupt
@@ -3485,12 +3521,12 @@ The organising principle is simple: **v1.0 ships only Confidence A. Confidence B
 
 ### 17.4 Explicitly out of scope for Quill (any version unless re-evaluated)
 
-Quill is opinionated about what it is *not*. The following are intentionally and permanently out of scope unless a future PRD revision re-opens the question.
+Quill is opinionated about what it is _not_. The following are intentionally and permanently out of scope unless a future PRD revision re-opens the question.
 
 - **Visual word-processor styling in the editor.** No bold/italic/colour as direct formatting. Quill is screen-reader-first; users who want WYSIWYG should use Word. Markdown supports inline emphasis textually.
 - **Real-time collaborative editing.** Not in v1.x. The architecture does not preclude it; we are not committing to it.
 - **Cloud-sync of documents.** Sync is for keymap and settings only (8.8). Document storage stays on the user's machine and chosen cloud-drive folder.
-- **Mobile, web, macOS, or Linux ports.** Cross-platform is post-v2 at earliest. The `core/` layer has no `wx` so it remains *possible*, not *committed*.
+- **Mobile, web, macOS, or Linux ports.** Cross-platform is post-v2 at earliest. The `core/` layer has no `wx` so it remains _possible_, not _committed_.
 - **Voice input / dictation.** Use Windows dictation; Quill does not reinvent the mic/STT stack. An opt-in Hey QUILL command layer may sit on top of dictation and dispatch existing Quill commands, but it stays silent and only listens while dictation is active.
 - **AI authoring assistant.** The current build exposes a local Writing Assistant shell, prompt presets, Prompt Studio reusable prompt templates, Agent Center guided profiles, AI Hub launch surface, AI connection preferences (Ollama local/cloud, OpenAI, Claude, OpenRouter, Gemini, Azure OpenAI, custom OpenAI-compatible), provider verification/model discovery, searchable model filtering, status-detail accessibility announcements, and a sandboxed Python tool. The quick writing actions (Rewrite Selection, Summarize Selection, Continue Writing, Fix Grammar) each guard on the AI-enabled setting regardless of entry point (menu, command palette, or keybinding) and fall back to a sensible scope when there is no selection (paragraph at cursor for rewrite/grammar, whole document for summarize), announcing the chosen scope and word count. The AI status line also detects a saved key that cannot be decrypted on the current device (for example after a portable install is moved to another Windows account) and prompts the user to re-enter the key rather than reporting a generic authentication error. Longer-horizon autocomplete policy tuning and richer model-catalog management remain future work.
 - **Project workspaces and Find in Folder.** Deferred to v1.2 (see 17.2).

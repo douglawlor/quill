@@ -3,7 +3,7 @@
 Status: research proposal for review. Nothing here is approved or built. If
 accepted, this becomes a new tier inserted after Tier 3 (GLOW), pushing the
 current Tiers 4, 5, and 6 down to 5, 6, and 7. A bookmark is recorded in
-`golden.md` so the decision is not lost.
+`ROADMAP.md` so the decision is not lost.
 
 This document evaluates the `s:\code\agents` repository (the Community Access
 "Accessibility Agents" project) and proposes a concrete, QUILL-shaped way to

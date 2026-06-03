@@ -122,7 +122,7 @@ select = ["E", "F", "I", "UP", "B"]
 "tests/unit/scripts/test_build_windows_distribution.py" = ["E501"]
 # py2app requires patching finalize_options before importing the platform
 # shell-integration module, so that import is deliberately late.
-"setup_macos.py" = ["E402"]
+"scripts/setup_macos.py" = ["E402"]
 # macOS-only platform tests import the module under test after a
 # sys.platform skip guard, so the import is deliberately not at the top.
 "tests/unit/platform/macos/test_high_contrast.py" = ["E402"]

@@ -45,6 +45,7 @@ Quill is designed as a screen-reader-first Windows desktop app in Python + wxPyt
 - `tests/{unit,integration,a11y,perf,fixtures}`: split test strategy reflected in CI.
 
 Concurrency model in the PRD:
+
 - UI thread owns widgets and editor buffer.
 - Thread pools handle file I/O and heavier compute.
 - `wxasync`-managed asyncio handles HTTP/network operations.
@@ -52,6 +53,7 @@ Concurrency model in the PRD:
 - Cross-thread UI updates marshal through `wx.CallAfter`/`wx.CallLater`.
 
 Persistence model in the PRD:
+
 - User data rooted at `%APPDATA%\Quill\...`
 - JSON stores validated by schemas under `quill/core/schemas/`
 - Atomic writes via temp file + `os.replace`
@@ -74,16 +76,16 @@ Persistence model in the PRD:
 Apply these rules to every UI change in `quill/ui/*`:
 
 - Keep parent ownership consistent in dialog layout trees.
-	- If controls are parented to `panel = wx.Panel(dialog)`, keep that control tree in a panel sizer and attach the panel to an outer dialog sizer.
-	- Do not attach the same root sizer to both panel and dialog.
+  - If controls are parented to `panel = wx.Panel(dialog)`, keep that control tree in a panel sizer and attach the panel to an outer dialog sizer.
+  - Do not attach the same root sizer to both panel and dialog.
 - Prefer stock controls for instructional content users must read.
-	- Use `wx.TextCtrl(..., wx.TE_MULTILINE | wx.TE_READONLY)` or list controls for screen-reader review, not transient message boxes when content is long.
+  - Use `wx.TextCtrl(..., wx.TE_MULTILINE | wx.TE_READONLY)` or list controls for screen-reader review, not transient message boxes when content is long.
 - Avoid mutating menu items while menus are open.
-	- Defer menu label/enable/check updates until menu close to avoid focus churn and native menu instability under rapid arrow navigation.
+  - Defer menu label/enable/check updates until menu close to avoid focus churn and native menu instability under rapid arrow navigation.
 - Treat `wx.CallAfter` as optional in tests and fallback environments.
-	- Guard with `getattr(wx, "CallAfter", None)` and provide a synchronous fallback where safe.
+  - Guard with `getattr(wx, "CallAfter", None)` and provide a synchronous fallback where safe.
 - Keep dialog focus behavior predictable.
-	- Set explicit default buttons, bind Escape/Close consistently, and return focus to editor after modal close.
+  - Set explicit default buttons, bind Escape/Close consistently, and return focus to editor after modal close.
 - Add focused tests for dialog and menu regressions.
 
 ## Cloud coding agent directives (read this first)
@@ -134,7 +136,7 @@ sequenced after Tier 4) now that the shared `quill-glow-core` engine is green.
 - Stage SPECIFIC files only. NEVER `git add -A` (it pulls in `.history/` and
   `uv.lock`). Keep `ROADMAP.md`, the living lists, and the tracker totals
   reconciled with each change.
-	- Include at least one behavior test (or source-contract test when UI stubs are limited) per bug class.
+  - Include at least one behavior test (or source-contract test when UI stubs are limited) per bug class.
 
 ## Keep dialogs.md current
 
@@ -217,4 +219,3 @@ Dialog Change Checklist (every dialog PR):
 Source-of-truth rule: before closing any dialog work item, run
 `python -m quill.tools.dialog_inventory`; if the scan and the committed registry
 disagree, the work is incomplete regardless of checklist status.
-
