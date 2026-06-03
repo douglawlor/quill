@@ -1,0 +1,54 @@
+"""Download and stage the optional DECtalk speech runtime.
+
+Split out of :mod:`quill.core.read_aloud` so the read-aloud module stays within
+its size budget (GATE-11). The download is verified against a pinned SHA-256
+before extraction (SEC-6) and runs with a certifi-aware TLS context.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import shutil
+import urllib.request
+import zipfile
+from pathlib import Path
+
+from quill.core.read_aloud import ReadAloudUnavailableError
+
+DECTALK_RELEASE_ZIP_URL = (
+    "https://github.com/dectalk/dectalk/releases/download/2023-10-30/vs2022.zip"
+)
+# SHA-256 of the pinned vs2022.zip release asset, verified before extraction (SEC-6).
+DECTALK_RELEASE_ZIP_SHA256 = "4a778056c109b37f95ade4b3d3e308b9396b22a4b0629f9756ec0e5051b9636d"
+
+
+def download_dectalk_runtime(target_dir: Path) -> Path:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    archive = target_dir / "vs2022.zip"
+    from quill.core.net import verified_ssl_context
+
+    with urllib.request.urlopen(  # noqa: S310 - HTTPS URL constant, verified context
+        DECTALK_RELEASE_ZIP_URL, timeout=180, context=verified_ssl_context()
+    ) as response:
+        payload = response.read()
+    actual = hashlib.sha256(payload).hexdigest()
+    if actual.lower() != DECTALK_RELEASE_ZIP_SHA256.lower():
+        raise ReadAloudUnavailableError(
+            "Downloaded DECtalk runtime failed its integrity check and was discarded.\n"
+            f"  expected: {DECTALK_RELEASE_ZIP_SHA256}\n"
+            f"  got:      {actual}"
+        )
+    archive.write_bytes(payload)
+    extract_root = target_dir / "release"
+    if extract_root.exists():
+        shutil.rmtree(extract_root)
+    extract_root.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(extract_root)
+    for candidate in (
+        extract_root / "AMD64" / "speak.exe",
+        extract_root / "speak.exe",
+    ):
+        if candidate.exists():
+            return candidate.resolve()
+    raise ReadAloudUnavailableError("Downloaded DECtalk package did not contain speak.exe")

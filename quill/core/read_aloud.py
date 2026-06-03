@@ -6,8 +6,6 @@ import subprocess
 import tempfile
 import threading
 import time
-import urllib.request
-import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,10 +42,6 @@ DECTALK_VOICE_COMMANDS: dict[str, str] = {
     "wendy": "[:nw]",
     "kit": "[:nk]",
 }
-
-DECTALK_RELEASE_ZIP_URL = (
-    "https://github.com/dectalk/dectalk/releases/download/2023-10-30/vs2022.zip"
-)
 
 KOKORO_VOICES: list[tuple[str, str]] = [
     ("af_heart", "Heart (American Female, warm)"),
@@ -548,30 +542,6 @@ def synthesize_to_file_with_dectalk(
             tmp_path.unlink(missing_ok=True)
         except OSError:
             pass
-
-
-def download_dectalk_runtime(target_dir: Path) -> Path:
-    target_dir.mkdir(parents=True, exist_ok=True)
-    archive = target_dir / "vs2022.zip"
-    from quill.core.net import verified_ssl_context
-
-    with urllib.request.urlopen(  # noqa: S310 - HTTPS URL constant, verified context
-        DECTALK_RELEASE_ZIP_URL, timeout=180, context=verified_ssl_context()
-    ) as response:
-        archive.write_bytes(response.read())
-    extract_root = target_dir / "release"
-    if extract_root.exists():
-        shutil.rmtree(extract_root)
-    extract_root.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(archive) as zf:
-        zf.extractall(extract_root)
-    for candidate in (
-        extract_root / "AMD64" / "speak.exe",
-        extract_root / "speak.exe",
-    ):
-        if candidate.exists():
-            return candidate.resolve()
-    raise ReadAloudUnavailableError("Downloaded DECtalk package did not contain speak.exe")
 
 
 def list_dectalk_voices() -> list[VoiceOption]:

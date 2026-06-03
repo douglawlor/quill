@@ -36,7 +36,7 @@ _REVIEWED_EGRESS: dict[str, str] = {
         "User types a URL in the Open from URL dialog and confirms a 'Download "
         "from <host> (<size>)?' prompt before any body is fetched."
     ),
-    "core/read_aloud.py::download_dectalk_runtime": (
+    "core/dectalk_runtime.py::download_dectalk_runtime": (
         "User explicitly installs the optional DECTALK voice runtime; download "
         "runs with a verified TLS context and visible progress."
     ),

@@ -1055,9 +1055,17 @@ disabled <code>check_hostname</code> anywhere in the package.</td>
 <td>Verify checksums for downloaded binaries and models</td>
 <td>Security</td>
 <td>M</td>
-<td>Todo</td>
+<td>Done</td>
 <td>DECtalk runtime and GGUF downloads are checksum-verified before use;
-failure aborts with a clear message.</td>
+failure aborts with a clear message. Delivered: pinned SHA-256 on every
+<code>ModelSpec</code> and on the DECtalk vs2022.zip release;
+<code>model_manager._download</code> and
+<code>dectalk_runtime.download_dectalk_runtime</code> stream-hash and
+discard the file on mismatch; the Windows build script verifies the
+staged DECtalk archive. Also repointed the gated Phi-4 GGUF to the open
+<code>lmstudio-community</code> mirror (fixing a live download
+regression). DECtalk download split into
+<code>quill/core/dectalk_runtime.py</code> to respect GATE-11.</td>
 </tr>
 <tr>
 <td>SEC-8</td>
@@ -7584,6 +7592,19 @@ failures.</li>
 and announcement-correct, enabling side-by-side review and synchronized
 navigation. This is specifically scoped for compare and revision tasks
 and must preserve QUILL’s no-focus-chaos rule.</li>
+<li><strong>GitHub Copilot SDK as an optional cloud provider
+(COMP-7).</strong> Add a GitHub Copilot adapter behind the existing
+<code>quill/ai/*</code> provider boundary and consent/egress gates
+(AI-13, GATE-9), never a default and off until the user opts in. It
+reuses the device-login sign-in path (AI-19) so a user can authenticate
+with a subscription they already have instead of pasting a hidden API
+key, and it explicitly targets Copilot’s <strong>free tier</strong> so
+the capability is reachable without a paid plan. Strictly local-first
+defaults are preserved: the bundled GGUF models stay the default, no
+document content leaves the device without per-action consent, and the
+adapter advertises an unavailable path with an announced reason when the
+user is not signed in. The subscription/sign-in friction is the reason
+this stays post-1.0 rather than a core capability.</li>
 </ol>
 <p>Intentional non-goal in this parity plan: <strong>multi-caret and
 rectangular editing remain out of scope</strong> for QUILL’s primary
@@ -7679,9 +7700,9 @@ CQ-16) are counted once, in their primary tier.</p>
 <td>Tier 4</td>
 <td>Structural health and performance</td>
 <td>31</td>
-<td>26</td>
-<td>5</td>
-<td>DLG-3, CQ-16, CQ-1, DLG-2, SEC-6</td>
+<td>27</td>
+<td>4</td>
+<td>DLG-3, CQ-16, CQ-1, DLG-2</td>
 </tr>
 <tr>
 <td>Tier 6</td>
@@ -7696,8 +7717,8 @@ CQ-14, CQ-23, CQ-24, LINUX-2</td>
 <td><strong>1.0 subtotal</strong></td>
 <td>Tiers 1, 2, 4, 6 (the QUILL 1.0 scope)</td>
 <td><strong>148</strong></td>
-<td><strong>109</strong></td>
-<td><strong>39</strong></td>
+<td><strong>110</strong></td>
+<td><strong>38</strong></td>
 <td></td>
 </tr>
 <tr>
@@ -7753,8 +7774,8 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 <td><strong>Total</strong></td>
 <td>All tiers (1.0 + 2.0)</td>
 <td><strong>211</strong></td>
-<td><strong>128</strong></td>
-<td><strong>83</strong></td>
+<td><strong>129</strong></td>
+<td><strong>82</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -7804,7 +7825,7 @@ the third table and are not part of either 1.0 list.</p>
 <tr>
 <td>Tier 4 — Structural health</td>
 <td>In progress / Todo</td>
-<td>DLG-3, CQ-1 (in progress), CQ-16, DLG-2, SEC-6</td>
+<td>DLG-3, CQ-1 (in progress), CQ-16, DLG-2</td>
 </tr>
 <tr>
 <td>Tier 6 — Documentation</td>
@@ -7849,7 +7870,7 @@ SHELL-1</td>
 <td>Tier 4 — Structural health</td>
 <td>CQ-7, CQ-12, CQ-13, CQ-14, CQ-15, CQ-17, CQ-18, CQ-19, CQ-20, CQ-21,
 CQ-22, GATE-10, GATE-11, PERF-1, PERF-2, PERF-3, PERF-8, PERF-9,
-PERF-10, PERF-11, PERF-12, PERF-13, PERF-14, SEC-4, SEC-7, SEC-8,
+PERF-10, PERF-11, PERF-12, PERF-13, PERF-14, SEC-4, SEC-6, SEC-7, SEC-8,
 SEC-14, SEC-15, SEC-16, SEC-17, TYPE-1, TYPE-2, TYPE-3, TYPE-4, TYPE-5,
 TYPE-6, TYPE-7, TYPE-8</td>
 </tr>
@@ -7903,10 +7924,11 @@ FEAT-16, FEAT-17, FEAT-18, LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 </tr>
 <tr>
 <td>Competitive parity plan (Notepad++ benchmark)</td>
-<td>COMP-1, COMP-2, COMP-3, COMP-4, COMP-5, COMP-6</td>
+<td>COMP-1, COMP-2, COMP-3, COMP-4, COMP-5, COMP-6, COMP-7</td>
 <td>Closes high-value project workflow gaps (search, workspace, plugin
-lifecycle, encoding conversion, macros, split review) while preserving
-QUILL’s screen-reader-first and explicit-consent architecture.</td>
+lifecycle, encoding conversion, macros, split review) plus an optional
+GitHub Copilot SDK cloud provider, while preserving QUILL’s
+screen-reader-first and explicit-consent architecture.</td>
 </tr>
 </tbody>
 </table>

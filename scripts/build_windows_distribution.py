@@ -45,6 +45,7 @@ EMBEDDED_PYTHON_SHA256 = "a86a2e28870967745d255cc597d1e4d19ae79e65e927cdc324baa0
 DECTALK_RELEASE_ZIP_URL = (
     "https://github.com/dectalk/dectalk/releases/download/2023-10-30/vs2022.zip"
 )
+DECTALK_RELEASE_ZIP_SHA256 = "4a778056c109b37f95ade4b3d3e308b9396b22a4b0629f9756ec0e5051b9636d"
 
 DEFAULT_BUNDLED_DEPENDENCY_GROUPS = ("ui", "spellcheck", "ocr")
 
@@ -873,7 +874,9 @@ def _download_and_stage_dectalk_release(portable_dir: Path) -> Path:
     speech_root.mkdir(parents=True, exist_ok=True)
     archive = speech_root / "vs2022.zip"
     print(f"Downloading DECtalk release from {DECTALK_RELEASE_ZIP_URL}...")
-    _download_with_verification(DECTALK_RELEASE_ZIP_URL, archive, expected_sha256=None)
+    _download_with_verification(
+        DECTALK_RELEASE_ZIP_URL, archive, expected_sha256=DECTALK_RELEASE_ZIP_SHA256
+    )
 
     extract_root = speech_root / "extracted"
     if extract_root.exists():

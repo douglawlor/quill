@@ -121,6 +121,7 @@ from quill.core.custom_profiles import (
     load_custom_profiles,
     save_custom_profiles,
 )
+from quill.core.dectalk_runtime import download_dectalk_runtime
 from quill.core.diagnostics import (
     build_bug_report_payload,
     build_diagnostics_review_text,
@@ -294,7 +295,6 @@ from quill.core.read_aloud import (
     discover_melotts_executable,
     discover_openvoice_executable,
     discover_piper_executable,
-    download_dectalk_runtime,
     list_chatterbox_english_voices,
     list_dectalk_voices,
     list_espeak_english_voices,

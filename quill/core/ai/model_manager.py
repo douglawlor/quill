@@ -8,6 +8,7 @@ manual file handling. Standard library only (urllib) — no extra dependencies.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 import urllib.request
@@ -32,9 +33,11 @@ class ModelSpec:
     url: str
     approx_gb: float
     note: str = ""
+    sha256: str = ""
 
 
-# Curated, free, open GGUF models (bartowski Q4_K_M re-uploads, no auth/gating).
+# Curated, free, open GGUF models hosted on non-gated public repositories.
+# Each download is verified against the pinned SHA-256 before use (SEC-6).
 MODELS: dict[str, ModelSpec] = {
     "llama-3.2-1b": ModelSpec(
         "llama-3.2-1b",
@@ -44,15 +47,17 @@ MODELS: dict[str, ModelSpec] = {
         "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
         0.8,
         "Best for low-memory machines (under 8 GB RAM).",
+        "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
     ),
     "phi-4-mini": ModelSpec(
         "phi-4-mini",
         "Phi-4-mini Instruct",
         "Phi-4-mini-instruct-Q4_K_M.gguf",
-        "https://huggingface.co/bartowski/Phi-4-mini-instruct-GGUF/resolve/main/"
+        "https://huggingface.co/lmstudio-community/Phi-4-mini-instruct-GGUF/resolve/main/"
         "Phi-4-mini-instruct-Q4_K_M.gguf",
         2.5,
         "Recommended for machines with 8 GB RAM or more.",
+        "3c4d3cbdf3006d81444f6c7a5a56eb93d8e0f0e2ba5963b8ab62f9fd42604233",
     ),
 }
 
@@ -173,7 +178,7 @@ def ensure_model(progress: _ProgressCallback | None = None) -> str:
     if target.exists():
         return str(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    _download(spec.url, target, progress)
+    _download(spec.url, target, progress, spec.sha256)
     return str(target)
 
 
@@ -185,12 +190,18 @@ def existing_model() -> str | None:
     return str(target) if target.exists() else None
 
 
-def _download(url: str, target: Path, progress: _ProgressCallback | None = None) -> None:
+def _download(
+    url: str,
+    target: Path,
+    progress: _ProgressCallback | None = None,
+    expected_sha256: str = "",
+) -> None:
     part = target.with_name(target.name + ".part")
     request = urllib.request.Request(url, headers={"User-Agent": "Quill"})
     from quill.core.net import verified_ssl_context
 
     context = verified_ssl_context() if url.lower().startswith("https") else None
+    digest = hashlib.sha256()
     with (
         urllib.request.urlopen(request, context=context) as response,
         open(part, "wb") as out,
@@ -202,7 +213,18 @@ def _download(url: str, target: Path, progress: _ProgressCallback | None = None)
             if not chunk:
                 break
             out.write(chunk)
+            digest.update(chunk)
             done += len(chunk)
             if progress is not None:
                 progress(done, total)
+    if expected_sha256:
+        actual = digest.hexdigest()
+        if actual.lower() != expected_sha256.lower():
+            part.unlink(missing_ok=True)
+            raise RuntimeError(
+                "Downloaded model failed its integrity check and was discarded.\n"
+                f"  url:      {url}\n"
+                f"  expected: {expected_sha256}\n"
+                f"  got:      {actual}"
+            )
     part.replace(target)
