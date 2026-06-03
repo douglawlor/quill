@@ -1153,9 +1153,11 @@ EdSharp across its entire core editing, navigation, search, snippet, structured
 text, and file-management surface, and far exceeds it on AI, accessibility audit
 (GLOW), OCR and image description, modern TTS, dictation, macros, watch folders,
 feature profiles, and cross-screen-reader announcements. EdSharp's only large
-categories QUILL deliberately does not pursue are RTF word processing and
-JScript.NET scripting add-ins. The actionable residue is a set of roughly twenty
-self-contained editor conveniences, listed as EDS-1 through EDS-20 below.
+category QUILL deliberately does not pursue is RTF *live rich-editing* (visual
+word processing on a `wx.RichTextCtrl`) and JScript.NET scripting add-ins; RTF as
+a *file format* is in scope as a 2.0 io-layer round-trip (EDS-21). The actionable
+residue is a set of roughly twenty self-contained editor conveniences plus the RTF
+format work, listed as EDS-1 through EDS-21 below.
 
 **Competitive analysis: EdSharp 4.0 vs QUILL**
 
@@ -1175,7 +1177,8 @@ self-contained editor conveniences, listed as EDS-1 through EDS-20 below.
 | Small editor conveniences (insert special char, date/time, number lines, hard-wrap, read-only guard, delete-to-bounds) | Yes | Partial / no | Gap (EDS-1..20) |
 | On-demand speech queries (say address/status/selection) | Yes | Partial (status bar) | Gap (EDS-14) |
 | Key Describer, indent-announce mode | Yes | No | Gap (EDS-17, EDS-18) |
-| RTF word processing (justify/style/font, format nav) | Yes | No (plain-text/markup-first) | Out of scope by design |
+| RTF as a file format (read formatting, write back) | Yes | Partial (lossy extract only) | Gap (EDS-21, 2.0) |
+| RTF live rich editing (justify/style/font, format nav) | Yes | No (plain-text/markup-first) | Out of scope by design |
 | JScript.NET scripting add-ins, exposed object model | Yes | No (plugins + AI instead) | Out of scope by design |
 | Compiler/run integration, LaTeX, PyBrace/PyDent | Yes | Partial (external tools) | Out of scope / future plugins |
 | Burn to CD, Send-To menu, MDI tile/cascade, web download | Yes | No | Obsolete / not pursued |
@@ -1210,6 +1213,25 @@ self-contained editor conveniences, listed as EDS-1 through EDS-20 below.
 | EDS-18 | Indentation-announce mode and Infer Indent | Accessibility | M | Todo | An opt-in mode announces indentation-level changes while navigating by line, plus an Infer Indent command that reports and optionally adopts the document's indent unit; tests cover change announcement and inferred-unit adoption. (EdSharp Alt+Shift+I, Alt+RightBracket.) |
 | EDS-19 | Run file and run target at cursor | Features | M | Todo | Commands execute the current file via its OS association (saving first when it has a path) and execute a URL, email address, or path at the cursor or in the selection, both behind the existing executable-path security validation (SEC-1); tests cover the association path and the security-reject path. (EdSharp F5, Shift+F5.) |
 | EDS-20 | Rename and delete current file on disk | Features | S | Todo | Commands rename and delete the current file both in the editor and on disk, each behind an explicit confirmation; tests cover rename, delete, and the cancel path. (EdSharp Alt+Shift+R, Alt+Shift+D.) |
+| EDS-21 | RTF round-trip through the io layer | IO | M | Todo | Promote RTF from the current lossy extract-only path to a real `io/*` format that reads RTF formatting into QUILL's Markdown-style internal markup and writes Markdown back out to valid RTF, following the `read(path) -> Document` / `write(doc, path)` contract; bold, italic, headings, lists, and links survive a round trip; no change to the editor control surface (the writing path stays a plain-text `wx.TextCtrl` over markup). Tests cover read, write, and a formatting round-trip. This is the only RTF scope QUILL pursues; see the note below. |
+
+Note on RTF and the editor control surface: QUILL's writing path is a stock
+`wx.TextCtrl` on purpose, because plain-text-first editing gives the strongest,
+most predictable screen-reader fidelity (NVDA, JAWS, Narrator parity) and is a
+standing design rule. There are two distinct "RTF support" scopes and only one is
+pursued. **In scope (EDS-21):** RTF as a *format* in the io layer, where formatting
+is read into QUILL's Markdown-style markup and written back out to RTF, with the
+editor surface unchanged. This is a clean extension of the existing `io/*` contract
+and the right home for the lossy `_format_rtf` extract that exists today. **Out of
+scope by design:** RTF as a *live rich-editing surface*. True visual rich editing
+would require swapping the writing control to `wx.RichTextCtrl`, whose
+screen-reader behavior is weaker and whose selection, navigation, and announcement
+model differs from the one every existing command and the EDS-1 through EDS-20
+conveniences assume. That tradeoff conflicts directly with QUILL's accessibility-
+first, plain-text-first mandate, so live RTF word processing stays a deliberate
+scope choice rather than a backlog item. Importantly, none of EDS-1 through EDS-20
+depend on RTF; they are plain-text conveniences that ship on the current surface
+regardless of whether EDS-21 lands.
 
 Why deferred: every EDS item is a self-contained editor convenience that adds
 polish but is not required for a great, trustworthy 1.0. They are best sequenced
@@ -1246,9 +1268,9 @@ This table tracks how many of the backlog IDs each tier names are still open. It
 | Tier 3 (2.0) | GLOW accessibility engine — deferred to QUILL 2.0 | 8 | 0 | 8 | GLOW-1..7, WATCH-8 |
 | Tier 5 (2.0) | BITS Whisperer transcription — deferred to QUILL 2.0 | 28 | 0 | 28 | BW-1..10, WATCH-9, NAV-10, AI-11, AI-12, AI-18, FEAT-12..18, LINUX-1, ECO-1, L10N-1, COLLAB-1 |
 | AX (2.0) | Accessibility Agents / axe-core engine — deferred to QUILL 2.0 | 6 | 0 | 6 | AX-A..F |
-| EDS (2.0) | EdSharp feature parity — deferred to QUILL 2.0 | 20 | 0 | 20 | EDS-1..20 |
-| **2.0 subtotal** | GLOW + BITS Whisperer + axe-core + EdSharp parity | **62** | **0** | **62** | |
-| **Total** | All tiers (1.0 + 2.0) | **205** | **90** | **115** | |
+| EDS (2.0) | EdSharp feature parity — deferred to QUILL 2.0 | 21 | 0 | 21 | EDS-1..21 |
+| **2.0 subtotal** | GLOW + BITS Whisperer + axe-core + EdSharp parity | **63** | **0** | **63** | |
+| **Total** | All tiers (1.0 + 2.0) | **206** | **90** | **116** | |
 
 > Deferral note (2026-06-02): per maintainer direction, the GLOW accessibility
 > engine (Tier 3, including the WATCH-8 GLOW watch action), the BITS Whisperer
@@ -1293,7 +1315,7 @@ list.
 | GLOW accessibility engine (Tier 3) | GLOW-1, GLOW-2, GLOW-3, GLOW-4, GLOW-5, GLOW-6, GLOW-7, WATCH-8 | Cross-repo engine integration; lands as a 2.0 headline once the shared `quill-glow-core` engine is green. |
 | BITS Whisperer transcription (Tier 5) | BW-1, BW-2, BW-3, BW-4, BW-5, BW-6, BW-7, BW-8, BW-9, BW-10, WATCH-9 | The second distinctive engine; a clean 2.0 integration after the 1.0 flagship ships. |
 | Accessibility Agents / axe-core (AX) | AX-A, AX-B, AX-C, AX-D, AX-E, AX-F | Builds on the GLOW engine and report surface, so it follows GLOW into 2.0. |
-| EdSharp feature parity (EDS) | EDS-1, EDS-2, EDS-3, EDS-4, EDS-5, EDS-6, EDS-7, EDS-8, EDS-9, EDS-10, EDS-11, EDS-12, EDS-13, EDS-14, EDS-15, EDS-16, EDS-17, EDS-18, EDS-19, EDS-20 | Self-contained editor conveniences from the EdSharp 4.0 competitive analysis; polish, not 1.0 blockers, so they land in 2.0 with beta feedback. |
+| EdSharp feature parity (EDS) | EDS-1, EDS-2, EDS-3, EDS-4, EDS-5, EDS-6, EDS-7, EDS-8, EDS-9, EDS-10, EDS-11, EDS-12, EDS-13, EDS-14, EDS-15, EDS-16, EDS-17, EDS-18, EDS-19, EDS-20, EDS-21 | Self-contained editor conveniences from the EdSharp 4.0 competitive analysis (plus EDS-21, RTF round-trip in the io layer); polish, not 1.0 blockers, so they land in 2.0 with beta feedback. Live RTF rich editing stays out of scope by design. |
 | Tier 5 stretch explorations | NAV-10, AI-11, AI-12, AI-18, FEAT-12, FEAT-13, FEAT-14, FEAT-15, FEAT-16, FEAT-17, FEAT-18, LINUX-1, ECO-1, L10N-1, COLLAB-1 | Post-1.0 breadth, chosen with beta feedback in 2.0. |
 
 Completed outside the formal tier lists (cross-cutting protections and quality work that the tiers reference only by theme): SEC-2 (path-escape guard for persistence writes), SEC-3 (OCR language allowlist), SEC-4 (documented and validated cwd safety for safe_subprocess), SEC-5 (verified TLS everywhere), GATE-1 (pre-commit), PERF-8 (documented scoped type-check), CQ-17 (thread-safety invariants note), and A11Y-1 (announcement grammar). The GATE-3/CQ-7 cleanup also incidentally cleared the `quill/core` and `quill/io` portion of the TYPE-1..8 zone, though those formal rows stay open until each is individually verified and closed.

@@ -5934,10 +5934,13 @@ navigation, search, snippet, structured text, and file-management
 surface, and far exceeds it on AI, accessibility audit (GLOW), OCR and
 image description, modern TTS, dictation, macros, watch folders, feature
 profiles, and cross-screen-reader announcements. EdSharp’s only large
-categories QUILL deliberately does not pursue are RTF word processing
-and JScript.NET scripting add-ins. The actionable residue is a set of
-roughly twenty self-contained editor conveniences, listed as EDS-1
-through EDS-20 below.</p>
+category QUILL deliberately does not pursue is RTF <em>live
+rich-editing</em> (visual word processing on a
+<code>wx.RichTextCtrl</code>) and JScript.NET scripting add-ins; RTF as
+a <em>file format</em> is in scope as a 2.0 io-layer round-trip
+(EDS-21). The actionable residue is a set of roughly twenty
+self-contained editor conveniences plus the RTF format work, listed as
+EDS-1 through EDS-21 below.</p>
 <p><strong>Competitive analysis: EdSharp 4.0 vs QUILL</strong></p>
 <table>
 <colgroup>
@@ -6041,7 +6044,13 @@ lines, hard-wrap, read-only guard, delete-to-bounds)</td>
 <td>Gap (EDS-17, EDS-18)</td>
 </tr>
 <tr>
-<td>RTF word processing (justify/style/font, format nav)</td>
+<td>RTF as a file format (read formatting, write back)</td>
+<td>Yes</td>
+<td>Partial (lossy extract only)</td>
+<td>Gap (EDS-21, 2.0)</td>
+</tr>
+<tr>
+<td>RTF live rich editing (justify/style/font, format nav)</td>
 <td>Yes</td>
 <td>No (plain-text/markup-first)</td>
 <td>Out of scope by design</td>
@@ -6339,8 +6348,44 @@ security-reject path. (EdSharp F5, Shift+F5.)</td>
 on disk, each behind an explicit confirmation; tests cover rename,
 delete, and the cancel path. (EdSharp Alt+Shift+R, Alt+Shift+D.)</td>
 </tr>
+<tr>
+<td>EDS-21</td>
+<td>RTF round-trip through the io layer</td>
+<td>IO</td>
+<td>M</td>
+<td>Todo</td>
+<td>Promote RTF from the current lossy extract-only path to a real
+<code>io/*</code> format that reads RTF formatting into QUILL’s
+Markdown-style internal markup and writes Markdown back out to valid
+RTF, following the <code>read(path) -&gt; Document</code> /
+<code>write(doc, path)</code> contract; bold, italic, headings, lists,
+and links survive a round trip; no change to the editor control surface
+(the writing path stays a plain-text <code>wx.TextCtrl</code> over
+markup). Tests cover read, write, and a formatting round-trip. This is
+the only RTF scope QUILL pursues; see the note below.</td>
+</tr>
 </tbody>
 </table>
+<p>Note on RTF and the editor control surface: QUILL’s writing path is a
+stock <code>wx.TextCtrl</code> on purpose, because plain-text-first
+editing gives the strongest, most predictable screen-reader fidelity
+(NVDA, JAWS, Narrator parity) and is a standing design rule. There are
+two distinct “RTF support” scopes and only one is pursued. <strong>In
+scope (EDS-21):</strong> RTF as a <em>format</em> in the io layer, where
+formatting is read into QUILL’s Markdown-style markup and written back
+out to RTF, with the editor surface unchanged. This is a clean extension
+of the existing <code>io/*</code> contract and the right home for the
+lossy <code>_format_rtf</code> extract that exists today. <strong>Out of
+scope by design:</strong> RTF as a <em>live rich-editing surface</em>.
+True visual rich editing would require swapping the writing control to
+<code>wx.RichTextCtrl</code>, whose screen-reader behavior is weaker and
+whose selection, navigation, and announcement model differs from the one
+every existing command and the EDS-1 through EDS-20 conveniences assume.
+That tradeoff conflicts directly with QUILL’s accessibility- first,
+plain-text-first mandate, so live RTF word processing stays a deliberate
+scope choice rather than a backlog item. Importantly, none of EDS-1
+through EDS-20 depend on RTF; they are plain-text conveniences that ship
+on the current surface regardless of whether EDS-21 lands.</p>
 <p>Why deferred: every EDS item is a self-contained editor convenience
 that adds polish but is not required for a great, trustworthy 1.0. They
 are best sequenced into 2.0 alongside the other deferred work, and
@@ -6481,25 +6526,25 @@ LINUX-1, ECO-1, L10N-1, COLLAB-1</td>
 <tr>
 <td>EDS (2.0)</td>
 <td>EdSharp feature parity — deferred to QUILL 2.0</td>
-<td>20</td>
+<td>21</td>
 <td>0</td>
-<td>20</td>
-<td>EDS-1..20</td>
+<td>21</td>
+<td>EDS-1..21</td>
 </tr>
 <tr>
 <td><strong>2.0 subtotal</strong></td>
 <td>GLOW + BITS Whisperer + axe-core + EdSharp parity</td>
-<td><strong>62</strong></td>
+<td><strong>63</strong></td>
 <td><strong>0</strong></td>
-<td><strong>62</strong></td>
+<td><strong>63</strong></td>
 <td></td>
 </tr>
 <tr>
 <td><strong>Total</strong></td>
 <td>All tiers (1.0 + 2.0)</td>
-<td><strong>205</strong></td>
+<td><strong>206</strong></td>
 <td><strong>90</strong></td>
-<td><strong>115</strong></td>
+<td><strong>116</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -6637,10 +6682,11 @@ into 2.0.</td>
 <td>EdSharp feature parity (EDS)</td>
 <td>EDS-1, EDS-2, EDS-3, EDS-4, EDS-5, EDS-6, EDS-7, EDS-8, EDS-9,
 EDS-10, EDS-11, EDS-12, EDS-13, EDS-14, EDS-15, EDS-16, EDS-17, EDS-18,
-EDS-19, EDS-20</td>
+EDS-19, EDS-20, EDS-21</td>
 <td>Self-contained editor conveniences from the EdSharp 4.0 competitive
-analysis; polish, not 1.0 blockers, so they land in 2.0 with beta
-feedback.</td>
+analysis (plus EDS-21, RTF round-trip in the io layer); polish, not 1.0
+blockers, so they land in 2.0 with beta feedback. Live RTF rich editing
+stays out of scope by design.</td>
 </tr>
 <tr>
 <td>Tier 5 stretch explorations</td>
