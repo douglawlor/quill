@@ -442,6 +442,7 @@ from quill.core.yaml_structure import (
     extract_yaml_nodes,
     rename_yaml_node,
 )
+from quill.io.export import format_label_for_path, write_document_as, write_plain_text_document
 from quill.io.open_read import OFFICE_STREAM_SUFFIXES as _OFFICE_STREAM_SUFFIXES
 from quill.io.open_read import read_open_document
 from quill.io.pandoc import (
@@ -449,8 +450,7 @@ from quill.io.pandoc import (
     PandocUnavailableError,
     convert_document_with_pandoc,
 )
-from quill.io.rtf import write_rtf_document
-from quill.io.text import read_text_document, write_text_document
+from quill.io.text import read_text_document
 from quill.platform.windows.high_contrast import is_high_contrast_enabled
 from quill.platform.windows.prism_bridge import AnnouncementEngine
 from quill.platform.windows.shell_integration import (
@@ -5964,17 +5964,14 @@ class MainFrame(
         self._tray_icon = None
 
     def _write_document_to_disk(self, document: object, target: Path | None = None) -> None:
-        """Write a document, routing .rtf through the RTF io writer.
+        """Write a document, converting to the format of the target extension.
 
-        The editor surface stores QUILL Markdown-style markup; for .rtf targets
-        that markup is rendered back to valid RTF (EDS-21), otherwise it is
-        written verbatim as text.
+        The editor surface stores QUILL Markdown-style markup; Save As routes that
+        markup through :func:`write_document_as`, which re-serializes it to RTF,
+        HTML, or stripped plain text for those extensions and writes it verbatim
+        (as Markdown) otherwise.
         """
-        destination = target if target is not None else getattr(document, "path", None)
-        if destination is not None and Path(destination).suffix.lower() == ".rtf":
-            write_rtf_document(document, target)  # type: ignore[arg-type]
-        else:
-            write_text_document(document, target)  # type: ignore[arg-type]
+        write_document_as(document, target)  # type: ignore[arg-type]
 
     def save_file(self) -> None:
         if self.document.path is None:
@@ -6113,6 +6110,22 @@ class MainFrame(
         printout.Destroy()
         self._set_status("Printed document")
 
+    # Save As wildcard filter index -> the extension that filter implies.
+    _SAVE_FILTER_EXTENSIONS = {0: ".txt", 1: ".md", 2: ".html", 3: ".rtf"}
+
+    def _resolve_save_target(self, target: Path, filter_index: int) -> Path:
+        """Give ``target`` an extension from the chosen type filter when none typed.
+
+        A typed extension always wins (so ``notes.txt`` stays plain text even if the
+        HTML filter was highlighted, and no ``notes.txt.html`` double extension is
+        created). Only when the user typed no extension do we fall back to the
+        selected filter, defaulting to Markdown for the "All files" choice.
+        """
+        if target.suffix:
+            return target
+        extension = self._SAVE_FILTER_EXTENSIONS.get(filter_index, ".md")
+        return target.with_suffix(extension)
+
     def save_file_as(self) -> None:
         wx = self._wx
         with wx.FileDialog(
@@ -6133,7 +6146,9 @@ class MainFrame(
                     set_filter_index(filter_index)
             if self._show_modal_dialog(dialog, "Save file as") != wx.ID_OK:
                 return
-            target = Path(dialog.GetPath())
+            get_filter_index = getattr(dialog, "GetFilterIndex", None)
+            chosen_filter = get_filter_index() if callable(get_filter_index) else -1
+            target = self._resolve_save_target(Path(dialog.GetPath()), chosen_filter)
 
         self.document.set_text(self.editor.GetValue())
         if self.document.modified and self.document.path is not None:
@@ -6142,7 +6157,7 @@ class MainFrame(
         self._load_persistent_undo_state(target, self.document.text)
         self._record_recent(target)
         self._refresh_title()
-        self._set_status(f"Saved as {target.name}")
+        self._set_status(f"Saved as {target.name} ({format_label_for_path(target)})")
 
     def save_as_plain_text(self) -> None:
         wx = self._wx
@@ -6163,7 +6178,7 @@ class MainFrame(
             encoding="utf-8",
             line_ending="\n",
         )
-        write_text_document(plain_doc, target)
+        write_plain_text_document(plain_doc, target)
         self._record_recent(target)
         self._set_status(f"Saved plain text to {target.name}")
 

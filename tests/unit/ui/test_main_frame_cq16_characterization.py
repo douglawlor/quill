@@ -247,31 +247,43 @@ def test_switch_document_wraps_around_and_guards_single_tab() -> None:
 
 
 def test_write_document_to_disk_routes_rtf_through_the_rtf_writer(monkeypatch) -> None:
-    import quill.ui.main_frame as main_frame_module
+    import quill.io.export as export_module
 
-    text_calls: list[tuple[object, Path | None]] = []
+    plain_calls: list[tuple[object, Path | None]] = []
     rtf_calls: list[tuple[object, Path | None]] = []
+    verbatim_calls: list[tuple[object, Path | None]] = []
     monkeypatch.setattr(
-        main_frame_module,
-        "write_text_document",
-        lambda doc, target: text_calls.append((doc, target)),
+        export_module,
+        "write_plain_text_document",
+        lambda doc, target=None: plain_calls.append((doc, target)),
     )
     monkeypatch.setattr(
-        main_frame_module,
+        export_module,
         "write_rtf_document",
-        lambda doc, target: rtf_calls.append((doc, target)),
+        lambda doc, target=None: rtf_calls.append((doc, target)),
+    )
+    monkeypatch.setattr(
+        export_module,
+        "write_text_document",
+        lambda doc, target=None: verbatim_calls.append((doc, target)),
     )
 
     frame = _bare()
 
+    # A .txt target strips markup to plain text.
     txt_doc = SimpleNamespace(path=Path("note.txt"))
     frame._write_document_to_disk(txt_doc)
-    assert text_calls == [(txt_doc, None)]
+    assert plain_calls == [(txt_doc, Path("note.txt"))]
     assert rtf_calls == []
+
+    # A .md target is written verbatim (already Markdown).
+    md_doc = SimpleNamespace(path=Path("note.md"))
+    frame._write_document_to_disk(md_doc)
+    assert verbatim_calls == [(md_doc, Path("note.md"))]
 
     rtf_doc = SimpleNamespace(path=Path("note.rtf"))
     frame._write_document_to_disk(rtf_doc)
-    assert rtf_calls == [(rtf_doc, None)]
+    assert rtf_calls == [(rtf_doc, Path("note.rtf"))]
 
     # An explicit .rtf target overrides a non-rtf document path.
     other = SimpleNamespace(path=Path("note.txt"))

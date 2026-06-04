@@ -193,7 +193,7 @@ The **File** menu is the full document lifecycle.
 - **Open from URL...** downloads a document or text resource through an explicit safety flow that confirms host and expected size.
 - **Workspace Snapshots** lets you save and reopen groups of documents as a single workspace snapshot, similar to lightweight workspaces in Visual Studio Code.
 - **Save** writes the current document.
-- **Save As...** writes to a new path.
+- **Save As...** writes to a new path, converting the document to the file type you choose in the dialog. Quill keeps your text as portable Markdown-style markup, so picking **Rich Text Format (\*.rtf)** writes real RTF, **HTML (\*.html)** writes a standalone web page, and **Text (\*.txt)** writes clean prose with the markup removed. Choosing **Markdown (\*.md)** keeps the markup verbatim. The file's extension always decides the format; if you type a name without an extension, the selected type supplies one. Saving to plain text or HTML is one-way for that file — links and emphasis are flattened — while your open document stays in its original markup.
 - **Save All** writes every modified open document.
 - **Save As Plain Text...** exports a clean plain-text version.
 - **Reload from Disk** throws away in-memory edits and reloads the file from storage after confirmation.

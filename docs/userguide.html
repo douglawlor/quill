@@ -422,7 +422,17 @@ size.</li>
 of documents as a single workspace snapshot, similar to lightweight
 workspaces in Visual Studio Code.</li>
 <li><strong>Save</strong> writes the current document.</li>
-<li><strong>Save As…</strong> writes to a new path.</li>
+<li><strong>Save As…</strong> writes to a new path, converting the
+document to the file type you choose in the dialog. Quill keeps your
+text as portable Markdown-style markup, so picking <strong>Rich Text
+Format (*.rtf)</strong> writes real RTF, <strong>HTML (*.html)</strong>
+writes a standalone web page, and <strong>Text (*.txt)</strong> writes
+clean prose with the markup removed. Choosing <strong>Markdown
+(*.md)</strong> keeps the markup verbatim. The file’s extension always
+decides the format; if you type a name without an extension, the
+selected type supplies one. Saving to plain text or HTML is one-way for
+that file — links and emphasis are flattened — while your open document
+stays in its original markup.</li>
 <li><strong>Save All</strong> writes every modified open document.</li>
 <li><strong>Save As Plain Text…</strong> exports a clean plain-text
 version.</li>
