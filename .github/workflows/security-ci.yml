@@ -87,6 +87,13 @@ jobs:
       - name: Run banned-pattern gate
         run: |
           python -m quill.tools.check_banned_patterns
+      - name: Audit dialog escape-button wiring
+        # A11Y-4 / DLG-3 (#124): fail if any custom dialog declares a standard
+        # Escape id that no button carries and that it does not handle via a
+        # WXK_ESCAPE key handler -- the keyboard trap that shipped as Prompt
+        # Studio being unclosable with Escape.
+        run: |
+          python -m quill.tools.dialog_button_contract
 
   no-silent-network:
     # GATE-9: every outbound network call must be in the reviewed egress

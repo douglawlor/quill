@@ -1,0 +1,116 @@
+"""Dialog escape-button wiring gate (A11Y-4 / DLG-3 reinforcement, #124).
+
+The repo-wide gate fails if any ``hardened_custom`` dialog declares a standard
+``escape_id`` that no button carries and that it does not handle via a manual
+``WXK_ESCAPE`` key handler -- the exact keyboard trap that shipped as #124
+(Prompt Studio could not be closed with Escape). The synthetic tests pin the
+audit's own logic so it cannot silently stop detecting the bug class.
+"""
+
+from __future__ import annotations
+
+import ast
+
+from quill.tools.dialog_button_contract import (
+    _audit_module,
+    find_violations,
+)
+
+
+def test_no_dialog_escape_button_traps_in_source() -> None:
+    """Every custom dialog's Escape id must be backed by a button or handler."""
+    violations = find_violations()
+    assert not violations, (
+        "Dialog(s) declare an Escape id with neither a matching button nor a "
+        "WXK_ESCAPE handler, so Escape cannot close them (keyboard trap, "
+        "WCAG 2.1.2, #124):\n" + "\n".join(f"  {v}" for v in violations)
+    )
+
+
+def _violations(source: str) -> list[str]:
+    tree = ast.parse(source)
+    return [f"{v.scope}:{v.wx_id}" for v in _audit_module("synthetic.py", tree)]
+
+
+def test_audit_flags_escape_id_without_button() -> None:
+    source = """
+class TrapDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Trap")
+        self.use = wx.Button(self.dialog, label="Use")
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+"""
+    assert _violations(source) == ["TrapDialog:ID_CANCEL"]
+
+
+def test_audit_accepts_matching_cancel_button() -> None:
+    source = """
+class OkDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Ok")
+        self.close = wx.Button(self.dialog, id=wx.ID_CANCEL, label="Close")
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+"""
+    assert _violations(source) == []
+
+
+def test_audit_accepts_positional_button_id() -> None:
+    source = """
+class PositionalDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Positional")
+        self.close = wx.Button(self.dialog, wx.ID_OK, label="Close")
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
+"""
+    assert _violations(source) == []
+
+
+def test_audit_accepts_create_button_sizer_flag() -> None:
+    source = """
+class SizerDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Sizer")
+        buttons = self.dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+"""
+    assert _violations(source) == []
+
+
+def test_audit_accepts_manual_escape_handler() -> None:
+    source = """
+class PaletteDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Palette")
+        self.dialog.Bind(wx.EVT_CHAR_HOOK, self._on_char_hook)
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+
+    def _on_char_hook(self, event):
+        if event.GetKeyCode() == wx.WXK_ESCAPE:
+            self.dialog.EndModal(wx.ID_CANCEL)
+"""
+    assert _violations(source) == []
+
+
+def test_audit_ignores_affirmative_id_without_button() -> None:
+    # An unbacked affirmative (Enter) id is benign -- dialogs routinely accept
+    # Enter via a char hook -- so only escape_id is a trap.
+    source = """
+class EnterDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Enter")
+        self.close = wx.Button(self.dialog, id=wx.ID_CANCEL, label="Close")
+        apply_modal_ids(self.dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+"""
+    assert _violations(source) == []
+
+
+def test_audit_skips_non_standard_escape_ids() -> None:
+    # Custom ids (self.ID_DISCARD) cannot be resolved to a button statically, so
+    # they are skipped rather than flagged as false positives.
+    source = """
+class CustomIdDialog:
+    def __init__(self):
+        self.dialog = wx.Dialog(parent, title="Custom")
+        apply_modal_ids(self.dialog, affirmative_id=self.ID_INSERT, escape_id=self.ID_DISCARD)
+"""
+    assert _violations(source) == []

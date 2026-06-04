@@ -25,7 +25,10 @@ from quill.core.assistant_ai import (
     list_assistant_models,
     load_assistant_api_key,
     load_assistant_connection_settings,
+    missing_required_api_key,
     provider_api_key_label,
+    provider_api_key_storage_hint,
+    provider_display_name,
     provider_help_text,
     provider_requires_api_key,
     recommended_model_guidance,
@@ -279,6 +282,16 @@ class PromptStudioDialog:
         right.Add(self.preview, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
         self.status = wx.StaticText(self.dialog, label="Ready.")
         right.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+        # A Close button bound to wx.ID_CANCEL gives keyboard and mouse users a
+        # dismiss affordance and lets SetEscapeId(wx.ID_CANCEL) close the dialog
+        # with Escape (#124); without a matching button id, Escape has nothing
+        # to activate and the dialog cannot be closed from the keyboard.
+        close_row = wx.BoxSizer(wx.HORIZONTAL)
+        self.close_button = wx.Button(self.dialog, id=wx.ID_CANCEL, label="Close")
+        self.close_button.SetName("Close")
+        close_row.AddStretchSpacer(1)
+        close_row.Add(self.close_button, 0)
+        right.Add(close_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         root.Add(left, 1, wx.EXPAND)
         root.Add(right, 2, wx.EXPAND)
@@ -1362,7 +1375,7 @@ class AIHubDialog:
             "- Destructive actions require explicit confirmation.\n"
             "- Cloud connections are user-configured and visible.\n"
             "- Chat transcripts are not persisted by default.\n"
-            "- API keys use Credential Manager when available, with encrypted fallback."
+            "- Your API key is stored securely on this device and never shared."
         )
         self.summary.SetValue(summary)
 
@@ -1473,6 +1486,7 @@ class AssistantConnectionDialog:
             panel,
             choices=[label for _value, label in self._PROVIDER_CHOICES],
         )
+        self.provider.SetName("Provider")
         self.provider.SetSelection(self._provider_choice_index(self._settings.provider))
         panel_sizer.Add(
             wx.StaticText(panel, label="Provider"),
@@ -1488,6 +1502,7 @@ class AssistantConnectionDialog:
         self.host.SetValue(
             self._settings.host or default_host_for_provider(self._settings.provider)
         )
+        self.host.SetName("Host URL")
         panel_sizer.Add(wx.StaticText(panel, label="Host URL"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 8)
         panel_sizer.Add(self.host, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
@@ -1503,7 +1518,7 @@ class AssistantConnectionDialog:
 
         self.api_key_label = wx.StaticText(
             panel,
-            label="API key (optional; stored in Windows Credential Manager)",
+            label=provider_api_key_label(self._settings.provider),
         )
         panel_sizer.Add(self.api_key_label, 0, wx.LEFT | wx.RIGHT | wx.TOP, 8)
 
@@ -1516,6 +1531,11 @@ class AssistantConnectionDialog:
         self.reveal_api_key.SetName("Reveal API key")
         self.api_key_row.Add(self.reveal_api_key, 0)
         panel_sizer.Add(self.api_key_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+        # Plain-language reassurance instead of storage jargon on the field
+        # label itself (#122), so a screen reader does not read implementation
+        # detail every time the key field gets focus.
+        self.api_key_hint = wx.StaticText(panel, label=provider_api_key_storage_hint())
+        panel_sizer.Add(self.api_key_hint, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         actions = wx.BoxSizer(wx.HORIZONTAL)
         self.verify_button = wx.Button(panel, label="Verify Connection")
@@ -1654,6 +1674,14 @@ class AssistantConnectionDialog:
 
     def _on_list_models(self, _event: object) -> None:
         settings = self._current_settings()
+        if missing_required_api_key(settings.provider, settings.host, self.api_key.GetValue()):
+            message = (
+                f"An API key is required for {provider_display_name(settings.provider)}. "
+                "Enter your key and try again."
+            )
+            self.connection_status.SetLabel(message)
+            self._wx.MessageBox(message, "Model Discovery", self._wx.ICON_WARNING | self._wx.OK)
+            return
         models, error = list_assistant_models(settings, self.api_key.GetValue())
         if error is not None:
             self.connection_status.SetLabel(error)

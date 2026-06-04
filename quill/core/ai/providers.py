@@ -76,23 +76,51 @@ def provider_requires_api_key(provider: str) -> bool:
     }
 
 
+def provider_display_name(provider: str) -> str:
+    """Return a friendly, human-facing name for a provider id."""
+    normalized = provider.strip().lower()
+    names = {
+        "off": "Off",
+        "ollama": "Ollama (local)",
+        "ollama_cloud": "Ollama Cloud",
+        "openai": "OpenAI",
+        "claude": "Claude",
+        "openrouter": "OpenRouter",
+        "gemini": "Google Gemini",
+        "azure_openai": "Azure OpenAI",
+        "custom": "Custom OpenAI-compatible endpoint",
+    }
+    return names.get(normalized, provider.strip() or "the selected provider")
+
+
 def provider_api_key_label(provider: str) -> str:
     normalized = provider.strip().lower()
     if normalized == "openai":
-        return "OpenAI API key (Credential Manager or DPAPI-encrypted fallback)"
+        return "OpenAI API key"
     if normalized == "claude":
-        return "Claude API key (Credential Manager or DPAPI-encrypted fallback)"
+        return "Claude API key"
     if normalized == "openrouter":
-        return "OpenRouter API key (Credential Manager or DPAPI-encrypted fallback)"
+        return "OpenRouter API key"
     if normalized == "gemini":
-        return "Google Gemini API key (Credential Manager or DPAPI-encrypted fallback)"
+        return "Google Gemini API key"
     if normalized == "azure_openai":
-        return "Azure OpenAI API key (Credential Manager or DPAPI-encrypted fallback)"
+        return "Azure OpenAI API key"
     if normalized == "ollama_cloud":
-        return "Ollama Cloud API key (Credential Manager or DPAPI-encrypted fallback)"
+        return "Ollama Cloud API key"
     if normalized == "custom":
-        return "API key (OpenAI-compatible endpoint; Credential Manager or DPAPI fallback)"
-    return "API key (optional; Credential Manager or DPAPI-encrypted fallback)"
+        return "API key (OpenAI-compatible endpoint)"
+    return "API key (optional)"
+
+
+def provider_api_key_storage_hint() -> str:
+    """Plain-language reassurance about where the API key is kept.
+
+    Intentionally free of implementation jargon ("Credential Manager", "DPAPI",
+    "encrypted fallback") and platform-specific wording, so it reads well on any
+    OS and when spoken by a screen reader. Use it as hint/help text near the key
+    field, not as the field's accessible name (#122).
+    """
+    return "Your key is stored securely on this device and never shared."
 
 
 def provider_help_text(provider: str) -> str:

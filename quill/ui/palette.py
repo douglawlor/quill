@@ -77,6 +77,12 @@ class CommandPaletteDialog:
 
     def _on_char_hook(self, event: object) -> None:
         key_code = event.GetKeyCode()
+        if key_code == self._wx.WXK_ESCAPE:
+            # The palette has no buttons, so SetEscapeId(wx.ID_CANCEL) has
+            # nothing to activate; close it explicitly so Escape is not a
+            # keyboard trap (WCAG 2.1.2, #124).
+            self.dialog.EndModal(self._wx.ID_CANCEL)
+            return
         if key_code in (self._wx.WXK_RETURN, self._wx.WXK_NUMPAD_ENTER):
             self._on_accept(event)
             return

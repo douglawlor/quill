@@ -405,3 +405,159 @@ def test_assistant_secret_unlock_failed_false_when_no_secret(
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(assistant_ai, "_load_api_key_from_credential_manager", lambda: "")
     assert assistant_ai.assistant_secret_unlock_failed() is False
+
+
+# --- #120: Ollama Cloud model discovery --------------------------------------
+
+
+def test_ollama_cloud_model_candidates_prefer_openai_endpoint() -> None:
+    # Ollama Cloud is OpenAI-compatible; the full hosted catalog lives at
+    # /v1/models, not the local-style /api/tags, so /v1/models must be queried.
+    candidates = assistant_ai._model_endpoint_candidates("ollama_cloud", "https://ollama.com")
+    assert candidates == ["https://ollama.com/v1/models"]
+    assert "https://ollama.com/api/tags" not in candidates
+
+
+def test_list_models_ollama_cloud_hits_openai_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str] = []
+
+    def _record(request, *_args, **_kwargs):
+        seen.append(request.full_url)
+        return _FakeResponse({"data": [{"id": "gpt-oss:120b"}, {"id": "qwen3:480b"}]})
+
+    monkeypatch.setattr(assistant_ai, "urlopen", _record)
+    settings = assistant_ai.AssistantConnectionSettings(
+        provider="ollama_cloud", host="https://ollama.com"
+    )
+    models, error = assistant_ai.list_assistant_models(settings, api_key="cloud-key")
+    assert error is None
+    assert models == ["gpt-oss:120b", "qwen3:480b"]
+    assert seen == ["https://ollama.com/v1/models"]
+
+
+def test_list_models_falls_through_empty_first_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A successful but empty first endpoint must not stop discovery while a
+    # later candidate could still return the full catalog (#120 secondary bug).
+    seen: list[str] = []
+
+    def _by_endpoint(request, *_args, **_kwargs):
+        seen.append(request.full_url)
+        if request.full_url.endswith("/api/tags"):
+            return _FakeResponse({"models": []})
+        return _FakeResponse({"data": [{"id": "llama3.2:1b"}]})
+
+    monkeypatch.setattr(assistant_ai, "urlopen", _by_endpoint)
+    settings = assistant_ai.AssistantConnectionSettings(
+        provider="ollama", host="http://localhost:11434"
+    )
+    models, error = assistant_ai.list_assistant_models(settings, api_key="")
+    assert error is None
+    assert models == ["llama3.2:1b"]
+    assert seen == [
+        "http://localhost:11434/api/tags",
+        "http://localhost:11434/v1/models",
+    ]
+
+
+# --- #123: verify with a blank required key fails ----------------------------
+
+
+def test_verify_blank_key_fails_for_key_required_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ollama.com/api/tags answers 200 unauthenticated, so without the guard a
+    # blank key would falsely verify. The network must not even be reached.
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("network must not be called for a blank required key")
+
+    monkeypatch.setattr(assistant_ai, "urlopen", _boom)
+    settings = assistant_ai.AssistantConnectionSettings(
+        provider="ollama_cloud", host="https://ollama.com"
+    )
+    ok, message = assistant_ai.verify_assistant_connection(settings, api_key="   ")
+    assert ok is False
+    assert "API key is required" in message
+    assert "Ollama Cloud" in message
+
+
+def test_verify_local_ollama_allows_blank_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Local Ollama needs no key, so a blank key must still verify.
+    monkeypatch.setattr(
+        assistant_ai,
+        "urlopen",
+        lambda *_a, **_k: _FakeResponse({"models": [{"name": "llama3.2:1b"}]}),
+    )
+    settings = assistant_ai.AssistantConnectionSettings(
+        provider="ollama", host="http://localhost:11434"
+    )
+    ok, message = assistant_ai.verify_assistant_connection(settings, api_key="")
+    assert ok is True
+    assert "verified" in message.lower()
+
+
+def test_verify_local_custom_http_allows_blank_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A custom OpenAI-compatible endpoint on loopback legitimately needs no key,
+    # so the #123 guard must exempt local hosts even though "custom" requires a
+    # key for remote endpoints.
+    monkeypatch.setattr(
+        assistant_ai,
+        "urlopen",
+        lambda *_a, **_k: _FakeResponse({"data": [{"id": "llama3.1:8b"}]}),
+    )
+    settings = assistant_ai.AssistantConnectionSettings(
+        provider="custom", host="http://localhost:11434", model="llama3.1:8b"
+    )
+    ok, _message = assistant_ai.verify_assistant_connection(settings, api_key="")
+    assert ok is True
+
+
+def test_missing_required_api_key_rule() -> None:
+    # Remote, key-required, blank key -> missing.
+    assert assistant_ai.missing_required_api_key("ollama_cloud", "https://ollama.com", "") is True
+    # Key supplied -> not missing.
+    assert assistant_ai.missing_required_api_key("ollama_cloud", "https://ollama.com", "k") is False
+    # Local custom endpoint -> exempt.
+    assert assistant_ai.missing_required_api_key("custom", "http://localhost:1234", "") is False
+    # Provider that needs no key -> never missing.
+    assert assistant_ai.missing_required_api_key("ollama", "http://localhost:11434", "") is False
+
+
+# --- #122: plain-language API key labels -------------------------------------
+
+
+def test_api_key_labels_have_no_storage_jargon() -> None:
+    jargon = ("Credential Manager", "DPAPI", "encrypted fallback")
+    for provider in (
+        "openai",
+        "claude",
+        "openrouter",
+        "gemini",
+        "azure_openai",
+        "ollama_cloud",
+        "custom",
+        "off",
+    ):
+        label = assistant_ai.provider_api_key_label(provider)
+        for term in jargon:
+            assert term not in label, f"{provider!r} label leaks jargon: {label!r}"
+
+
+def test_api_key_storage_hint_is_plain_and_jargon_free() -> None:
+    hint = assistant_ai.provider_api_key_storage_hint()
+    assert "securely" in hint.lower()
+    for term in ("Credential Manager", "DPAPI", "Windows", "encrypted fallback"):
+        assert term not in hint
+
+
+def test_provider_display_name_is_friendly() -> None:
+    assert assistant_ai.provider_display_name("ollama_cloud") == "Ollama Cloud"
+    assert assistant_ai.provider_display_name("openai") == "OpenAI"
+    assert assistant_ai.provider_display_name("azure_openai") == "Azure OpenAI"

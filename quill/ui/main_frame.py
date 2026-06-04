@@ -7895,7 +7895,10 @@ class MainFrame(
             if ok_button is not None:
                 ok_button.SetDefault()
             root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
-        apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+        # This editor has only an OK button, so Escape closes via OK rather than
+        # a non-existent Cancel button; SetEscapeId needs an id that a real
+        # button carries or Escape is inert (a keyboard trap, #124).
+        apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
         dialog.SetSizer(root)
 
         def refresh_list(keep: int | None = None) -> None:

@@ -962,7 +962,7 @@ class MenuBuilderMixin:
         )
         ai_menu.Append(
             self._id_ai_model,
-            self._menu_label("AI &Model && Connection...", "tools.ai_model"),
+            self._menu_label("AI &Model and Connection...", "tools.ai_model"),
         )
         ai_menu.Append(
             self._id_ai_forget_key,

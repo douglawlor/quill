@@ -23,6 +23,12 @@ from quill.core.ai.providers import (
     provider_api_key_label as provider_api_key_label,
 )
 from quill.core.ai.providers import (
+    provider_api_key_storage_hint as provider_api_key_storage_hint,
+)
+from quill.core.ai.providers import (
+    provider_display_name as provider_display_name,
+)
+from quill.core.ai.providers import (
     provider_help_text as provider_help_text,
 )
 from quill.core.ai.providers import (
@@ -110,6 +116,21 @@ def filter_model_names(models: list[str], query: str, *, limit: int = 200) -> li
     return [name for _score, name in ranked[:limit]]
 
 
+def missing_required_api_key(provider: str, host: str, api_key: str) -> bool:
+    """Return True when a remote, key-required provider was given a blank key.
+
+    Centralizes the #123 rule so verify and the UI's List Models guard cannot
+    diverge: a provider that requires a key fails when the key is blank, unless
+    the endpoint is local (a custom OpenAI-compatible server on loopback that
+    legitimately needs no key).
+    """
+    normalized = provider.strip().lower()
+    if not provider_requires_api_key(normalized) or api_key.strip():
+        return False
+    hostname = (urlparse((host or "").strip()).hostname or "").lower()
+    return not _is_local_host(hostname)
+
+
 def verify_assistant_connection(
     settings: AssistantConnectionSettings,
     api_key: str,
@@ -119,6 +140,17 @@ def verify_assistant_connection(
     provider = settings.provider.strip().lower()
     if provider == "off":
         return True, "AI provider is Off."
+
+    # A provider that requires a key cannot be verified without one. Some
+    # listing endpoints (for example ollama.com/api/tags) answer 200 without
+    # authentication, so without this guard verify would falsely report success
+    # for a blank required key (#123).
+    if missing_required_api_key(provider, settings.host, api_key):
+        return (
+            False,
+            f"An API key is required for {provider_display_name(provider)}. "
+            "Enter your key and try again.",
+        )
 
     models, error = list_assistant_models(settings, api_key, timeout_seconds=timeout_seconds)
     if error is None:
@@ -247,6 +279,7 @@ def list_assistant_models(
     attempts = max(1, max_attempts)
     for attempt in range(attempts):
         attempt_errors: list[_FetchError] = []
+        empty_success = False
         for endpoint in candidates:
             models, error = _fetch_models_from_endpoint(
                 endpoint,
@@ -255,8 +288,17 @@ def list_assistant_models(
                 max_models=max_models,
             )
             if error is None:
-                return models, None
+                if models:
+                    return models, None
+                # A 200 with no models (for example a local /api/tags before any
+                # model is pulled) must not stop discovery while a later
+                # candidate (/v1/models) could still return the catalog (#120).
+                empty_success = True
+                continue
             attempt_errors.append(error)
+
+        if empty_success and not attempt_errors:
+            return [], None
 
         last_error = _most_significant_error(attempt_errors)
         if last_error is None or last_error.category not in _RETRYABLE_CATEGORIES:
@@ -383,6 +425,12 @@ def _extract_names_from_model_item(item: dict[str, object]) -> list[str]:
 def _model_endpoint_candidates(provider: str, host: str) -> list[str]:
     normalized = provider.strip().lower()
     if normalized in {"openai", "openrouter", "custom", "claude"}:
+        return [f"{host}/v1/models"]
+    if normalized == "ollama_cloud":
+        # Ollama Cloud is OpenAI-compatible; its hosted catalog lives at the
+        # authenticated /v1/models endpoint. The local-style /api/tags is wrong
+        # for the cloud host (it answers 200 unauthenticated and lists nothing
+        # useful), so query only /v1/models here (#120).
         return [f"{host}/v1/models"]
     if normalized == "gemini":
         return [f"{host}/v1/models", f"{host}/v1beta/models"]
