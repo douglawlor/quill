@@ -1,9 +1,10 @@
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from flask_cors import CORS
 import os
+
 from dotenv import load_dotenv
+from flask import Flask
+from flask_cors import CORS
+from flask_migrate import Migrate
+from flask_sqlalchemy import SQLAlchemy
 
 load_dotenv()
 
@@ -29,8 +30,8 @@ def create_app():
 
     # Blueprints
     from .api.plugins import plugins_bp
-    from .web.routes import web_bp
     from .forge.forms import forge_bp
+    from .web.routes import web_bp
 
     app.register_blueprint(plugins_bp, url_prefix="/api/v1")
     app.register_blueprint(web_bp)

@@ -1,5 +1,6 @@
-import os
 import glob
+import os
+
 from quill import api
 
 
@@ -22,7 +23,7 @@ def siphon_knowledge(context):
 
         for file_path in files:
             filename = os.path.basename(file_path)
-            with open(file_path, "r", encoding="utf-8") as f:
+            with open(file_path, encoding="utf-8") as f:
                 for line_num, line in enumerate(f, 1):
                     # Simple heuristic: find lines that look like "Key: Value" or start with bullets
                     stripped = line.strip()

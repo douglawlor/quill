@@ -1,7 +1,8 @@
 from quill import api
 
 # Mock transformation maps for demonstration.
-# In a production version, these might use a more complex NLP engine or a set of a hundred mapping rules.
+# In a production version, these might use a more complex NLP engine
+# or a set of a hundred mapping rules.
 FORMAL_MAP = {
     "hello": "Greetings",
     "thanks": "We expression our gratitude",

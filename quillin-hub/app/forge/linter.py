@@ -1,12 +1,12 @@
-import subprocess
-import os
-import shutil
 import json
-from typing import Dict, Any
+import os
+import subprocess
+from typing import Any
+
 from .security_scanner import SecurityWatchdog
 
 
-def audit_submission(upload_path: str, manifest: Dict[str, Any]) -> Dict[str, Any]:
+def audit_submission(upload_path: str, manifest: dict[str, Any]) -> dict[str, Any]:
     """
     End-to-end audit of a Quillin submission.
     Combines structural linting and security analysis.

@@ -1,6 +1,4 @@
 import ast
-import os
-from typing import List, Tuple, Optional
 
 
 class SecurityWatchdog:
@@ -35,13 +33,13 @@ class SecurityWatchdog:
         self.manifest = manifest
         self.declared_capabilities = set(manifest.get("capabilities", []))
 
-    def scan_file(self, file_path: str) -> List[Tuple[int, str]]:
+    def scan_file(self, file_path: str) -> list[tuple[int, str]]:
         """
         Scans a python file using AST to find security and watchdog issues.
         Returns a list of (line_number, issue_message).
         """
         issues = []
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             try:
                 tree = ast.parse(f.read())
             except SyntaxError as e:
@@ -71,7 +69,7 @@ class SecurityWatchdog:
 
         return issues
 
-    def _check_module(self, module_name: str, line_no: int) -> Optional[Tuple[int, str]]:
+    def _check_module(self, module_name: str, line_no: int) -> tuple[int, str] | None:
         if not module_name:
             return None
 
@@ -88,7 +86,8 @@ class SecurityWatchdog:
                 if cap not in self.declared_capabilities:
                     return (
                         line_no,
-                        f"WATCHDOG: Module '{module_name}' requires '{cap}' capability, which is not declared in manifest.",
+                        f"WATCHDOG: Module '{module_name}' requires '{cap}' capability,"
+                        " which is not declared in manifest.",
                     )
 
         return None

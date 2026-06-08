@@ -1,6 +1,5 @@
-from flask import Blueprint, render_template, request, jsonify
-from app.models.database import Plugin, User, Interaction
-from .. import db
+from app.models.database import Interaction, Plugin
+from flask import Blueprint, render_template, request
 
 web_bp = Blueprint("web", __name__, template_folder="templates")
 

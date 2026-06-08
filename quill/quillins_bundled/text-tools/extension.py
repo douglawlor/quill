@@ -17,8 +17,6 @@ clipboard access, so no consent prompt is ever raised.
 
 from __future__ import annotations
 
-from html_ops import html_to_markdown as _html_to_markdown
-
 from algorithms import (
     RegexError,
     count_matches,
@@ -31,6 +29,7 @@ from algorithms import (
     number_lines,
     widest_line_width,
 )
+from html_ops import html_to_markdown as _html_to_markdown
 
 
 def register(api):

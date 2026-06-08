@@ -1,6 +1,5 @@
-from flask import Blueprint, jsonify, request
 from app.models.database import Plugin
-from app import db
+from flask import Blueprint, jsonify
 
 plugins_bp = Blueprint("plugins_api", __name__)
 

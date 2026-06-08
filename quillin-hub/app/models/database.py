@@ -1,4 +1,3 @@
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
 # This is usually initialized in __init__.py using db.init_app(app)

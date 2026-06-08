@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest
-
 from quill.core.quillins.host import ApiDispatcher
 from quill.core.quillins.model import (
     CAP_EDITOR_READ,

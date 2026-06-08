@@ -1,8 +1,9 @@
-from github import Github
 import json
 import os
-from app.models.database import Plugin, User
+
 from app import db
+from app.models.database import Plugin
+from github import Github
 
 
 def sync_from_github(token, repo_name="Community-Access/quill"):

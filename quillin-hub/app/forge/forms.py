@@ -1,6 +1,4 @@
-from flask import Blueprint, render_template, request, flash, redirect, url_for
-from app.models.database import Plugin, User, Interaction
-from app import db
+from flask import Blueprint, redirect, render_template, request, url_for
 
 forge_bp = Blueprint("forge", __name__, template_folder="templates")
 

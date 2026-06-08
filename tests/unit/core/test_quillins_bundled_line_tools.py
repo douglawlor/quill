@@ -19,10 +19,7 @@ import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
-
-import pytest
 
 from quill.core.quillins.loader import bundled_extensions_root
 from quill.core.quillins.registry import build_registry
