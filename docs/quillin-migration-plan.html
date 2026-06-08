@@ -244,10 +244,10 @@
 <h1
 id="migrating-quills-first-party-code-onto-the-quillins-contribution-grammar">Migrating
 QUILL’s first-party code onto the Quillins contribution grammar</h1>
-<p>Status: <strong>Plan / playbook</strong> · Companion to
-<code>docs/scripting.md</code> (esp. §16) and <code>menus.md</code>
-(§3.7 + Phase 5) · Scope: <strong>internal refactor, 2.0-scale,
-maintainability-driven</strong></p>
+<p>Status: <strong>In progress — Wave 0 + Pilot 1 shipped</strong> ·
+Companion to <code>docs/scripting.md</code> (esp. §16) and
+<code>menus.md</code> (§3.7 + Phase 5) · Scope: <strong>internal
+refactor, 2.0-scale, maintainability-driven</strong></p>
 <blockquote>
 <p>Read <code>docs/scripting.md</code> §16 for the <em>why</em> (one
 vocabulary, two tiers). This document is the <em>how</em>: a concrete,
@@ -347,10 +347,14 @@ bespoke UI, but that UI must pass A11Y-4 review — it is first-party, not
 a sandboxed extension.)</p>
 <h2 id="the-first-party-host-facade">4. The first-party host facade</h2>
 <p>This is the single piece of <em>new</em> core surface the migration
-introduces: <code>quill/core/contributions.py</code> (wx-free protocol)
-with a <code>quill/ui</code> implementation that adapts
-<code>MainFrame</code>. It is the trusted superset of
-<code>QuillExtensionApi</code>:</p>
+introduces, and it has <strong>landed</strong> (Wave 0):
+<code>quill/core/contributions.py</code> (wx-free) provides the trusted
+registration half of the facade — a <code>FirstPartyRegistrar</code>
+that emits an <code>ExtensionManifest</code> merged through the shared
+<code>build_registry</code>. The richer editor/announce/services breadth
+below is the trusted superset of <code>QuillExtensionApi</code> adapted
+onto <code>MainFrame</code>; it is filled in per wave as features
+move:</p>
 <table>
 <colgroup>
 <col style="width: 33%" />
@@ -486,58 +490,71 @@ under the <code>Format</code> menu.</p></li>
 AI/assistant flows, or shared mutable selection state until the facade
 has proven itself on Pilots 1–3.</p>
 <h2 id="wave-by-wave-sequencing">7. Wave-by-wave sequencing</h2>
+<p>Status legend: ✅ shipped · ⏳ future.</p>
 <table>
 <colgroup>
-<col style="width: 33%" />
-<col style="width: 33%" />
-<col style="width: 33%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
 </colgroup>
 <thead>
 <tr>
 <th>Wave</th>
 <th>Scope</th>
 <th>Exit criterion</th>
+<th>Status</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>0</td>
-<td>Land <code>quill/core/contributions.py</code> +
-<code>MainFrame</code> adapter; no features moved</td>
-<td>Facade unit-tested; <code>main_frame.py</code> unchanged in
-behavior; public-surface fixture stable</td>
+<td>Land <code>quill/core/contributions.py</code> (wx-free facade:
+<code>FirstPartyRegistrar</code> + <code>FirstPartyCommand</code> +
+<code>build_first_party_registry</code>) feeding the
+<strong>same</strong> <code>build_registry</code> as Quillins</td>
+<td>Facade unit-tested
+(<code>tests/unit/core/test_contributions.py</code>);
+<code>main_frame.py</code> unchanged in behavior; public-surface fixture
+stable</td>
+<td>✅ Shipped</td>
 </tr>
 <tr>
 <td>1</td>
 <td>Pilot 1 (EdSharp <code>eds.*</code>) — <strong>lands the menus.md
 §3.7 rename + recirculation as data</strong></td>
-<td>EdSharp table replaced by <code>register(host)</code>; each
-command’s <code>menu=(...)</code> set to its recirculated home
-(Insert/Edit/Format/Search/Navigate/File or the renamed
-<code>Power Tools</code> remainder);
-<code>test_eds_command_wiring.py</code> updated to the new placements
-and green; <code>main_frame.py</code> net-smaller</td>
+<td>EdSharp table + menu recirculation <strong>derived from</strong> the
+declarative <code>EDSHARP_COMMANDS</code> manifest (each command carries
+its recirculated home Insert/Edit/Format/Search/Navigate/File or the
+renamed <code>Power Tools</code> remainder);
+<code>test_eds_command_wiring.py</code> reads the manifest and is green;
+live menu byte-for-byte identical</td>
+<td>✅ Shipped</td>
 </tr>
 <tr>
 <td>2</td>
 <td>Line-ops + speak/status commands</td>
 <td>Each command a module; characterization tests green</td>
+<td>⏳ Future</td>
 </tr>
 <tr>
 <td>3</td>
 <td>Format-menu commands</td>
 <td><code>Format</code> contributions all flow through the registry</td>
+<td>⏳ Future</td>
 </tr>
 <tr>
 <td>4</td>
 <td>Navigate/View read-only commands</td>
 <td>…</td>
+<td>⏳ Future</td>
 </tr>
 <tr>
 <td>5</td>
 <td>Tools utilities that already use <code>show_web_form</code></td>
 <td>Dialogs stay A11Y-4-registered; <code>dialogs.md</code> rows
 unchanged</td>
+<td>⏳ Future</td>
 </tr>
 <tr>
 <td>N</td>
@@ -545,10 +562,34 @@ unchanged</td>
 lifecycle + surface</td>
 <td><code>quill/core</code> is the framework; remaining
 <code>main_frame.py</code> is guardrail code (§2)</td>
+<td>⏳ Future</td>
 </tr>
 </tbody>
 </table>
 <p>Each wave is multiple small PRs, not one large one.</p>
+<blockquote>
+<p><strong>Wave 0 / Pilot 1 — what actually shipped.</strong>
+<code>quill/core/contributions.py</code> is the wx-free first-party
+facade: a <code>FirstPartyRegistrar</code> collects
+<code>add_command(...)</code> declarations and emits an
+<code>ExtensionManifest</code> merged through the <em>same</em>
+<code>build_registry</code>
+(<code>quill/core/quillins/registry.py</code>) used for Quillins, so
+first-party ids and any Quillin contribution collide-detect uniformly
+(verified by
+<code>test_first_party_and_quillin_collide_through_one_registry</code>).
+First-party ids keep their namespaces (<code>eds.*</code>) and may
+attach under the whole bar (<code>FIRST_PARTY_MENU_PARENTS</code> is a
+superset of the narrow third-party <code>MENU_PARENTS</code>). The
+EdSharp pilot (<code>quill/ui/main_frame_edsharp_menu.py</code>) is the
+first consumer: its 33 commands are declared once as
+<code>EDSHARP_COMMANDS</code>, and both the palette registration table
+and the menu recirculation (one <code>_append_edsharp_group</code> loop
+instead of eight hand-written helpers) derive from that data. The
+handler resolves by convention (<code>eds.number_lines</code> →
+<code>self.number_lines</code>), so the data and behavior cannot drift.
+Waves 2–N repeat this mechanically, one command group per PR.</p>
+</blockquote>
 <h2 id="per-feature-migration-checklist">8. Per-feature migration
 checklist</h2>
 <p>For every feature moved:</p>

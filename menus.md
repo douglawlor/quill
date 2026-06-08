@@ -353,7 +353,8 @@ The bar is currently built imperatively in one large method in
 Phases 1–4 are **shipped on `main`** (commits `954e0b8`, `c525a4e`, `73567be`,
 `8f83cfa`). Each phase was independently shippable, behind characterization
 tests, and kept `tests/unit/ui/test_main_frame_menu_contract.py` and `dialogs.md`
-green. Phase 5 remains future work.
+green. Phase 5 has now landed its foundation (Wave 0 facade + the EdSharp pilot
+expressed as data); the remaining waves stay honestly future.
 
 | Phase | Change | Risk | Lever | Status |
 |-------|--------|------|-------|--------|
@@ -361,11 +362,14 @@ green. Phase 5 remains future work.
 | **2. Demote** | `AI` and `BITS Whisperer` → `Tools` submenus; AI promotable via Customize Menus when AI profile active. | Med | menu_customization + build | ✅ Shipped (`c525a4e`) |
 | **3. De-dup / relocate** | Move Find/Replace into `Edit`; reduce `Search` to in-files; move `View` preference toggles → Settings. | Med | build + settings registry | ✅ Shipped (`73567be`) |
 | **4. Flatten Tools** | Collapse the three 3-level chains to ≤2; regroup to PRD taxonomy; move Announcement Backend picker → Settings; **recirculate + rename EdSharp Tools (§3.7)**. | Med | build | ✅ Shipped (`8f83cfa`) |
-| **5. Menus-as-data** | Extract first-party menu into a declarative manifest consumed by the Quillins contribution registry. | High | contribution grammar | ⏳ Future |
+| **5. Menus-as-data (Wave 0 + Pilot 1)** | Land the wx-free first-party contribution facade (`quill/core/contributions.py`) that feeds the **same** `build_registry` as Quillins; express the 33 EdSharp `eds.*` commands as a declarative manifest (`EDSHARP_COMMANDS`) that **drives** the palette table and the menu recirculation. | High | contribution grammar | ✅ Shipped |
+| **5. Menus-as-data (Waves 2–N)** | Move the remaining first-party command groups (line-ops, Format, Navigate/View, Tools utilities) onto the facade per `docs/quillin-migration-plan.md` §7. | High | contribution grammar | ⏳ Future |
 
 **Sequencing note:** Phases 1–4 deliver the entire user-visible improvement on
 the existing machinery. Phase 5 is an internal refactor that unlocks the Quillin
-migration and is optional for the usability win.
+migration and is optional for the usability win. Wave 0 + Pilot 1 prove the
+"menus as data" model end-to-end (the EdSharp menu is now byte-for-byte rebuilt
+from a manifest); later waves repeat the mechanical move group by group.
 
 ---
 

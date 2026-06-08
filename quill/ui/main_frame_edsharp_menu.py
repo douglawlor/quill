@@ -1,146 +1,321 @@
 """EdSharp command registration and menu wiring for :class:`MainFrame`.
 
 Extracted from ``main_frame.py`` to keep the monolith under its GATE-11 budget.
-The mixin owns the single source of truth for the EdSharp (EDS-1..21) command
-table, registers those commands with the palette/Keymap Editor, and recirculates
-them into their conventional menus (menus.md Phase 4): the former
-``Tools > EdSharp Tools`` monolith is dissolved so its commands live where users
-expect them (Insert, Edit, File, Format, Navigate, Search, Tools > Accessibility)
-and the cohesive remainder ships as ``Tools > Power Tools``. Every handler lives
-on :class:`~quill.ui.main_frame_edsharp.EdSharpActionsMixin`; this mixin only
-wires them into the accessible surfaces, so both stay in lock-step.
+This mixin owns the single source of truth for the EdSharp (EDS-1..21) commands,
+registers them with the palette/Keymap Editor, and recirculates them into their
+conventional menus (menus.md Phase 4): the former ``Tools > EdSharp Tools``
+monolith is dissolved so its commands live where users expect them (Insert, Edit,
+File, Format, Navigate, Search, Tools > Accessibility) and the cohesive remainder
+ships as ``Tools > Power Tools``.
+
+Phase 5 (menus-as-data) turns that source of truth into a **declarative manifest**:
+:data:`EDSHARP_COMMANDS` expresses every command in the shared contribution
+grammar (:mod:`quill.core.contributions`) — id, title, top-level home, in-menu
+label, and grouping — and both the palette registration table and the menu
+recirculation are *derived* from it. The handlers still live on
+:class:`~quill.ui.main_frame_edsharp.EdSharpActionsMixin` and resolve by
+convention (``eds.number_lines`` -> ``self.number_lines``), so the data and the
+behavior can never drift.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
+from quill.core.contributions import FirstPartyCommand, FirstPartyRegistrar
+
+
+def _build_edsharp_registrar() -> FirstPartyRegistrar:
+    """Declare the EdSharp parity commands (EDS-1..21) as first-party data.
+
+    Commands are declared grouped by their recirculated menu home (menus.md
+    Phase 4). Within each ``group`` the declaration order is the live menu order,
+    and ``separator_before`` reproduces the visual grouping; one data-driven
+    helper appends each group. None carry a default keybinding — EdSharp's own
+    shortcuts collide with QUILL's curated keymap, so users bind them from the
+    Keymap Editor instead.
+    """
+
+    registrar = FirstPartyRegistrar()
+    add = registrar.add_command
+
+    # Insert menu --------------------------------------------------------
+    add(
+        id="eds.insert_special_character",
+        title="EdSharp: Insert Special Character",
+        top_level="Insert",
+        group="insert",
+        label="Special &Character...",
+        separator_before=True,
+    )
+    add(
+        id="eds.insert_date_time",
+        title="EdSharp: Insert Date and Time",
+        top_level="Insert",
+        group="insert",
+        label="Date and &Time",
+    )
+    add(
+        id="eds.calculate_and_insert_date",
+        title="EdSharp: Insert Calculated Date",
+        top_level="Insert",
+        group="insert",
+        label="C&alculated Date...",
+    )
+    add(
+        id="eds.insert_file_content",
+        title="EdSharp: Insert File Content",
+        top_level="Insert",
+        group="insert",
+        label="File &Content...",
+    )
+
+    # Edit menu ----------------------------------------------------------
+    add(
+        id="eds.paste_html_as_markdown",
+        title="EdSharp: Paste HTML as Markdown",
+        top_level="Edit",
+        group="edit",
+        label="Paste &HTML as Markdown",
+        separator_before=True,
+    )
+    add(
+        id="eds.delete_to_line_start",
+        title="EdSharp: Delete to Line Start",
+        top_level="Edit",
+        group="edit",
+        label="Delete to Line &Start",
+        separator_before=True,
+    )
+    add(
+        id="eds.delete_to_line_end",
+        title="EdSharp: Delete to Line End",
+        top_level="Edit",
+        group="edit",
+        label="Delete to Line E&nd",
+    )
+    add(
+        id="eds.delete_to_document_start",
+        title="EdSharp: Delete to Document Start",
+        top_level="Edit",
+        group="edit",
+        label="Delete to Document &Top",
+    )
+    add(
+        id="eds.delete_to_document_end",
+        title="EdSharp: Delete to Document End",
+        top_level="Edit",
+        group="edit",
+        label="Delete to Document Botto&m",
+    )
+    add(
+        id="eds.delete_paragraph",
+        title="EdSharp: Delete Paragraph",
+        top_level="Edit",
+        group="edit",
+        label="Delete Paragrap&h",
+    )
+
+    # File menu ----------------------------------------------------------
+    add(
+        id="eds.new_document_from_clipboard",
+        title="EdSharp: New Document from Clipboard",
+        top_level="File",
+        group="file_create",
+        label="New from Cli&pboard",
+    )
+    add(
+        id="eds.run_current_file",
+        title="EdSharp: Run Current File",
+        top_level="File",
+        group="file_ops",
+        label="R&un Current File",
+    )
+    add(
+        id="eds.run_target_at_cursor",
+        title="EdSharp: Open Target at Cursor",
+        top_level="File",
+        group="file_ops",
+        label="Open &Target at Cursor",
+    )
+    add(
+        id="eds.rename_current_file",
+        title="EdSharp: Rename Current File",
+        top_level="File",
+        group="file_ops",
+        label="Re&name Current File...",
+    )
+    add(
+        id="eds.delete_current_file",
+        title="EdSharp: Delete Current File",
+        top_level="File",
+        group="file_ops",
+        label="Dele&te Current File...",
+    )
+
+    # Format > Transform Lines ------------------------------------------
+    add(
+        id="eds.number_lines",
+        title="EdSharp: Number Lines",
+        top_level="Format",
+        group="transform_lines",
+        label="&Number Lines...",
+    )
+    add(
+        id="eds.hard_wrap_lines",
+        title="EdSharp: Hard-Wrap Lines",
+        top_level="Format",
+        group="transform_lines",
+        label="&Hard-Wrap Lines...",
+    )
+
+    # Navigate menu ------------------------------------------------------
+    add(
+        id="eds.go_to_percent",
+        title="EdSharp: Go to Percent",
+        top_level="Navigate",
+        group="navigate",
+        label="Go to &Percent...",
+        separator_before=True,
+    )
+    add(
+        id="eds.move_to_first_non_blank",
+        title="EdSharp: Move to First Non-Blank",
+        top_level="Navigate",
+        group="navigate",
+        label="First &Non-Blank",
+    )
+    add(
+        id="eds.move_to_last_non_blank",
+        title="EdSharp: Move to Last Non-Blank",
+        top_level="Navigate",
+        group="navigate",
+        label="&Last Non-Blank",
+    )
+
+    # Search menu --------------------------------------------------------
+    add(
+        id="eds.count_regex_matches",
+        title="EdSharp: Count Regex Matches",
+        top_level="Search",
+        group="search",
+        label="&Count Regex Matches...",
+        separator_before=True,
+    )
+    add(
+        id="eds.extract_regex_matches",
+        title="EdSharp: Extract Regex Matches",
+        top_level="Search",
+        group="search",
+        label="E&xtract Regex Matches...",
+    )
+    add(
+        id="eds.set_lines_first_not_second",
+        title="EdSharp: Lines in First Block Only",
+        top_level="Search",
+        group="search",
+        label="Lines in First &Block Only",
+        separator_before=True,
+    )
+    add(
+        id="eds.set_lines_common",
+        title="EdSharp: Lines Common to Both Blocks",
+        top_level="Search",
+        group="search",
+        label="Lines Co&mmon to Both Blocks",
+    )
+
+    # Tools > Accessibility ---------------------------------------------
+    add(
+        id="eds.speak_cursor_address",
+        title="EdSharp: Speak Cursor Address",
+        top_level="Tools",
+        group="accessibility",
+        label="Speak Cursor &Address",
+        separator_before=True,
+    )
+    add(
+        id="eds.speak_document_status",
+        title="EdSharp: Speak Document Status",
+        top_level="Tools",
+        group="accessibility",
+        label="Speak Document Stat&us",
+    )
+    add(
+        id="eds.speak_selection_length",
+        title="EdSharp: Speak Selection Length",
+        top_level="Tools",
+        group="accessibility",
+        label="Speak Selection &Length",
+    )
+
+    # Tools > Power Tools (the cohesive EdSharp remainder) --------------
+    add(
+        id="eds.toggle_read_only_guard",
+        title="EdSharp: Toggle Read-Only Guard",
+        top_level="Tools",
+        group="power_tools",
+        label="Toggle &Read-Only Guard",
+    )
+    add(
+        id="eds.toggle_clipboard_collector",
+        title="EdSharp: Toggle Clipboard Collector",
+        top_level="Tools",
+        group="power_tools",
+        label="Toggle Clipboard Co&llector",
+    )
+    add(
+        id="eds.collect_clipboard_now",
+        title="EdSharp: Collect Clipboard Now",
+        top_level="Tools",
+        group="power_tools",
+        label="Collect Clipboard No&w",
+    )
+    add(
+        id="eds.toggle_key_describer",
+        title="EdSharp: Toggle Key Describer",
+        top_level="Tools",
+        group="power_tools",
+        label="Toggle &Key Describer",
+    )
+    add(
+        id="eds.toggle_indent_announce",
+        title="EdSharp: Toggle Indentation Announcements",
+        top_level="Tools",
+        group="power_tools",
+        label="Toggle Indentation &Announcements",
+    )
+    add(
+        id="eds.infer_indent",
+        title="EdSharp: Infer Indentation",
+        top_level="Tools",
+        group="power_tools",
+        label="I&nfer Indentation...",
+    )
+    return registrar
+
+
+# The declarative EdSharp manifest. Both the palette registration table and the
+# menu recirculation derive from this single data structure (menus.md Phase 5).
+EDSHARP_REGISTRAR: FirstPartyRegistrar = _build_edsharp_registrar()
+EDSHARP_COMMANDS: tuple[FirstPartyCommand, ...] = EDSHARP_REGISTRAR.commands
+
 
 class EdSharpMenuMixin:
     """Palette + menu wiring for the EdSharp parity commands."""
 
     def _edsharp_command_table(self) -> list[tuple[str, str, Callable[[], None]]]:
-        """EdSharp parity commands (EDS-1..21) as ``(id, label, handler)`` rows.
+        """EdSharp parity commands as ``(id, label, handler)`` rows.
 
-        Shared by command registration (palette + Keymap Editor) and the menu
-        recirculation so the two never drift. None carry a default keybinding;
-        EdSharp's own shortcuts collide with QUILL's curated keymap, so users bind
-        them from the Keymap Editor instead.
+        Derived from the declarative :data:`EDSHARP_COMMANDS` manifest; the
+        handler is resolved by convention (``eds.number_lines`` ->
+        ``self.number_lines``) so the data and behavior stay in lock-step. Shared
+        by command registration (palette + Keymap Editor) and the menu
+        recirculation so the two never drift.
         """
         return [
-            (
-                "eds.insert_special_character",
-                "EdSharp: Insert Special Character",
-                self.insert_special_character,
-            ),
-            ("eds.insert_date_time", "EdSharp: Insert Date and Time", self.insert_date_time),
-            (
-                "eds.calculate_and_insert_date",
-                "EdSharp: Insert Calculated Date",
-                self.calculate_and_insert_date,
-            ),
-            ("eds.insert_file_content", "EdSharp: Insert File Content", self.insert_file_content),
-            (
-                "eds.new_document_from_clipboard",
-                "EdSharp: New Document from Clipboard",
-                self.new_document_from_clipboard,
-            ),
-            (
-                "eds.paste_html_as_markdown",
-                "EdSharp: Paste HTML as Markdown",
-                self.paste_html_as_markdown,
-            ),
-            ("eds.number_lines", "EdSharp: Number Lines", self.number_lines),
-            ("eds.hard_wrap_lines", "EdSharp: Hard-Wrap Lines", self.hard_wrap_lines),
-            (
-                "eds.delete_to_line_start",
-                "EdSharp: Delete to Line Start",
-                self.delete_to_line_start,
-            ),
-            ("eds.delete_to_line_end", "EdSharp: Delete to Line End", self.delete_to_line_end),
-            (
-                "eds.delete_to_document_start",
-                "EdSharp: Delete to Document Start",
-                self.delete_to_document_start,
-            ),
-            (
-                "eds.delete_to_document_end",
-                "EdSharp: Delete to Document End",
-                self.delete_to_document_end,
-            ),
-            ("eds.delete_paragraph", "EdSharp: Delete Paragraph", self.delete_paragraph),
-            (
-                "eds.set_lines_first_not_second",
-                "EdSharp: Lines in First Block Only",
-                self.set_lines_first_not_second,
-            ),
-            ("eds.set_lines_common", "EdSharp: Lines Common to Both Blocks", self.set_lines_common),
-            ("eds.count_regex_matches", "EdSharp: Count Regex Matches", self.count_regex_matches),
-            (
-                "eds.extract_regex_matches",
-                "EdSharp: Extract Regex Matches",
-                self.extract_regex_matches,
-            ),
-            (
-                "eds.speak_cursor_address",
-                "EdSharp: Speak Cursor Address",
-                self.speak_cursor_address,
-            ),
-            (
-                "eds.speak_document_status",
-                "EdSharp: Speak Document Status",
-                self.speak_document_status,
-            ),
-            (
-                "eds.speak_selection_length",
-                "EdSharp: Speak Selection Length",
-                self.speak_selection_length,
-            ),
-            ("eds.go_to_percent", "EdSharp: Go to Percent", self.go_to_percent),
-            (
-                "eds.move_to_first_non_blank",
-                "EdSharp: Move to First Non-Blank",
-                self.move_to_first_non_blank,
-            ),
-            (
-                "eds.move_to_last_non_blank",
-                "EdSharp: Move to Last Non-Blank",
-                self.move_to_last_non_blank,
-            ),
-            (
-                "eds.toggle_read_only_guard",
-                "EdSharp: Toggle Read-Only Guard",
-                self.toggle_read_only_guard,
-            ),
-            (
-                "eds.toggle_clipboard_collector",
-                "EdSharp: Toggle Clipboard Collector",
-                self.toggle_clipboard_collector,
-            ),
-            (
-                "eds.collect_clipboard_now",
-                "EdSharp: Collect Clipboard Now",
-                self.collect_clipboard_now,
-            ),
-            (
-                "eds.toggle_key_describer",
-                "EdSharp: Toggle Key Describer",
-                self.toggle_key_describer,
-            ),
-            (
-                "eds.toggle_indent_announce",
-                "EdSharp: Toggle Indentation Announcements",
-                self.toggle_indent_announce,
-            ),
-            ("eds.infer_indent", "EdSharp: Infer Indentation", self.infer_indent),
-            ("eds.run_current_file", "EdSharp: Run Current File", self.run_current_file),
-            (
-                "eds.run_target_at_cursor",
-                "EdSharp: Open Target at Cursor",
-                self.run_target_at_cursor,
-            ),
-            ("eds.rename_current_file", "EdSharp: Rename Current File", self.rename_current_file),
-            ("eds.delete_current_file", "EdSharp: Delete Current File", self.delete_current_file),
+            (command.id, command.title, getattr(self, command.handler_name))
+            for command in EDSHARP_COMMANDS
         ]
 
     def _register_edsharp_commands(self) -> None:
@@ -155,7 +330,7 @@ class EdSharpMenuMixin:
     def _eds_menu_item(self, menu: object, command_id: str, label: str) -> None:
         """Append one EdSharp command to ``menu`` and bind its handler.
 
-        Shared by every recirculation helper and the Power Tools submenu so the
+        Shared by the data-driven group helper and the Power Tools submenu so the
         menu surface and the command palette stay in lock-step. The label shows
         any user-assigned keybinding via ``_menu_label``.
         """
@@ -165,64 +340,46 @@ class EdSharpMenuMixin:
         handler = self._edsharp_handlers()[command_id]
         self.frame.Bind(wx.EVT_MENU, lambda _e, run=handler: run(), id=item_id)
 
+    def _append_edsharp_group(self, menu: object, group: str) -> None:
+        """Append every command in ``group`` to ``menu`` in declaration order.
+
+        The single data-driven recirculation primitive (menus.md Phase 5): it
+        reads :data:`EDSHARP_COMMANDS`, emits each command's separator and label
+        from the manifest, and binds it — replacing the eight hand-written
+        per-group helpers with one loop over the declarative data.
+        """
+        for command in EDSHARP_REGISTRAR.commands_in_group(group):
+            if command.placement.separator_before:
+                menu.AppendSeparator()
+            self._eds_menu_item(menu, command.id, command.placement.label)
+
     # --- Recirculation helpers (menus.md Phase 4) --------------------------
-    # Each appends a separator-led EdSharp group to a conventional menu.
+    # Thin, data-driven wrappers kept as named seams for the menu builder. Each
+    # delegates to _append_edsharp_group so the placement lives in the manifest.
 
     def _append_edsharp_insert_items(self, insert_menu: object) -> None:
-        insert_menu.AppendSeparator()
-        self._eds_menu_item(insert_menu, "eds.insert_special_character", "Special &Character...")
-        self._eds_menu_item(insert_menu, "eds.insert_date_time", "Date and &Time")
-        self._eds_menu_item(insert_menu, "eds.calculate_and_insert_date", "C&alculated Date...")
-        self._eds_menu_item(insert_menu, "eds.insert_file_content", "File &Content...")
+        self._append_edsharp_group(insert_menu, "insert")
 
     def _append_edsharp_edit_items(self, edit_menu: object) -> None:
-        edit_menu.AppendSeparator()
-        self._eds_menu_item(edit_menu, "eds.paste_html_as_markdown", "Paste &HTML as Markdown")
-        edit_menu.AppendSeparator()
-        self._eds_menu_item(edit_menu, "eds.delete_to_line_start", "Delete to Line &Start")
-        self._eds_menu_item(edit_menu, "eds.delete_to_line_end", "Delete to Line E&nd")
-        self._eds_menu_item(edit_menu, "eds.delete_to_document_start", "Delete to Document &Top")
-        self._eds_menu_item(edit_menu, "eds.delete_to_document_end", "Delete to Document Botto&m")
-        self._eds_menu_item(edit_menu, "eds.delete_paragraph", "Delete Paragrap&h")
+        self._append_edsharp_group(edit_menu, "edit")
 
     def _append_edsharp_file_create_items(self, file_menu: object) -> None:
-        self._eds_menu_item(file_menu, "eds.new_document_from_clipboard", "New from Cli&pboard")
+        self._append_edsharp_group(file_menu, "file_create")
 
     def _append_edsharp_file_ops_items(self, file_menu: object) -> None:
-        self._eds_menu_item(file_menu, "eds.run_current_file", "R&un Current File")
-        self._eds_menu_item(file_menu, "eds.run_target_at_cursor", "Open &Target at Cursor")
-        self._eds_menu_item(file_menu, "eds.rename_current_file", "Re&name Current File...")
-        self._eds_menu_item(file_menu, "eds.delete_current_file", "Dele&te Current File...")
+        self._append_edsharp_group(file_menu, "file_ops")
 
     def _append_edsharp_transform_line_items(self, transform_menu: object) -> None:
-        self._eds_menu_item(transform_menu, "eds.number_lines", "&Number Lines...")
-        self._eds_menu_item(transform_menu, "eds.hard_wrap_lines", "&Hard-Wrap Lines...")
+        self._append_edsharp_group(transform_menu, "transform_lines")
 
     def _append_edsharp_navigate_items(self, navigate_menu: object) -> None:
-        navigate_menu.AppendSeparator()
-        self._eds_menu_item(navigate_menu, "eds.go_to_percent", "Go to &Percent...")
-        self._eds_menu_item(navigate_menu, "eds.move_to_first_non_blank", "First &Non-Blank")
-        self._eds_menu_item(navigate_menu, "eds.move_to_last_non_blank", "&Last Non-Blank")
+        self._append_edsharp_group(navigate_menu, "navigate")
 
     def _append_edsharp_search_items(self, search_menu: object) -> None:
-        search_menu.AppendSeparator()
-        self._eds_menu_item(search_menu, "eds.count_regex_matches", "&Count Regex Matches...")
-        self._eds_menu_item(search_menu, "eds.extract_regex_matches", "E&xtract Regex Matches...")
-        search_menu.AppendSeparator()
-        self._eds_menu_item(
-            search_menu, "eds.set_lines_first_not_second", "Lines in First &Block Only"
-        )
-        self._eds_menu_item(search_menu, "eds.set_lines_common", "Lines Co&mmon to Both Blocks")
+        self._append_edsharp_group(search_menu, "search")
 
     def _append_edsharp_accessibility_items(self, accessibility_menu: object) -> None:
-        accessibility_menu.AppendSeparator()
-        self._eds_menu_item(accessibility_menu, "eds.speak_cursor_address", "Speak Cursor &Address")
-        self._eds_menu_item(
-            accessibility_menu, "eds.speak_document_status", "Speak Document Stat&us"
-        )
-        self._eds_menu_item(
-            accessibility_menu, "eds.speak_selection_length", "Speak Selection &Length"
-        )
+        self._append_edsharp_group(accessibility_menu, "accessibility")
 
     def _build_power_tools_menu(self) -> object:
         """Build the Tools > Power Tools submenu (the cohesive EdSharp remainder).
@@ -234,10 +391,5 @@ class EdSharpMenuMixin:
         """
         wx = self._wx
         menu = wx.Menu()
-        self._eds_menu_item(menu, "eds.toggle_read_only_guard", "Toggle &Read-Only Guard")
-        self._eds_menu_item(menu, "eds.toggle_clipboard_collector", "Toggle Clipboard Co&llector")
-        self._eds_menu_item(menu, "eds.collect_clipboard_now", "Collect Clipboard No&w")
-        self._eds_menu_item(menu, "eds.toggle_key_describer", "Toggle &Key Describer")
-        self._eds_menu_item(menu, "eds.toggle_indent_announce", "Toggle Indentation &Announcements")
-        self._eds_menu_item(menu, "eds.infer_indent", "I&nfer Indentation...")
+        self._append_edsharp_group(menu, "power_tools")
         return menu

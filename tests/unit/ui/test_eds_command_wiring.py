@@ -1,10 +1,16 @@
 """Source-contract tests for EdSharp (EDS-1..21) UI wiring in main_frame.py.
 
 These assert that every EdSharp command is registered (palette + Keymap Editor)
-and surfaced in the Tools > EdSharp Tools menu, and that the read-only guard and
+and recirculated into its conventional menu, and that the read-only guard and
 key/indent event hooks are wired. Live wx construction is impractical for the full
-menu tree in CI, so we verify the wiring via the source text — the same strategy
-used by the A11Y-4 dialog-contract guard and the menu-contract test.
+menu tree in CI, so we verify the wiring via the source text and the declarative
+manifest — the same strategy used by the A11Y-4 dialog-contract guard and the
+menu-contract test.
+
+Phase 5 (menus-as-data): the command table and the menu recirculation are both
+derived from the wx-free :data:`quill.ui.main_frame_edsharp_menu.EDSHARP_COMMANDS`
+manifest, so these tests read the data directly rather than parsing a literal
+table body.
 """
 
 from __future__ import annotations
@@ -14,6 +20,7 @@ from pathlib import Path
 import quill.ui.main_frame as main_frame_module
 import quill.ui.main_frame_edsharp_menu as eds_menu_module
 import quill.ui.main_frame_menu as main_frame_menu_module
+from quill.ui.main_frame_edsharp_menu import EDSHARP_COMMANDS, EDSHARP_REGISTRAR
 
 _SOURCE = (
     Path(main_frame_module.__file__).read_text(encoding="utf-8")
@@ -61,11 +68,9 @@ _EDS_COMMAND_IDS = [
 
 
 def test_command_table_lists_every_eds_command() -> None:
-    table_start = _MENU_SOURCE.index("def _edsharp_command_table")
-    table_end = _MENU_SOURCE.index("def _register_edsharp_commands")
-    table = _MENU_SOURCE[table_start:table_end]
+    manifest_ids = {command.id for command in EDSHARP_COMMANDS}
     for command_id in _EDS_COMMAND_IDS:
-        assert f'"{command_id}"' in table, f"{command_id} missing from command table"
+        assert command_id in manifest_ids, f"{command_id} missing from EDSHARP_COMMANDS manifest"
 
 
 def test_commands_are_registered_and_keymap_assignable() -> None:
@@ -79,13 +84,28 @@ def test_commands_are_registered_and_keymap_assignable() -> None:
 
 
 def test_every_command_is_menu_wired() -> None:
-    # menus.md Phase 4: the EdSharp monolith is dissolved. Each command appears
-    # in the command table AND in one of the recirculation helpers / the Power
-    # Tools submenu, so it is both registered and menu-wired.
-    for command_id in _EDS_COMMAND_IDS:
-        assert _MENU_SOURCE.count(f'"{command_id}"') >= 2, (
-            f"{command_id} not menu-wired (only present in the command table)"
+    # menus.md Phase 4 + 5: the EdSharp monolith is dissolved and the menu
+    # recirculation is data-driven. Each command carries a menu placement (group)
+    # in the declarative manifest, and the generic group helper appends it.
+    valid_groups = {
+        "insert",
+        "edit",
+        "file_create",
+        "file_ops",
+        "transform_lines",
+        "navigate",
+        "search",
+        "accessibility",
+        "power_tools",
+    }
+    for command in EDSHARP_COMMANDS:
+        assert command.placement.group in valid_groups, (
+            f"{command.id} has unknown menu group {command.placement.group!r}"
         )
+        assert command.placement.label, f"{command.id} has no menu label"
+    # Every group is actually wired to a menu (the helpers / Power Tools submenu
+    # delegate to the single data-driven primitive).
+    assert "self._append_edsharp_group(" in _MENU_SOURCE
     # The cohesive remainder ships as Tools > Power Tools (the foreign "EdSharp"
     # brand name is gone); the recirculated groups are appended to conventional
     # menus from the menu build.
@@ -136,24 +156,55 @@ def test_read_only_state_refreshes_on_open() -> None:
 
 
 def test_command_table_is_exactly_the_expected_ids_with_no_duplicates() -> None:
-    import re
-
-    table_start = _MENU_SOURCE.index("def _edsharp_command_table")
-    table_end = _MENU_SOURCE.index("def _register_edsharp_commands")
-    ids = re.findall(r'"(eds\.[a-z_]+)"', _MENU_SOURCE[table_start:table_end])
+    ids = [command.id for command in EDSHARP_COMMANDS]
     assert len(ids) == len(_EDS_COMMAND_IDS)
-    assert len(set(ids)) == len(ids), "duplicate command id in table"
+    assert len(set(ids)) == len(ids), "duplicate command id in manifest"
     assert set(ids) == set(_EDS_COMMAND_IDS)
 
 
 def test_every_table_handler_exists_on_the_actions_mixin() -> None:
-    import re
-
     from quill.ui.main_frame_edsharp import EdSharpActionsMixin
 
-    table_start = _MENU_SOURCE.index("def _edsharp_command_table")
-    table_end = _MENU_SOURCE.index("def _register_edsharp_commands")
-    handlers = re.findall(r"self\.([a-z_]+)[,)]", _MENU_SOURCE[table_start:table_end])
-    assert handlers, "no handlers parsed from command table"
-    for name in handlers:
-        assert hasattr(EdSharpActionsMixin, name), f"missing handler {name} on EdSharpActionsMixin"
+    for command in EDSHARP_COMMANDS:
+        name = command.handler_name
+        assert hasattr(EdSharpActionsMixin, name), (
+            f"missing handler {name} on EdSharpActionsMixin for {command.id}"
+        )
+
+
+def test_menu_recirculation_preserves_shipped_group_order() -> None:
+    # The data-driven group helper appends commands in declaration order; verify
+    # each conventional menu's EdSharp group is in the exact shipped sequence.
+    expected = {
+        "insert": [
+            "eds.insert_special_character",
+            "eds.insert_date_time",
+            "eds.calculate_and_insert_date",
+            "eds.insert_file_content",
+        ],
+        "edit": [
+            "eds.paste_html_as_markdown",
+            "eds.delete_to_line_start",
+            "eds.delete_to_line_end",
+            "eds.delete_to_document_start",
+            "eds.delete_to_document_end",
+            "eds.delete_paragraph",
+        ],
+        "search": [
+            "eds.count_regex_matches",
+            "eds.extract_regex_matches",
+            "eds.set_lines_first_not_second",
+            "eds.set_lines_common",
+        ],
+        "power_tools": [
+            "eds.toggle_read_only_guard",
+            "eds.toggle_clipboard_collector",
+            "eds.collect_clipboard_now",
+            "eds.toggle_key_describer",
+            "eds.toggle_indent_announce",
+            "eds.infer_indent",
+        ],
+    }
+    for group, ids in expected.items():
+        actual = [c.id for c in EDSHARP_REGISTRAR.commands_in_group(group)]
+        assert actual == ids, f"group {group} order drifted: {actual}"

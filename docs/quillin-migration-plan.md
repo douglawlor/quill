@@ -1,8 +1,8 @@
 # Migrating QUILL's first-party code onto the Quillins contribution grammar
 
-Status: **Plan / playbook** · Companion to `docs/scripting.md` (esp. §16) and
-`menus.md` (§3.7 + Phase 5) · Scope: **internal refactor, 2.0-scale,
-maintainability-driven**
+Status: **In progress — Wave 0 + Pilot 1 shipped** · Companion to
+`docs/scripting.md` (esp. §16) and `menus.md` (§3.7 + Phase 5) · Scope:
+**internal refactor, 2.0-scale, maintainability-driven**
 
 > Read `docs/scripting.md` §16 for the *why* (one vocabulary, two tiers). This
 > document is the *how*: a concrete, low-risk, reversible procedure for moving
@@ -99,9 +99,13 @@ that UI must pass A11Y-4 review — it is first-party, not a sandboxed extension
 
 ## 4. The first-party host facade
 
-This is the single piece of *new* core surface the migration introduces:
-`quill/core/contributions.py` (wx-free protocol) with a `quill/ui` implementation
-that adapts `MainFrame`. It is the trusted superset of `QuillExtensionApi`:
+This is the single piece of *new* core surface the migration introduces, and it
+has **landed** (Wave 0): `quill/core/contributions.py` (wx-free) provides the
+trusted registration half of the facade — a `FirstPartyRegistrar` that emits an
+`ExtensionManifest` merged through the shared `build_registry`. The richer
+editor/announce/services breadth below is the trusted superset of
+`QuillExtensionApi` adapted onto `MainFrame`; it is filled in per wave as
+features move:
 
 | Group | Methods (illustrative) | Notes |
 | --- | --- | --- |
@@ -180,17 +184,35 @@ shared mutable selection state until the facade has proven itself on Pilots 1–
 
 ## 7. Wave-by-wave sequencing
 
-| Wave | Scope | Exit criterion |
-| --- | --- | --- |
-| 0 | Land `quill/core/contributions.py` + `MainFrame` adapter; no features moved | Facade unit-tested; `main_frame.py` unchanged in behavior; public-surface fixture stable |
-| 1 | Pilot 1 (EdSharp `eds.*`) — **lands the menus.md §3.7 rename + recirculation as data** | EdSharp table replaced by `register(host)`; each command's `menu=(...)` set to its recirculated home (Insert/Edit/Format/Search/Navigate/File or the renamed `Power Tools` remainder); `test_eds_command_wiring.py` updated to the new placements and green; `main_frame.py` net-smaller |
-| 2 | Line-ops + speak/status commands | Each command a module; characterization tests green |
-| 3 | Format-menu commands | `Format` contributions all flow through the registry |
-| 4 | Navigate/View read-only commands | … |
-| 5 | Tools utilities that already use `show_web_form` | Dialogs stay A11Y-4-registered; `dialogs.md` rows unchanged |
-| N | Re-evaluate; stop when `main_frame.py` is a thin shell of lifecycle + surface | `quill/core` is the framework; remaining `main_frame.py` is guardrail code (§2) |
+Status legend: ✅ shipped · ⏳ future.
+
+| Wave | Scope | Exit criterion | Status |
+| --- | --- | --- | --- |
+| 0 | Land `quill/core/contributions.py` (wx-free facade: `FirstPartyRegistrar` + `FirstPartyCommand` + `build_first_party_registry`) feeding the **same** `build_registry` as Quillins | Facade unit-tested (`tests/unit/core/test_contributions.py`); `main_frame.py` unchanged in behavior; public-surface fixture stable | ✅ Shipped |
+| 1 | Pilot 1 (EdSharp `eds.*`) — **lands the menus.md §3.7 rename + recirculation as data** | EdSharp table + menu recirculation **derived from** the declarative `EDSHARP_COMMANDS` manifest (each command carries its recirculated home Insert/Edit/Format/Search/Navigate/File or the renamed `Power Tools` remainder); `test_eds_command_wiring.py` reads the manifest and is green; live menu byte-for-byte identical | ✅ Shipped |
+| 2 | Line-ops + speak/status commands | Each command a module; characterization tests green | ⏳ Future |
+| 3 | Format-menu commands | `Format` contributions all flow through the registry | ⏳ Future |
+| 4 | Navigate/View read-only commands | … | ⏳ Future |
+| 5 | Tools utilities that already use `show_web_form` | Dialogs stay A11Y-4-registered; `dialogs.md` rows unchanged | ⏳ Future |
+| N | Re-evaluate; stop when `main_frame.py` is a thin shell of lifecycle + surface | `quill/core` is the framework; remaining `main_frame.py` is guardrail code (§2) | ⏳ Future |
 
 Each wave is multiple small PRs, not one large one.
+
+> **Wave 0 / Pilot 1 — what actually shipped.** `quill/core/contributions.py` is
+> the wx-free first-party facade: a `FirstPartyRegistrar` collects
+> `add_command(...)` declarations and emits an `ExtensionManifest` merged through
+> the *same* `build_registry` (`quill/core/quillins/registry.py`) used for
+> Quillins, so first-party ids and any Quillin contribution collide-detect
+> uniformly (verified by `test_first_party_and_quillin_collide_through_one_registry`).
+> First-party ids keep their namespaces (`eds.*`) and may attach under the whole
+> bar (`FIRST_PARTY_MENU_PARENTS` is a superset of the narrow third-party
+> `MENU_PARENTS`). The EdSharp pilot (`quill/ui/main_frame_edsharp_menu.py`) is the
+> first consumer: its 33 commands are declared once as `EDSHARP_COMMANDS`, and
+> both the palette registration table and the menu recirculation (one
+> `_append_edsharp_group` loop instead of eight hand-written helpers) derive from
+> that data. The handler resolves by convention (`eds.number_lines` →
+> `self.number_lines`), so the data and behavior cannot drift. Waves 2–N repeat
+> this mechanically, one command group per PR.
 
 ## 8. Per-feature migration checklist
 
