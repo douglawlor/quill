@@ -123,7 +123,7 @@ Menu structure:
   - Support
   - Customize
   - Power Tools *(editor-behavior power toggles grouped together where no other menu is a natural home)*
-  - Quillins
+  - Quillins *(includes **Text Tools** for line transforms/regex and **Insert Tools** for date/time placeholders)*
   - Dictation and Watch Folder Automation (BITS Whisperer) appears here when enabled.
 - **Window**: document/tab management actions.
 - **Help**: contextual help, onboarding docs, feature profile support, updates, and About.

@@ -1194,3 +1194,27 @@ Then open **Help → Open Keyboard Reference** and let Quill teach you the rest 
 The best way to understand Quill is to use it on something real: a note you care about, an extracted PDF that needs trust review, an EPUB chapter you want to navigate, a Markdown file you want to clean up, or an HTML document you want to make more usable.
 
 Quill is trying to feel like a skilled guide sitting just beside the editor, not standing in front of it. If it succeeds, you will notice something simple: you spend less time wondering what the application can do, and more time deciding what you want to do next.
+
+## Quillins: Sandboxed Extensions
+
+Quill supports **Quillins** — small, sandboxed extensions that add new commands, snippets, and menu items to the editor without requiring a full app restart.
+
+### Bundled Quillins
+Quill ships with several trusted, first-party Quillins enabled by default. These provide common utilities that would otherwise clutter the core editor:
+
+- **Text Tools**: Provides advanced text transformations and analysis, including:
+  - **Line Numbering**: Prefix lines with sequential numbers.
+  - **Hard Wrap**: Wrap text at a specific character width.
+  - **Regex Tools**: Count or extract patterns across the document.
+  - **Block Filtering**: Find lines that are common to two blocks or exist only in the first.
+- **Insert Tools**: Provides smart placeholders for quick insertion, such as the current **Date** and **Date/Time**.
+
+### The Quillins Manager
+You can discover, review, and manage all installed Quillins via **Tools $\rightarrow$ Quillins**.
+The Manager allows you to:
+- See a list of all installed Quillins.
+- Review the manifest of a selected Quillin (name, version, author, and capabilities).
+- Verify the security permissions (capabilities) a Quillin has declared (e.g., filesystem or network access).
+
+### Authoring Quillins
+For developers, Quillins are designed to be "screen-reader-first." They follow a strict capability model: a Quillin must declare the minimum set of permissions it needs, and any sensitive action (like writing to a file) is consent-gated at runtime.
