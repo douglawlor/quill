@@ -78,7 +78,24 @@ def test_update_toggle_is_in_help_menu_not_view_menu() -> None:
 
 def test_replace_menu_uses_interactive_replace_command() -> None:
     source = _menu_source()
-    assert '_menu_label("&Replace...", "edit.replace")' in source
+    assert '_menu_label("Rep&lace...", "edit.replace")' in source
+
+
+def test_find_group_lives_in_edit_not_search() -> None:
+    # menus.md Phase 3: in-document Find/Replace and the find-navigation commands
+    # live in Edit; the Search menu is the cross-file search hub only.
+    source = _menu_source()
+    for fid in (
+        "self._id_find",
+        "self._id_replace",
+        "self._id_find_next",
+        "self._id_find_previous",
+        "self._id_find_all_matches",
+    ):
+        assert re.search(rf"edit_menu\.Append\(\s*{re.escape(fid)}\b", source), fid
+        assert not re.search(rf"search_menu\.Append\(\s*{re.escape(fid)}\b", source), fid
+    assert re.search(r"search_menu\.Append\(\s*self\._id_search_in_files\b", source)
+    assert re.search(r"search_menu\.Append\(\s*self\._id_replace_in_files\b", source)
 
 
 def test_insert_link_is_not_duplicated_in_edit_menu() -> None:

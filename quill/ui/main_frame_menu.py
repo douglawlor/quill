@@ -131,6 +131,27 @@ class MenuBuilderMixin:
         )
         edit_menu.Check(self._id_toggle_extend_selection_mode, self._extend_selection_mode)
         edit_menu.AppendSeparator()
+        # Find / Replace and the find-navigation commands live in Edit (their
+        # conventional home and their edit.* command ids); the Search menu is
+        # reserved for cross-file search (menus.md Phase 3).
+        edit_menu.Append(self._id_find, self._menu_label("Fin&d...", "edit.find"))
+        edit_menu.Append(
+            self._id_replace,
+            self._menu_label("Rep&lace...", "edit.replace"),
+        )
+        edit_menu.Append(
+            self._id_find_next,
+            self._menu_label("Find &Next", "edit.find_next"),
+        )
+        edit_menu.Append(
+            self._id_find_previous,
+            self._menu_label("Find Pre&vious", "edit.find_previous"),
+        )
+        edit_menu.Append(
+            self._id_find_all_matches,
+            self._menu_label("Find All &Matches", "edit.find_all_matches"),
+        )
+        edit_menu.AppendSeparator()
         # Insert Link lives in the Insert menu (its primary home); the Edit menu
         # keeps only Follow Link so the same command is not duplicated (MENU-3).
         edit_menu.Append(
@@ -207,25 +228,8 @@ class MenuBuilderMixin:
         insert_menu = wx.Menu()
 
         search_menu = wx.Menu()
-        search_menu.Append(self._id_find, self._menu_label("&Find...", "edit.find"))
-        search_menu.Append(
-            self._id_replace,
-            self._menu_label("&Replace...", "edit.replace"),
-        )
-        search_menu.AppendSeparator()
-        search_menu.Append(
-            self._id_find_next,
-            self._menu_label("Find &Next", "edit.find_next"),
-        )
-        search_menu.Append(
-            self._id_find_previous,
-            self._menu_label("Find &Previous", "edit.find_previous"),
-        )
-        search_menu.Append(
-            self._id_find_all_matches,
-            self._menu_label("Find &All Matches", "edit.find_all_matches"),
-        )
-        search_menu.AppendSeparator()
+        # Search is the cross-file search hub; in-document Find/Replace lives in
+        # the Edit menu (menus.md Phase 3).
         search_menu.Append(
             self._id_search_in_files,
             self._menu_label("Search in &Files...", "tools.search_in_files"),
@@ -255,9 +259,11 @@ class MenuBuilderMixin:
         self._id_dirty_title_asterisk = wx.NewIdRef()
         self._id_dirty_title_asterisk_text = wx.NewIdRef()
         view_menu = wx.Menu()
-        view_menu.AppendCheckItem(self._id_toggle_tray_mode, "Enable System Tray &Mode")
-        view_menu.Check(self._id_toggle_tray_mode, self.settings.tray_enabled)
-        view_menu.AppendSeparator()
+        # View keeps genuine view actions and view-state toggles. Preference
+        # toggles (theme/dark mode, system-tray mode, title-bar path, dirty-title
+        # style, persistent undo, spell-check-as-you-type, and word-prediction-as-
+        # you-type) now live in the registry-driven Settings dialog (menus.md
+        # Phase 3), where they are persisted; they are no longer duplicated here.
         view_menu.AppendCheckItem(
             self._id_toggle_soft_wrap,
             self._menu_label("Toggle Soft &Wrap", "view.toggle_soft_wrap"),
@@ -269,49 +275,6 @@ class MenuBuilderMixin:
         view_menu.Check(self._id_toggle_tab_control, self.settings.show_tab_control)
         view_menu.AppendCheckItem(self._id_toggle_find_wrap, "Wrap &Find Searches")
         view_menu.Check(self._id_toggle_find_wrap, self.settings.wrap_find)
-        view_menu.AppendCheckItem(self._id_toggle_title_full_path, "Show Full Path in &Title Bar")
-        view_menu.Check(
-            self._id_toggle_title_full_path,
-            getattr(self.settings, "title_bar_path_mode", "name") == "full_path",
-        )
-        dirty_menu = wx.Menu()
-        dirty_menu.AppendRadioItem(self._id_dirty_title_text, "Dirty Indicator: Text")
-        dirty_menu.AppendRadioItem(self._id_dirty_title_asterisk, "Dirty Indicator: Asterisk")
-        dirty_menu.AppendRadioItem(
-            self._id_dirty_title_asterisk_text,
-            "Dirty Indicator: Asterisk + Text",
-        )
-        dirty_style = getattr(self.settings, "dirty_title_style", "text")
-        dirty_menu.Check(self._id_dirty_title_text, dirty_style == "text")
-        dirty_menu.Check(self._id_dirty_title_asterisk, dirty_style == "asterisk")
-        dirty_menu.Check(
-            self._id_dirty_title_asterisk_text,
-            dirty_style == "asterisk_text",
-        )
-        view_menu.AppendSubMenu(dirty_menu, "&Dirty Title Style")
-        view_menu.AppendCheckItem(self._id_toggle_dark_mode, "Toggle &Dark Mode")
-        view_menu.Check(self._id_toggle_dark_mode, self.settings.theme == "dark")
-        view_menu.AppendCheckItem(
-            self._id_toggle_persistent_undo,
-            "Enable &Persistent Undo",
-        )
-        view_menu.Check(self._id_toggle_persistent_undo, self.settings.persistent_undo)
-        view_menu.AppendCheckItem(
-            self._id_toggle_spellcheck_as_you_type,
-            "Spell Check As You &Type",
-        )
-        view_menu.Check(
-            self._id_toggle_spellcheck_as_you_type,
-            self.settings.spellcheck_as_you_type,
-        )
-        view_menu.AppendCheckItem(
-            self._id_toggle_intellisense_as_you_type,
-            "Word Prediction As You &Type",
-        )
-        view_menu.Check(
-            self._id_toggle_intellisense_as_you_type,
-            getattr(self.settings, "intellisense_as_you_type", False),
-        )
         view_menu.AppendCheckItem(
             self._id_start_with_no_document_open,
             "Start With &No Document Open",
@@ -320,6 +283,7 @@ class MenuBuilderMixin:
             self._id_start_with_no_document_open,
             self.settings.start_with_no_document_open,
         )
+        view_menu.AppendSeparator()
         view_menu.Append(
             self._id_preview,
             self._menu_label("&Preview...", "view.preview"),
