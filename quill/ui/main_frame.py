@@ -542,8 +542,6 @@ _TOP_MENU_DEFS: tuple[tuple[str, str], ...] = (
     ("format", "F&ormat"),
     ("navigate", "&Navigate"),
     ("search", "&Search"),
-    ("ai", "A&I"),
-    ("whisperer", "&BITS Whisperer"),
     ("tools", "&Tools"),
     ("window", "&Window"),
     ("help", "&Help"),

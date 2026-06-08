@@ -1030,6 +1030,7 @@ class MenuBuilderMixin:
             self._menu_label("Generate &Audio...", "tools.read_aloud_generate_audio"),
         )
         ai_menu.AppendSubMenu(speech_menu, "&Speech")
+        tools_menu.AppendSubMenu(ai_menu, "AI &Assistant")
         whisperer_menu = wx.Menu()
         whisperer_menu.Append(
             self._id_whisperer_about,
@@ -1128,6 +1129,11 @@ class MenuBuilderMixin:
             self._menu_label("&Capability Matrix", "whisperer.capability_matrix"),
         )
         whisperer_menu.AppendSubMenu(bw_rollout_menu, "&Rollout")
+        # BITS Whisperer (deferred to QUILL 2.0) is demoted from a top-level menu
+        # to a Tools submenu (menus.md Phase 2); it only appears when the master
+        # core.bw_whisperer flag is enabled, which it is not for 1.0.
+        if self._feature_enabled("core.bw_whisperer"):
+            tools_menu.AppendSubMenu(whisperer_menu, "&BITS Whisperer")
         glow_menu = wx.Menu()
         glow_menu.Append(
             self._id_glow_audit_document,
@@ -1367,13 +1373,6 @@ class MenuBuilderMixin:
         menu_bar.Append(format_menu, "F&ormat")
         menu_bar.Append(navigate_menu, "&Navigate")
         menu_bar.Append(search_menu, "&Search")
-        menu_bar.Append(ai_menu, "A&I")
-        # BITS Whisperer is deferred to QUILL 2.0; the master ``core.bw_whisperer``
-        # flag is locked off for 1.0, so the whole menu stays hidden until the
-        # suite reaches feature parity. Its commands are also feature-gated out of
-        # the palette via the bw_* feature dependencies on this master flag.
-        if self._feature_enabled("core.bw_whisperer"):
-            menu_bar.Append(whisperer_menu, "&BITS Whisperer")
         menu_bar.Append(tools_menu, "&Tools")
         menu_bar.Append(window_menu, "&Window")
         menu_bar.Append(help_menu, "&Help")
