@@ -49,6 +49,9 @@ class MenuBuilderMixin:
         self._refresh_recent_menu()
         file_menu.Append(self._id_open_url, "Open from &URL...")
         file_menu.AppendSubMenu(self._sessions_menu, "&Workspace Snapshots")
+        # New document from clipboard sits beside New (EdSharp recirculation,
+        # menus.md Phase 4).
+        self._append_edsharp_file_create_items(file_menu)
         file_menu.AppendSeparator()
         # --- Save ---
         file_menu.Append(self._id_save, self._menu_label("&Save", "file.save"))
@@ -63,6 +66,9 @@ class MenuBuilderMixin:
         # --- Print ---
         file_menu.Append(self._id_page_setup, "Pa&ge Setup...")
         file_menu.Append(self._id_print, self._menu_label("&Print...", "file.print"))
+        file_menu.AppendSeparator()
+        # --- Current-file operations (EdSharp recirculation, menus.md Phase 4) ---
+        self._append_edsharp_file_ops_items(file_menu)
         file_menu.AppendSeparator()
         # --- Close ---
         file_menu.Append(
@@ -225,6 +231,9 @@ class MenuBuilderMixin:
         selection_menu.AppendSeparator()
         selection_menu.AppendSubMenu(mark_ring_menu, "Recent &Marks (Ring)")
         edit_menu.AppendSubMenu(selection_menu, "&Selection")
+        # Paste-as-Markdown and line-deletion commands (EdSharp recirculation,
+        # menus.md Phase 4).
+        self._append_edsharp_edit_items(edit_menu)
         insert_menu = wx.Menu()
 
         search_menu = wx.Menu()
@@ -238,6 +247,10 @@ class MenuBuilderMixin:
             self._id_replace_in_files,
             self._menu_label("&Replace Across Files...", "tools.replace_in_files"),
         )
+        # Regex match count/extract and block set-ops make Search the single
+        # find / filter / extract-lines hub (EdSharp recirculation, menus.md
+        # Phase 4).
+        self._append_edsharp_search_items(search_menu)
         self._id_send_to_tray = wx.NewIdRef()
         self._id_toggle_tray_mode = wx.NewIdRef()
         self._id_toggle_soft_wrap = wx.NewIdRef()
@@ -428,6 +441,9 @@ class MenuBuilderMixin:
         self._id_insert_code_block = wx.NewIdRef()
         self._id_insert_footnote = wx.NewIdRef()
         self._id_insert_table = wx.NewIdRef()
+        # Percent / first / last non-blank movement (EdSharp recirculation,
+        # menus.md Phase 4).
+        self._append_edsharp_navigate_items(navigate_menu)
         format_menu = wx.Menu()
         case_menu = wx.Menu()
         case_menu.Append(
@@ -579,6 +595,9 @@ class MenuBuilderMixin:
             self._id_manage_snippets,
             self._menu_label("Manage Snippets...", "format.manage_snippets"),
         )
+        # Special character / date-time / calculated date / file content (EdSharp
+        # recirculation, menus.md Phase 4).
+        self._append_edsharp_insert_items(insert_menu)
         self._id_next_document = wx.NewIdRef()
         self._id_previous_document = wx.NewIdRef()
         window_menu = wx.Menu()
@@ -794,21 +813,9 @@ class MenuBuilderMixin:
             self._id_announcement_backend,
             self._menu_label("Announcement &Backend...", "tools.announcement_backend"),
         )
-        backend_menu = wx.Menu()
-        backend_menu.AppendRadioItem(
-            self._id_announcement_backend_auto,
-            "Automatic (Prism when available)",
-        )
-        backend_menu.AppendRadioItem(self._id_announcement_backend_prism, "Prism")
-        backend_menu.AppendRadioItem(self._id_announcement_backend_status_only, "Status Bar Only")
-        current_backend = self._announcement_engine.state().requested_backend
-        backend_menu.Check(self._id_announcement_backend_auto, current_backend == "auto")
-        backend_menu.Check(self._id_announcement_backend_prism, current_backend == "prism")
-        backend_menu.Check(
-            self._id_announcement_backend_status_only,
-            current_backend == "status_only",
-        )
-        read_aloud_menu.AppendSubMenu(backend_menu, "Announcement Bac&kend")
+        # The Announcement Backend picker is a preference, not an action; its
+        # auto/Prism/status-only choice now lives in the registry-driven Settings
+        # dialog (menus.md Phase 4 / §3.5), flattening this 3-level chain.
         read_aloud_menu.Append(
             self._id_toggle_announcement_trace,
             "Announcement &Trace (in Settings)...",
@@ -855,16 +862,17 @@ class MenuBuilderMixin:
             self._id_describe_image,
             self._menu_label("&Describe Image...", "tools.describe_image"),
         )
-        shell_menu = wx.Menu()
-        shell_menu.Append(
+        # Shell-integration verbs are promoted to direct Integrations entries
+        # (no third level — menus.md Phase 4 / §3.5).
+        integrations_menu.AppendSeparator()
+        integrations_menu.Append(
             self._id_shell_install,
             self._menu_label("&Install Shell Integration...", "tools.shell_install"),
         )
-        shell_menu.Append(
+        integrations_menu.Append(
             self._id_shell_remove,
             self._menu_label("&Remove Shell Integration", "tools.shell_remove"),
         )
-        integrations_menu.AppendSubMenu(shell_menu, "Sh&ell Integration")
         tools_menu.AppendSubMenu(integrations_menu, "&Integrations")
 
         intake_menu = wx.Menu()
@@ -1116,7 +1124,6 @@ class MenuBuilderMixin:
             self._id_glow_fix_selection,
             self._menu_label("GLOW Fix S&election", "tools.glow_fix_selection"),
         )
-        authoring_menu.AppendSubMenu(glow_menu, "&GLOW")
         macro_menu = wx.Menu()
         macro_menu.Append(
             self._id_start_macro_recording,
@@ -1134,53 +1141,61 @@ class MenuBuilderMixin:
             self._id_manage_macros,
             self._menu_label("&Manage Macros...", "tools.manage_macros"),
         )
-        authoring_menu.AppendSubMenu(macro_menu, "&Macros")
-        convert_menu = wx.Menu()
-        convert_menu.Append(
+        # Transform Lines is the single home for line/text transforms (menus.md
+        # §3.7.2): the former Tools > Authoring > Convert group plus the EdSharp
+        # line transforms, surfaced under Format where text-shaping lives.
+        transform_menu = wx.Menu()
+        self._append_edsharp_transform_line_items(transform_menu)
+        transform_menu.AppendSeparator()
+        transform_menu.Append(
             self._id_sort_lines_ascending,
             self._menu_label("&Sort Lines Ascending", "edit.sort_lines_ascending"),
         )
-        convert_menu.Append(
+        transform_menu.Append(
             self._id_sort_lines_descending,
             self._menu_label("Sort Lines &Descending", "edit.sort_lines_descending"),
         )
-        convert_menu.Append(
+        transform_menu.Append(
             self._id_reverse_lines,
             self._menu_label("&Reverse Lines", "edit.reverse_lines"),
         )
-        convert_menu.Append(
+        transform_menu.Append(
             self._id_remove_duplicate_lines,
             self._menu_label("Remove &Duplicate Lines", "edit.remove_duplicate_lines"),
         )
-        convert_menu.AppendSeparator()
-        convert_menu.Append(
+        transform_menu.AppendSeparator()
+        transform_menu.Append(
             self._id_trim_trailing_whitespace,
             self._menu_label(
                 "Trim Trailing &Whitespace",
                 "edit.trim_trailing_whitespace",
             ),
         )
-        convert_menu.Append(
+        transform_menu.Append(
             self._id_normalize_whitespace,
             self._menu_label("&Normalize Whitespace", "edit.normalize_whitespace"),
         )
-        convert_menu.AppendSeparator()
-        convert_menu.Append(
+        transform_menu.AppendSeparator()
+        transform_menu.Append(
             self._id_convert_indentation_to_spaces,
             self._menu_label(
                 "Convert Indentation to &Spaces",
                 "edit.convert_indentation_to_spaces",
             ),
         )
-        convert_menu.Append(
+        transform_menu.Append(
             self._id_convert_indentation_to_tabs,
             self._menu_label(
                 "Convert Indentation to &Tabs",
                 "edit.convert_indentation_to_tabs",
             ),
         )
-        authoring_menu.AppendSubMenu(convert_menu, "Co&nvert")
+        format_menu.AppendSubMenu(transform_menu, "Transform &Lines")
         tools_menu.AppendSubMenu(authoring_menu, "Authoring && &Automation")
+        # GLOW and Macros are promoted to direct Tools submenus so no Tools chain
+        # exceeds two levels (menus.md Phase 4 / §3.5).
+        tools_menu.AppendSubMenu(glow_menu, "&GLOW")
+        tools_menu.AppendSubMenu(macro_menu, "&Macros")
 
         compare_menu = wx.Menu()
         compare_menu.Append(self._id_compare_with_file, "Compare with &File...")
@@ -1206,6 +1221,9 @@ class MenuBuilderMixin:
         )
         accessibility_menu.Append(self._id_validate_contrast, "&Validate Contrast...")
         accessibility_menu.Append(self._id_link_inventory, "Link Inventory && Alt-Text Catalo&g...")
+        # Speak cursor address / document status / selection length are screen-
+        # reader status queries (EdSharp recirculation, menus.md Phase 4).
+        self._append_edsharp_accessibility_items(accessibility_menu)
         tools_menu.AppendSubMenu(accessibility_menu, "A&ccessibility")
 
         support_menu = wx.Menu()
@@ -1245,7 +1263,7 @@ class MenuBuilderMixin:
         customize_menu.Append(self._id_reset_keymap, "&Reset Keymap")
         tools_menu.AppendSubMenu(customize_menu, "&Customize")
         tools_menu.AppendSeparator()
-        tools_menu.AppendSubMenu(self._build_edsharp_menu(), "Ed&Sharp Tools")
+        tools_menu.AppendSubMenu(self._build_power_tools_menu(), "&Power Tools")
         tools_menu.AppendSubMenu(self._build_quillins_menu(), "&Quillins")
 
         # The former top-level "Settings" menu is gone. All configuration now

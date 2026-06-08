@@ -1,11 +1,14 @@
-"""EdSharp command registration and Tools-menu wiring for :class:`MainFrame`.
+"""EdSharp command registration and menu wiring for :class:`MainFrame`.
 
 Extracted from ``main_frame.py`` to keep the monolith under its GATE-11 budget.
 The mixin owns the single source of truth for the EdSharp (EDS-1..21) command
-table, registers those commands with the palette/Keymap Editor, and builds the
-``Tools > EdSharp Tools`` submenu. Every handler lives on
-:class:`~quill.ui.main_frame_edsharp.EdSharpActionsMixin`; this mixin only wires
-them into the accessible surfaces, so both stay in lock-step.
+table, registers those commands with the palette/Keymap Editor, and recirculates
+them into their conventional menus (menus.md Phase 4): the former
+``Tools > EdSharp Tools`` monolith is dissolved so its commands live where users
+expect them (Insert, Edit, File, Format, Navigate, Search, Tools > Accessibility)
+and the cohesive remainder ships as ``Tools > Power Tools``. Every handler lives
+on :class:`~quill.ui.main_frame_edsharp.EdSharpActionsMixin`; this mixin only
+wires them into the accessible surfaces, so both stay in lock-step.
 """
 
 from __future__ import annotations
@@ -19,8 +22,8 @@ class EdSharpMenuMixin:
     def _edsharp_command_table(self) -> list[tuple[str, str, Callable[[], None]]]:
         """EdSharp parity commands (EDS-1..21) as ``(id, label, handler)`` rows.
 
-        Shared by command registration (palette + Keymap Editor) and the EdSharp
-        Tools menu so the two never drift. None carry a default keybinding;
+        Shared by command registration (palette + Keymap Editor) and the menu
+        recirculation so the two never drift. None carry a default keybinding;
         EdSharp's own shortcuts collide with QUILL's curated keymap, so users bind
         them from the Keymap Editor instead.
         """
@@ -144,78 +147,97 @@ class EdSharpMenuMixin:
         for command_id, label, handler in self._edsharp_command_table():
             self.commands.register(command_id, label, handler, self._binding_for(command_id))
 
-    def _build_edsharp_menu(self) -> object:
-        """Build the Tools > EdSharp Tools submenu and bind every item.
-
-        Items reuse the handlers from ``_edsharp_command_table`` so the menu and
-        the command palette stay in lock-step. Labels show any user-assigned
-        keybinding via ``_menu_label``.
-        """
-        wx = self._wx
-        handlers = {
+    def _edsharp_handlers(self) -> dict[str, Callable[[], None]]:
+        return {
             command_id: handler for command_id, _label, handler in self._edsharp_command_table()
         }
 
-        def item(menu: object, command_id: str, label: str) -> None:
-            item_id = wx.NewIdRef()
-            menu.Append(item_id, self._menu_label(label, command_id))
-            handler = handlers[command_id]
-            self.frame.Bind(wx.EVT_MENU, lambda _e, run=handler: run(), id=item_id)
+    def _eds_menu_item(self, menu: object, command_id: str, label: str) -> None:
+        """Append one EdSharp command to ``menu`` and bind its handler.
 
-        insert_menu = wx.Menu()
-        item(insert_menu, "eds.insert_special_character", "Insert &Special Character...")
-        item(insert_menu, "eds.insert_date_time", "Insert &Date and Time")
-        item(insert_menu, "eds.calculate_and_insert_date", "Insert &Calculated Date...")
-        item(insert_menu, "eds.insert_file_content", "Insert &File Content...")
+        Shared by every recirculation helper and the Power Tools submenu so the
+        menu surface and the command palette stay in lock-step. The label shows
+        any user-assigned keybinding via ``_menu_label``.
+        """
+        wx = self._wx
+        item_id = wx.NewIdRef()
+        menu.Append(item_id, self._menu_label(label, command_id))
+        handler = self._edsharp_handlers()[command_id]
+        self.frame.Bind(wx.EVT_MENU, lambda _e, run=handler: run(), id=item_id)
 
-        lines_menu = wx.Menu()
-        item(lines_menu, "eds.number_lines", "&Number Lines...")
-        item(lines_menu, "eds.hard_wrap_lines", "&Hard-Wrap Lines...")
-        lines_menu.AppendSeparator()
-        item(lines_menu, "eds.delete_to_line_start", "Delete to Line &Start")
-        item(lines_menu, "eds.delete_to_line_end", "Delete to Line &End")
-        item(lines_menu, "eds.delete_to_document_start", "Delete to Document &Top")
-        item(lines_menu, "eds.delete_to_document_end", "Delete to Document &Bottom")
-        item(lines_menu, "eds.delete_paragraph", "Delete &Paragraph")
+    # --- Recirculation helpers (menus.md Phase 4) --------------------------
+    # Each appends a separator-led EdSharp group to a conventional menu.
 
-        compare_menu = wx.Menu()
-        item(compare_menu, "eds.set_lines_first_not_second", "Lines in &First Block Only")
-        item(compare_menu, "eds.set_lines_common", "Lines &Common to Both Blocks")
+    def _append_edsharp_insert_items(self, insert_menu: object) -> None:
+        insert_menu.AppendSeparator()
+        self._eds_menu_item(insert_menu, "eds.insert_special_character", "Special &Character...")
+        self._eds_menu_item(insert_menu, "eds.insert_date_time", "Date and &Time")
+        self._eds_menu_item(insert_menu, "eds.calculate_and_insert_date", "C&alculated Date...")
+        self._eds_menu_item(insert_menu, "eds.insert_file_content", "File &Content...")
 
-        regex_menu = wx.Menu()
-        item(regex_menu, "eds.count_regex_matches", "&Count Matches...")
-        item(regex_menu, "eds.extract_regex_matches", "&Extract Matches...")
+    def _append_edsharp_edit_items(self, edit_menu: object) -> None:
+        edit_menu.AppendSeparator()
+        self._eds_menu_item(edit_menu, "eds.paste_html_as_markdown", "Paste &HTML as Markdown")
+        edit_menu.AppendSeparator()
+        self._eds_menu_item(edit_menu, "eds.delete_to_line_start", "Delete to Line &Start")
+        self._eds_menu_item(edit_menu, "eds.delete_to_line_end", "Delete to Line E&nd")
+        self._eds_menu_item(edit_menu, "eds.delete_to_document_start", "Delete to Document &Top")
+        self._eds_menu_item(edit_menu, "eds.delete_to_document_end", "Delete to Document Botto&m")
+        self._eds_menu_item(edit_menu, "eds.delete_paragraph", "Delete Paragrap&h")
 
-        go_menu = wx.Menu()
-        item(go_menu, "eds.go_to_percent", "Go to &Percent...")
-        item(go_menu, "eds.move_to_first_non_blank", "&First Non-Blank")
-        item(go_menu, "eds.move_to_last_non_blank", "&Last Non-Blank")
+    def _append_edsharp_file_create_items(self, file_menu: object) -> None:
+        self._eds_menu_item(file_menu, "eds.new_document_from_clipboard", "New from Cli&pboard")
 
-        speak_menu = wx.Menu()
-        item(speak_menu, "eds.speak_cursor_address", "Cursor &Address")
-        item(speak_menu, "eds.speak_document_status", "Document &Status")
-        item(speak_menu, "eds.speak_selection_length", "Selection &Length")
+    def _append_edsharp_file_ops_items(self, file_menu: object) -> None:
+        self._eds_menu_item(file_menu, "eds.run_current_file", "R&un Current File")
+        self._eds_menu_item(file_menu, "eds.run_target_at_cursor", "Open &Target at Cursor")
+        self._eds_menu_item(file_menu, "eds.rename_current_file", "Re&name Current File...")
+        self._eds_menu_item(file_menu, "eds.delete_current_file", "Dele&te Current File...")
 
+    def _append_edsharp_transform_line_items(self, transform_menu: object) -> None:
+        self._eds_menu_item(transform_menu, "eds.number_lines", "&Number Lines...")
+        self._eds_menu_item(transform_menu, "eds.hard_wrap_lines", "&Hard-Wrap Lines...")
+
+    def _append_edsharp_navigate_items(self, navigate_menu: object) -> None:
+        navigate_menu.AppendSeparator()
+        self._eds_menu_item(navigate_menu, "eds.go_to_percent", "Go to &Percent...")
+        self._eds_menu_item(navigate_menu, "eds.move_to_first_non_blank", "First &Non-Blank")
+        self._eds_menu_item(navigate_menu, "eds.move_to_last_non_blank", "&Last Non-Blank")
+
+    def _append_edsharp_search_items(self, search_menu: object) -> None:
+        search_menu.AppendSeparator()
+        self._eds_menu_item(search_menu, "eds.count_regex_matches", "&Count Regex Matches...")
+        self._eds_menu_item(search_menu, "eds.extract_regex_matches", "E&xtract Regex Matches...")
+        search_menu.AppendSeparator()
+        self._eds_menu_item(
+            search_menu, "eds.set_lines_first_not_second", "Lines in First &Block Only"
+        )
+        self._eds_menu_item(search_menu, "eds.set_lines_common", "Lines Co&mmon to Both Blocks")
+
+    def _append_edsharp_accessibility_items(self, accessibility_menu: object) -> None:
+        accessibility_menu.AppendSeparator()
+        self._eds_menu_item(accessibility_menu, "eds.speak_cursor_address", "Speak Cursor &Address")
+        self._eds_menu_item(
+            accessibility_menu, "eds.speak_document_status", "Speak Document Stat&us"
+        )
+        self._eds_menu_item(
+            accessibility_menu, "eds.speak_selection_length", "Speak Selection &Length"
+        )
+
+    def _build_power_tools_menu(self) -> object:
+        """Build the Tools > Power Tools submenu (the cohesive EdSharp remainder).
+
+        These commands have no conventional menu home — they are editor-power
+        utilities (read-only guard, clipboard collector, key describer, indent
+        helpers) that belong together rather than scattered. The foreign
+        "EdSharp" brand name is dropped (menus.md Phase 4 / §3.7).
+        """
+        wx = self._wx
         menu = wx.Menu()
-        menu.AppendSubMenu(insert_menu, "&Insert")
-        menu.AppendSubMenu(lines_menu, "&Lines")
-        menu.AppendSubMenu(compare_menu, "Compare &Blocks")
-        menu.AppendSubMenu(regex_menu, "Find with &Regex")
-        menu.AppendSubMenu(go_menu, "&Go")
-        menu.AppendSubMenu(speak_menu, "Spea&k")
-        menu.AppendSeparator()
-        item(menu, "eds.new_document_from_clipboard", "&New Document from Clipboard")
-        item(menu, "eds.paste_html_as_markdown", "Paste &HTML as Markdown")
-        menu.AppendSeparator()
-        item(menu, "eds.toggle_read_only_guard", "Toggle &Read-Only Guard")
-        item(menu, "eds.toggle_clipboard_collector", "Toggle Clipboard Co&llector")
-        item(menu, "eds.collect_clipboard_now", "Collect Clipboard No&w")
-        item(menu, "eds.toggle_key_describer", "Toggle &Key Describer")
-        item(menu, "eds.toggle_indent_announce", "Toggle Indentation &Announcements")
-        item(menu, "eds.infer_indent", "I&nfer Indentation...")
-        menu.AppendSeparator()
-        item(menu, "eds.run_current_file", "R&un Current File")
-        item(menu, "eds.run_target_at_cursor", "&Open Target at Cursor")
-        item(menu, "eds.rename_current_file", "Rename Current File...")
-        item(menu, "eds.delete_current_file", "Delete Current File...")
+        self._eds_menu_item(menu, "eds.toggle_read_only_guard", "Toggle &Read-Only Guard")
+        self._eds_menu_item(menu, "eds.toggle_clipboard_collector", "Toggle Clipboard Co&llector")
+        self._eds_menu_item(menu, "eds.collect_clipboard_now", "Collect Clipboard No&w")
+        self._eds_menu_item(menu, "eds.toggle_key_describer", "Toggle &Key Describer")
+        self._eds_menu_item(menu, "eds.toggle_indent_announce", "Toggle Indentation &Announcements")
+        self._eds_menu_item(menu, "eds.infer_indent", "I&nfer Indentation...")
         return menu

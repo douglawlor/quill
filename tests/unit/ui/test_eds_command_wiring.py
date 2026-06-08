@@ -79,19 +79,33 @@ def test_commands_are_registered_and_keymap_assignable() -> None:
 
 
 def test_every_command_is_menu_wired() -> None:
-    menu_start = _MENU_SOURCE.index("def _build_edsharp_menu")
-    menu = _MENU_SOURCE[menu_start:]
+    # menus.md Phase 4: the EdSharp monolith is dissolved. Each command appears
+    # in the command table AND in one of the recirculation helpers / the Power
+    # Tools submenu, so it is both registered and menu-wired.
     for command_id in _EDS_COMMAND_IDS:
-        assert f'"{command_id}"' in menu, f"{command_id} missing from EdSharp menu"
-    # The submenu is attached to the Tools menu.
-    assert 'AppendSubMenu(self._build_edsharp_menu(), "Ed&Sharp Tools")' in _SOURCE
+        assert _MENU_SOURCE.count(f'"{command_id}"') >= 2, (
+            f"{command_id} not menu-wired (only present in the command table)"
+        )
+    # The cohesive remainder ships as Tools > Power Tools (the foreign "EdSharp"
+    # brand name is gone); the recirculated groups are appended to conventional
+    # menus from the menu build.
+    assert 'AppendSubMenu(self._build_power_tools_menu(), "&Power Tools")' in _SOURCE
+    for helper in (
+        "_append_edsharp_insert_items",
+        "_append_edsharp_edit_items",
+        "_append_edsharp_file_create_items",
+        "_append_edsharp_file_ops_items",
+        "_append_edsharp_transform_line_items",
+        "_append_edsharp_navigate_items",
+        "_append_edsharp_search_items",
+        "_append_edsharp_accessibility_items",
+    ):
+        assert f"self.{helper}(" in _SOURCE, f"{helper} is not called from the menu build"
 
 
 def test_menu_items_are_bound() -> None:
-    menu_start = _MENU_SOURCE.index("def _build_edsharp_menu")
-    menu = _MENU_SOURCE[menu_start:]
-    # The local item() helper appends and binds in one step for every entry.
-    assert "self.frame.Bind(wx.EVT_MENU, lambda _e, run=handler: run(), id=item_id)" in menu
+    # The shared _eds_menu_item helper appends and binds every entry in one step.
+    assert "self.frame.Bind(wx.EVT_MENU, lambda _e, run=handler: run(), id=item_id)" in _MENU_SOURCE
 
 
 def test_read_only_guard_protects_edit_helpers() -> None:
