@@ -52,6 +52,17 @@ repos:
         files: ^quill/ui/.*\.py$
         require_serial: true
 
+      - id: module-size-budget
+        name: module-size budget (GATE-11)
+        # GATE-11: a module may not grow past its ratchet budget (or the 600-line
+        # default cap). Split the module or lower an extracted budget in
+        # quill/tools/module_size_budgets.json — budgets only decrease.
+        entry: python -m quill.tools.module_size_budget
+        language: system
+        pass_filenames: false
+        files: ^quill/.*\.py$
+        require_serial: true
+
       - id: docs-artifacts
         name: docs HTML/EPUB parity
         # Fail if a docs/**/*.md changed without its regenerated .html/.epub
