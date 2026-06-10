@@ -53,7 +53,7 @@ severity tally of <strong>remaining open items</strong> is:</p>
 <tr>
 <td>MEDIUM</td>
 <td style="text-align: right;">31</td>
-<td>1 closed (M-27); rest open — tracked below</td>
+<td>2 closed (M-1, M-27); rest open — tracked below</td>
 </tr>
 <tr>
 <td>LOW</td>
@@ -169,6 +169,16 @@ categories
 Fall back to <code>str(error)</code> only when no category matches.</li>
 <li><strong>Regression test:</strong>
 <code>tests/unit/core/test_watch_actions.py::test_permission_error_humanized</code>.</li>
+<li><strong>Status:</strong> ✅ FIXED —
+<code>_humanize_action_error</code> added to
+<code>quill/core/watch_actions.py</code>, routed through all 8
+broad-except sites plus the registry’s last-resort guard. New regression
+tests: <code>test_humanize_permission_error_is_actionable</code>,
+<code>test_humanize_file_not_found_mentions_reappear</code>,
+<code>test_humanize_generic_oserror_keeps_strerror</code>,
+<code>test_humanize_unrecognized_error_falls_back_to_str</code>,
+<code>test_move_action_permission_error_humanized</code>. Budget
+re-baselined (+57 lines). (See CHANGELOG entry.)</li>
 </ul>
 <h4 id="m-2-coreipc.py128-148-jsonl-queue-append-with-no-file-lock">M-2
 — <code>core/ipc.py:128-148</code> — JSONL queue append with no file
@@ -217,6 +227,13 @@ and surface the most recent error in
 <code>"Profile X failed 5 times in a row: PermissionError"</code>.</li>
 <li><strong>Regression test:</strong>
 <code>tests/unit/core/test_watch_profiles.py::test_consecutive_errors_tracked_per_profile</code>.</li>
+<li><strong>Status:</strong> ✅ FIXED — <code>WatchManager</code> now
+tracks <code>last_error</code> and <code>consecutive_error_count</code>
+per <code>profile_id</code>, with successful scans clearing the streak.
+New regression tests:
+<code>test_manager_records_prescan_error_for_profile</code>,
+<code>test_manager_records_scan_error_and_clears_on_recovery</code>.
+(See CHANGELOG entry.)</li>
 </ul>
 <h4
 id="m-5-coreaifoundation_models.py120-and-coreaiassistant.py70-asyncio.run-per-call">M-5
@@ -908,17 +925,16 @@ escape (SECURITY).</li>
 <li><strong>M-6</strong> — manifest HMAC key rotation (SECURITY).</li>
 <li><strong>M-5</strong> — cache the asyncio event loop (PERF, AI
 providers).</li>
-<li><strong>M-1 / M-3 / M-4 / M-16</strong> — watch-action humanization
-+ allowlist + profile error tracking + provider probe (UX, security,
-BUG).</li>
+<li><strong>M-1</strong> ✅ / <strong>M-4</strong> ✅ / <strong>M-3 /
+M-16</strong> — watch-action humanization and per-profile error tracking
+are done; allowlist + provider probe remain (UX, security, BUG).</li>
 <li><strong>M-9 / M-10 / M-11 / M-12 / M-13</strong> — I/O robustness
 and parsing (BUG).</li>
 <li><strong>M-14 / M-15</strong> — read-aloud timeouts
 (RELIABILITY).</li>
 <li><strong>M-17 / M-18 / M-19 / M-20 / M-21 / M-22 / M-23</strong> —
 stability lifecycle and contracts (LIFECYCLE, TEST_GAP).</li>
-<li><strong>M-24 / M-25 / M-26 / M-27</strong> — tool/audit/doc
-hardening.</li>
+<li><strong>M-24 / M-25 / M-26</strong> — tool/audit/doc hardening.</li>
 </ol>
 <h3 id="tier-c-ui-polish-1.0-1.1">Tier C — UI polish (1.0 → 1.1)</h3>
 <ol start="16" type="1">
@@ -1621,11 +1637,11 @@ hard-coded secrets.</td>
 <tr>
 <td>MEDIUM</td>
 <td style="text-align: right;">32</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">31</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">30</td>
 <td style="text-align: right;">0</td>
 <td style="text-align: right;">0</td>
-<td>M-27 closed; 31 remain open. Tier B (defense-in-depth, 1.0 →
+<td>M-1, M-27 closed; 30 remain open. Tier B (defense-in-depth, 1.0 →
 1.1).</td>
 </tr>
 <tr>
@@ -1650,8 +1666,8 @@ remain open.</td>
 <tr>
 <td><strong>Sub-total (defects)</strong></td>
 <td style="text-align: right;"><strong>83</strong></td>
-<td style="text-align: right;"><strong>40</strong></td>
-<td style="text-align: right;"><strong>43</strong></td>
+<td style="text-align: right;"><strong>41</strong></td>
+<td style="text-align: right;"><strong>42</strong></td>
 <td style="text-align: right;"><strong>0</strong></td>
 <td style="text-align: right;"><strong>0</strong></td>
 <td>—</td>
@@ -1668,8 +1684,8 @@ remain open.</td>
 <tr>
 <td><strong>Total findings</strong></td>
 <td style="text-align: right;"><strong>99</strong></td>
-<td style="text-align: right;"><strong>57</strong></td>
-<td style="text-align: right;"><strong>43</strong></td>
+<td style="text-align: right;"><strong>58</strong></td>
+<td style="text-align: right;"><strong>42</strong></td>
 <td style="text-align: right;"><strong>0</strong></td>
 <td style="text-align: right;"><strong>0</strong></td>
 <td>—</td>
@@ -1772,6 +1788,16 @@ session)</h3>
 <td style="text-align: right;">16 / 16</td>
 <td>5 paths + 12 quillin lint tests passed, 0 failed</td>
 </tr>
+<tr>
+<td>Sweep 9 (§5 watch-action humanization + per-profile errors: M-1,
+M-4)</td>
+<td style="text-align: right;">13 / 13</td>
+<td style="text-align: right;"><strong>3 / 32</strong></td>
+<td style="text-align: right;">14 / 22</td>
+<td style="text-align: right;">13 / 16</td>
+<td style="text-align: right;">16 / 16</td>
+<td>1554 unit tests passed, 0 failed; ruff clean</td>
+</tr>
 </tbody>
 </table>
 <blockquote>
@@ -1785,12 +1811,12 @@ coverage.</p>
 <h3 id="whats-still-on-the-runway-ordered-by-tier">13.3 What’s still on
 the runway (ordered by tier)</h3>
 <p><strong>Tier A — release blockers (HIGH): ALL CLOSED ✅</strong></p>
-<p><strong>Tier B — defense-in-depth (MEDIUM, 1.0 → 1.1):</strong> 31
-open (M-27 closed). Sorted by impact: M-1 (8 watch-action sites), M-4,
-M-5 (asyncio loop reuse), M-6 (update manifest signing), M-7 (sandbox
-hardening), M-9..M-13 (IO-format robustness), M-14/M-15 (read-aloud),
-M-16..M-23 (stability lifecycle), M-24..M-26, M-28..M-32 (UI dialog /
-menu contract, image capture, sticky notes, csv grid).</p>
+<p><strong>Tier B — defense-in-depth (MEDIUM, 1.0 → 1.1):</strong> 30
+open (M-1, M-4, M-27 closed). Sorted by impact: M-5 (asyncio loop
+reuse), M-6 (update manifest signing), M-7 (sandbox hardening),
+M-9..M-13 (IO-format robustness), M-14/M-15 (read-aloud), M-16..M-23
+(stability lifecycle), M-24..M-26, M-28..M-32 (UI dialog / menu
+contract, image capture, sticky notes, csv grid).</p>
 <p><strong>Tier C — UI polish (LOW, 1.0 → 1.1):</strong> L-5, L-9, L-11,
 L-13, L-17, L-18, L-19, L-20, L-23.</p>
 <p><strong>Tier D — magic / delight (§8): ALL CLOSED ✅</strong> All 16

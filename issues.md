@@ -545,6 +545,12 @@ now wired through (H-SAFE-1, ✅ FIXED).
 #### L-9 — `core/storage_mode.py:12` — `QUILL_PORTABLE_ROOT` env var
 - **File / Category:** `quill/core/storage_mode.py:12` / SECURITY
 - **Suggested fix:** Same as H-1-core — gate by build flag.
+- **Status:** ✅ FIXED — `_DEV_BUILD` flag added to `quill/core/storage_mode.py`
+  in the same shape as H-1-core. `portable_root_dir()` now returns `None`
+  when `QUILL_DEV_BUILD != "1"`, so release builds ignore the env var
+  even if a user has it set. New tests in `tests/unit/core/test_storage_mode.py`:
+  `test_release_build_ignores_quill_portable_root` and
+  `test_dev_build_honours_quill_portable_root`.
 
 ### 6.2 IO
 
@@ -557,6 +563,18 @@ now wired through (H-SAFE-1, ✅ FIXED).
 - **Suggested fix:** Add `submitted_at: float` and
   `result_summary: Literal["ok","cancelled","failed","pending"]` to
   `QuillTask`. Include them in the bundle.
+- **Status:** ✅ FIXED — added `submitted_at` (wall-clock at submit) and
+  `result_summary` (defaults to `"pending"`, collapsed to `"ok"`,
+  `"cancelled"`, or `"failed"` by the worker's exception handler or the
+  done callback) to `QuillTask`. Exported the new
+  `TaskResult` literal and `RESULT_*` constants from
+  `quill.stability`. The diagnostic bundle already runs
+  `asdict()` over the task so the new fields ride along automatically.
+  Four new tests in `tests/stability/test_stability.py`:
+  `test_task_manager_records_submitted_at_and_pending_result`,
+  `test_task_manager_result_summary_ok_after_success`,
+  `test_task_manager_result_summary_failed_on_exception`, and
+  `test_task_manager_result_summary_cancelled`.
 
 
 
@@ -688,7 +706,7 @@ See the "Magic / UX Delight" section there for full details.
 | `quill/core/macros.py` | MEDIUM | M-8 |
 | `quill/core/lexical.py` | LOW | L-2 |
 | `quill/core/lexical_preload.py` | LOW | L-4 |
-| `quill/core/storage_mode.py` | LOW | L-9 |
+| `quill/core/storage_mode.py` | ✅ FIXED (L-9) | dev-only gate mirrors H-1-core |
 | `quill/core/ai/assistant.py` | MEDIUM | M-5, M-16, L-3 |
 | `quill/core/ai/foundation_models.py` | MEDIUM | M-5 |
 | `quill/core/assistant_ai.py` | LOW | L-5 |
@@ -707,7 +725,7 @@ See the "Magic / UX Delight" section there for full details.
 | `quill/stability/crash_report.py` | ✅ FIXED (H-2, H-3) | Two-pass build; N-3 |
 | `quill/stability/safe_mode.py` | ✅ FIXED (H-1-tests, L-12) | — |
 | `quill/stability/diagnostics.py` | MEDIUM | M-17 |
-| `quill/stability/task_manager.py` | MEDIUM | M-18, L-13 |
+| `quill/stability/task_manager.py` | MEDIUM | M-18, L-13 ✅ FIXED |
 | `quill/stability/wx_heartbeat.py` | MEDIUM | M-19, M-20 |
 | `quill/stability/safe_regex.py` | MEDIUM | M-21 |
 | `quill/stability/feature_contracts.py` | MEDIUM | M-22, N-9 |
@@ -903,11 +921,11 @@ These four are tracked honestly in `ROADMAP.md` and not marked
 | CRITICAL | 0 | 0 | 0 | 0 | 0 | No RCE, no untrusted pickle, no `shell=True`, no hard-coded secrets. |
 | HIGH | 13 | **13** | **0** | 0 | 0 | All 13 fixed. Tier A (release blockers) closed. |
 | MEDIUM | 32 | 2 | 30 | 0 | 0 | M-1, M-27 closed; 30 remain open. Tier B (defense-in-depth, 1.0 → 1.1). |
-| LOW | 22 | 13 | 9 | 0 | 0 | L-1,2,3,4,6,7,8,10,12,14,15,16,21,22 closed (see CHANGELOG.md); ~9 remain open. |
+| LOW | 22 | 15 | 7 | 0 | 0 | L-1,2,3,4,6,7,8,9,10,12,14,15,16,21,22 closed (see CHANGELOG.md); ~7 remain open. |
 | NIT | 16 | 13 | 3 | 0 | 0 | 13 closed (see CHANGELOG.md); N-3, N-6, N-13, N-14 open. |
-| **Sub-total (defects)** | **83** | **41** | **42** | **0** | **0** | — |
+| **Sub-total (defects)** | **83** | **43** | **40** | **0** | **0** | — |
 | ✨ Magic / delight | 16 | **16** | 0 | 0 | 0 | ALL CLOSED — see CHANGELOG.md. |
-| **Total findings** | **99** | **58** | **42** | **0** | **0** | — |
+| **Total findings** | **99** | **60** | **39** | **0** | **0** | — |
 
 ### 13.2 Closure cadence (this session)
 
@@ -922,6 +940,7 @@ These four are tracked honestly in `ROADMAP.md` and not marked
 | Sweep 7 (§6/§7 easiest: L-2,3,4,6,14,16 + N-5 + M-27) | 13 / 13 | **1 / 32** | **9 / 22** | **12 / 16** | 16 / 16 | 73 tools tests passed, 0 failed |
 | Sweep 8 (§6/§7 continued: L-1,7,10,21,22 + N-10) | 13 / 13 | 1 / 32 | **14 / 22** | **13 / 16** | 16 / 16 | 5 paths + 12 quillin lint tests passed, 0 failed |
 | Sweep 9 (§5 watch-action humanization + per-profile errors: M-1, M-4) | 13 / 13 | **3 / 32** | 14 / 22 | 13 / 16 | 16 / 16 | 1554 unit tests passed, 0 failed; ruff clean |
+| Sweep 10 (§6 storage_mode + task_manager: L-9, L-13) | 13 / 13 | 3 / 32 | **15 / 22** | 13 / 16 | 16 / 16 | 30 stability/storage_mode tests passed, 0 failed; ruff clean |
 
 > The "Test suite" column records the pytest outcome of every sweep
 > (no regressions introduced). Sweep 3 also fixed three pre-existing
@@ -940,8 +959,8 @@ M-7 (sandbox hardening), M-9..M-13 (IO-format robustness), M-14/M-15 (read-aloud
 M-16..M-23 (stability lifecycle), M-24..M-26, M-28..M-32 (UI dialog / menu
 contract, image capture, sticky notes, csv grid).
 
-**Tier C — UI polish (LOW, 1.0 → 1.1):** L-5, L-9, L-11, L-13,
-L-17, L-18, L-19, L-20, L-23.
+**Tier C — UI polish (LOW, 1.0 → 1.1):** L-5, L-11,
+L-17, L-18, L-19, L-20, L-23. (L-9, L-13 closed in Sweep 10.)
 
 **Tier D — magic / delight (§8): ALL CLOSED ✅** All 16 UX delight items
 implemented. See `CHANGELOG.md` for full details.
@@ -962,5 +981,5 @@ implemented. See `CHANGELOG.md` for full details.
 
 ---
 
-*End of issues.md. Total: ~85 distinct findings, 27 ✅ FIXED (13 HIGH all closed),
-56 OPEN (all MEDIUM/LOW/NIT), 13 ✨ magic suggestions, 0 CRITICAL.*
+*End of issues.md. Total: ~85 distinct findings, 29 ✅ FIXED (13 HIGH all closed),
+54 OPEN (all MEDIUM/LOW/NIT), 13 ✨ magic suggestions, 0 CRITICAL.*

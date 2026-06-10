@@ -160,6 +160,90 @@ def test_task_manager_cancellation_token_raises_cancelled_error() -> None:
         manager.shutdown()
 
 
+def test_task_manager_records_submitted_at_and_pending_result() -> None:
+    # L-13: every task carries a wall-clock ``submitted_at`` and starts in
+    # the ``pending`` state, which is what the diagnostic bundle will render.
+    manager = TaskManager(max_workers=1)
+    try:
+        gate = threading.Event()
+
+        def worker(*, cancellation_token, **_kwargs):
+            gate.wait(timeout=1)
+            cancellation_token.raise_if_cancelled()
+            return "ok"
+
+        before = time.time()
+        task = manager.submit("slow", worker)
+        try:
+            assert task.submitted_at >= before
+            assert task.result_summary == "pending"
+        finally:
+            gate.set()
+            assert task.future.result(timeout=1) == "ok"
+    finally:
+        manager.shutdown()
+
+
+def test_task_manager_result_summary_ok_after_success() -> None:
+    # L-13: a successful task collapses to ``"ok"`` once the done callback
+    # runs. The snapshot only carries the result_summary, not the future.
+    manager = TaskManager(max_workers=1)
+    try:
+        task = manager.submit("noop", lambda **_kwargs: 42)
+        assert task.future.result(timeout=1) == 42
+        # The done callback may race with the assertion, so wait for it.
+        for _ in range(20):
+            if task.result_summary == "ok":
+                break
+            time.sleep(0.01)
+        assert task.result_summary == "ok"
+    finally:
+        manager.shutdown()
+
+
+def test_task_manager_result_summary_failed_on_exception() -> None:
+    # L-13: an exception in the worker collapses to ``"failed"`` rather
+    # than leaking the future's exception to the diagnostic bundle.
+    manager = TaskManager(max_workers=1)
+    try:
+        task = manager.submit("boom", lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("nope")))
+        with pytest.raises(RuntimeError):
+            task.future.result(timeout=1)
+        for _ in range(20):
+            if task.result_summary == "failed":
+                break
+            time.sleep(0.01)
+        assert task.result_summary == "failed"
+    finally:
+        manager.shutdown()
+
+
+def test_task_manager_result_summary_cancelled() -> None:
+    # L-13: cancelling the future collapses the summary to ``"cancelled"``.
+    manager = TaskManager(max_workers=1)
+    try:
+        started = threading.Event()
+
+        def worker(*, cancellation_token, **_kwargs):
+            started.set()
+            while True:
+                cancellation_token.raise_if_cancelled()
+                time.sleep(0.01)
+
+        task = manager.submit("never", worker)
+        assert started.wait(timeout=1)
+        task.cancellation_token.cancel()
+        with pytest.raises(CancelledError):
+            task.future.result(timeout=1)
+        for _ in range(20):
+            if task.result_summary == "cancelled":
+                break
+            time.sleep(0.01)
+        assert task.result_summary == "cancelled"
+    finally:
+        manager.shutdown()
+
+
 def test_run_subprocess_safely_times_out(monkeypatch) -> None:
     def fake_run(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd=["echo"], timeout=0.1)
