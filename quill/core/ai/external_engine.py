@@ -171,6 +171,7 @@ def configure_engine(
     *,
     enabled: bool = False,
     description: str = "",
+    which: Callable[[str], str | None] = shutil.which,
 ) -> EngineConfig:
     """Parse a shell-style command line and persist one engine's config.
 
@@ -201,6 +202,12 @@ def configure_engine(
             raise ValueError(
                 f"The program '{command[0]}' is not in the QUILL external-engine allowlist. "
                 "Allowed engines are: " + ", ".join(sorted(_ENGINE_EXECUTABLE_BASENAMES)) + "."
+            )
+        resolved = which(command[0])
+        if resolved is None and not Path(command[0]).is_absolute():
+            raise ValueError(
+                f"The program '{command[0]}' was not found on PATH. "
+                "Install it or provide the full path to the executable."
             )
     config = EngineConfig(
         engine_id=cleaned_id,

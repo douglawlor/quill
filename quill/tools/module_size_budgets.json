@@ -8,6 +8,7 @@
   "_rebaseline_2026_06_09e": "glow.py +11 lines for the L-7 fix (logger.warning in the six broad-except GLOW backend sites). Budget re-baselined to current size.",
   "_rebaseline_2026_06_09f": "watch_actions.py +59 lines for the M-1 fix (add _humanize_action_error helper and route the 8 broad except sites + the registry's last-resort guard through it). Budget re-baselined to current size.",
   "_rebaseline_2026_06_09g": "main_frame.py +4 and structured.py +13: bug-fix growth from Sweep 12 (dialog scaffolding tidy) and M-11 (corrupt-xlsx actionable error adds _corrupt_spreadsheet_text helper). Budget re-baselined to current measured sizes.",
+  "_rebaseline_2026_06_09h": "read_aloud.py +3 for M-14/M-15 fixes: _MAX_SYNTHESIS_SECONDS constant + temp-file stdin for Piper + wall-clock kill loop for DECtalk/eSpeak.",
   "_next_target_main_frame": 15000,
   "_default_cap": 600,
   "budgets": {
@@ -15,7 +16,7 @@
     "quill/ui/assistant_tools.py": 1785,
     "quill/ui/main_frame_power_tools.py": 737,
     "quill/ui/main_frame_menu.py": 2405,
-    "quill/core/read_aloud.py": 1240,
+    "quill/core/read_aloud.py": 1243,
     "quill/core/assistant_ai.py": 1230,
     "quill/core/features.py": 1113,
     "quill/core/glow.py": 810,

@@ -222,5 +222,13 @@ def test_probe_engine_rejects_unallowed_executable():
 
 def test_configure_engine_accepts_node_executable():
     """H-2-core: canonical engine basenames are accepted."""
-    config = ee.configure_engine("a11y", "node engine.js", enabled=True)
+    config = ee.configure_engine(
+        "a11y", "node engine.js", enabled=True, which=lambda _: "/usr/bin/node"
+    )
     assert config.command == ("node", "engine.js")
+
+
+def test_unresolvable_executable_rejected():
+    """M-3: a short name that is not on PATH must be rejected at configure time."""
+    with pytest.raises(ValueError, match="not found on PATH"):
+        ee.configure_engine("a11y", "node engine.js", enabled=True, which=lambda _: None)
