@@ -49,7 +49,7 @@ DEFAULT_KEYMAP: dict[str, str] = {
     "edit.copy_selection_for_email": "Ctrl+Shift+Grave, C",
     "edit.undo": "Ctrl+Z",
     "edit.redo": "Ctrl+Y",
-    "edit.toggle_extend_selection_mode": "",  # Insert+F8 chord — handled in _on_editor_key_down
+    "edit.toggle_extend_selection_mode": "",  # no default binding; assign via keymap editor
     "edit.start_selection": "F8",
     "edit.complete_selection": "Shift+F8",
     "edit.reselect": "Ctrl+Shift+F8",

@@ -3524,16 +3524,6 @@ class MainFrame(
         f8_key = getattr(wx, "WXK_F8", None)
         if (
             f8_key is not None
-            and self._insert_key_down
-            and event.GetKeyCode() == f8_key
-            and not event.ControlDown()
-            and not event.AltDown()
-            and not event.ShiftDown()
-        ):
-            self.toggle_extend_selection_mode()
-            return
-        if (
-            f8_key is not None
             and event.GetKeyCode() == f8_key
             and self._compare_session is not None
         ):
