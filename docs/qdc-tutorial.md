@@ -32,7 +32,7 @@ standard accessibility announcement path.
 
 ## Opening the console
 
-Menu: `Tools > Authoring and Automation > Developer Console > Open Python Console`
+Menu: `Tools > Power Tools > Developer Console > Open Python Console`
 or `Open TypeScript Console`.
 
 Command palette: `quill.console.openPython` / `quill.console.openTypeScript`.
@@ -323,7 +323,7 @@ interface QuillConsoleApi {
 
 ## Console safety settings
 
-`Tools > Authoring and Automation > Developer Console > Console Safety Settings`
+`Tools > Power Tools > Developer Console > Console Safety Settings`
 or command `quill.console.openSafetySettings`.
 
 Settings:
