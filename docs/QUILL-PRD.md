@@ -2510,6 +2510,104 @@ Ask Quill is a conversational assistant that runs entirely on the user's machine
 
 **Discoverability and reliability.** Ask Quill lives under a top-level **AI** menu (Alt+I) alongside the "Use Artificial Intelligence" toggle and AI Model settings. Generation runs off the UI thread. The single-instance lock self-heals (PID + creation-time identity) so a stale lock from a crash never blocks launch.
 
+### 5.77 Copy Tray — twelve-slot persistent clipboard
+
+Copy Tray gives users twelve independently addressable clipboard slots that survive application restarts. Each slot holds text explicitly placed there; slots are written atomically to disk on every change.
+
+**Motivation.** The system clipboard holds one item and is shared across every running application. Screen-reader users who work across multiple documents, do research from multiple sources, or paste recurring fragments (signatures, disclaimers, code boilerplate) lose clipboard contents constantly because any copy from any app overwrites it. Copy Tray is a private, persistent alternative.
+
+**Core operations.**
+
+- **Copy to slot N** — copies the current selection to slot N (1–12). Reports the slot number, optional label, and a text preview through the screen-reader bridge.
+- **Paste from slot N** — inserts the slot's text at the cursor (or replaces the selection). Reports slot number and label. Supports multi-press: single=paste, double=peek, triple=open dialog.
+- **Open Copy Tray dialog** — shows all twelve slots with slot number, optional label, and a text preview. Inline editing of content and label; auto-save on slot change.
+- **Set label** — names a slot with a short string. Labels are spoken in all subsequent announcements and visible in the dialog.
+- **Clear All Tray Slots** — empties all twelve slots after a Yes/No confirmation defaulting to No.
+
+**Multi-press paste (Phase 2).** The paste chord supports three levels of intent:
+
+| Press count | Behaviour |
+| --- | --- |
+| Single | Paste slot content at cursor |
+| Double | Peek: announce slot content without pasting |
+| Triple | Open Copy Tray dialog focused on that slot |
+
+The press window is 400 ms. This lets expert users check what a slot holds before committing — useful for a crowded tray where memory may be unreliable.
+
+**Keyboard defaults.**
+
+| Action | Default binding |
+| --- | --- |
+| Paste from slot 1–9 | `Ctrl+Shift+1` through `Ctrl+Shift+9` |
+| Paste from slot 10 | `Ctrl+Shift+0` |
+| Paste from slot 11 | `Ctrl+Shift+-` |
+| Paste from slot 12 | `Ctrl+Shift+=` |
+| Copy to slot 1–9 | `Ctrl+Shift+Grave, Shift+1` through `Ctrl+Shift+Grave, Shift+9` |
+| Copy to slot 10 | `Ctrl+Shift+Grave, Shift+0` |
+| Copy to slot 11 | `Ctrl+Shift+Grave, Shift+-` |
+| Copy to slot 12 | `Ctrl+Shift+Grave, Shift+=` |
+| Open Copy Tray dialog | `Ctrl+Shift+Grave, X` |
+
+The paste bindings use the number row directly for maximum speed. The copy bindings use the QUILL-key prefix to distinguish from heading shortcuts. All bindings are reassignable via the Keymap Editor.
+
+**Storage.** `copy_tray.json` in the QUILL user data directory. Atomic write (`os.replace`). Version-tagged JSON; corrupt files fail silently (fresh state, no crash).
+
+**Accessibility guarantees.** Every operation announces through the screen-reader bridge: "Copied to slot 1", "Pasted from slot 3 (signature)", "Slot 5 is empty", "Slot 2: by the way" (peek). The dialog list receives focus on open. Empty and non-empty slots are announced distinctly. The clear-all confirmation defaults to No.
+
+**Implementation map.** `quill/core/copy_tray.py` (pure model, mypy-clean), `quill/core/multi_press.py` (MultiPressDispatcher, wx-free), `quill/ui/main_frame_copy_tray.py` (mixin with multi-press wiring), `quill/ui/copy_tray_dialog.py` (dialog), `quill/core/keymap.py` (24 slot commands + 2 management commands). Menu: `Edit > Copy Tray` submenu.
+
+---
+
+### 5.78 Abbreviation Expansion — TextExpander-style bare-word shortcuts
+
+Abbreviation Expansion replaces short trigger words with longer text automatically as you type. It complements the snippet system (which requires an explicit trigger prefix) by firing on any bare word followed by a delimiter.
+
+**Motivation.** Typing common phrases repeatedly is fatiguing and slow. TextExpander and similar tools are widely used but require separate purchase and licensing. QUILL's built-in abbreviation engine gives screen-reader users the same productivity gain with no external dependency and full keyboard control over every setting.
+
+**How it works.** When the user types a trigger word (e.g. `btw`) followed by any delimiter character — space, period, comma, semicolon, colon, exclamation mark, question mark, closing bracket, closing brace, tab, or newline — QUILL:
+
+1. Detects the trigger at the cursor.
+2. Looks up the trigger in the library (longest match first; case-insensitive by default).
+3. Replaces the trigger with the expanded text.
+4. Positions the cursor as specified (at `${cursor}` if present, otherwise after the expansion).
+5. Optionally plays a configured sound.
+6. Announces the expansion through the screen-reader bridge.
+
+**Default library.** Fifteen built-in abbreviations ship out-of-the-box: `btw` → by the way, `imo` → in my opinion, `asap` → as soon as possible, `afaik` → as far as I know, `fwiw` → for what it's worth, `tbd` → to be determined, `wrt` → with respect to, `aka` → also known as, `eg` → for example, `ie` → that is, `atm` → at the moment, `iirc` → if I recall correctly, `imho` → in my humble opinion, `tbh` → to be honest, `ngl` → not going to lie.
+
+**Variables.** Expansion bodies support:
+
+| Variable | Value |
+| --- | --- |
+| `${cursor}` | Cursor position after expansion |
+| `${date}` | Current date (e.g. June 11, 2026) |
+| `${time}` | Current time (12-hour, e.g. 02:30 PM) |
+| `${clipboard}` | System clipboard text at expansion time |
+
+**Keyboard defaults.**
+
+| Action | Default binding |
+| --- | --- |
+| Expand abbreviation at cursor (manual) | `Ctrl+Shift+Grave, A` |
+| Manage Abbreviations... | `Ctrl+Shift+Grave, Shift+A` |
+| Toggle expansion on/off | `Ctrl+Shift+Grave, E` |
+
+**Settings.** Three settings in `Editing` preferences:
+
+- `abbreviation_expansion` (bool, default True) — master on/off.
+- `abbreviation_expansion_sound` (bool, default False) — play a sound on expansion.
+- `abbreviation_expansion_sound_file` (text) — path to a `.wav` file; blank = system default beep.
+
+**Status bar.** The `abbreviations` status bar cell shows `ABR: On` or `ABR: Off`. Clicking it toggles expansion. Hidden by default; add via status bar settings.
+
+**Storage.** `abbreviations.json` in the QUILL user data directory. Atomic write. Default library written on first launch if file is absent.
+
+**Interaction with snippets.** Abbreviation expansion fires before snippet expansion in `_on_text_changed`. If an abbreviation match is found, snippet expansion is skipped for that keystroke. The `;`-prefix snippet trigger is disjoint from bare-word abbreviation triggers so conflicts are practically impossible.
+
+**Accessibility guarantees.** Every expansion announces "Expanded: \<preview\>" through the screen-reader bridge. Manual trigger (`Ctrl+Shift+Grave, A`) announces "Expanded to: \<preview\>" or "No abbreviation match". Toggle announces "Abbreviation expansion on/off".
+
+**Implementation map.** `quill/core/abbreviations.py` (pure model, mypy-clean: `Abbreviation`, `AbbreviationLibrary`, `try_expand`, `resolve_expansion`), `quill/ui/main_frame_abbreviations.py` (`AbbreviationsMixin`), `quill/ui/abbreviation_manager_dialog.py` (management dialog, A11Y-4 compliant). Menu: `Insert > Expand Abbreviation`, `Insert > Manage Abbreviations...`, `Insert > Toggle Abbreviation Expansion`.
+
 ---
 
 ## 6. Spell checking deep dive

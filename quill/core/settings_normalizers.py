@@ -28,6 +28,8 @@ STATUS_BAR_ITEMS: tuple[str, ...] = (
     "sr_name",
     # §10.4 Notebook goal progress cell.
     "notebook_goal",
+    # Abbreviation expansion toggle indicator.
+    "abbreviations",
 )
 
 
@@ -50,6 +52,7 @@ def _default_status_bar_hidden() -> list[str]:
         "quill_key_mode",
         "extend_mode",
         "sr_name",
+        "abbreviations",
     ]
 
 

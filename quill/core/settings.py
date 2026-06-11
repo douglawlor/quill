@@ -91,6 +91,9 @@ class Settings:
     assistant_prompt_style: str = "balanced"
     markdown_clipboard_format: str = "html"
     auto_clean_html_paste: bool = False
+    abbreviation_expansion: bool = True
+    abbreviation_expansion_sound: bool = False
+    abbreviation_expansion_sound_file: str = ""
     dictation_engine: str = "vosk"
     dictation_language: str = "en-US"
     dictation_model: str = "base"
@@ -472,6 +475,9 @@ class Settings:
         glow_pii_redaction_consent = bool(data.get("glow_pii_redaction_consent", False))
         glow_language_processing_consent = bool(data.get("glow_language_processing_consent", False))
         ssh_trust_first_use = bool(data.get("ssh_trust_first_use", False))
+        abbreviation_expansion = bool(data.get("abbreviation_expansion", True))
+        abbreviation_expansion_sound = bool(data.get("abbreviation_expansion_sound", False))
+        abbreviation_expansion_sound_file = str(data.get("abbreviation_expansion_sound_file", ""))
         if recent_files_limit < 1:
             recent_files_limit = 1
         if recent_files_limit > 50:
@@ -609,6 +615,9 @@ class Settings:
             glow_pii_redaction_consent=glow_pii_redaction_consent,
             glow_language_processing_consent=glow_language_processing_consent,
             ssh_trust_first_use=ssh_trust_first_use,
+            abbreviation_expansion=abbreviation_expansion,
+            abbreviation_expansion_sound=abbreviation_expansion_sound,
+            abbreviation_expansion_sound_file=abbreviation_expansion_sound_file,
         )
 
 

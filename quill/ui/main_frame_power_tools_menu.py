@@ -348,6 +348,29 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         label="Speak Selection &Length",
     )
 
+    # Edit > Copy Tray --------------------------------------------------
+    # The two dialog-level commands are registered through the manifest so they
+    # appear in the Command Palette and Keymap Editor. The per-slot copy/paste
+    # commands (copy_to_tray_1..12, paste_from_tray_1..12) are registered
+    # directly in MainFrame._build_commands so they can share the explicit ID
+    # arrays used by the Edit > Copy Tray submenu without creating duplicates.
+    add(
+        id="edit.open_copy_tray",
+        title="Open Copy Tray",
+        top_level="Edit",
+        group="copy_tray",
+        label="Open Copy &Tray...",
+        separator_before=False,
+    )
+    add(
+        id="edit.clear_all_tray_slots",
+        title="Clear All Tray Slots",
+        top_level="Edit",
+        group="copy_tray",
+        label="C&lear All Tray Slots",
+        separator_before=False,
+    )
+
     # Tools > Advanced (the cohesive remainder) --------------------------
     add(
         id="power.run_current_file",
@@ -524,6 +547,9 @@ class PowerToolsMenuMixin:
 
     def _append_power_tools_accessibility_items(self, accessibility_menu: object) -> None:
         self._append_power_tools_group(accessibility_menu, "accessibility")
+
+    def _append_power_tools_copy_tray_items(self, menu: object) -> None:
+        self._append_power_tools_group(menu, "copy_tray")
 
     def _build_power_tools_menu(self) -> object:
         """Build the Tools > Advanced submenu (the cohesive remainder).

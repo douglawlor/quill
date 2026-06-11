@@ -117,6 +117,9 @@ DEFAULT_KEYMAP: dict[str, str] = {
     "format.insert_markdown_tag": "Ctrl+Shift+Grave, M",
     "format.insert_snippet": "Ctrl+Shift+Grave, S",
     "format.manage_snippets": "Ctrl+Shift+Grave, Shift+S",
+    "format.expand_abbreviation": "Ctrl+Shift+Grave, A",
+    "format.manage_abbreviations": "Ctrl+Shift+Grave, Shift+A",
+    "format.toggle_abbreviation_expansion": "Ctrl+Shift+Grave, E",
     "power.insert_special_character": "F2",  # §4.22 EdSharp parity
     "power.number_lines": "Alt+Shift+N",  # §4.22 Number Items parity
     "power.trim_blank_lines": "Ctrl+Shift+Enter",  # §4.22 Trim Blanks parity
@@ -149,6 +152,38 @@ DEFAULT_KEYMAP: dict[str, str] = {
     # §10.8 — magic paste moves to QUILL key, V (handled in QuillKeyMixin prefix
     # state machine).  Ctrl+Alt+V removed — screen readers eat Ctrl+Alt+ chords.
     "edit.magic_paste": "",
+    # §CopyTray — Copy Tray slot access (12 slots).
+    # Paste: Ctrl+Shift+N for N=1-9, Ctrl+Shift+0 for slot 10,
+    #        Ctrl+Shift+- for slot 11, Ctrl+Shift+= for slot 12.
+    # Copy:  QUILL+Shift+N for same key positions (Shift+digit/symbol).
+    # QUILL+1-6 (bare) are heading shortcuts; Shift variants are distinct.
+    # Open tray dialog: QUILL+X.
+    "edit.open_copy_tray": "Ctrl+Shift+Grave, X",
+    "edit.clear_all_tray_slots": "",
+    "edit.copy_to_tray_1": "Ctrl+Shift+Grave, Shift+1",
+    "edit.copy_to_tray_2": "Ctrl+Shift+Grave, Shift+2",
+    "edit.copy_to_tray_3": "Ctrl+Shift+Grave, Shift+3",
+    "edit.copy_to_tray_4": "Ctrl+Shift+Grave, Shift+4",
+    "edit.copy_to_tray_5": "Ctrl+Shift+Grave, Shift+5",
+    "edit.copy_to_tray_6": "Ctrl+Shift+Grave, Shift+6",
+    "edit.copy_to_tray_7": "Ctrl+Shift+Grave, Shift+7",
+    "edit.copy_to_tray_8": "Ctrl+Shift+Grave, Shift+8",
+    "edit.copy_to_tray_9": "Ctrl+Shift+Grave, Shift+9",
+    "edit.copy_to_tray_10": "Ctrl+Shift+Grave, Shift+0",
+    "edit.copy_to_tray_11": "Ctrl+Shift+Grave, Shift+-",
+    "edit.copy_to_tray_12": "Ctrl+Shift+Grave, Shift+=",
+    "edit.paste_from_tray_1": "Ctrl+Shift+1",
+    "edit.paste_from_tray_2": "Ctrl+Shift+2",
+    "edit.paste_from_tray_3": "Ctrl+Shift+3",
+    "edit.paste_from_tray_4": "Ctrl+Shift+4",
+    "edit.paste_from_tray_5": "Ctrl+Shift+5",
+    "edit.paste_from_tray_6": "Ctrl+Shift+6",
+    "edit.paste_from_tray_7": "Ctrl+Shift+7",
+    "edit.paste_from_tray_8": "Ctrl+Shift+8",
+    "edit.paste_from_tray_9": "Ctrl+Shift+9",
+    "edit.paste_from_tray_10": "Ctrl+Shift+0",
+    "edit.paste_from_tray_11": "Ctrl+Shift+-",
+    "edit.paste_from_tray_12": "Ctrl+Shift+=",
 }
 
 
@@ -215,6 +250,9 @@ _PACK_LABELS: dict[str, str] = {
     "format.list_manager": "List Manager",
     "format.insert_snippet": "Insert Snippet",
     "format.manage_snippets": "Manage Snippets",
+    "format.expand_abbreviation": "Expand Abbreviation",
+    "format.manage_abbreviations": "Manage Abbreviations",
+    "format.toggle_abbreviation_expansion": "Toggle Abbreviation Expansion",
     "format.toggle_line_comment": "Toggle Line Comment",
     "format.upper_case": "Upper Case",
     "navigate.back_location": "Back",
@@ -466,6 +504,9 @@ def merge_keymaps(raw: object) -> dict[str, str]:
         "format.insert_markdown_tag": ("CTRL+ALT+M", "Ctrl+Shift+Grave, M"),
         "format.insert_snippet": ("CTRL+ALT+SPACE", "Ctrl+Shift+Grave, S"),
         "format.manage_snippets": ("CTRL+ALT+SHIFT+SPACE", "Ctrl+Shift+Grave, Shift+S"),
+        "format.expand_abbreviation": ("", "Ctrl+Shift+Grave, A"),
+        "format.manage_abbreviations": ("", "Ctrl+Shift+Grave, Shift+A"),
+        "format.toggle_abbreviation_expansion": ("", "Ctrl+Shift+Grave, E"),
     }
     legacy_preview_conflict = (
         str(raw.get("view.preview", "")).strip().upper() == "CTRL+SHIFT+P"

@@ -706,6 +706,95 @@ Use the familiar commands first:
 
 Quill adds two especially useful ideas on top of that.
 
+### Copy Tray
+
+Copy Tray is **twelve** independently addressable clipboard slots that survive application restarts. Each slot holds text you copy there explicitly. Unlike the system clipboard — shared across every application and reset on every copy — Copy Tray slots belong exclusively to QUILL and hold their contents until you replace or clear them.
+
+**Pasting from a slot is a single chord: hold `Ctrl+Shift` and press a number key.**
+
+| Key | What happens |
+| --- | --- |
+| `Ctrl+Shift+1` through `Ctrl+Shift+9` | Paste from slots 1–9 |
+| `Ctrl+Shift+0` | Paste from slot 10 |
+| `Ctrl+Shift+-` | Paste from slot 11 |
+| `Ctrl+Shift+=` | Paste from slot 12 |
+
+**Copying to a slot uses the QUILL key prefix followed by the same key with Shift:**
+
+| Key | What happens |
+| --- | --- |
+| `Ctrl+Shift+Grave, Shift+1` through `Shift+9` | Copy selection to slots 1–9 |
+| `Ctrl+Shift+Grave, Shift+0` | Copy selection to slot 10 |
+| `Ctrl+Shift+Grave, Shift+-` | Copy selection to slot 11 |
+| `Ctrl+Shift+Grave, Shift+=` | Copy selection to slot 12 |
+
+**Multi-press paste.** Press the paste chord multiple times quickly:
+
+- **Single press** — paste the slot's content at the cursor (standard behaviour).
+- **Double press** — peek: QUILL announces the slot's content without pasting it. Useful to check what a slot holds before committing to a paste.
+- **Triple press** — open the Copy Tray dialog directly, focused on that slot.
+
+**Open the tray dialog:** `Ctrl+Shift+Grave, X` (or `Edit > Copy Tray > Open Copy Tray...`).
+
+The dialog lists all twelve slots. Each row shows the slot number, an optional label, and a preview of the stored text. Navigate with arrow keys. Buttons:
+
+- **Paste** — insert the selected slot's text at the cursor. Also activated by double-clicking or pressing Enter on a row.
+- **Paste from Clipboard** — store the system clipboard into the selected slot.
+- **Save Changes** — save edits made directly in the content area.
+- **Clear Slot** — empty the selected slot.
+- **Close** — close without pasting.
+
+**Tray icon access.** The system tray icon menu also includes a Copy Tray submenu listing all occupied slots. Click any slot entry to paste its content into the active editor. This makes QUILL's clipboard available from the tray without bringing the window to the front.
+
+**Tips.**
+
+- Keep a signature, disclaimer, or standard heading in slot 1. One chord pastes it anywhere.
+- Use labelled slots for a research session: slot 1 "intro quote", slot 2 "methodology note", slot 3 "source URL". Copy one fragment per slot as you read, then paste in order when drafting.
+- Double-press any paste chord to hear what is in that slot without pasting — useful when navigating your tray by memory.
+- Slots survive restarts. Build a small library of recurring fragments you reach for daily.
+- All bindings are reassignable in the Keymap Editor (`App > Preferences > Keyboard`).
+
+### Abbreviation Expansion
+
+Abbreviation Expansion is a TextExpander-style feature. You type a short trigger word followed by any delimiter character (space, period, comma, and so on) and QUILL silently replaces the trigger with the full text.
+
+**Example:** type `btw ` (note the trailing space) and QUILL replaces it with `by the way `.
+
+QUILL ships with fifteen built-in abbreviations covering common shorthand (`imo`, `asap`, `afaik`, and more). You can add, edit, and disable any abbreviation, including the built-in ones.
+
+**Enabling and disabling.** Abbreviation expansion is on by default. To toggle it:
+
+- Press `Ctrl+Shift+Grave, E` — or use `Insert > Toggle Abbreviation Expansion`.
+- Click the **ABR: On / ABR: Off** cell in the status bar (if visible; add it via status bar settings).
+- Change **Abbreviation expansion** in `App > Preferences > Editing`.
+
+**Managing abbreviations.** Open `Insert > Manage Abbreviations...` (or press `Ctrl+Shift+Grave, Shift+A`) to add, edit, and organise your abbreviations. Each abbreviation has:
+
+- **Abbreviation** — the short trigger word, e.g. `btw`.
+- **Expansion** — the full text to substitute, e.g. `by the way`.
+- **Description** — optional note for your own reference.
+- **Case sensitive** — when checked, only the exact-case trigger matches; otherwise any capitalisation of the trigger fires.
+- **Enabled** — toggle individual abbreviations without deleting them.
+
+**Manual trigger.** Press `Ctrl+Shift+Grave, A` (or `Insert > Expand Abbreviation`) to expand the word immediately before the cursor without typing a delimiter character. Useful when you want expansion mid-word or at end-of-document.
+
+**Variables in expansions.** Expansions support these placeholders:
+
+| Placeholder | Inserts |
+| --- | --- |
+| `${cursor}` | Places the cursor here after expansion |
+| `${date}` | Current date (e.g. June 11, 2026) |
+| `${time}` | Current time (e.g. 02:30 PM) |
+| `${clipboard}` | Current system clipboard text |
+
+**Sound feedback.** Optional: enable **Play sound on abbreviation expansion** in `App > Preferences > Editing` and optionally point **Abbreviation expansion sound file** to a `.wav` file. Leave the path blank for the default system beep.
+
+**Tips.**
+
+- Use `${cursor}` to drop the cursor inside a template. For example, the abbreviation `sig` expanding to `Best regards,${cursor}Jeff` positions the cursor right after the comma.
+- Use case-sensitive abbreviations sparingly — most triggers are lowercase and case sensitivity is rarely needed.
+- Abbreviations fire before snippet expansion. If a word matches both, the abbreviation wins.
+
 ### Copy With Source
 
 `Ctrl+Shift+C` copies the current selection, then appends a source reference that captures document context. If nothing is selected, Quill uses the current line. This is excellent for notes, review workflows, and evidence gathering.

@@ -190,6 +190,11 @@ class MenuBuilderMixin:
         self._id_normalize_whitespace = wx.NewIdRef()
         self._id_convert_indentation_to_spaces = wx.NewIdRef()
         self._id_convert_indentation_to_tabs = wx.NewIdRef()
+        # Copy Tray slot IDs (Edit > Copy Tray submenu)
+        self._id_copy_tray_slots: list[wx.WindowIDRef] = [wx.NewIdRef() for _ in range(12)]
+        self._id_paste_tray_slots: list[wx.WindowIDRef] = [wx.NewIdRef() for _ in range(12)]
+        self._id_open_copy_tray = wx.NewIdRef()
+        self._id_clear_all_tray_slots = wx.NewIdRef()
         edit_menu = wx.Menu()
         edit_menu.Append(self._id_undo, self._menu_label("&Undo", "edit.undo"))
         edit_menu.Append(self._id_redo, self._menu_label("&Redo", "edit.redo"))
@@ -201,6 +206,24 @@ class MenuBuilderMixin:
         edit_menu.Append(wx.ID_PASTE, "&Paste\tCtrl+V")
         # Paste variants and New Document from Clipboard (power tools)
         self._append_power_tools_edit_items(edit_menu)
+        # Copy Tray submenu — per-slot items use explicit IDs for direct bindings;
+        # open/clear dialog commands are recirculated from the manifest via the
+        # helper (menus.md Phase 4 pattern).
+        tray_menu = wx.Menu()
+        for _n in range(1, 13):
+            tray_menu.Append(
+                self._id_copy_tray_slots[_n - 1],
+                self._menu_label(f"Copy to Slot &{_n}", f"edit.copy_to_tray_{_n}"),
+            )
+        tray_menu.AppendSeparator()
+        for _n in range(1, 13):
+            tray_menu.Append(
+                self._id_paste_tray_slots[_n - 1],
+                self._menu_label(f"Paste from Slot &{_n}", f"edit.paste_from_tray_{_n}"),
+            )
+        tray_menu.AppendSeparator()
+        self._append_power_tools_copy_tray_items(tray_menu)
+        edit_menu.AppendSubMenu(tray_menu, "Copy &Tray")
         edit_menu.Append(
             self._id_copy_with_source,
             self._menu_label("Copy With &Attribution", "edit.copy_with_source"),
@@ -543,6 +566,9 @@ class MenuBuilderMixin:
         self._id_insert_markdown_tag = wx.NewIdRef()
         self._id_insert_snippet = wx.NewIdRef()
         self._id_manage_snippets = wx.NewIdRef()
+        self._id_expand_abbreviation = wx.NewIdRef()
+        self._id_manage_abbreviations = wx.NewIdRef()
+        self._id_toggle_abbreviation_expansion = wx.NewIdRef()
         self._id_format_bold = wx.NewIdRef()
         self._id_format_italic = wx.NewIdRef()
         self._id_heading_1 = wx.NewIdRef()
@@ -810,6 +836,21 @@ class MenuBuilderMixin:
         insert_menu.Append(
             self._id_manage_snippets,
             self._menu_label("Manage Snippets...", "format.manage_snippets"),
+        )
+        insert_menu.AppendSeparator()
+        insert_menu.Append(
+            self._id_expand_abbreviation,
+            self._menu_label("E&xpand Abbreviation", "format.expand_abbreviation"),
+        )
+        insert_menu.Append(
+            self._id_manage_abbreviations,
+            self._menu_label("Manage Abbrevi&ations...", "format.manage_abbreviations"),
+        )
+        insert_menu.Append(
+            self._id_toggle_abbreviation_expansion,
+            self._menu_label(
+                "&Toggle Abbreviation Expansion", "format.toggle_abbreviation_expansion"
+            ),
         )
         # Special character / date-time / calculated date / file content (Power Tools
         # recirculation, menus.md Phase 4).
@@ -2134,6 +2175,21 @@ class MenuBuilderMixin:
         )
         self.frame.Bind(
             wx.EVT_MENU,
+            lambda _e: self.expand_abbreviation_at_cursor(),
+            id=self._id_expand_abbreviation,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.open_abbreviation_manager(),
+            id=self._id_manage_abbreviations,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.toggle_abbreviation_expansion(),
+            id=self._id_toggle_abbreviation_expansion,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
             lambda _e: self.show_word_prediction(),
             id=self._id_word_prediction,
         )
@@ -2648,6 +2704,19 @@ class MenuBuilderMixin:
             lambda _e: self.go_to_sticky_note_in_notebook(),
             id=self._id_go_to_sticky_note_in_notebook,
         )
+        # Copy Tray per-slot bindings (slots 1-9)
+        for _n in range(1, 10):
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e, _slot=_n: self.copy_to_tray_slot(_slot),
+                id=self._id_copy_tray_slots[_n - 1],
+            )
+        for _n in range(1, 10):
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e, _slot=_n: self.paste_from_tray_slot(_slot),
+                id=self._id_paste_tray_slots[_n - 1],
+            )
         self.frame.Bind(wx.EVT_MENU, self._on_open_recent)
         self.frame.Bind(wx.EVT_MENU, self._on_session_menu)
         self.frame.Bind(wx.EVT_MENU, self._on_recent_session_menu)

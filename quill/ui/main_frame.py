@@ -476,8 +476,10 @@ from quill.ui.csv_grid import CsvGridSurface
 from quill.ui.dialog_contract import apply_modal_ids, focus_primary_control, show_modal_dialog
 from quill.ui.editor_surface import PLAIN, RICH, surface_kind
 from quill.ui.html_paste_cleaner import analyze_paste
+from quill.ui.main_frame_abbreviations import AbbreviationsMixin
 from quill.ui.main_frame_ai_actions import AiActionsMixin
 from quill.ui.main_frame_browse import BrowseModeMixin
+from quill.ui.main_frame_copy_tray import CopyTrayMixin
 from quill.ui.main_frame_image import ImageCaptureMixin
 from quill.ui.main_frame_intellisense import IntellisensePopupMixin
 from quill.ui.main_frame_line_commands import LineCommandsMixin
@@ -766,6 +768,7 @@ class _IntellisensePopup:
 
 
 class MainFrame(
+    AbbreviationsMixin,
     AiActionsMixin,
     ImageCaptureMixin,
     BrowseModeMixin,
@@ -777,6 +780,7 @@ class MainFrame(
     StatusBarMixin,
     IntellisensePopupMixin,
     LineCommandsMixin,
+    CopyTrayMixin,
     ProfilePickerMixin,
     SshEditingMixin,
     PowerToolsActionsMixin,
@@ -805,6 +809,7 @@ class MainFrame(
         "file_path": "File Path",
         "quill_key_mode": "QUILL Key",
         "extend_mode": "Extend Mode",
+        "abbreviations": "Abbreviations",
         "sr_name": "Screen Reader",
         "suggestion": "Suggested Action",
         "notebook_goal": "Notebook Goal",
@@ -826,6 +831,7 @@ class MainFrame(
         "file_path": 260,
         "quill_key_mode": 130,
         "extend_mode": 110,
+        "abbreviations": 120,
         "sr_name": 160,
         "suggestion": 220,
         "notebook_goal": 200,
@@ -847,6 +853,7 @@ class MainFrame(
         "file_path": "core.file",
         "quill_key_mode": "core.navigate",
         "extend_mode": "core.edit",
+        "abbreviations": "core.edit",
         "sr_name": "core.app",
         "suggestion": "core.app",
         "notebook_goal": "core.notebook",
@@ -1027,6 +1034,7 @@ class MainFrame(
             load_snippet_library() if not safe_mode else SnippetLibrary(version=1, snippets=[])
         )
         self._snippet_expansion_guard = False
+        self._init_abbreviations()
         self._intellisense_popup: _IntellisensePopup | None = None
         self._intellisense_context: IntellisenseContext | None = None
         self._intellisense_fragment_text = ""
@@ -2552,6 +2560,24 @@ class MainFrame(
             self._binding_for("format.manage_snippets"),
         )
         self.commands.register(
+            "format.expand_abbreviation",
+            "Expand Abbreviation",
+            self.expand_abbreviation_at_cursor,
+            self._binding_for("format.expand_abbreviation"),
+        )
+        self.commands.register(
+            "format.manage_abbreviations",
+            "Manage Abbreviations...",
+            self.open_abbreviation_manager,
+            self._binding_for("format.manage_abbreviations"),
+        )
+        self.commands.register(
+            "format.toggle_abbreviation_expansion",
+            "Toggle Abbreviation Expansion",
+            self.toggle_abbreviation_expansion,
+            self._binding_for("format.toggle_abbreviation_expansion"),
+        )
+        self.commands.register(
             "format.bold",
             "Bold",
             self.format_bold,
@@ -2833,6 +2859,21 @@ class MainFrame(
             self.magic_paste,
             None,
         )
+        # Copy Tray per-slot commands — registered here (not through the power-tools
+        # manifest) so they share the explicit menu-ID arrays and avoid duplicate entries.
+        for _ct_n in range(1, 13):
+            self.commands.register(
+                f"edit.copy_to_tray_{_ct_n}",
+                f"Copy to Tray Slot {_ct_n}",
+                (lambda _n=_ct_n: lambda: self.copy_to_tray_slot(_n))(),
+                self._binding_for(f"edit.copy_to_tray_{_ct_n}"),
+            )
+            self.commands.register(
+                f"edit.paste_from_tray_{_ct_n}",
+                f"Paste from Tray Slot {_ct_n}",
+                (lambda _n=_ct_n: lambda: self.paste_from_tray_slot(_n))(),
+                self._binding_for(f"edit.paste_from_tray_{_ct_n}"),
+            )
         self._register_power_tools_commands()
         self._register_quillins_commands()
 
@@ -3047,7 +3088,15 @@ class MainFrame(
             "format.insert_markdown_tag": self._id_insert_markdown_tag,
             "format.insert_snippet": self._id_insert_snippet,
             "format.manage_snippets": self._id_manage_snippets,
+            "format.expand_abbreviation": self._id_expand_abbreviation,
+            "format.manage_abbreviations": self._id_manage_abbreviations,
+            "format.toggle_abbreviation_expansion": self._id_toggle_abbreviation_expansion,
             "edit.word_prediction": self._id_word_prediction,
+            # Copy Tray
+            "edit.open_copy_tray": self._id_open_copy_tray,
+            "edit.clear_all_tray_slots": self._id_clear_all_tray_slots,
+            **{f"edit.copy_to_tray_{i}": self._id_copy_tray_slots[i - 1] for i in range(1, 13)},
+            **{f"edit.paste_from_tray_{i}": self._id_paste_tray_slots[i - 1] for i in range(1, 13)},
         }
 
     def _on_command_run(self, command_id: str) -> None:
@@ -3482,6 +3531,12 @@ class MainFrame(
 
     def _on_text_changed(self, _event: object) -> None:
         if self._voice_command_guard:
+            return
+        if (
+            not self._abbreviation_expansion_guard
+            and getattr(self.settings, "abbreviation_expansion", True)
+            and self._expand_abbreviation_if_match()
+        ):
             return
         if (
             not self._snippet_expansion_guard
@@ -6859,6 +6914,32 @@ class MainFrame(
         exit_id = wx.NewIdRef()
         menu.Append(show_id, "Show Quill")
         menu.AppendSeparator()
+        # Copy Tray submenu — list occupied slots for quick paste
+        ct_sub = wx.Menu()
+        tray = self._tray()
+        has_any = False
+        for n, slot in tray.all_slots():
+            if not slot.is_empty():
+                has_any = True
+                label_part = f" ({slot.label})" if slot.label else ""
+                item_label = f"&{n}.{label_part} {slot.preview(50)}"
+                slot_id = wx.NewIdRef()
+                ct_sub.Append(slot_id, item_label)
+                menu.Bind(
+                    wx.EVT_MENU,
+                    lambda _e, _n=n: self._tray_paste_slot(_n),
+                    id=slot_id,
+                )
+        if not has_any:
+            empty_id = wx.NewIdRef()
+            ct_sub.Append(empty_id, "(all slots empty)")
+            ct_sub.Enable(empty_id, False)
+        ct_sub.AppendSeparator()
+        open_tray_id = wx.NewIdRef()
+        ct_sub.Append(open_tray_id, "Open Copy Tray...")
+        menu.Bind(wx.EVT_MENU, lambda _e: self.open_copy_tray(), id=open_tray_id)
+        menu.AppendSubMenu(ct_sub, "Copy &Tray")
+        menu.AppendSeparator()
         menu.Append(sticky_id, "Sticky Notes...")
         menu.Append(new_sticky_id, "New Sticky Note...")
         menu.AppendSeparator()
@@ -6869,6 +6950,11 @@ class MainFrame(
         menu.Bind(wx.EVT_MENU, lambda _e: self._exit_from_tray(), id=exit_id)
         self._tray_icon.PopupMenu(menu)
         menu.Destroy()
+
+    def _tray_paste_slot(self, n: int) -> None:
+        """Restore the window (if hidden) then paste from Copy Tray slot *n*."""
+        self._restore_from_tray()
+        self.paste_from_tray_slot(n)
 
     def _exit_from_tray(self) -> None:
         self._is_exiting = True

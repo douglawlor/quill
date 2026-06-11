@@ -75,6 +75,10 @@ _POWER_TOOLS_COMMAND_IDS = [
     "power.keep_unique_lines",
     "power.delete_lines_containing",
     "power.delete_lines_not_containing",
+    # Copy Tray (dialog-level commands only; per-slot commands register directly
+    # in MainFrame._build_commands to avoid duplicate menu entries)
+    "edit.open_copy_tray",
+    "edit.clear_all_tray_slots",
 ]
 
 
@@ -103,6 +107,7 @@ def test_every_command_is_menu_wired() -> None:
     valid_groups = {
         "insert",
         "edit",
+        "copy_tray",
         "file_ops",
         "format_line",
         "sort_filter",
@@ -136,6 +141,7 @@ def test_every_command_is_menu_wired() -> None:
         "_append_power_tools_navigate_items",
         "_append_power_tools_search_items",
         "_append_power_tools_accessibility_items",
+        "_append_power_tools_copy_tray_items",
     ):
         assert f"self.{helper}(" in _SOURCE, f"{helper} is not called from the menu build"
 
@@ -180,6 +186,7 @@ def test_command_table_is_exactly_the_expected_ids_with_no_duplicates() -> None:
 
 
 def test_every_table_handler_exists_on_the_actions_mixin() -> None:
+    from quill.ui.main_frame_copy_tray import CopyTrayMixin
     from quill.ui.main_frame_power_tools import PowerToolsActionsMixin
     from quill.ui.main_frame_power_tools_menu import _MIGRATED_HANDLERS
 
@@ -190,6 +197,12 @@ def test_every_table_handler_exists_on_the_actions_mixin() -> None:
             assert callable(_MIGRATED_HANDLERS[command.id])
             continue
         name = command.handler_name
+        # Copy Tray commands live on CopyTrayMixin, not PowerToolsActionsMixin.
+        if command.placement.group == "copy_tray":
+            assert hasattr(CopyTrayMixin, name), (
+                f"missing handler {name} on CopyTrayMixin for {command.id}"
+            )
+            continue
         assert hasattr(PowerToolsActionsMixin, name), (
             f"missing handler {name} on PowerToolsActionsMixin for {command.id}"
         )
@@ -219,6 +232,10 @@ def test_menu_recirculation_preserves_shipped_group_order() -> None:
         "edit": [
             "power.paste_html_as_markdown",
             "power.new_document_from_clipboard",
+        ],
+        "copy_tray": [
+            "edit.open_copy_tray",
+            "edit.clear_all_tray_slots",
         ],
         "format_line": [
             "power.number_lines",
