@@ -159,6 +159,117 @@ class TestTryExpand:
             assert result is not None, f"trigger char {ch!r} did not fire"
 
 
+class TestAbbreviationLibraryMethods:
+    def test_add_appends_and_returns(self) -> None:
+        lib = AbbreviationLibrary(version=1, abbreviations=[])
+        a = lib.add("btw", "by the way")
+        assert a.abbreviation == "btw"
+        assert a.expansion == "by the way"
+        assert len(lib.abbreviations) == 1
+        assert lib.abbreviations[0] is a
+
+    def test_remove_by_id(self) -> None:
+        lib = _lib(("btw", "by the way"), ("imo", "in my opinion"))
+        target_id = lib.abbreviations[0].id
+        lib.remove(target_id)
+        assert len(lib.abbreviations) == 1
+        assert lib.abbreviations[0].abbreviation == "imo"
+
+    def test_remove_unknown_id_is_noop(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        lib.remove("nonexistent-id")
+        assert len(lib.abbreviations) == 1
+
+    def test_enable_sets_enabled_true(self) -> None:
+        lib = AbbreviationLibrary(
+            version=1,
+            abbreviations=[Abbreviation(id="x", abbreviation="x", expansion="y", enabled=False)],
+        )
+        lib.enable("x")
+        assert lib.abbreviations[0].enabled is True
+
+    def test_disable_sets_enabled_false(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        target_id = lib.abbreviations[0].id
+        lib.disable(target_id)
+        assert lib.abbreviations[0].enabled is False
+
+    def test_update_changes_fields(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        target_id = lib.abbreviations[0].id
+        result = lib.update(target_id, expansion="by the way (updated)", description="test")
+        assert result.expansion == "by the way (updated)"
+        assert result.description == "test"
+
+    def test_update_unknown_id_raises(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        import pytest
+
+        with pytest.raises(KeyError):
+            lib.update("bad-id", expansion="x")
+
+    def test_all_returns_copy(self) -> None:
+        lib = _lib(("btw", "by the way"), ("imo", "in my opinion"))
+        result = lib.all()
+        assert len(result) == 2
+        result.clear()
+        assert len(lib.abbreviations) == 2  # original unaffected
+
+    def test_enabled_only_filters_disabled(self) -> None:
+        lib = AbbreviationLibrary(
+            version=1,
+            abbreviations=[
+                Abbreviation(id="1", abbreviation="btw", expansion="x", enabled=True),
+                Abbreviation(id="2", abbreviation="imo", expansion="y", enabled=False),
+            ],
+        )
+        result = lib.enabled_only()
+        assert len(result) == 1
+        assert result[0].abbreviation == "btw"
+
+    def test_find_by_trigger_match(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        result = lib.find_by_trigger("btw")
+        assert result is not None
+        assert result.abbreviation == "btw"
+
+    def test_find_by_trigger_no_match(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        assert lib.find_by_trigger("imo") is None
+
+    def test_find_by_trigger_case_insensitive(self) -> None:
+        lib = _lib(("btw", "by the way"))
+        assert lib.find_by_trigger("BTW") is not None
+
+    def test_find_by_trigger_case_sensitive_mismatch(self) -> None:
+        lib = AbbreviationLibrary(
+            version=1,
+            abbreviations=[
+                Abbreviation(id="1", abbreviation="btw", expansion="x", case_sensitive=True)
+            ],
+        )
+        assert lib.find_by_trigger("BTW") is None
+
+    def test_find_by_trigger_longest_match(self) -> None:
+        lib = AbbreviationLibrary(
+            version=1,
+            abbreviations=[
+                Abbreviation(id="1", abbreviation="imo", expansion="in my opinion"),
+                Abbreviation(id="2", abbreviation="imho", expansion="in my humble opinion"),
+            ],
+        )
+        result = lib.find_by_trigger("imho")
+        assert result is not None
+        assert result.abbreviation == "imho"
+
+    def test_find_by_trigger_skips_disabled(self) -> None:
+        lib = AbbreviationLibrary(
+            version=1,
+            abbreviations=[Abbreviation(id="1", abbreviation="btw", expansion="x", enabled=False)],
+        )
+        assert lib.find_by_trigger("btw") is None
+
+
 class TestPersistence:
     def test_roundtrip(self, tmp_path: object) -> None:
         lib = _lib(("btw", "by the way"), ("imo", "in my opinion"))

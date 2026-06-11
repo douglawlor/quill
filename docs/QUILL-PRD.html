@@ -4875,17 +4875,32 @@ preview through the screen-reader bridge.</li>
 cursor (or replaces the selection). Reports slot number and label.
 Supports multi-press: single=paste, double=peek, triple=open
 dialog.</li>
+<li><strong>Copy to Next Empty Slot</strong>
+(<code>edit.copy_to_next_slot</code>) — copies the selection to the
+first unoccupied, unpinned slot in order 1–12. Announces which slot was
+used. If all slots are occupied, announces this rather than silently
+overwriting.</li>
+<li><strong>Search Tray Slots</strong>
+(<code>edit.search_tray_slots</code>) — opens a minimal search dialog.
+User types a query; QUILL searches all slot text and labels and
+announces matches. The user can press a digit key to paste that slot
+directly.</li>
 <li><strong>Open Copy Tray dialog</strong> — shows all twelve slots with
 slot number, optional label, and a text preview. Inline editing of
-content and label; auto-save on slot change.</li>
+content and label; auto-save on slot change. Includes Pin/Unpin
+button.</li>
 <li><strong>Set label</strong> — names a slot with a short string.
-Labels are spoken in all subsequent announcements and visible in the
-dialog.</li>
+Labels are spoken in all subsequent announcements, visible in the
+dialog, and shown in the Paste from Tray submenu alongside a text
+preview.</li>
+<li><strong>Pin / Unpin</strong> — marks a slot as pinned from the
+dialog. Pinned slots are never overwritten by next-empty routing and are
+announced with a "pinned" prefix.</li>
 <li><strong>Clear All Tray Slots</strong> — empties all twelve slots
 after a Yes/No confirmation defaulting to No.</li>
 </ul>
-<p><strong>Multi-press paste (Phase 2).</strong> The paste chord
-supports three levels of intent:</p>
+<p><strong>Multi-press paste.</strong> The paste chord supports three
+levels of intent:</p>
 <table>
 <thead>
 <tr>
@@ -4908,9 +4923,19 @@ supports three levels of intent:</p>
 </tr>
 </tbody>
 </table>
-<p>The press window is 400 ms. This lets expert users check what a slot
-holds before committing — useful for a crowded tray where memory may be
-unreliable.</p>
+<p>The press window is configurable via
+<code>multi_press_window_ms</code> (default 400 ms, range 100–1000 ms;
+found in <code>App &gt; Preferences &gt; Editing</code>). This lets
+expert users check what a slot holds before committing — useful for a
+crowded tray where memory may be unreliable.</p>
+<p><strong>Paste submenu slot labels.</strong> The
+<code>Edit &gt; Copy Tray &gt; Paste from Tray</code> menu shows each
+slot's label and a text preview inline (e.g. "1 signature — Hi, I wanted
+to follow..."). Screen readers read both columns when navigating the
+submenu.</p>
+<p><strong>Status bar cell.</strong> The <code>copy_tray_slots</code>
+status bar cell shows <code>Slots: X/12</code> (occupied count).
+Clicking it opens the Copy Tray dialog.</p>
 <p><strong>Keyboard defaults.</strong></p>
 <table>
 <thead>
@@ -4972,12 +4997,18 @@ through the screen-reader bridge: "Copied to slot 1", "Pasted from slot
 dialog list receives focus on open. Empty and non-empty slots are
 announced distinctly. The clear-all confirmation defaults to No.</p>
 <p><strong>Implementation map.</strong>
-<code>quill/core/copy_tray.py</code> (pure model, mypy-clean),
+<code>quill/core/copy_tray.py</code> (pure model, mypy-clean;
+<code>TraySlot</code> with <code>pinned</code> field,
+<code>pin_slot</code>, <code>unpin_slot</code>,
+<code>first_empty_slot</code>, <code>search_slots</code>),
 <code>quill/core/multi_press.py</code> (MultiPressDispatcher, wx-free),
-<code>quill/ui/main_frame_copy_tray.py</code> (mixin with multi-press
-wiring), <code>quill/ui/copy_tray_dialog.py</code> (dialog),
-<code>quill/core/keymap.py</code> (24 slot commands + 2 management
-commands). Menu: <code>Edit &gt; Copy Tray</code> submenu.</p>
+<code>quill/ui/main_frame_copy_tray.py</code> (mixin: multi-press
+wiring, <code>copy_to_next_slot</code>, <code>search_tray_slots</code>,
+<code>_TraySearchDialog</code>, <code>_update_paste_tray_labels</code>),
+<code>quill/ui/copy_tray_dialog.py</code> (dialog with Pin/Unpin
+button), <code>quill/core/keymap.py</code> (24 slot commands + 4
+management commands). Menu: <code>Edit &gt; Copy Tray</code> submenu
+including "Copy to Next Empty Slot" and "Search Tray Slots...".</p>
 <hr />
 <h3
 id="578-abbreviation-expansion--textexpander-style-bare-word-shortcuts">5.78
@@ -5006,15 +5037,16 @@ present, otherwise after the expansion).</li>
 <li>Announces the expansion through the screen-reader bridge.</li>
 </ol>
 <p><strong>Default library.</strong> Fifteen built-in abbreviations ship
-out-of-the-box: <code>btw</code> → by the way, <code>imo</code> → in my
-opinion, <code>asap</code> → as soon as possible, <code>afaik</code> →
-as far as I know, <code>fwiw</code> → for what it's worth,
-<code>tbd</code> → to be determined, <code>wrt</code> → with respect to,
-<code>aka</code> → also known as, <code>eg</code> → for example,
-<code>ie</code> → that is, <code>atm</code> → at the moment,
-<code>iirc</code> → if I recall correctly, <code>imho</code> → in my
-humble opinion, <code>tbh</code> → to be honest, <code>ngl</code> → not
-going to lie.</p>
+out-of-the-box: <code>afaik</code> → as far as I know,
+<code>afaict</code> → as far as I can tell, <code>asap</code> → as soon
+as possible, <code>atm</code> → at the moment, <code>btw</code> → by the
+way, <code>fwiw</code> → for what it's worth, <code>imo</code> → in my
+opinion, <code>imho</code> → in my humble opinion, <code>irl</code> → in
+real life, <code>omw</code> → on my way, <code>tbh</code> → to be
+honest, <code>tbc</code> → to be confirmed, <code>tbd</code> → to be
+determined, <code>ttyl</code> → talk to you later, <code>wrt</code> →
+with regard to. These are declared as <code>_BUILTINS</code> in
+<code>abbreviations.py</code>.</p>
 <p><strong>Variables.</strong> Expansion bodies support:</p>
 <table>
 <thead>
@@ -5065,7 +5097,7 @@ going to lie.</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Settings.</strong> Three settings in <code>Editing</code>
+<p><strong>Settings.</strong> Four settings in <code>Editing</code>
 preferences:</p>
 <ul>
 <li><code>abbreviation_expansion</code> (bool, default True) — master
@@ -5074,6 +5106,9 @@ on/off.</li>
 play a sound on expansion.</li>
 <li><code>abbreviation_expansion_sound_file</code> (text) — path to a
 <code>.wav</code> file; blank = system default beep.</li>
+<li><code>multi_press_window_ms</code> (int, default 400, range
+100–1000) — time window for double/triple press detection across all
+multi-press chords (copy tray peek, command palette re-run, etc.).</li>
 </ul>
 <p><strong>Status bar.</strong> The <code>abbreviations</code> status
 bar cell shows <code>ABR: On</code> or <code>ABR: Off</code>. Clicking
@@ -5093,16 +5128,361 @@ impossible.</p>
 trigger (<code>Ctrl+Shift+Grave, A</code>) announces "Expanded to:
 &lt;preview&gt;" or "No abbreviation match". Toggle announces
 "Abbreviation expansion on/off".</p>
+<p><strong>Abbreviation Manager dialog.</strong>
+<code>quill/ui/abbreviation_manager_dialog.py</code> — A11Y-4 compliant,
+registered in the dialog inventory. Features: search field (filters the
+list in real time), Import button (merges a JSON file, skips duplicate
+IDs, announces count), Export button (saves full library to a JSON
+file). Disabled abbreviations shown with "(disabled)" suffix.</p>
+<p><strong><code>AbbreviationLibrary</code> class API</strong> (all
+methods on
+<code>quill/core/abbreviations.AbbreviationLibrary</code>):</p>
+<ul>
+<li><code>add(abbr, expansion, **kwargs) -&gt; Abbreviation</code> —
+adds a new abbreviation, generates a UUID.</li>
+<li><code>remove(id) -&gt; None</code> — removes by ID.</li>
+<li><code>enable(id) / disable(id) -&gt; None</code> — toggle without
+deletion.</li>
+<li><code>update(id, **fields) -&gt; Abbreviation</code> — updates one
+or more fields; uses <code>object.__setattr__</code> for
+<code>slots=True</code> dataclass.</li>
+<li><code>all() -&gt; list[Abbreviation]</code> — full library in insert
+order.</li>
+<li><code>enabled_only() -&gt; list[Abbreviation]</code> — only enabled
+entries.</li>
+<li><code>find_by_trigger(text, case_sensitive) -&gt; Abbreviation | None</code>
+— looks up by trigger word.</li>
+</ul>
 <p><strong>Implementation map.</strong>
 <code>quill/core/abbreviations.py</code> (pure model, mypy-clean:
-<code>Abbreviation</code>, <code>AbbreviationLibrary</code>,
-<code>try_expand</code>, <code>resolve_expansion</code>),
+<code>Abbreviation</code> dataclass, <code>AbbreviationLibrary</code>,
+<code>try_expand</code>, <code>resolve_expansion</code>,
+<code>_BUILTINS</code>),
 <code>quill/ui/main_frame_abbreviations.py</code>
 (<code>AbbreviationsMixin</code>),
-<code>quill/ui/abbreviation_manager_dialog.py</code> (management dialog,
-A11Y-4 compliant). Menu: <code>Insert &gt; Expand Abbreviation</code>,
+<code>quill/ui/abbreviation_manager_dialog.py</code> (management dialog
+with search + import/export). Menu:
+<code>Insert &gt; Expand Abbreviation</code>,
 <code>Insert &gt; Manage Abbreviations...</code>,
 <code>Insert &gt; Toggle Abbreviation Expansion</code>.</p>
+<hr />
+<h3 id="579-ask-ai--lightweight-in-editor-ai-chat">5.79 Ask AI —
+lightweight in-editor AI chat</h3>
+<p>Ask AI is a modal dialog that lets users send a prompt to a
+configured AI provider and read the response without leaving QUILL. No
+document text is changed; the dialog is purely informational.</p>
+<p><strong>Motivation.</strong> Screen-reader users frequently need to
+ask a quick question while writing — define a term, check a fact,
+explore a phrasing option — and switching to a browser or a separate AI
+client breaks flow, especially when using NVDA or JAWS where switching
+applications involves extra navigation. Ask AI keeps the interaction
+entirely within the QUILL keyboard model.</p>
+<p><strong>Entry point.</strong>
+<code>Tools &gt; AI Assistant &gt; Ask AI...</code> (<code>Alt+Q</code>
+default chord). The Command Palette entry is "Ask AI". The binding is
+user-reassignable.</p>
+<p><strong>Providers.</strong> Three providers are supported. QUILL
+detects which keys are configured and only shows available
+providers.</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Auth</th>
+<th>Model discovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OpenRouter</td>
+<td>API key (DPAPI-encrypted)</td>
+<td><code>GET /api/v1/models</code>, cached per session</td>
+</tr>
+<tr>
+<td>OpenAI</td>
+<td>API key (DPAPI-encrypted)</td>
+<td><code>GET /v1/models</code>, filtered to
+<code>gpt-*</code>/<code>o*</code> families</td>
+</tr>
+<tr>
+<td>Ollama</td>
+<td>None (local)</td>
+<td><code>GET /api/tags</code>; greyed out if service not running</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Smart focus.</strong> When the dialog opens, focus lands in
+the Prompt field if the provider and model are already configured. If
+not yet configured, focus starts on the Provider choice so the user is
+guided to set it up first.</p>
+<p><strong>Dialog layout.</strong></p>
+<pre><code>Provider:  [OpenRouter v]
+Model:     [claude-3-5-sonnet v]
+Prompt:    [multiline — Ctrl+Enter to send]
+[Send]  [Clear]  [Close]</code></pre>
+<p>The response opens in a separate read-only dialog (model label at
+top, scrollable text area, Copy to Clipboard, Close). Closing the
+response dialog returns focus to the Ask AI dialog so the user can ask a
+follow-up without reopening.</p>
+<p><strong>Settings</strong> (in <code>Preferences &gt; AI</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ai_chat_default_provider</code></td>
+<td>str</td>
+<td><code>"openrouter"</code></td>
+<td>Last-used provider</td>
+</tr>
+<tr>
+<td><code>ai_chat_default_model</code></td>
+<td>str</td>
+<td><code>""</code></td>
+<td>Last-used model</td>
+</tr>
+<tr>
+<td><code>ollama_base_url</code></td>
+<td>str</td>
+<td><code>"http://localhost:11434"</code></td>
+<td>Ollama endpoint (override for remote Ollama)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Keys stored in Windows Credential Manager</strong> (never in
+<code>settings.json</code>): <code>quill-openrouter-api-key</code>,
+<code>quill-openai-api-key</code>.</p>
+<p><strong>Safe Mode.</strong> The Ask AI menu item and dialog are
+disabled when <code>QUILL_SAFE_MODE=1</code>.</p>
+<p><strong>Network egress.</strong> Audited in
+<code>network_egress_audit.py</code>: <code>openrouter_chat</code>,
+<code>openai_chat</code>, <code>ollama_chat</code>,
+<code>openrouter_models</code>, <code>openai_models</code>,
+<code>ollama_models</code>. Timeout: 60 s for chat, 10 s for model
+list.</p>
+<p><strong>Implementation map.</strong>
+<code>quill/core/ai_chat.py</code> (provider abstraction:
+<code>send_prompt</code>, <code>list_models</code>),
+<code>quill/ui/ai_chat_dialog.py</code> (Ask AI dialog + AI Response
+dialog, A11Y-4 hardened, registered in dialog inventory).</p>
+<hr />
+<h3 id="580-check-grammar-with-ai">5.80 Check Grammar with AI</h3>
+<p>Check Grammar with AI sends the current selection (or full document
+if nothing is selected) to the configured AI model with a grammar-review
+prompt and displays the result in the AI Response dialog. No edits are
+applied automatically.</p>
+<p><strong>Entry point.</strong>
+<code>Edit &gt; Grammar &gt; Check Grammar with AI</code>. Command
+Palette: "Check Grammar with AI". User-assignable binding; no default
+chord.</p>
+<p><strong>Default prompt.</strong></p>
+<pre><code>You are a grammar and style editor. Review the following text and list
+only the corrections needed. For each correction, give: the original
+phrase, the corrected phrase, and a one-sentence reason. Do not rewrite
+the whole passage. If the text is correct, say &quot;No issues found.&quot;
+
+Text:
+{selection}</code></pre>
+<p>When Phase 3 (§5.81) is active, the command uses the user's "Check
+Grammar" prompt from the Prompt Library instead, so the instruction text
+is fully customisable.</p>
+<p><strong>Model selection.</strong> Uses
+<code>settings.ai_prompt_default_model</code> when set, otherwise falls
+back to <code>settings.ai_chat_default_model</code>. This lets users
+choose a different (e.g. more capable) model for grammar review than for
+casual chat.</p>
+<p><strong>Implementation.</strong> Single method
+<code>check_grammar_with_ai()</code> in <code>MainFrame</code>. Runs on
+a background thread (<code>threading.Thread</code>, daemon=True); UI
+updates via <code>wx.CallAfter</code>. Command id:
+<code>tools.check_grammar_ai</code>.</p>
+<hr />
+<h3 id="581-ai-prompt-library">5.81 AI Prompt Library</h3>
+<p>The Prompt Library is a named, user-expandable collection of AI
+instructions. Each prompt operates on the current selection or document:
+the user picks a prompt, QUILL sends the text and the prompt to the AI,
+and a response dialog shows the result. No document text changes without
+explicit action.</p>
+<p><strong>Motivation.</strong> Power users accumulate a personal set of
+AI instructions they run repeatedly — improve clarity, vary sentence
+rhythm, convert to bullets, generate an outline. Without a library,
+these prompts must be retyped or pasted from an external file each time.
+The Prompt Library turns these into first-class named commands,
+accessible from the keyboard, the command palette, and the dialog.</p>
+<p><strong>Entry point.</strong>
+<code>Tools &gt; AI Assistant &gt; Prompt Library...</code>. Command
+Palette: "Prompt Library". User-assignable binding.</p>
+<p><strong>Prompt object fields.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>Short display name ("Improve clarity")</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>Instruction text, with <code>{selection}</code>,
+<code>{document}</code>, <code>{title}</code> variables</td>
+</tr>
+<tr>
+<td><code>category</code></td>
+<td>Editing, Writing, Structure, Research, or Custom</td>
+</tr>
+<tr>
+<td><code>is_builtin</code></td>
+<td>True for shipped defaults — editable but not deletable</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>UUID, stable across renames</td>
+</tr>
+<tr>
+<td><code>shortcut</code></td>
+<td>Optional keyboard chord bound to this prompt</td>
+</tr>
+<tr>
+<td><code>enabled</code></td>
+<td>False to hide from menus without deleting</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>"builtin", "user", or Quillin id</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Built-in prompts (12).</strong> Shipped defaults, always
+present, user-editable:</p>
+<ul>
+<li>Editing: Check Grammar, Improve Clarity, Fix Grammar, Make Concise,
+Active Voice, Formal Tone, Conversational Tone</li>
+<li>Writing: Continue from Here</li>
+<li>Structure: Convert to Bullet Points</li>
+<li>Research: Define This Term, Find Counterarguments</li>
+<li>Custom: (none shipped; user-created)</li>
+</ul>
+<p><strong>Prompt Library Dialog.</strong> Split layout: left panel
+shows a searchable list of all prompts (filtered by the search field in
+real time); right panel shows the selected prompt's text and an optional
+input override. Buttons: Run with AI, New Prompt, Edit, Disable/Enable,
+Delete, Import .pqp, Export .pqp, Close. A11Y-4 hardened, registered in
+the dialog inventory.</p>
+<p><strong>Settings.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ai_prompt_default_model</code></td>
+<td>str</td>
+<td><code>""</code></td>
+<td>Model used for prompt runs. Blank inherits
+<code>ai_chat_default_model</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Storage.</strong> <code>%APPDATA%\Quill\prompts.json</code> —
+atomic write, schema-validated. Built-in prompts are not persisted; only
+user additions and overrides to built-ins are stored.</p>
+<p><strong>Quillin bridge.</strong> A Quillin may ship a
+<code>prompts.json</code> file alongside its manifest. QUILL loads it
+automatically when the Prompt Library opens, adding those prompts to the
+library for the session (not persisted to disk). The bundled
+<code>ai-writing-prompts</code> Quillin ships 7 additional prompts this
+way: Expand This, Vary Sentence Rhythm, Make More Vivid (Writing); Write
+a Title, Generate Outline (Structure); Suggest Supporting Evidence
+(Research); Plain Language (Editing).</p>
+<p><strong>Implementation map.</strong>
+<code>quill/core/prompt_library.py</code> (<code>Prompt</code>
+dataclass, <code>PromptLibrary</code> CRUD, <code>.pqp</code>
+import/export, Quillin prompt loading),
+<code>quill/ui/prompt_library_dialog.py</code> (Prompt Library dialog),
+<code>quill/quillins_bundled/ai-writing-prompts/</code> (bundled prompt
+pack).</p>
+<hr />
+<h3 id="582-prompt-quill-pack-pqp--shareable-prompt-collections">5.82
+Prompt Quill Pack (.pqp) — shareable prompt collections</h3>
+<p>A <code>.pqp</code> (Prompt Quill Pack) file is a JSON document that
+packages a named collection of prompts for sharing or backup.</p>
+<p><strong>File format.</strong></p>
+<div class="sourceCode" id="cb20"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;schema&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.prompt-pack/1&quot;</span><span class="fu">,</span></span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;My Writing Prompts&quot;</span><span class="fu">,</span></span>
+<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;prompts&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;Make Punchy&quot;</span><span class="fu">,</span></span>
+<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;Rewrite this as a punchy one-liner: {selection}&quot;</span><span class="fu">,</span></span>
+<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;category&quot;</span><span class="fu">:</span> <span class="st">&quot;Editing&quot;</span></span>
+<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb20-11"><a href="#cb20-11" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p><strong>Import.</strong> Via the Import .pqp button in the Prompt
+Library dialog. Prompts whose name already exists in the library are
+skipped; the count of newly added prompts is announced.</p>
+<p><strong>Export.</strong> Via the Export .pqp button. Exports all
+user-defined prompts (or a selected subset). Built-in prompts can
+optionally be included when the user has edited them.</p>
+<p><strong>Use case.</strong> A writing team can share a
+<code>.pqp</code> file containing their house-style prompts. A power
+user can back up their library and restore it on a new machine. A
+Quillin author can distribute prompts as a <code>.pqp</code> for users
+who prefer not to install a Quillin.</p>
+<hr />
+<h3 id="583-quillin-manager--install-update-and-remove-extensions">5.83
+Quillin Manager — install, update, and remove extensions</h3>
+<p>The Quillin Manager (<code>Tools &gt; Quillins</code>) lets users
+discover, enable, disable, and uninstall Quillins. As of this version it
+also supports installing a new Quillin directly from a local folder.</p>
+<p><strong>Install from Folder.</strong> The Install from Folder button
+opens a system folder picker. QUILL reads the selected folder's
+<code>manifest.json</code>, validates it, copies the directory into the
+per-user extensions root
+(<code>%APPDATA%\Quill\extensions\&lt;id&gt;\</code>), enables the
+Quillin, and refreshes the list. If an extension with the same id is
+already installed, it is replaced. Path containment is enforced: a
+crafted extension id cannot install files outside the extensions
+root.</p>
+<p><strong>Remove.</strong> Selecting an extension and pressing Remove
+deletes its directory and removes its state entry. Confirmation is
+required.</p>
+<p><strong>Enable/Disable.</strong> Toggle without uninstalling. A
+disabled Quillin's prompts and commands are not loaded.</p>
+<p><strong>Manifest display.</strong> Selecting a Quillin shows its
+name, version, author, description, declared capabilities, and any
+validation errors. This gives users the information they need to make an
+informed trust decision before enabling.</p>
+<p><strong>Security model (SEC-8).</strong> Third-party Quillin
+<em>discovery</em> (auto-scanning the extensions root) is locked off for
+QUILL 1.0 (<code>core.third_party_plugins</code> feature flag is
+<code>locked_off</code>). Install from Folder is the only way to add a
+third-party Quillin. The user must explicitly choose the folder,
+providing informed consent equivalent to "install this extension".
+Bundled Quillins (shipped inside the QUILL install tree) are always
+discovered and are not affected by the SEC-8 lock.</p>
+<p><strong>Implementation map.</strong>
+<code>quill/core/quillins/loader.py</code>
+(<code>install_extension</code>, <code>remove_extension</code>,
+<code>set_enabled</code>), <code>quill/ui/main_frame_quillins.py</code>
+(<code>QuillinsManagerMixin</code> — manager panel, Install from Folder
+button and handler).</p>
 <hr />
 <h2 id="6-spell-checking-deep-dive">6. Spell checking deep dive</h2>
 <h3 id="61-the-tinyspell-question">6.1 The TinySpell question</h3>
@@ -5458,17 +5838,17 @@ off by default in the profile selector but available to install.</li>
 <h3 id="87-storage-format">8.7 Storage format</h3>
 <p><code>keymap.json</code> is plain JSON, human readable, version
 controlled friendly:</p>
-<div class="sourceCode" id="cb20"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
-<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;profile&quot;</span><span class="fu">:</span> <span class="st">&quot;System&quot;</span><span class="fu">,</span></span>
-<span id="cb20-4"><a href="#cb20-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;bindings&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb20-5"><a href="#cb20-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.save&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+S&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb20-6"><a href="#cb20-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.palette.open&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+Shift+P&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;global&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb20-7"><a href="#cb20-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.spell.checkDocument&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;F7&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb20-8"><a href="#cb20-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.gotoLine&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+G&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor &amp;&amp; !format:pdf&quot;</span> <span class="fu">}</span></span>
-<span id="cb20-9"><a href="#cb20-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb20-10"><a href="#cb20-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb23"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;profile&quot;</span><span class="fu">:</span> <span class="st">&quot;System&quot;</span><span class="fu">,</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;bindings&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.save&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+S&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.palette.open&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+Shift+P&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;global&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.spell.checkDocument&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;F7&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.gotoLine&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+G&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor &amp;&amp; !format:pdf&quot;</span> <span class="fu">}</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 <h3 id="88-import-export-sync">8.8 Import, export, sync</h3>
 <ul>
 <li>Export the active keymap to a single JSON file.</li>
@@ -8788,6 +9168,49 @@ reordering/hiding and editor context-menu entries (the
 <code>quill.core.menu_customization</code> model already supports both;
 the remaining work is the item-level UI and a stable item-key binding in
 the menu build).</label></li>
+</ul>
+<h3 id="2121-ai-chat-prompt-library-and-quillin-manager-phase-23">21.21
+AI chat, Prompt Library, and Quillin Manager (Phase 2/3)</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" checked="" />Add <code>ask_ai</code>
+dialog with provider selection (OpenRouter, OpenAI, Ollama), model list,
+and prompt field. Smart focus: prompt field when configured, provider
+choice when not. A11Y-4 hardened.</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>check_grammar_with_ai()</code> command — sends selection or full
+document to AI; uses <code>ai_prompt_default_model</code> setting (falls
+back to <code>ai_chat_default_model</code>). Runs off UI
+thread.</label></li>
+<li><label><input type="checkbox" checked="" />Add AI Prompt Library
+(<code>quill/core/prompt_library.py</code>) with 12 built-in prompts,
+full CRUD, enable/disable, per-prompt optional shortcut, and
+<code>.pqp</code> import/export.</label></li>
+<li><label><input type="checkbox" checked="" />Add Prompt Library dialog
+(<code>quill/ui/prompt_library_dialog.py</code>) — searchable list, run
+with AI, new/edit/delete prompts, import/export
+<code>.pqp</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>ai_prompt_default_model</code> setting in
+<code>Preferences &gt; AI</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Add bundled Quillin
+<code>ai-writing-prompts</code> with 7 prompts contributed to the Prompt
+Library at load time (no capability declaration needed; prompts.json
+sidecar pattern).</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>install_extension()</code> to
+<code>quill/core/quillins/loader.py</code> with path-containment
+enforcement.</label></li>
+<li><label><input type="checkbox" checked="" />Add Install from Folder
+button to Quillin Manager; uses <code>wx.DirDialog</code> +
+<code>install_extension()</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Add <code>.pqp</code>
+(Prompt Quill Pack) file format:
+<code>{"schema": "quill.prompt-pack/1", "name": "...", "prompts": [...]}</code>.</label></li>
+<li><label><input type="checkbox" checked="" />API keys stored
+exclusively in Windows Credential Manager
+(<code>quill-openrouter-api-key</code>,
+<code>quill-openai-api-key</code>, <code>quill-ollama-api-key</code>);
+never in <code>settings.json</code>.</label></li>
 </ul>
 </body>
 </html>

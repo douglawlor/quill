@@ -188,3 +188,108 @@ def test_all_slots_returns_twelve_tuples(tmp_path: Path) -> None:
     slots = tray.all_slots()
     assert len(slots) == 12
     assert [n for n, _ in slots] == list(range(1, 13))
+
+
+# ---------------------------------------------------------------------------
+# Pinned slots
+# ---------------------------------------------------------------------------
+
+
+def test_pin_slot_sets_pinned_flag(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(3, "important")
+    tray.pin_slot(3)
+    assert tray.slot(3).pinned is True
+
+
+def test_unpin_slot_clears_pinned_flag(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(3, "important")
+    tray.pin_slot(3)
+    tray.unpin_slot(3)
+    assert tray.slot(3).pinned is False
+
+
+def test_pinned_flag_persists_across_instances(tmp_path: Path) -> None:
+    tray1 = CopyTray(tmp_path)
+    tray1.copy_to(2, "pinned content")
+    tray1.pin_slot(2)
+
+    tray2 = CopyTray(tmp_path)
+    assert tray2.slot(2).pinned is True
+
+
+# ---------------------------------------------------------------------------
+# first_empty_slot
+# ---------------------------------------------------------------------------
+
+
+def test_first_empty_slot_returns_one_when_all_empty(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    assert tray.first_empty_slot() == 1
+
+
+def test_first_empty_slot_skips_occupied(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(1, "a")
+    tray.copy_to(2, "b")
+    assert tray.first_empty_slot() == 3
+
+
+def test_first_empty_slot_skips_pinned(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.pin_slot(1)  # pinned but empty — still skipped
+    assert tray.first_empty_slot() == 2
+
+
+def test_first_empty_slot_returns_none_when_all_occupied_or_pinned(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    for n in range(1, 13):
+        tray.copy_to(n, f"data {n}")
+    assert tray.first_empty_slot() is None
+
+
+# ---------------------------------------------------------------------------
+# search_slots
+# ---------------------------------------------------------------------------
+
+
+def test_search_slots_finds_by_text(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(1, "the quick brown fox")
+    tray.copy_to(2, "lazy dog")
+    results = tray.search_slots("quick")
+    assert len(results) == 1
+    assert results[0][0] == 1
+
+
+def test_search_slots_finds_by_label(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(5, "some content")
+    tray.set_label(5, "contract clause")
+    results = tray.search_slots("contract")
+    assert len(results) == 1
+    assert results[0][0] == 5
+
+
+def test_search_slots_case_insensitive(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(1, "The Agreement is")
+    results = tray.search_slots("agreement")
+    assert len(results) == 1
+
+
+def test_search_slots_empty_slot_excluded(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(1, "hello")
+    results = tray.search_slots("hello")
+    assert len(results) == 1
+    tray.clear_slot(1)
+    results = tray.search_slots("hello")
+    assert len(results) == 0
+
+
+def test_search_slots_no_match_returns_empty(tmp_path: Path) -> None:
+    tray = CopyTray(tmp_path)
+    tray.copy_to(1, "unrelated content")
+    assert tray.search_slots("nomatch") == []

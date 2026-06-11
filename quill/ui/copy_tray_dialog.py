@@ -12,12 +12,15 @@ import wx
 from quill.core.copy_tray import CopyTray
 
 
-def _slot_row_text(n: int, slot_text: str, slot_label: str) -> str:
+def _slot_row_text(n: int, slot_text: str, slot_label: str, pinned: bool = False) -> str:
+    pin_tag = "[pinned] " if pinned else ""
     if not slot_text:
-        return f"{n}.  (empty)"
+        return f"{n}.  {pin_tag}(empty)"
     preview_src = " ".join(slot_text.split())
     preview = preview_src[:55] + ("..." if len(preview_src) > 55 else "")
-    return f"{n}.  {slot_label} — {preview}" if slot_label else f"{n}.  {preview}"
+    if slot_label:
+        return f"{n}.  {pin_tag}{slot_label} — {preview}"
+    return f"{n}.  {pin_tag}{preview}"
 
 
 class CopyTrayDialog:
@@ -81,9 +84,16 @@ class CopyTrayDialog:
         self._btn_clip = wx.Button(self.dialog, wx.ID_ANY, label="Paste from C&lipboard")
         self._btn_save = wx.Button(self.dialog, wx.ID_ANY, label="&Save Changes")
         self._btn_clear = wx.Button(self.dialog, wx.ID_ANY, label="Clea&r Slot")
+        self._btn_pin = wx.Button(self.dialog, wx.ID_ANY, label="P&in")
         btn_close = wx.Button(self.dialog, wx.ID_CANCEL, label="C&lose")
 
-        for btn in (self._btn_paste, self._btn_clip, self._btn_save, self._btn_clear):
+        for btn in (
+            self._btn_paste,
+            self._btn_clip,
+            self._btn_save,
+            self._btn_clear,
+            self._btn_pin,
+        ):
             btn_sizer.Add(btn, 0, wx.RIGHT, 4)
         btn_sizer.AddStretchSpacer(1)
         btn_sizer.Add(btn_close, 0)
@@ -108,6 +118,7 @@ class CopyTrayDialog:
         self._btn_clip.Bind(wx.EVT_BUTTON, self._on_paste_clipboard)
         self._btn_save.Bind(wx.EVT_BUTTON, self._on_save)
         self._btn_clear.Bind(wx.EVT_BUTTON, self._on_clear_slot)
+        self._btn_pin.Bind(wx.EVT_BUTTON, self._on_pin_toggle)
 
         self._load_slot(1)
         self._update_buttons()
@@ -140,9 +151,9 @@ class CopyTrayDialog:
         slot = self._tray.slot(n)
         self._label_ctrl.SetValue(slot.label)
         self._content_ctrl.SetValue(slot.text)
-        self._listbox.SetName(
-            "Copy tray slots — slot {}{} loaded".format(n, f" ({slot.label})" if slot.label else "")
-        )
+        pin_part = " [pinned]" if slot.pinned else ""
+        label_part = f" ({slot.label})" if slot.label else ""
+        self._listbox.SetName(f"Copy tray slots — slot {n}{label_part}{pin_part} loaded")
         self._guard = False
 
     def _flush_edits(self) -> None:
@@ -164,7 +175,7 @@ class CopyTrayDialog:
         idx = self._listbox.GetSelection() if keep else 0
         self._listbox.Clear()
         for n, slot in self._tray.all_slots():
-            self._listbox.Append(_slot_row_text(n, slot.text, slot.label))
+            self._listbox.Append(_slot_row_text(n, slot.text, slot.label, slot.pinned))
         count = self._listbox.GetCount()
         if count > 0:
             self._listbox.SetSelection(max(0, min(idx, count - 1)))
@@ -172,10 +183,12 @@ class CopyTrayDialog:
 
     def _update_buttons(self) -> None:
         n = self._sel_n()
+        slot = self._tray.slot(n)
         has_content = bool(self._content_ctrl.GetValue().strip())
         self._btn_paste.Enable(has_content)
-        self._btn_clear.Enable(not self._tray.slot(n).is_empty())
+        self._btn_clear.Enable(not slot.is_empty())
         self._btn_clip.Enable(self._clipboard_text() != "")
+        self._btn_pin.SetLabel("Un&pin" if slot.pinned else "P&in")
 
     def _clipboard_text(self) -> str:
         text = ""
@@ -240,3 +253,15 @@ class CopyTrayDialog:
         self._rebuild_list()
         self._update_buttons()
         self._listbox.SetName(f"Copy tray slots — slot {n} cleared")
+
+    def _on_pin_toggle(self, _event: object) -> None:
+        n = self._sel_n()
+        if self._tray.slot(n).pinned:
+            self._tray.unpin_slot(n)
+            state = "unpinned"
+        else:
+            self._tray.pin_slot(n)
+            state = "pinned"
+        self._rebuild_list()
+        self._update_buttons()
+        self._listbox.SetName(f"Copy tray slots — slot {n} {state}")

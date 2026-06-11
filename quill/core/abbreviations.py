@@ -47,6 +47,55 @@ class AbbreviationLibrary:
     version: int
     abbreviations: list[Abbreviation]
 
+    def add(self, abbreviation: str, expansion: str, **kwargs: object) -> Abbreviation:
+        abbr = Abbreviation(
+            id=str(uuid.uuid4()),
+            abbreviation=abbreviation,
+            expansion=expansion,
+            **kwargs,  # type: ignore[arg-type]
+        )
+        self.abbreviations.append(abbr)
+        return abbr
+
+    def remove(self, id: str) -> None:
+        self.abbreviations = [a for a in self.abbreviations if a.id != id]
+
+    def enable(self, id: str) -> None:
+        for a in self.abbreviations:
+            if a.id == id:
+                a.enabled = True
+
+    def disable(self, id: str) -> None:
+        for a in self.abbreviations:
+            if a.id == id:
+                a.enabled = False
+
+    def update(self, id: str, **fields: object) -> Abbreviation:
+        for a in self.abbreviations:
+            if a.id == id:
+                for k, v in fields.items():
+                    object.__setattr__(a, k, v)
+                return a
+        raise KeyError(id)
+
+    def all(self) -> list[Abbreviation]:
+        return list(self.abbreviations)
+
+    def enabled_only(self) -> list[Abbreviation]:
+        return [a for a in self.abbreviations if a.enabled]
+
+    def find_by_trigger(self, text: str, case_sensitive: bool = False) -> Abbreviation | None:
+        for a in sorted(self.abbreviations, key=lambda x: len(x.abbreviation), reverse=True):
+            if not a.enabled:
+                continue
+            if a.case_sensitive or case_sensitive:
+                if a.abbreviation == text:
+                    return a
+            else:
+                if a.abbreviation.lower() == text.lower():
+                    return a
+        return None
+
 
 @dataclass(slots=True)
 class AbbreviationMatch:
@@ -58,21 +107,21 @@ class AbbreviationMatch:
 
 
 _BUILTINS: list[tuple[str, str, str]] = [
-    ("btw", "by the way", "Common shorthand"),
-    ("imo", "in my opinion", ""),
     ("afaik", "as far as I know", ""),
+    ("afaict", "as far as I can tell", ""),
     ("asap", "as soon as possible", ""),
-    ("fwiw", "for what it's worth", ""),
-    ("tbd", "to be determined", ""),
-    ("wrt", "with respect to", ""),
-    ("aka", "also known as", ""),
-    ("eg", "for example", ""),
-    ("ie", "that is", ""),
     ("atm", "at the moment", ""),
-    ("iirc", "if I recall correctly", ""),
+    ("btw", "by the way", "Common shorthand"),
+    ("fwiw", "for what it's worth", ""),
+    ("imo", "in my opinion", ""),
     ("imho", "in my humble opinion", ""),
+    ("irl", "in real life", ""),
+    ("omw", "on my way", ""),
     ("tbh", "to be honest", ""),
-    ("ngl", "not going to lie", ""),
+    ("tbc", "to be confirmed", ""),
+    ("tbd", "to be determined", ""),
+    ("ttyl", "talk to you later", ""),
+    ("wrt", "with regard to", ""),
 ]
 
 

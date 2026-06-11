@@ -30,6 +30,8 @@ STATUS_BAR_ITEMS: tuple[str, ...] = (
     "notebook_goal",
     # Abbreviation expansion toggle indicator.
     "abbreviations",
+    # Copy Tray occupied-slot count.
+    "copy_tray_slots",
 )
 
 
@@ -53,6 +55,7 @@ def _default_status_bar_hidden() -> list[str]:
         "extend_mode",
         "sr_name",
         "abbreviations",
+        "copy_tray_slots",
     ]
 
 

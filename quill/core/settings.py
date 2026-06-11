@@ -94,6 +94,7 @@ class Settings:
     abbreviation_expansion: bool = True
     abbreviation_expansion_sound: bool = False
     abbreviation_expansion_sound_file: str = ""
+    multi_press_window_ms: int = 400
     dictation_engine: str = "vosk"
     dictation_language: str = "en-US"
     dictation_model: str = "base"
@@ -169,6 +170,12 @@ class Settings:
     # host keys cause the connection to be rejected. When true, the first
     # time we see a key we silently cache it (paramiko.AutoAddPolicy).
     ssh_trust_first_use: bool = False
+    # AI chat (Phase 2): Ask AI dialog provider/model defaults.
+    ai_chat_default_provider: str = "openrouter"
+    ai_chat_default_model: str = ""
+    ollama_base_url: str = "http://localhost:11434"
+    # AI prompts (Phase 3): separate default model for prompt-library runs.
+    ai_prompt_default_model: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
@@ -475,9 +482,20 @@ class Settings:
         glow_pii_redaction_consent = bool(data.get("glow_pii_redaction_consent", False))
         glow_language_processing_consent = bool(data.get("glow_language_processing_consent", False))
         ssh_trust_first_use = bool(data.get("ssh_trust_first_use", False))
+        ai_chat_default_provider = (
+            str(data.get("ai_chat_default_provider", "openrouter")).strip() or "openrouter"
+        )
+        ai_chat_default_model = str(data.get("ai_chat_default_model", ""))
+        ollama_base_url = (
+            str(data.get("ollama_base_url", "http://localhost:11434")).strip()
+            or "http://localhost:11434"
+        )
+        ai_prompt_default_model = str(data.get("ai_prompt_default_model", ""))
         abbreviation_expansion = bool(data.get("abbreviation_expansion", True))
         abbreviation_expansion_sound = bool(data.get("abbreviation_expansion_sound", False))
         abbreviation_expansion_sound_file = str(data.get("abbreviation_expansion_sound_file", ""))
+        raw_mp = int(data.get("multi_press_window_ms", 400))
+        multi_press_window_ms = max(100, min(1000, raw_mp))
         if recent_files_limit < 1:
             recent_files_limit = 1
         if recent_files_limit > 50:
@@ -615,9 +633,14 @@ class Settings:
             glow_pii_redaction_consent=glow_pii_redaction_consent,
             glow_language_processing_consent=glow_language_processing_consent,
             ssh_trust_first_use=ssh_trust_first_use,
+            ai_chat_default_provider=ai_chat_default_provider,
+            ai_chat_default_model=ai_chat_default_model,
+            ollama_base_url=ollama_base_url,
+            ai_prompt_default_model=ai_prompt_default_model,
             abbreviation_expansion=abbreviation_expansion,
             abbreviation_expansion_sound=abbreviation_expansion_sound,
             abbreviation_expansion_sound_file=abbreviation_expansion_sound_file,
+            multi_press_window_ms=multi_press_window_ms,
         )
 
 

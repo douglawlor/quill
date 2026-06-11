@@ -15,6 +15,7 @@ class TraySlot:
     text: str = ""
     label: str = ""
     copied_at: str = ""
+    pinned: bool = False
 
     def is_empty(self) -> bool:
         return not self.text
@@ -60,6 +61,16 @@ class CopyTray:
         self._slots[slot - 1].label = label.strip()
         self._save()
 
+    def pin_slot(self, slot: int) -> None:
+        self._check(slot)
+        self._slots[slot - 1].pinned = True
+        self._save()
+
+    def unpin_slot(self, slot: int) -> None:
+        self._check(slot)
+        self._slots[slot - 1].pinned = False
+        self._save()
+
     def clear_slot(self, slot: int) -> None:
         self._check(slot)
         self._slots[slot - 1] = TraySlot()
@@ -83,6 +94,22 @@ class CopyTray:
     def all_slots(self) -> list[tuple[int, TraySlot]]:
         return list(enumerate(self._slots, start=1))
 
+    def first_empty_slot(self) -> int | None:
+        """Return the slot number of the first empty, non-pinned slot, or None."""
+        for n, slot in enumerate(self._slots, start=1):
+            if not slot.pinned and slot.is_empty():
+                return n
+        return None
+
+    def search_slots(self, query: str) -> list[tuple[int, TraySlot]]:
+        """Return (slot_number, slot) pairs whose text or label contains *query*."""
+        q = query.lower()
+        return [
+            (n, slot)
+            for n, slot in enumerate(self._slots, start=1)
+            if not slot.is_empty() and (q in slot.text.lower() or q in slot.label.lower())
+        ]
+
     # -- persistence --
 
     def _save(self) -> None:
@@ -101,6 +128,7 @@ class CopyTray:
                     text=s.get("text", ""),
                     label=s.get("label", ""),
                     copied_at=s.get("copied_at", ""),
+                    pinned=bool(s.get("pinned", False)),
                 )
         except Exception:  # noqa: BLE001  # corrupt data — start fresh
             pass

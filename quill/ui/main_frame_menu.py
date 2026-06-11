@@ -195,6 +195,8 @@ class MenuBuilderMixin:
         self._id_paste_tray_slots: list[wx.WindowIDRef] = [wx.NewIdRef() for _ in range(12)]
         self._id_open_copy_tray = wx.NewIdRef()
         self._id_clear_all_tray_slots = wx.NewIdRef()
+        self._id_copy_to_next_slot = wx.NewIdRef()
+        self._id_search_tray_slots = wx.NewIdRef()
         edit_menu = wx.Menu()
         edit_menu.Append(self._id_undo, self._menu_label("&Undo", "edit.undo"))
         edit_menu.Append(self._id_redo, self._menu_label("&Redo", "edit.redo"))
@@ -221,6 +223,15 @@ class MenuBuilderMixin:
                 self._id_paste_tray_slots[_n - 1],
                 self._menu_label(f"Paste from Slot &{_n}", f"edit.paste_from_tray_{_n}"),
             )
+        tray_menu.AppendSeparator()
+        tray_menu.Append(
+            self._id_copy_to_next_slot,
+            self._menu_label("Copy to &Next Empty Slot", "edit.copy_to_next_slot"),
+        )
+        tray_menu.Append(
+            self._id_search_tray_slots,
+            self._menu_label("&Search Tray Slots...", "edit.search_tray_slots"),
+        )
         tray_menu.AppendSeparator()
         self._append_power_tools_copy_tray_items(tray_menu)
         edit_menu.AppendSubMenu(tray_menu, "Copy &Tray")
@@ -943,6 +954,9 @@ class MenuBuilderMixin:
         self._id_ai_agent_center = wx.NewIdRef()
         self._id_ai_accessibility_agent = wx.NewIdRef()
         self._id_ask_quill_chat = wx.NewIdRef()
+        self._id_ask_ai = wx.NewIdRef()
+        self._id_prompt_library = wx.NewIdRef()
+        self._id_check_grammar_ai = wx.NewIdRef()
         self._id_ai_enabled = wx.NewIdRef()
         self._id_ai_status_badge = wx.NewIdRef()
         self._id_ai_status_detail = wx.NewIdRef()
@@ -1166,6 +1180,15 @@ class MenuBuilderMixin:
         ai_menu.Check(self._id_ai_enabled, load_ai_enabled())
         ai_menu.AppendSeparator()
         ai_menu.Append(
+            self._id_ask_ai,
+            self._menu_label("&Ask AI...", "tools.ask_ai"),
+        )
+        ai_menu.Append(
+            self._id_prompt_library,
+            self._menu_label("&Prompt Library...", "tools.prompt_library"),
+        )
+        ai_menu.AppendSeparator()
+        ai_menu.Append(
             self._id_ai_hub,
             self._menu_label("AI &Hub...", "tools.ai_hub"),
         )
@@ -1214,6 +1237,10 @@ class MenuBuilderMixin:
         ai_menu.Append(
             self._id_ai_fix_grammar,
             self._menu_label("Fix &Grammar", "tools.ai_fix_grammar"),
+        )
+        ai_menu.Append(
+            self._id_check_grammar_ai,
+            self._menu_label("Check Grammar with &AI...", "tools.check_grammar_ai"),
         )
         ai_menu.Append(
             self._id_train_style,
@@ -1694,6 +1721,21 @@ class MenuBuilderMixin:
             wx.EVT_MENU,
             lambda _e: self.make_document_accessible(),
             id=self._id_ai_accessibility_agent,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.open_ask_ai(),
+            id=self._id_ask_ai,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.open_prompt_library(),
+            id=self._id_prompt_library,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.check_grammar_with_ai(),
+            id=self._id_check_grammar_ai,
         )
         self.frame.Bind(
             wx.EVT_MENU,
@@ -2704,19 +2746,29 @@ class MenuBuilderMixin:
             lambda _e: self.go_to_sticky_note_in_notebook(),
             id=self._id_go_to_sticky_note_in_notebook,
         )
-        # Copy Tray per-slot bindings (slots 1-9)
-        for _n in range(1, 10):
+        # Copy Tray per-slot bindings (slots 1-12)
+        for _n in range(1, 13):
             self.frame.Bind(
                 wx.EVT_MENU,
                 lambda _e, _slot=_n: self.copy_to_tray_slot(_slot),
                 id=self._id_copy_tray_slots[_n - 1],
             )
-        for _n in range(1, 10):
+        for _n in range(1, 13):
             self.frame.Bind(
                 wx.EVT_MENU,
                 lambda _e, _slot=_n: self.paste_from_tray_slot(_slot),
                 id=self._id_paste_tray_slots[_n - 1],
             )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.copy_to_next_slot(),
+            id=self._id_copy_to_next_slot,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.search_tray_slots(),
+            id=self._id_search_tray_slots,
+        )
         self.frame.Bind(wx.EVT_MENU, self._on_open_recent)
         self.frame.Bind(wx.EVT_MENU, self._on_session_menu)
         self.frame.Bind(wx.EVT_MENU, self._on_recent_session_menu)

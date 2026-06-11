@@ -769,6 +769,41 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         feature_id="future.ai",
         keywords=("assistant", "tone", "style", "prompt"),
     ),
+    SettingSpec(
+        "ai_chat_default_provider",
+        "Ask AI default provider",
+        "ai",
+        "text",
+        "Default provider selected when the Ask AI dialog opens"
+        " (openrouter, openai, ollama_local, ollama_cloud).",
+        keywords=("ai", "chat", "provider", "openrouter", "openai", "ollama"),
+    ),
+    SettingSpec(
+        "ai_chat_default_model",
+        "Ask AI default model",
+        "ai",
+        "text",
+        "Default model ID selected when the Ask AI dialog opens."
+        " Leave blank to use the first model in the list.",
+        keywords=("ai", "chat", "model"),
+    ),
+    SettingSpec(
+        "ollama_base_url",
+        "Ollama base URL",
+        "ai",
+        "text",
+        "Base URL for the Ollama server. Default: http://localhost:11434",
+        keywords=("ollama", "ai", "local", "url"),
+    ),
+    SettingSpec(
+        "ai_prompt_default_model",
+        "AI prompt default model",
+        "ai",
+        "text",
+        "Default model ID used when running prompt-library prompts."
+        " Leave blank to fall back to the Ask AI default model.",
+        keywords=("ai", "prompt", "model", "prompt library", "grammar"),
+    ),
     # --- Transcription -----------------------------------------------------
     SettingSpec(
         "bw_provider_mode",
@@ -962,6 +997,18 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         "Add a verb that opens a file and starts reading it aloud.",
         feature_id="read_aloud",
         keywords=("read aloud", "speech", "context menu", "verb"),
+    ),
+    # --- Multi-press -------------------------------------------------------
+    SettingSpec(
+        "multi_press_window_ms",
+        "Multi-press time window (ms)",
+        "editing",
+        "int",
+        "How long QUILL waits for a second or third keypress before treating "
+        "the first as a single press. Applies to Copy Tray and Command Palette "
+        "multi-press actions. 300 ms suits fast typists; 500 ms helps users "
+        "with motor control differences. Default: 400.",
+        keywords=("multi press", "double press", "copy tray", "keyboard", "timer"),
     ),
     # --- Security and privacy ----------------------------------------------
     SettingSpec(

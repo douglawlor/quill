@@ -239,6 +239,7 @@ from quill.core.menu_customization import (
     save_menu_customization,
 )
 from quill.core.metrics import compute_document_stats
+from quill.core.multi_press import MultiPressDispatcher
 from quill.core.navigation import (
     next_block_start,
     next_heading_start,
@@ -810,6 +811,7 @@ class MainFrame(
         "quill_key_mode": "QUILL Key",
         "extend_mode": "Extend Mode",
         "abbreviations": "Abbreviations",
+        "copy_tray_slots": "Copy Tray",
         "sr_name": "Screen Reader",
         "suggestion": "Suggested Action",
         "notebook_goal": "Notebook Goal",
@@ -832,6 +834,7 @@ class MainFrame(
         "quill_key_mode": 130,
         "extend_mode": 110,
         "abbreviations": 120,
+        "copy_tray_slots": 110,
         "sr_name": 160,
         "suggestion": 220,
         "notebook_goal": 200,
@@ -854,6 +857,7 @@ class MainFrame(
         "quill_key_mode": "core.navigate",
         "extend_mode": "core.edit",
         "abbreviations": "core.edit",
+        "copy_tray_slots": "core.edit",
         "sr_name": "core.app",
         "suggestion": "core.app",
         "notebook_goal": "core.notebook",
@@ -1472,6 +1476,24 @@ class MainFrame(
             "tools.ai_accessibility_agent",
             "Accessibility Tune-Up",
             self.make_document_accessible,
+            None,
+        )
+        self.commands.register(
+            "tools.ask_ai",
+            "Ask AI...",
+            self.open_ask_ai,
+            None,
+        )
+        self.commands.register(
+            "tools.prompt_library",
+            "Prompt Library",
+            self.open_prompt_library,
+            None,
+        )
+        self.commands.register(
+            "tools.check_grammar_ai",
+            "Check Grammar with AI",
+            self.check_grammar_with_ai,
             None,
         )
         self.commands.register(
@@ -2874,6 +2896,18 @@ class MainFrame(
                 (lambda _n=_ct_n: lambda: self.paste_from_tray_slot(_n))(),
                 self._binding_for(f"edit.paste_from_tray_{_ct_n}"),
             )
+        self.commands.register(
+            "edit.copy_to_next_slot",
+            "Copy to Next Empty Tray Slot",
+            self.copy_to_next_slot,
+            self._binding_for("edit.copy_to_next_slot"),
+        )
+        self.commands.register(
+            "edit.search_tray_slots",
+            "Search Copy Tray Slots",
+            self.search_tray_slots,
+            self._binding_for("edit.search_tray_slots"),
+        )
         self._register_power_tools_commands()
         self._register_quillins_commands()
 
@@ -2947,6 +2981,9 @@ class MainFrame(
             "tools.ai_prompt_studio": self._id_ai_prompt_studio,
             "tools.ai_agent_center": self._id_ai_agent_center,
             "tools.ai_accessibility_agent": self._id_ai_accessibility_agent,
+            "tools.ask_ai": self._id_ask_ai,
+            "tools.prompt_library": self._id_prompt_library,
+            "tools.check_grammar_ai": self._id_check_grammar_ai,
             "tools.ask_quill_chat": self._id_ask_quill_chat,
             "tools.ai_model": self._id_ai_model,
             "tools.ai_session_browser": self._id_ai_session_browser,
@@ -3095,6 +3132,8 @@ class MainFrame(
             # Copy Tray
             "edit.open_copy_tray": self._id_open_copy_tray,
             "edit.clear_all_tray_slots": self._id_clear_all_tray_slots,
+            "edit.copy_to_next_slot": self._id_copy_to_next_slot,
+            "edit.search_tray_slots": self._id_search_tray_slots,
             **{f"edit.copy_to_tray_{i}": self._id_copy_tray_slots[i - 1] for i in range(1, 13)},
             **{f"edit.paste_from_tray_{i}": self._id_paste_tray_slots[i - 1] for i in range(1, 13)},
         }
@@ -7661,10 +7700,58 @@ class MainFrame(
             pass
 
     def open_palette(self) -> None:
+        """Open Command Palette (single press) or re-run last command (double press)."""
+        if not hasattr(self, "_palette_dispatcher"):
+            window_ms = int(getattr(getattr(self, "settings", None), "multi_press_window_ms", 400))
+            self._palette_dispatcher = MultiPressDispatcher(window_ms=window_ms)
+            self._palette_timer: object = None
+            self._last_palette_command_id: str | None = None
+        dispatcher = self._palette_dispatcher
+        count, needs_timer = dispatcher.press("palette")
+        existing = self._palette_timer
+        if existing is not None:
+            stop = getattr(existing, "Stop", None)
+            if callable(stop):
+                stop()
+        if needs_timer:
+            self._palette_timer = self._wx.CallLater(
+                dispatcher.window_ms,
+                self._fire_palette_action,
+            )
+        else:
+            self._palette_timer = None
+            self._fire_palette_action_with_count(count)
+
+    def _fire_palette_action(self) -> None:
+        count = self._palette_dispatcher.timeout("palette")
+        self._palette_timer = None
+        self._fire_palette_action_with_count(count)
+
+    def _fire_palette_action_with_count(self, count: int) -> None:
+        if count >= 2:
+            self._run_last_palette_command()
+        else:
+            self._open_palette_dialog()
+
+    def _open_palette_dialog(self) -> None:
         dialog = CommandPaletteDialog(
             self.frame, self.commands, self.features, announce_fn=self._announce
         )
         dialog.show_modal_and_run()
+        command_id = dialog.last_run_command_id()
+        if command_id:
+            self._last_palette_command_id = command_id
+
+    def _run_last_palette_command(self) -> None:
+        command_id = getattr(self, "_last_palette_command_id", None)
+        if command_id is None:
+            self._announce("No recent palette command to repeat")
+            return
+        try:
+            self.commands.run(command_id)
+            self._announce("Repeated last palette command")
+        except Exception:  # noqa: BLE001
+            self._announce("Could not repeat last palette command")
 
     def create_sticky_note(self) -> None:
         if self._safe_mode:
@@ -17693,6 +17780,81 @@ class MainFrame(
             review_changes=self.open_ai_diff_review,
         )
         dialog.show()
+
+    def open_ask_ai(self) -> None:
+        from quill.ui.ai_chat_dialog import AskAIDialog
+
+        dlg = AskAIDialog(self.frame, self.settings)
+        dlg.show()
+        dlg.close()
+
+    def open_prompt_library(self) -> None:
+        from quill.ui.prompt_library_dialog import PromptLibraryDialog
+
+        lib = self._get_prompt_library()
+        dlg = PromptLibraryDialog(
+            self.frame,
+            lib,
+            self.settings,
+            selection=str(self.editor.GetStringSelection()),
+            document=str(self.editor.GetValue()),
+            title=self._current_document_title(),
+        )
+        dlg.show()
+        dlg.close()
+
+    def check_grammar_with_ai(self) -> None:
+        import threading
+
+        lib = self._get_prompt_library()
+        grammar = lib.find_by_id("builtin-check-grammar")
+        if grammar is None:
+            self._announce("Grammar prompt not found.")
+            return
+        selection = str(self.editor.GetStringSelection()) or str(self.editor.GetValue())
+        if not selection.strip():
+            self._announce("No text to check grammar for.")
+            return
+        provider_id = self.settings.ai_chat_default_provider
+        model_id = self.settings.ai_prompt_default_model or self.settings.ai_chat_default_model
+        if not model_id:
+            self._set_status("No AI model configured. Set one in Preferences > AI.")
+            return
+        prompt_text = grammar.text.replace("{selection}", selection)
+        self._announce(f"Checking grammar with {model_id}...")
+
+        def run() -> None:
+            import wx as _wx
+
+            try:
+                from quill.core.ai_chat import send_prompt
+                from quill.platform.windows.credential_manager import get_credential
+
+                api_key = get_credential(f"quill-{provider_id}-api-key") or ""
+                result = send_prompt(provider_id, model_id, prompt_text, api_key=api_key)
+                _wx.CallAfter(self._show_grammar_result, result, model_id, provider_id)
+            except Exception as exc:  # noqa: BLE001
+                _wx.CallAfter(self._announce, f"Grammar check failed: {exc}")
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _show_grammar_result(self, result: str, model_id: str, provider_id: str) -> None:
+        from quill.ui.ai_chat_dialog import AIResponseDialog
+
+        dlg = AIResponseDialog(self.frame, result, model_id, provider_id)
+        dlg.show()
+        dlg.close()
+
+    def _get_prompt_library(self) -> object:
+        if not hasattr(self, "_prompt_library_cache"):
+            from quill.core.paths import app_data_dir
+            from quill.core.prompt_library import PromptLibrary
+
+            lib = PromptLibrary(app_data_dir() / "prompts.json")
+            for item in self._installed_quillins():
+                lib.load_quillin_prompts(item.directory / "prompts.json")
+            self._prompt_library_cache = lib
+        return self._prompt_library_cache
 
     def _ai_insert_text(self, text: str) -> None:
         self.editor.WriteText(text)

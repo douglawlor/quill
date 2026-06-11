@@ -734,21 +734,38 @@ Copy Tray is **twelve** independently addressable clipboard slots that survive a
 - **Double press** — peek: QUILL announces the slot's content without pasting it. Useful to check what a slot holds before committing to a paste.
 - **Triple press** — open the Copy Tray dialog directly, focused on that slot.
 
+**Copy to Next Empty Slot.** `Edit > Copy Tray > Copy to Next Empty Slot` copies the selection to the first unoccupied (and unpinned) slot in order 1–12 and announces which one: "Copied to slot 4 (first empty)." If all twelve slots are occupied, QUILL tells you rather than silently overwriting anything.
+
+**Search Tray Slots.** `Edit > Copy Tray > Search Tray Slots...` opens a small search dialog. Type any word or phrase; QUILL searches all slot text and labels and announces matching slots. Press the corresponding digit key to paste that slot directly, or Escape to cancel.
+
+**Pinned slots.** From the Copy Tray dialog, any slot can be marked Pinned. Pinned slots:
+
+- Are never overwritten by "Copy to Next Empty Slot" routing.
+- Are announced with a "pinned" prefix: "Slot 1 (pinned — signature)".
+- Persist the pin flag in `copy_tray.json` across restarts.
+
+To pin or unpin a slot, open the Copy Tray dialog (`Ctrl+Shift+Grave, X`), select the slot, and use the Pin/Unpin button.
+
+**Paste submenu slot labels.** The `Edit > Copy Tray > Paste from Tray` submenu shows the label and a text preview for every occupied slot: "1  signature — Hi, I wanted to follow..." Screen readers hear both the label and the preview when navigating the submenu.
+
 **Open the tray dialog:** `Ctrl+Shift+Grave, X` (or `Edit > Copy Tray > Open Copy Tray...`).
 
 The dialog lists all twelve slots. Each row shows the slot number, an optional label, and a preview of the stored text. Navigate with arrow keys. Buttons:
 
 - **Paste** — insert the selected slot's text at the cursor. Also activated by double-clicking or pressing Enter on a row.
 - **Paste from Clipboard** — store the system clipboard into the selected slot.
+- **Pin / Unpin** — toggle the pin state for the selected slot.
 - **Save Changes** — save edits made directly in the content area.
 - **Clear Slot** — empty the selected slot.
 - **Close** — close without pasting.
+
+**Status bar.** The `Slots: X/12` cell in the status bar shows how many of the twelve slots are occupied. Click the cell to open the Copy Tray dialog. Add the cell via `App > Preferences > Status Bar` if it is not visible.
 
 **Tray icon access.** The system tray icon menu also includes a Copy Tray submenu listing all occupied slots. Click any slot entry to paste its content into the active editor. This makes QUILL's clipboard available from the tray without bringing the window to the front.
 
 **Tips.**
 
-- Keep a signature, disclaimer, or standard heading in slot 1. One chord pastes it anywhere.
+- Keep a signature, disclaimer, or standard heading in slot 1 and pin it. One chord pastes it anywhere and "Copy to Next Empty Slot" will never overwrite it.
 - Use labelled slots for a research session: slot 1 "intro quote", slot 2 "methodology note", slot 3 "source URL". Copy one fragment per slot as you read, then paste in order when drafting.
 - Double-press any paste chord to hear what is in that slot without pasting — useful when navigating your tray by memory.
 - Slots survive restarts. Build a small library of recurring fragments you reach for daily.
@@ -760,7 +777,27 @@ Abbreviation Expansion is a TextExpander-style feature. You type a short trigger
 
 **Example:** type `btw ` (note the trailing space) and QUILL replaces it with `by the way `.
 
-QUILL ships with fifteen built-in abbreviations covering common shorthand (`imo`, `asap`, `afaik`, and more). You can add, edit, and disable any abbreviation, including the built-in ones.
+QUILL ships with fifteen built-in abbreviations covering common shorthand. You can add, edit, and disable any abbreviation, including the built-in ones.
+
+**Built-in abbreviations.**
+
+| Abbreviation | Expansion |
+| --- | --- |
+| `afaik` | as far as I know |
+| `afaict` | as far as I can tell |
+| `asap` | as soon as possible |
+| `atm` | at the moment |
+| `btw` | by the way |
+| `fwiw` | for what it's worth |
+| `imo` | in my opinion |
+| `imho` | in my humble opinion |
+| `irl` | in real life |
+| `omw` | on my way |
+| `tbh` | to be honest |
+| `tbc` | to be confirmed |
+| `tbd` | to be determined |
+| `ttyl` | talk to you later |
+| `wrt` | with regard to |
 
 **Enabling and disabling.** Abbreviation expansion is on by default. To toggle it:
 
@@ -776,6 +813,10 @@ QUILL ships with fifteen built-in abbreviations covering common shorthand (`imo`
 - **Case sensitive** — when checked, only the exact-case trigger matches; otherwise any capitalisation of the trigger fires.
 - **Enabled** — toggle individual abbreviations without deleting them.
 
+The manager dialog includes a **Search** field at the top. Type any part of a trigger word or expansion text to filter the list in real time. Disabled abbreviations appear with a "(disabled)" suffix.
+
+The manager also has **Import** and **Export** buttons for JSON round-trips. Export saves your full library to a file. Import merges a file into your library; abbreviations with duplicate IDs are skipped. QUILL announces how many were added on import.
+
 **Manual trigger.** Press `Ctrl+Shift+Grave, A` (or `Insert > Expand Abbreviation`) to expand the word immediately before the cursor without typing a delimiter character. Useful when you want expansion mid-word or at end-of-document.
 
 **Variables in expansions.** Expansions support these placeholders:
@@ -787,6 +828,8 @@ QUILL ships with fifteen built-in abbreviations covering common shorthand (`imo`
 | `${time}` | Current time (e.g. 02:30 PM) |
 | `${clipboard}` | Current system clipboard text |
 
+**Multi-press window.** The double/triple press detection window is configurable in `App > Preferences > Editing` as **Multi-press window (ms)** (default 400 ms; range 100–1000 ms). A larger window helps if you press keys slowly; a smaller window prevents accidental double-fires for fast typists.
+
 **Sound feedback.** Optional: enable **Play sound on abbreviation expansion** in `App > Preferences > Editing` and optionally point **Abbreviation expansion sound file** to a `.wav` file. Leave the path blank for the default system beep.
 
 **Tips.**
@@ -794,6 +837,7 @@ QUILL ships with fifteen built-in abbreviations covering common shorthand (`imo`
 - Use `${cursor}` to drop the cursor inside a template. For example, the abbreviation `sig` expanding to `Best regards,${cursor}Jeff` positions the cursor right after the comma.
 - Use case-sensitive abbreviations sparingly — most triggers are lowercase and case sensitivity is rarely needed.
 - Abbreviations fire before snippet expansion. If a word matches both, the abbreviation wins.
+- Export your library regularly as a backup and to share abbreviations between machines.
 
 ### Copy With Source
 
@@ -1403,11 +1447,100 @@ Quill ships with several trusted, first-party Quillins enabled by default. These
 - **Insert Tools**: Provides smart placeholders for quick insertion, such as the current **Date** and **Date/Time**.
 
 ### The Quillins Manager
-You can discover, review, and manage all installed Quillins via **Tools $\rightarrow$ Quillins**.
-The Manager allows you to:
-- See a list of all installed Quillins.
-- Review the manifest of a selected Quillin (name, version, author, and capabilities).
-- Verify the security permissions (capabilities) a Quillin has declared (e.g., filesystem or network access).
+
+Open via **Tools > Quillins**. The Manager lets you:
+
+- See every installed Quillin and its current status (enabled or disabled).
+- Select a Quillin to review its manifest: name, version, author, description, and declared capabilities.
+- Enable or disable a Quillin without removing it.
+- Remove a Quillin entirely (confirmation required).
+- **Install from Folder** — press this button to select a local folder containing a Quillin. QUILL reads its `manifest.json`, validates it, copies the folder into your per-user extensions directory, and enables it immediately. If a Quillin with the same id is already installed it is replaced. This is the supported path for installing third-party Quillins.
+
+When you select a Quillin, the panel shows all declared capabilities (for example `fs.read` or `net`). Review these before enabling an extension from an unknown source.
 
 ### Authoring Quillins
 For developers, Quillins are designed to be "screen-reader-first." They follow a strict capability model: a Quillin must declare the minimum set of permissions it needs, and any sensitive action (like writing to a file) is consent-gated at runtime.
+
+---
+
+## AI Assistant
+
+QUILL includes a built-in AI assistant that works with OpenRouter, OpenAI, and Ollama. All three are optional; QUILL detects which keys you have configured and only shows providers that are available. API keys are stored in Windows Credential Manager and never written to disk in plain text.
+
+### Setting up an AI provider
+
+Open **App > Preferences > AI** to configure your provider.
+
+- **OpenRouter** — paste your API key into the OpenRouter API Key field. OpenRouter gives you access to many models (Claude, GPT-4o, Gemini, and more) with a single key.
+- **OpenAI** — paste your OpenAI API key.
+- **Ollama** — no key needed. Install Ollama on your machine (`ollama serve`) and QUILL detects it automatically at `http://localhost:11434`. Change the Ollama Base URL setting if you run Ollama on a different port or machine.
+
+You can also set a **Default model for prompt runs** (`ai_prompt_default_model`). Leave it blank to share the same model across Ask AI and the Prompt Library, or set a different model here if you want a more capable model for prompt-library work.
+
+### Ask AI (Alt+Q)
+
+`Tools > AI Assistant > Ask AI...` opens a dialog where you type a question and read the answer without leaving QUILL.
+
+- **Provider** and **Model** choices are pre-filled with the last values you used.
+- If a provider and model are already configured, focus lands directly in the Prompt field so you can start typing immediately. If not yet configured, focus starts on the Provider choice to guide you through setup.
+- Press **Ctrl+Enter** or the **Send** button to submit. QUILL announces "Sending..." and disables the button while the request is in flight.
+- The response opens in a read-only dialog. Use cursor keys to read it, and **Copy to Clipboard** to copy the full text. Closing the response returns you to the Ask AI dialog so you can ask a follow-up.
+- **Clear** resets the prompt field and refocuses it.
+
+### Check Grammar with AI
+
+`Edit > Grammar > Check Grammar with AI` sends the selected text (or the full document if nothing is selected) to your AI model with a grammar-review prompt. The response dialog lists corrections in the form "original phrase → corrected phrase — reason". No changes are applied automatically; you apply corrections yourself.
+
+The default grammar instruction is: review the text and list only the corrections needed; do not rewrite the passage. If you want a different instruction, open the Prompt Library, find the "Check Grammar" built-in prompt, and edit its text — the command picks up your version automatically.
+
+### Prompt Library
+
+`Tools > AI Assistant > Prompt Library...` opens the full prompt management dialog.
+
+**What it shows.** A searchable list of all prompts on the left (type in the search field to filter by name or category). The selected prompt's instruction text on the right. An optional input text field where you can type or paste text to use as the selection context.
+
+**Running a prompt.**
+1. Select a prompt from the list (or type in the search field to find it).
+2. Optionally paste text into the input field. If blank, QUILL uses the current editor selection or full document.
+3. Press **Run with AI**. The result opens in the AI Response dialog.
+
+**Managing prompts.**
+
+- **New Prompt** — opens a small dialog: enter a name, choose a category, and write the instruction text. Use `{selection}` where you want QUILL to insert the text.
+- **Edit** — modify the name, category, or instruction of a selected user prompt. Built-in prompts can have their text overridden (the override is saved; the original is never deleted).
+- **Disable/Enable** — hides or shows a prompt in the list without deleting it. Useful for built-ins you never use.
+- **Delete** — removes a user-created prompt. Built-in prompts cannot be deleted.
+
+**Importing and exporting prompt packs.**
+
+QUILL uses `.pqp` (Prompt Quill Pack) files to share prompt collections.
+
+- **Import .pqp** — opens a file picker; imports all prompts from the file. Prompts whose names already exist in your library are skipped.
+- **Export .pqp** — saves all your user-defined prompts to a `.pqp` file you can share or back up.
+
+A `.pqp` file is plain JSON with a human-readable structure:
+
+```json
+{
+  "schema": "quill.prompt-pack/1",
+  "name": "My Writing Prompts",
+  "prompts": [
+    {
+      "name": "Make Punchy",
+      "text": "Rewrite this as a punchy one-liner: {selection}",
+      "category": "Editing"
+    }
+  ]
+}
+```
+
+**Built-in prompts.** QUILL ships 12 built-in prompts across five categories. These are always present and fully editable; they cannot be deleted.
+
+| Category | Prompt names |
+| --- | --- |
+| Editing | Check Grammar, Improve Clarity, Fix Grammar, Make Concise, Active Voice, Formal Tone, Conversational Tone |
+| Writing | Continue from Here |
+| Structure | Convert to Bullet Points |
+| Research | Define This Term, Find Counterarguments |
+
+**Quillin-contributed prompts.** Quillins can ship a `prompts.json` file that adds prompts to the library. The bundled `ai-writing-prompts` Quillin contributes 7 additional prompts (Expand This, Vary Sentence Rhythm, Make More Vivid, Write a Title, Generate Outline, Suggest Supporting Evidence, Plain Language). These appear in the list and can be run like any other prompt; they are not persisted to your library file.
