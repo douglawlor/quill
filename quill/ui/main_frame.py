@@ -19733,22 +19733,23 @@ class MainFrame(
     def open_individual_feature_toggles(self) -> None:
         """Per-feature override surface (FLAG-3).
 
-        Lists every non-locked feature with a checkbox reflecting its current
-        effective state on top of the active profile. Toggling a feature
-        applies live, persists, and announces the dependency cascade; locked
-        core features are not listed because they cannot be turned off.
+        Lists every user-toggleable feature with a CheckBox reflecting its
+        current effective state on top of the active profile. Locked-on and
+        locked-off features are omitted because neither is user-toggleable.
+        Individual wx.CheckBox controls are used instead of CheckListBox so
+        screen readers (NVDA/JAWS) announce checked state on navigation.
         """
         wx = self._wx
         toggleable = sorted(
             (
                 (feature_id, definition)
                 for feature_id, definition in FEATURE_DEFINITIONS.items()
-                if not definition.locked_on
+                if not definition.locked_on and not definition.locked_off
             ),
             key=lambda item: (item[1].category, item[1].name),
         )
         feature_ids = [feature_id for feature_id, _definition in toggleable]
-        dialog = wx.Dialog(self.frame, title="Manage Individual Features", size=(700, 620))
+        dialog = wx.Dialog(self.frame, title="Manage Individual Features", size=(700, 640))
         panel = wx.Panel(dialog)
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
@@ -19757,51 +19758,70 @@ class MainFrame(
                 label=(
                     "Turn individual features on or off on top of your profile. "
                     "Enabling a feature also enables what it needs; disabling one "
-                    "turns off the features that depend on it."
+                    "turns off the features that depend on it. "
+                    "Use Space or Enter to toggle the focused feature."
                 ),
             ),
             0,
             wx.ALL | wx.EXPAND,
             8,
         )
-        chooser = wx.CheckListBox(
-            panel,
-            choices=[definition.name for _feature_id, definition in toggleable],
-        )
+
+        # Scrolled panel of individual CheckBox controls — NVDA/JAWS announce
+        # "checked" / "not checked" natively when focus moves between them,
+        # unlike CheckListBox which only announces name without state.
+        scroll = wx.ScrolledWindow(panel, style=wx.VSCROLL)
+        scroll.SetScrollRate(0, 20)
+        scroll_sizer = wx.BoxSizer(wx.VERTICAL)
+        checkboxes: list[wx.CheckBox] = []
+        for feature_id, definition in toggleable:
+            cb = wx.CheckBox(scroll, label=definition.name)
+            cb.SetValue(self.features.is_enabled(feature_id))
+            checkboxes.append(cb)
+            scroll_sizer.Add(cb, 0, wx.ALL, 3)
+        scroll.SetSizer(scroll_sizer)
+
         detail = wx.TextCtrl(panel, style=wx.TE_MULTILINE | wx.TE_READONLY)
+        detail.SetValue("Tab to a feature checkbox to see details below.")
 
         def sync_checks() -> None:
             for index, feature_id in enumerate(feature_ids):
-                chooser.Check(index, self.features.is_enabled(feature_id))
+                if index < len(checkboxes):
+                    checkboxes[index].SetValue(self.features.is_enabled(feature_id))
 
-        def refresh_detail() -> None:
-            selection = chooser.GetSelection()
-            if selection == wx.NOT_FOUND or selection < 0 or selection >= len(feature_ids):
-                detail.SetValue("Select a feature to see why it is on or off.")
-                return
-            detail.SetValue(self.features.describe_feature(feature_ids[selection]))
+        def refresh_detail(index: int) -> None:
+            if 0 <= index < len(feature_ids):
+                detail.SetValue(self.features.describe_feature(feature_ids[index]))
 
-        def on_toggle(event: object) -> None:
-            index = event.GetSelection() if hasattr(event, "GetSelection") else wx.NOT_FOUND
-            if index == wx.NOT_FOUND or index < 0 or index >= len(feature_ids):
-                return
-            feature_id = feature_ids[index]
-            enabled = chooser.IsChecked(index)
-            affected = self.features.set_feature_enabled(feature_id, enabled)
-            announcement = self.features.describe_feature_toggle(feature_id, enabled, affected)
-            sync_checks()
-            chooser.SetSelection(index)
-            refresh_detail()
-            self._build_menu()
-            self._apply_accelerators()
-            self._set_status(announcement)
+        def make_focus_handler(index: int):
+            def _on_focus(_event: object) -> None:
+                refresh_detail(index)
 
-        sync_checks()
-        refresh_detail()
-        chooser.Bind(wx.EVT_CHECKLISTBOX, on_toggle)
-        chooser.Bind(wx.EVT_LISTBOX, lambda _e: refresh_detail())
-        root.Add(chooser, 1, wx.ALL | wx.EXPAND, 8)
-        root.Add(detail, 1, wx.ALL | wx.EXPAND, 8)
+            return _on_focus
+
+        def make_toggle_handler(index: int):
+            def _on_toggle(_event: object) -> None:
+                if index < 0 or index >= len(feature_ids):
+                    return
+                feature_id = feature_ids[index]
+                enabled = checkboxes[index].GetValue()
+                affected = self.features.set_feature_enabled(feature_id, enabled)
+                announcement = self.features.describe_feature_toggle(feature_id, enabled, affected)
+                sync_checks()
+                refresh_detail(index)
+                self._build_menu()
+                self._apply_accelerators()
+                self._set_status(announcement)
+
+            return _on_toggle
+
+        for i, cb in enumerate(checkboxes):
+            cb.Bind(wx.EVT_CHECKBOX, make_toggle_handler(i))
+            cb.Bind(wx.EVT_SET_FOCUS, make_focus_handler(i))
+
+        root.Add(scroll, 1, wx.ALL | wx.EXPAND, 8)
+        root.Add(detail, 0, wx.ALL | wx.EXPAND, 8)
+        root.SetItemMinSize(detail, (-1, 80))
         buttons = dialog.CreateButtonSizer(wx.OK)
         if buttons is not None:
             ok_button = dialog.FindWindowById(wx.ID_OK)
@@ -19818,6 +19838,8 @@ class MainFrame(
         if buttons is not None:
             outer.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         dialog.SetSizerAndFit(outer)
+        if checkboxes:
+            wx.CallAfter(checkboxes[0].SetFocus)
         self._show_modal_dialog(dialog, "Manage Individual Features")
         self._refresh_title()
 
