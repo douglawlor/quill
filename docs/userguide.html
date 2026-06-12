@@ -2647,5 +2647,59 @@ prompts (Expand This, Vary Sentence Rhythm, Make More Vivid, Write a
 Title, Generate Outline, Suggest Supporting Evidence, Plain Language).
 These appear in the list and can be run like any other prompt; they are
 not persisted to your library file.</p>
+<h3 id="skill-library-sqp-skills">Skill Library (.sqp skills)</h3>
+<p>Skills are multi-step AI workflows. Where a prompt is one
+instruction, a skill is a sequence of steps where each step can use the
+output of the step before it.</p>
+<p><code>Tools &gt; AI Assistant &gt; Skill Library...</code> opens the
+Skill Library dialog.</p>
+<p><strong>What a skill looks like.</strong> A skill has a name, a
+description, and a list of steps. Before running, QUILL shows a
+parameter dialog if the skill declares any parameters (such as tone,
+target reading level, or output format). Each step runs in order, sends
+its prompt to the AI, and stores the response for the next step to
+use.</p>
+<p><strong>Bundled skills.</strong> QUILL ships four skills in the
+<code>ai-writing-skills</code> Quillin:</p>
+<ul>
+<li><strong>Accessible Rewrite</strong> — Analyses your text for
+plain-language issues (long sentences, passive voice, jargon), then
+produces a targeted rewrite. You choose the target reading level (Grade
+6, 8, or 10). The rewritten text replaces the selection when you
+Accept.</li>
+<li><strong>Research and Draft</strong> — Extracts the central topic
+from your selection, gathers five supporting facts, then drafts a
+paragraph at your chosen tone and length.</li>
+<li><strong>Meeting Notes to Action Items</strong> — Reads meeting
+notes, extracts every action item with owner and deadline, checks for
+missed items, and produces a clean follow-up summary. Output goes to
+clipboard.</li>
+<li><strong>Argument Strengthener</strong> — Identifies your argument's
+logical structure, finds weaknesses and counterarguments, then produces
+a strengthened version tailored to your chosen audience.</li>
+</ul>
+<p><strong>Running a skill.</strong></p>
+<ol type="1">
+<li>Open <code>Tools &gt; AI Assistant &gt; Skill Library...</code></li>
+<li>Select a skill from the list.</li>
+<li>Press <strong>Run</strong>. If the skill has parameters, a small
+dialog appears — fill in the choices and press OK.</li>
+<li>QUILL announces "Running step 1 of N..." as each step executes.</li>
+<li>When complete, the result dialog appears. Read the output, then
+press <strong>Accept</strong> to apply it (if the skill places output in
+the document) or <strong>Copy</strong> to copy to clipboard.</li>
+</ol>
+<p><strong>No streaming.</strong> Each step sends a complete prompt and
+waits for the full response before the next step begins. This makes step
+outputs reliable and readable between steps.</p>
+<p><strong>Authoring and sharing skills.</strong> A skill is a
+<code>.sqp</code> (Skill Quill Pack) file — a plain Markdown document
+with YAML front matter. Open any <code>.sqp</code> file in QUILL to read
+and edit it. Share skills by sharing the file. See
+<code>docs/scripting.md</code> §20 for the full authoring reference, and
+<code>docs/skills-tutorial.md</code> for a guided walkthrough.</p>
+<p><strong>Validating a skill file.</strong> Run
+<code>python -m quill.tools.sqp_validator yourskill.sqp</code> to check
+for errors before sharing or shipping.</p>
 </body>
 </html>

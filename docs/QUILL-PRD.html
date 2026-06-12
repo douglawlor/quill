@@ -5484,211 +5484,180 @@ discovered and are not affected by the SEC-8 lock.</p>
 (<code>QuillinsManagerMixin</code> — manager panel, Install from Folder
 button and handler).</p>
 <hr />
-<h2 id="6-spell-checking-deep-dive">6. Spell checking deep dive</h2>
-<h3 id="61-the-tinyspell-question">6.1 The TinySpell question</h3>
-<p>TinySpell is a small, fast Windows spell-checker that watches the
-clipboard or current input field and alerts on misspellings. It is
-genuinely useful for many users. So the question is: should Quill
-integrate tightly with TinySpell, or build its own engine?</p>
-<p>We have chosen to <strong>build our own engine</strong>, tightly
-integrated into Quill, for the following reasons:</p>
-<ol type="1">
-<li><strong>Screen-reader fidelity.</strong> TinySpell speaks through
-its own UI surfaces and conventions. Quill needs total control over how
-misspellings are announced, navigated, and corrected so that NVDA, JAWS,
-and Narrator hear the same predictable patterns. A loose integration
-would create a second source of speech that competes with our own.</li>
-<li><strong>Document context.</strong> TinySpell works across
-applications and therefore cannot use document-level context (heading
-structure, surrounding paragraph, language metadata, per-document
-dictionary). Quill knows exactly what document the cursor is in and can
-do much better.</li>
-<li><strong>Per-document and per-paragraph language detection.</strong>
-Multi-language documents need language switches mid-stream. An external
-tool will not know.</li>
-<li><strong>Suggestion ranking that learns.</strong> TinySpell's
-suggestion order is fixed. Quill ranks suggestions using the user's own
-writing and the surrounding sentence, which is the single biggest
-quality-of-life upgrade in modern spell check.</li>
-<li><strong>Offline guarantee.</strong> Quill commits to spell check
-working with zero network. An external dependency complicates that
-guarantee.</li>
-<li><strong>Distribution.</strong> Bundling TinySpell would create a
-licence and update story we do not control.</li>
-<li><strong>Keymap and palette parity.</strong> Every Quill action is in
-the palette and reassignable. Spell-check commands must be too.</li>
-</ol>
-<p>We will, however, ship a small <strong>TinySpell interop
-plugin</strong> for v1.1 for users who already rely on TinySpell
-elsewhere and want a unified personal dictionary. That plugin
-imports/exports the personal dictionary file and otherwise stays out of
-the way.</p>
-<h3 id="62-engine-architecture-quill-spell">6.2 Engine architecture:
-"Quill Spell"</h3>
-<p>Quill Spell is a layered local engine:</p>
+<h3
+id="584-skill-quill-pack-sqp--multi-step-ai-workflows-in-plain-text">5.84
+Skill Quill Pack (.sqp) — multi-step AI workflows in plain text</h3>
+<p>A <code>.sqp</code> (Skill Quill Pack) file is a Markdown document
+with YAML front matter where level-1 headings define sequential AI
+steps. It extends <code>.pqp</code> prompt packs from single
+instructions to multi-step workflows with parameters, variable chaining,
+and conditional branching.</p>
+<p><strong>Motivation.</strong> Many real AI tasks are not single-shot
+prompts. Research then draft. Analyse then rewrite. Detect intent then
+branch. Encoding this logic in JSON means writing a DSL nobody can
+author without tooling. Writing it in Markdown means any user can open
+the file, read every step, and edit it — no schema browser, no visual
+designer. The skill is the document.</p>
+<p><strong>Key design choices:</strong></p>
 <ul>
-<li><strong>Layer 1: Tokeniser.</strong> Unicode-aware word splitter
-that understands code (CamelCase, snake_case, kebab-case), contractions,
-hyphenation, URLs, emoji, file paths, and Markdown/HTML syntax tokens.
-It hands the next layer a stream of
-<code>(word, span, context_kind)</code> tuples where
-<code>context_kind</code> is one of <code>prose</code>,
-<code>code</code>, <code>identifier</code>, <code>url</code>,
-<code>markup</code>, <code>path</code>.</li>
-<li><strong>Layer 2: Dictionary stack.</strong> A priority-ordered stack
-of dictionaries: per-document, per-project (if applicable), user
-personal, language-base (Hunspell), plus optional jargon packs (medical,
-legal, technical, scientific). The first dictionary that accepts the
-word wins.</li>
-<li><strong>Layer 3: Hunspell backend.</strong> Bundled via
-<code>cyhunspell</code>. Dictionaries shipped: en-US, en-GB, en-CA,
-en-AU, es-ES, es-MX, fr-FR, de-DE, pt-BR, pl-PL, ja-JP (with MeCab).
-Others available via a one-click downloader.</li>
-<li><strong>Layer 4: Suggestion engine.</strong> Combines Hunspell's
-edit-distance suggestions with a character-level n-gram model and a
-small contextual reranker (a tiny on-device transformer; runs on CPU in
-&lt;10 ms per call). Top 5 suggestions, ranked by combined score.</li>
-<li><strong>Layer 5: Learning loop.</strong> When the user accepts a
-suggestion, the engine increments its frequency. When the user adds a
-word, it goes to the appropriate dictionary (with a prompt asking
-which). When the user repeatedly rejects a suggestion in favour of
-another, the reranker learns the preference. Learning is 100 percent
-local and resettable.</li>
-<li><strong>Layer 6: Context awareness.</strong> The tokeniser tells the
-engine when it is inside a code fence, an inline code span, a URL, or a
-Markdown link target. Those regions are skipped by default. Settings let
-the user enable code spell checking with a programming-aware
-dictionary.</li>
+<li>No streaming — each step sends a full prompt and receives a full
+response before the next step runs. This makes step outputs reliable as
+inputs to subsequent steps.</li>
+<li>Synchronous execution from the caller's perspective; threading is
+the UI layer's responsibility.</li>
+<li>Depth limit of 2 for nested skill calls to keep execution
+predictable.</li>
 </ul>
-<h3 id="63-user-experience">6.3 User experience</h3>
-<ul>
-<li><strong>Status indicator.</strong> The status bar shows the active
-dictionary stack as a short label, for example
-<code>en-GB + tech + personal</code>.</li>
-<li><strong>F7 full review.</strong> Modal Spell Check dialog with:
-misspelled word, surrounding sentence with the word highlighted and
-announced, suggestions list, replacement edit, Change, Change All,
-Ignore, Ignore All, Add to (with submenu for which dictionary), Finish,
-Cancel. The word is spoken and then spelled letter by letter.</li>
-<li><strong>Ctrl+; quick fix.</strong> Jumps to the next misspelling,
-opens a small modal list of the top 5 suggestions. Numbers 1 through 5
-accept the corresponding suggestion. Enter accepts the highlighted one.
-<code>A</code> adds to dictionary. <code>I</code> ignores once.
-<code>Esc</code> cancels.</li>
-<li><strong>Background pass.</strong> A debounced background tokenise
-runs as the user types. Results live in a sidecar model. No visual
-squiggles. The screen reader is never interrupted by background
-work.</li>
-<li><strong>Mode toggle.</strong> <code>Alt+F7</code> toggles
-as-you-type checking for the current document.</li>
-<li><strong>Per-document language.</strong> A YAML-style sidecar
-(<code>&lt;doc&gt;.quill.yml</code>) can pin language and dictionaries.
-Detected automatically from a magic comment on the first line if
-present.</li>
-<li><strong>Magic touches.</strong>
-<ul>
-<li>When you add a word, Quill says "Added <word> to your personal
-dictionary" or "Added <word> to this document's dictionary" so you
-always know where it went.</li>
-<li>When you reject the same suggestion three times for the same
-misspelling, Quill quietly asks once whether you want to add the
-rejected word to your personal dictionary.</li>
-<li>When pasting a large block of text, the spell pass is queued at a
-lower priority so the paste itself is instant.</li>
-<li>When entering a code fence in Markdown, the engine switches
-automatically to identifier mode and stops complaining about variable
-names.</li>
-</ul></li>
-</ul>
-<hr />
-<h2 id="7-command-palette-deep-dive">7. Command palette deep dive</h2>
-<p>The command palette is modelled directly on Visual Studio Code's,
-adapted for screen readers.</p>
-<h3 id="71-opening-and-dismissing">7.1 Opening and dismissing</h3>
-<ul>
-<li><code>Ctrl+Shift+P</code> opens the palette in command mode.</li>
-<li><code>F1</code> does the same.</li>
-<li>Each prefix shortcut (below) opens the palette pre-seeded with that
-prefix.</li>
-<li><code>Esc</code> closes without action.</li>
-<li><code>Enter</code> runs the selected entry (and remembers it).</li>
-<li><code>Tab</code> from the input moves into the list.
-<code>Shift+Tab</code> returns to the input.</li>
-</ul>
-<h3 id="72-prefix-modes">7.2 Prefix modes</h3>
-<p>A single edit field, one list. The first character of the input may
-be a mode prefix:</p>
-<table>
-<thead>
-<tr>
-<th>Prefix</th>
-<th>Shortcut to open directly</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>(none) or <code>&gt;</code></td>
-<td><code>Ctrl+Shift+P</code></td>
-<td>Run a command</td>
-</tr>
-<tr>
-<td><code>?</code></td>
-<td><code>Ctrl+Shift+?</code></td>
-<td>Show help for all prefixes</td>
-</tr>
-<tr>
-<td><code>:</code></td>
-<td><code>Ctrl+G</code> (when no page markers)</td>
-<td>Go to line</td>
-</tr>
-<tr>
-<td><code>@</code></td>
-<td><code>Ctrl+R</code></td>
-<td>Jump to bookmark in current document</td>
-</tr>
-<tr>
-<td><code>#</code></td>
-<td><code>Ctrl+T</code></td>
-<td>Jump to bookmark across all open documents</td>
-</tr>
-<tr>
-<td><code>!</code></td>
-<td><code>Ctrl+Shift+M</code></td>
-<td>Show issues (spell check, bookmark, format)</td>
-</tr>
-<tr>
-<td><code>&lt;</code></td>
-<td><code>Ctrl+E</code></td>
-<td>Open a recent file</td>
-</tr>
-<tr>
-<td><code>~</code></td>
-<td><code>Ctrl+Shift+O</code></td>
-<td>Switch open document</td>
-</tr>
-<tr>
-<td><code>=</code></td>
-<td>(palette only)</td>
-<td>Open a setting</td>
-</tr>
-</tbody>
-</table>
-<p>These prefixes are themselves reassignable (see <a
-href="#8-keymap-and-keystroke-reassignment">section 8</a>).</p>
-<h3 id="73-matching">7.3 Matching</h3>
-<ul>
-<li>Fuzzy subsequence match across the visible label.</li>
-<li>Each match scored by: subsequence tightness, prefix bonus,
-word-boundary bonus, recency, frequency.</li>
-<li>Top 100 results displayed, lazily.</li>
-<li>Ties broken alphabetically.</li>
-</ul>
-<h3 id="74-rows">7.4 Rows</h3>
-<p>Each row in command mode shows three regions, all announced as one
-string by the screen reader (with internal punctuation chosen to read
-well):</p>
-<pre class="text"><code>&lt;Command title&gt; — &lt;current keybinding or &quot;unassigned&quot;&gt; — &lt;source&gt;</code></pre>
+<p><strong>File format (<code>quill.skill/1</code>).</strong></p>
+<div class="sourceCode" id="cb21"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="an">schema:</span><span class="co"> quill.skill/1</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a><span class="an">name:</span><span class="co"> Research and Draft</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a><span class="an">description:</span><span class="co"> Extracts topic, gathers facts, drafts a paragraph.</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> QUILL Project</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a><span class="an">version:</span><span class="co"> 1.0.0</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="an">parameters:</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a><span class="co">  - name: tone</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="co">    label: Tone</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="co">    type: choice</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a><span class="co">    choices: [formal, conversational, neutral]</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a><span class="co">    default: neutral</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a><span class="fu"># Step 1: Extract topic</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>Identify the main topic in: {selection}</span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a><span class="fu"># Step 2: Research</span></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>List five facts about &quot;{step1.output}&quot;.</span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a><span class="fu"># Step 3: Draft</span></span>
+<span id="cb21-24"><a href="#cb21-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-25"><a href="#cb21-25" aria-hidden="true" tabindex="-1"></a>Write a {parameters.tone} paragraph weaving in those facts.</span>
+<span id="cb21-26"><a href="#cb21-26" aria-hidden="true" tabindex="-1"></a>Facts: {step2.output}</span>
+<span id="cb21-27"><a href="#cb21-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-28"><a href="#cb21-28" aria-hidden="true" tabindex="-1"></a><span class="in">```output</span></span>
+<span id="cb21-29"><a href="#cb21-29" aria-hidden="true" tabindex="-1"></a><span class="in">format: text</span></span>
+<span id="cb21-30"><a href="#cb21-30" aria-hidden="true" tabindex="-1"></a><span class="in">label: Drafted paragraph</span></span>
+<span id="cb21-31"><a href="#cb21-31" aria-hidden="true" tabindex="-1"></a><span class="in">accept_into: selection</span></span></code></pre></div>
+<pre><code>
+**Special blocks inside steps:**
+
+| Block type | Purpose |
+| --- | --- |
+| `` `input` `` | Appends literal data to the prompt text |
+| `` `condition` `` | Branches execution: `if: &quot;X&quot; contains &quot;Y&quot; / then: step3 / else: step4` |
+| `` `output` `` | On last step: `format` (text/list/json), `label`, `accept_into` (selection/clipboard/none) |
+| `` `use-prompt` `` | Delegates to a named prompt from the Prompt Library |
+| `` `use-skill` `` | Calls another skill (depth-bounded) |
+
+**Variables.** `{selection}`, `{document}`, `{title}`, `{clipboard}`, `{stepN.output}`, `{parameters.name}`.
+
+**Validation tool.** `python -m quill.tools.sqp_validator &lt;path&gt;` validates one file or a directory. Exit 0 clean, exit 1 errors, `--strict` also checks for missing metadata.
+
+**Bundled skills.** The `ai-writing-skills` Quillin ships four sample skills: Accessible Rewrite, Research and Draft, Meeting Notes to Action Items, Argument Strengthener.
+
+**Implementation map.**
+
+| File | Role |
+| --- | --- |
+| `quill/core/skill_pack.py` | `SkillPack` dataclass, `.sqp` parser, validator, synchronous runner |
+| `quill/tools/sqp_validator.py` | CLI validator |
+| `quill/quillins_bundled/ai-writing-skills/` | Four bundled `.sqp` skill files |
+| `tests/unit/core/test_skill_pack.py` | 23 tests: parsing, validation, runner, branching, bundled files |
+
+---
+
+## 6. Spell checking deep dive
+
+### 6.1 The TinySpell question
+
+TinySpell is a small, fast Windows spell-checker that watches the clipboard or current input field and alerts on misspellings. It is genuinely useful for many users. So the question is: should Quill integrate tightly with TinySpell, or build its own engine?
+
+We have chosen to **build our own engine**, tightly integrated into Quill, for the following reasons:
+
+1. **Screen-reader fidelity.** TinySpell speaks through its own UI surfaces and conventions. Quill needs total control over how misspellings are announced, navigated, and corrected so that NVDA, JAWS, and Narrator hear the same predictable patterns. A loose integration would create a second source of speech that competes with our own.
+2. **Document context.** TinySpell works across applications and therefore cannot use document-level context (heading structure, surrounding paragraph, language metadata, per-document dictionary). Quill knows exactly what document the cursor is in and can do much better.
+3. **Per-document and per-paragraph language detection.** Multi-language documents need language switches mid-stream. An external tool will not know.
+4. **Suggestion ranking that learns.** TinySpell&#39;s suggestion order is fixed. Quill ranks suggestions using the user&#39;s own writing and the surrounding sentence, which is the single biggest quality-of-life upgrade in modern spell check.
+5. **Offline guarantee.** Quill commits to spell check working with zero network. An external dependency complicates that guarantee.
+6. **Distribution.** Bundling TinySpell would create a licence and update story we do not control.
+7. **Keymap and palette parity.** Every Quill action is in the palette and reassignable. Spell-check commands must be too.
+
+We will, however, ship a small **TinySpell interop plugin** for v1.1 for users who already rely on TinySpell elsewhere and want a unified personal dictionary. That plugin imports/exports the personal dictionary file and otherwise stays out of the way.
+
+### 6.2 Engine architecture: &quot;Quill Spell&quot;
+
+Quill Spell is a layered local engine:
+
+- **Layer 1: Tokeniser.** Unicode-aware word splitter that understands code (CamelCase, snake_case, kebab-case), contractions, hyphenation, URLs, emoji, file paths, and Markdown/HTML syntax tokens. It hands the next layer a stream of `(word, span, context_kind)` tuples where `context_kind` is one of `prose`, `code`, `identifier`, `url`, `markup`, `path`.
+- **Layer 2: Dictionary stack.** A priority-ordered stack of dictionaries: per-document, per-project (if applicable), user personal, language-base (Hunspell), plus optional jargon packs (medical, legal, technical, scientific). The first dictionary that accepts the word wins.
+- **Layer 3: Hunspell backend.** Bundled via `cyhunspell`. Dictionaries shipped: en-US, en-GB, en-CA, en-AU, es-ES, es-MX, fr-FR, de-DE, pt-BR, pl-PL, ja-JP (with MeCab). Others available via a one-click downloader.
+- **Layer 4: Suggestion engine.** Combines Hunspell&#39;s edit-distance suggestions with a character-level n-gram model and a small contextual reranker (a tiny on-device transformer; runs on CPU in &lt;10 ms per call). Top 5 suggestions, ranked by combined score.
+- **Layer 5: Learning loop.** When the user accepts a suggestion, the engine increments its frequency. When the user adds a word, it goes to the appropriate dictionary (with a prompt asking which). When the user repeatedly rejects a suggestion in favour of another, the reranker learns the preference. Learning is 100 percent local and resettable.
+- **Layer 6: Context awareness.** The tokeniser tells the engine when it is inside a code fence, an inline code span, a URL, or a Markdown link target. Those regions are skipped by default. Settings let the user enable code spell checking with a programming-aware dictionary.
+
+### 6.3 User experience
+
+- **Status indicator.** The status bar shows the active dictionary stack as a short label, for example `en-GB + tech + personal`.
+- **F7 full review.** Modal Spell Check dialog with: misspelled word, surrounding sentence with the word highlighted and announced, suggestions list, replacement edit, Change, Change All, Ignore, Ignore All, Add to (with submenu for which dictionary), Finish, Cancel. The word is spoken and then spelled letter by letter.
+- **Ctrl+; quick fix.** Jumps to the next misspelling, opens a small modal list of the top 5 suggestions. Numbers 1 through 5 accept the corresponding suggestion. Enter accepts the highlighted one. `A` adds to dictionary. `I` ignores once. `Esc` cancels.
+- **Background pass.** A debounced background tokenise runs as the user types. Results live in a sidecar model. No visual squiggles. The screen reader is never interrupted by background work.
+- **Mode toggle.** `Alt+F7` toggles as-you-type checking for the current document.
+- **Per-document language.** A YAML-style sidecar (`&lt;doc&gt;.quill.yml`) can pin language and dictionaries. Detected automatically from a magic comment on the first line if present.
+- **Magic touches.**
+  - When you add a word, Quill says &quot;Added &lt;word&gt; to your personal dictionary&quot; or &quot;Added &lt;word&gt; to this document&#39;s dictionary&quot; so you always know where it went.
+  - When you reject the same suggestion three times for the same misspelling, Quill quietly asks once whether you want to add the rejected word to your personal dictionary.
+  - When pasting a large block of text, the spell pass is queued at a lower priority so the paste itself is instant.
+  - When entering a code fence in Markdown, the engine switches automatically to identifier mode and stops complaining about variable names.
+
+---
+
+## 7. Command palette deep dive
+
+The command palette is modelled directly on Visual Studio Code&#39;s, adapted for screen readers.
+
+### 7.1 Opening and dismissing
+
+- `Ctrl+Shift+P` opens the palette in command mode.
+- `F1` does the same.
+- Each prefix shortcut (below) opens the palette pre-seeded with that prefix.
+- `Esc` closes without action.
+- `Enter` runs the selected entry (and remembers it).
+- `Tab` from the input moves into the list. `Shift+Tab` returns to the input.
+
+### 7.2 Prefix modes
+
+A single edit field, one list. The first character of the input may be a mode prefix:
+
+| Prefix | Shortcut to open directly | Meaning |
+| --- | --- | --- |
+| (none) or `&gt;` | `Ctrl+Shift+P` | Run a command |
+| `?` | `Ctrl+Shift+?` | Show help for all prefixes |
+| `:` | `Ctrl+G` (when no page markers) | Go to line |
+| `@` | `Ctrl+R` | Jump to bookmark in current document |
+| `#` | `Ctrl+T` | Jump to bookmark across all open documents |
+| `!` | `Ctrl+Shift+M` | Show issues (spell check, bookmark, format) |
+| `&lt;` | `Ctrl+E` | Open a recent file |
+| `~` | `Ctrl+Shift+O` | Switch open document |
+| `=` | (palette only) | Open a setting |
+
+These prefixes are themselves reassignable (see [section 8](#8-keymap-and-keystroke-reassignment)).
+
+### 7.3 Matching
+
+- Fuzzy subsequence match across the visible label.
+- Each match scored by: subsequence tightness, prefix bonus, word-boundary bonus, recency, frequency.
+- Top 100 results displayed, lazily.
+- Ties broken alphabetically.
+
+### 7.4 Rows
+
+Each row in command mode shows three regions, all announced as one string by the screen reader (with internal punctuation chosen to read well):
+
+```text
+&lt;Command title&gt; — &lt;current keybinding or &quot;unassigned&quot;&gt; — &lt;source&gt;</code></pre>
 <p>For example:</p>
 <pre class="text"><code>Improve Reading Order with AI — unassigned — Quill
 Spell Check Document — F7 — Quill
@@ -5838,17 +5807,17 @@ off by default in the profile selector but available to install.</li>
 <h3 id="87-storage-format">8.7 Storage format</h3>
 <p><code>keymap.json</code> is plain JSON, human readable, version
 controlled friendly:</p>
-<div class="sourceCode" id="cb23"><pre
-class="sourceCode json"><code class="sourceCode json"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
-<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;profile&quot;</span><span class="fu">:</span> <span class="st">&quot;System&quot;</span><span class="fu">,</span></span>
-<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;bindings&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.save&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+S&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.palette.open&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+Shift+P&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;global&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.spell.checkDocument&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;F7&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
-<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.gotoLine&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+G&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor &amp;&amp; !format:pdf&quot;</span> <span class="fu">}</span></span>
-<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb24"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="dv">1</span><span class="fu">,</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;profile&quot;</span><span class="fu">:</span> <span class="st">&quot;System&quot;</span><span class="fu">,</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;bindings&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.save&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+S&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.palette.open&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+Shift+P&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;global&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.spell.checkDocument&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;F7&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor&quot;</span> <span class="fu">}</span><span class="ot">,</span></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span> <span class="dt">&quot;command&quot;</span><span class="fu">:</span> <span class="st">&quot;quill.editor.gotoLine&quot;</span><span class="fu">,</span> <span class="dt">&quot;key&quot;</span><span class="fu">:</span> <span class="st">&quot;Ctrl+G&quot;</span><span class="fu">,</span> <span class="dt">&quot;when&quot;</span><span class="fu">:</span> <span class="st">&quot;editor &amp;&amp; !format:pdf&quot;</span> <span class="fu">}</span></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 <h3 id="88-import-export-sync">8.8 Import, export, sync</h3>
 <ul>
 <li>Export the active keymap to a single JSON file.</li>
@@ -9211,6 +9180,25 @@ exclusively in Windows Credential Manager
 (<code>quill-openrouter-api-key</code>,
 <code>quill-openai-api-key</code>, <code>quill-ollama-api-key</code>);
 never in <code>settings.json</code>.</label></li>
+<li><label><input type="checkbox" checked="" />Add <code>.sqp</code>
+(Skill Quill Pack) file format: <code>quill.skill/1</code> schema; YAML
+front matter + Markdown steps; parameters, condition branching, output
+blocks, use-prompt/use-skill delegation.</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>quill/core/skill_pack.py</code>: parser, validator
+(<code>validate_skill</code>), synchronous runner
+(<code>run_skill</code>); no streaming by design.</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>quill/tools/sqp_validator.py</code>: CLI validator with
+<code>--strict</code> mode.</label></li>
+<li><label><input type="checkbox" checked="" />Add bundled
+<code>ai-writing-skills</code> Quillin with 4 sample skills (Accessible
+Rewrite, Research and Draft, Meeting Notes to Action Items, Argument
+Strengthener).</label></li>
+<li><label><input type="checkbox" checked="" />Add
+<code>tests/unit/core/test_skill_pack.py</code>: 23 tests covering
+parsing, validation, runner, condition branching, depth limit, and all
+bundled files.</label></li>
 </ul>
 </body>
 </html>

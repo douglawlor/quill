@@ -2794,6 +2794,81 @@ The Quillin Manager (`Tools > Quillins`) lets users discover, enable, disable, a
 
 ---
 
+### 5.84 Skill Quill Pack (.sqp) — multi-step AI workflows in plain text
+
+A `.sqp` (Skill Quill Pack) file is a Markdown document with YAML front matter where level-1 headings define sequential AI steps. It extends `.pqp` prompt packs from single instructions to multi-step workflows with parameters, variable chaining, and conditional branching.
+
+**Motivation.** Many real AI tasks are not single-shot prompts. Research then draft. Analyse then rewrite. Detect intent then branch. Encoding this logic in JSON means writing a DSL nobody can author without tooling. Writing it in Markdown means any user can open the file, read every step, and edit it — no schema browser, no visual designer. The skill is the document.
+
+**Key design choices:**
+- No streaming — each step sends a full prompt and receives a full response before the next step runs. This makes step outputs reliable as inputs to subsequent steps.
+- Synchronous execution from the caller's perspective; threading is the UI layer's responsibility.
+- Depth limit of 2 for nested skill calls to keep execution predictable.
+
+**File format (`quill.skill/1`).**
+
+```markdown
+---
+schema: quill.skill/1
+name: Research and Draft
+description: Extracts topic, gathers facts, drafts a paragraph.
+author: QUILL Project
+version: 1.0.0
+parameters:
+  - name: tone
+    label: Tone
+    type: choice
+    choices: [formal, conversational, neutral]
+    default: neutral
+---
+
+# Step 1: Extract topic
+
+Identify the main topic in: {selection}
+
+# Step 2: Research
+
+List five facts about "{step1.output}".
+
+# Step 3: Draft
+
+Write a {parameters.tone} paragraph weaving in those facts.
+Facts: {step2.output}
+
+```output
+format: text
+label: Drafted paragraph
+accept_into: selection
+```
+```
+
+**Special blocks inside steps:**
+
+| Block type | Purpose |
+| --- | --- |
+| `` `input` `` | Appends literal data to the prompt text |
+| `` `condition` `` | Branches execution: `if: "X" contains "Y" / then: step3 / else: step4` |
+| `` `output` `` | On last step: `format` (text/list/json), `label`, `accept_into` (selection/clipboard/none) |
+| `` `use-prompt` `` | Delegates to a named prompt from the Prompt Library |
+| `` `use-skill` `` | Calls another skill (depth-bounded) |
+
+**Variables.** `{selection}`, `{document}`, `{title}`, `{clipboard}`, `{stepN.output}`, `{parameters.name}`.
+
+**Validation tool.** `python -m quill.tools.sqp_validator <path>` validates one file or a directory. Exit 0 clean, exit 1 errors, `--strict` also checks for missing metadata.
+
+**Bundled skills.** The `ai-writing-skills` Quillin ships four sample skills: Accessible Rewrite, Research and Draft, Meeting Notes to Action Items, Argument Strengthener.
+
+**Implementation map.**
+
+| File | Role |
+| --- | --- |
+| `quill/core/skill_pack.py` | `SkillPack` dataclass, `.sqp` parser, validator, synchronous runner |
+| `quill/tools/sqp_validator.py` | CLI validator |
+| `quill/quillins_bundled/ai-writing-skills/` | Four bundled `.sqp` skill files |
+| `tests/unit/core/test_skill_pack.py` | 23 tests: parsing, validation, runner, branching, bundled files |
+
+---
+
 ## 6. Spell checking deep dive
 
 ### 6.1 The TinySpell question
@@ -4216,3 +4291,8 @@ The governing rules remain the same throughout the roadmap: local-first processi
 - [x] Add Install from Folder button to Quillin Manager; uses `wx.DirDialog` + `install_extension()`.
 - [x] Add `.pqp` (Prompt Quill Pack) file format: `{"schema": "quill.prompt-pack/1", "name": "...", "prompts": [...]}`.
 - [x] API keys stored exclusively in Windows Credential Manager (`quill-openrouter-api-key`, `quill-openai-api-key`, `quill-ollama-api-key`); never in `settings.json`.
+- [x] Add `.sqp` (Skill Quill Pack) file format: `quill.skill/1` schema; YAML front matter + Markdown steps; parameters, condition branching, output blocks, use-prompt/use-skill delegation.
+- [x] Add `quill/core/skill_pack.py`: parser, validator (`validate_skill`), synchronous runner (`run_skill`); no streaming by design.
+- [x] Add `quill/tools/sqp_validator.py`: CLI validator with `--strict` mode.
+- [x] Add bundled `ai-writing-skills` Quillin with 4 sample skills (Accessible Rewrite, Research and Draft, Meeting Notes to Action Items, Argument Strengthener).
+- [x] Add `tests/unit/core/test_skill_pack.py`: 23 tests covering parsing, validation, runner, condition branching, depth limit, and all bundled files.
