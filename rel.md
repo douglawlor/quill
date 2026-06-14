@@ -91,3 +91,14 @@ This release also clears out a batch of accessibility and startup problems that 
 - **Insert > Date and Time is a submenu now.** The flat **Date and Time** and **Calculated Date...** items have been replaced by a single **Date and Time** submenu that ships three items: **Insert Date**, **Insert Time**, and **Insert Date and Time**. The bundled `com.quill.bundled.insert-tools` Quillin owns the submenu — this is the canonical home for date/time snippets and is the model we use for migrating other built-in conveniences into Quillins.
 - **Sound is opt-in.** Most earcons are off until you choose a sound pack and enable events, so nothing about your current setup gets noisier on upgrade. Turn sound on from **Preferences → Sound** and **Tools → Reading & Dictation → Sound Events...**.
 - **Indentation tones default to Off.** They only play once you pick a scale, so code files stay silent unless you ask for the tones.
+
+## Roadmap: what's coming
+
+- **QUILL Braille Mode** is now captured as a six-phase roadmap. The full
+  spec lives at `docs/braille.md`; `.brf`, `.brl`, `.pef`, and `.ueb` files
+  are first-class document types in v1.0, with English UEB only and
+  liblouis kept strictly out-of-process. Track the work through issues
+  #224–#246 (labels `braille` + `p1`…`p6`). Implementation begins with
+  Phase 1 (BRF Core: open, save, page map, status bar, first commands);
+  Phase 5 (the optional UEB Braille Pack) and Phase 6 (source-to-BRF
+  linking) are gated on later phases.
