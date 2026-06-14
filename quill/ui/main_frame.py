@@ -5251,22 +5251,41 @@ class MainFrame(
             widget.PopupMenu(menu, widget.ScreenToClient(point))
 
     def _on_close(self, event: object) -> None:
-        if self.settings.tray_enabled and not self._is_exiting:
-            self._ensure_tray_icon()
-            self.frame.Hide()
-            self._set_status("Quill is running in the system tray")
-            event.Veto()
-            return
-        if not self._can_close_all_documents():
-            event.Veto()
-            return
+        import logging
 
-        # #210: close is committed past the veto checks; arm a daemon hard-exit
-        # before cleanup so a blocking step or stuck main loop cannot trap the
-        # process with no closable window.
+        log = logging.getLogger(__name__)
+        # Tray mode hides instead of closing -- but only for a plain close, and a
+        # failure in the tray path must never trap the window open.
+        if not self._is_exiting:
+            try:
+                if self.settings.tray_enabled:
+                    self._ensure_tray_icon()
+                    self.frame.Hide()
+                    self._set_status("Quill is running in the system tray")
+                    event.Veto()
+                    return
+            except Exception:  # noqa: BLE001 - a tray failure must not block exit
+                log.warning("Tray hide failed during close; closing instead", exc_info=True)
+
+        # Offer to save. A user Cancel legitimately vetoes the close; an
+        # *exception* here is a bug, not a cancel -- per #210 the window must
+        # still close, so we log and proceed rather than aborting the handler
+        # with no hard-exit armed (the previous behaviour: a raising save prompt
+        # left the editor stuck open with nothing to force it shut).
+        try:
+            if not self._can_close_all_documents():
+                event.Veto()
+                return
+        except Exception:  # noqa: BLE001 - never trap the window open on a prompt bug
+            log.warning("Save-on-close prompt failed; closing anyway (#210)", exc_info=True)
+
+        # #210: the close is committed. Arm the daemon hard-exit BEFORE any
+        # cleanup so a blocking/throwing step -- or a wx main loop that never
+        # returns -- can never leave the process running with no closable window.
         if getattr(self, "_hard_exit_enabled", False):
             from quill.stability.shutdown_watchdog import arm_hard_exit
 
+            log.info("Close committed; arming hard-exit watchdog (#210)")
             arm_hard_exit()
 
         # #210: the window must always close. Every shutdown step below runs
@@ -22574,3 +22593,13 @@ def run_app(
         watchdog = getattr(frame, "_stability_watchdog", None)
         if watchdog is not None:
             watchdog.stop()
+    # #210: the GUI loop has ended and our timers are stopped, so QUILL is done.
+    # Force the process to terminate rather than returning up the stack: a
+    # lingering non-daemon thread (a TTS driver loop, an audio backend, a
+    # leftover worker) must never be able to keep QUILL alive with no window. The
+    # hard-exit watchdog in _on_close covers the other half -- a main loop that
+    # never returns at all.
+    import logging
+
+    logging.shutdown()
+    os._exit(0)

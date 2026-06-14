@@ -99,28 +99,132 @@ class BrailleCommandsMixin:
             self._menu_label("Recalculate Page &Map", "braille.recalculate_page_map"),
         )
         menu.AppendSubMenu(page_tools, "&Page Tools")
+
+        # Phase 5 (BR-022): the Translation submenu only appears when the
+        # optional braille pack is installed (and not in safe mode), so users
+        # never see disabled translation items.
+        translation_items = self._braille_translation_items()
+        if translation_items:
+            translation = wx.Menu()
+            self._id_braille_tr_g1 = wx.NewIdRef()
+            self._id_braille_tr_g2 = wx.NewIdRef()
+            self._id_braille_tr_sel = wx.NewIdRef()
+            self._id_braille_back = wx.NewIdRef()
+            translation.Append(
+                self._id_braille_tr_g1,
+                self._menu_label("Translate to UEB Grade &1", "braille.translate_ueb_g1"),
+            )
+            translation.Append(
+                self._id_braille_tr_g2,
+                self._menu_label("Translate to UEB Grade &2", "braille.translate_ueb_g2"),
+            )
+            translation.Append(
+                self._id_braille_tr_sel,
+                self._menu_label("Translate &Selection to UEB", "braille.translate_selection"),
+            )
+            translation.Append(
+                self._id_braille_back,
+                self._menu_label("&Back-Translate UEB (draft)", "braille.back_translate"),
+            )
+            menu.AppendSubMenu(translation, "&Translation")
+
+        # Always offer the installer so a user without the pack can get it.
+        self._id_braille_install = wx.NewIdRef()
+        menu.Append(
+            self._id_braille_install,
+            self._menu_label("&Install Braille Pack...", "braille.install_pack"),
+        )
         return menu
 
-    def _bind_braille_menu(self) -> None:
-        """Bind every Braille menu item to its handler."""
-        wx = self._wx
-        bindings = [
-            (self._id_braille_read_status, self.read_braille_status),
-            (self._id_braille_read_detailed, self.read_detailed_braille_status),
-            (self._id_braille_line_cell, self.read_current_line_and_cell),
-            (self._id_braille_page, self.read_current_braille_page),
-            (self._id_braille_print_page, self.read_current_print_page),
-            (self._id_braille_progress, self.read_progress_summary),
-            (self._id_braille_go_to_page, self.go_to_braille_page),
-            (self._id_braille_next_page, self.next_braille_page),
-            (self._id_braille_prev_page, self.previous_braille_page),
-            (self._id_braille_insert_break, self.insert_braille_page_break),
-            (self._id_braille_remove_break, self.remove_braille_page_break),
-            (self._id_braille_normalize, self.normalize_braille_line_endings),
-            (self._id_braille_recalc, self.recalculate_braille_page_map),
+    def _braille_translation_items(self) -> list[tuple[str, str]]:
+        """Return ``(label, command_id)`` for the Translation submenu, or [].
+
+        Empty when the optional braille pack is not installed or QUILL is in
+        safe mode, so the submenu is hidden rather than shown disabled.
+        """
+        from quill.core.braille_pack import is_braille_pack_installed
+
+        if getattr(self, "_safe_mode", False) or not is_braille_pack_installed():
+            return []
+        return [
+            ("Translate to UEB Grade 1", "braille.translate_ueb_g1"),
+            ("Translate to UEB Grade 2", "braille.translate_ueb_g2"),
+            ("Translate Selection to UEB", "braille.translate_selection"),
+            ("Back-Translate UEB (draft)", "braille.back_translate"),
         ]
-        for id_ref, handler in bindings:
-            self.frame.Bind(wx.EVT_MENU, lambda _e, h=handler: h(), id=id_ref)
+
+    def _bind_braille_menu(self) -> None:
+        """Bind every Braille menu item to its handler.
+
+        Bindings are written one id at a time (rather than a loop) so the menu
+        contract test can statically match each ``id=self._id_*`` to a Bind.
+        """
+        wx = self._wx
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.read_braille_status(), id=self._id_braille_read_status
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.read_detailed_braille_status(),
+            id=self._id_braille_read_detailed,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.read_current_line_and_cell(), id=self._id_braille_line_cell
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.read_current_braille_page(), id=self._id_braille_page
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.read_current_print_page(), id=self._id_braille_print_page
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.read_progress_summary(), id=self._id_braille_progress
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.go_to_braille_page(), id=self._id_braille_go_to_page
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.next_braille_page(), id=self._id_braille_next_page
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.previous_braille_page(), id=self._id_braille_prev_page
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.insert_braille_page_break(),
+            id=self._id_braille_insert_break,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.remove_braille_page_break(),
+            id=self._id_braille_remove_break,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.normalize_braille_line_endings(),
+            id=self._id_braille_normalize,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.recalculate_braille_page_map(), id=self._id_braille_recalc
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.install_braille_pack_command(), id=self._id_braille_install
+        )
+        if self._braille_translation_items():
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.translate_to_ueb_g1(), id=self._id_braille_tr_g1
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.translate_to_ueb_g2(), id=self._id_braille_tr_g2
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.translate_selection_to_ueb(),
+                id=self._id_braille_tr_sel,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.back_translate_ueb(), id=self._id_braille_back
+            )
 
     def _register_braille_commands(self) -> None:
         """Register every Phase 1 braille command with the command registry."""
@@ -167,6 +271,24 @@ class BrailleCommandsMixin:
                 self.recalculate_braille_page_map,
             ),
             ("braille.save_as_clean", "Save As Clean BRF", self.save_as_clean_brf),
+            # Phase 5 (BR-022) translation commands + the optional pack installer.
+            (
+                "braille.translate_ueb_g1",
+                "Translate to UEB Grade 1",
+                self.translate_to_ueb_g1,
+            ),
+            (
+                "braille.translate_ueb_g2",
+                "Translate to UEB Grade 2",
+                self.translate_to_ueb_g2,
+            ),
+            (
+                "braille.translate_selection",
+                "Translate Selection to UEB",
+                self.translate_selection_to_ueb,
+            ),
+            ("braille.back_translate", "Back-Translate UEB", self.back_translate_ueb),
+            ("braille.install_pack", "Install Braille Pack...", self.install_braille_pack_command),
         ]
         for command_id, label, handler in commands:
             self.commands.register(command_id, label, handler, self._binding_for(command_id))
@@ -386,3 +508,100 @@ class BrailleCommandsMixin:
     def save_as_clean_brf(self) -> None:
         # Phase 1 stub registered to keep menu wiring stable (#235 / BR-012).
         self._say("Save as clean BRF is not available yet.")
+
+    # ------------------------------------------------------------------
+    # Translation commands (#245 / BR-022) -- route through the worker
+    # ------------------------------------------------------------------
+
+    def translate_to_ueb_g1(self) -> None:
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+        self._translate_and_open(
+            source=editor.GetValue(),
+            table="en-ueb-g1",
+            label=lambda result: (
+                f"Translated to UEB G1. {self._brf_page_count(result)} braille pages."
+            ),
+        )
+
+    def translate_to_ueb_g2(self) -> None:
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+        self._translate_and_open(
+            source=editor.GetValue(),
+            table="en-ueb-g2",
+            label=lambda result: (
+                f"Translated to UEB G2. {self._brf_page_count(result)} braille pages."
+            ),
+        )
+
+    def translate_selection_to_ueb(self) -> None:
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+        getter = getattr(editor, "GetStringSelection", None)
+        selection = getter() if callable(getter) else ""
+        self._translate_and_open(
+            source=selection,
+            table="en-ueb-g2",
+            label=lambda result: (
+                f"Translated selection to UEB G2. {self._brf_page_count(result)} braille pages."
+            ),
+        )
+
+    def back_translate_ueb(self) -> None:
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+        self._translate_and_open(
+            source=editor.GetValue(),
+            table="en-ueb-g2",
+            draft=True,
+            label=lambda result: (
+                f"Back-translation draft. {len(result.split())} words. Review against the BRF."
+            ),
+        )
+
+    def install_braille_pack_command(self) -> None:
+        from quill.core.braille_pack import install_braille_pack
+
+        install_braille_pack(self._set_status)
+        self._say("Download the QUILL Braille Pack from the documentation (Phase 5, optional).")
+
+    def _translate_and_open(
+        self,
+        *,
+        source: str,
+        table: str,
+        label,
+        draft: bool = False,
+    ) -> None:
+        from quill.core import braille_worker_client as worker
+
+        if not source.strip():
+            self._say("Nothing to translate.")
+            return
+        try:
+            result = (
+                worker.back_translate(source, table=table)
+                if draft
+                else worker.forward_translate(source, table=table)
+            )
+        except worker.WorkerError as exc:
+            self._say(f"Translation failed: {exc}")
+            return
+        if not result:
+            self._say("Translation failed: the worker returned an empty result.")
+            return
+        from quill.core.document import Document
+
+        self._create_document_tab(Document(text=result), select=True)
+        self._say(label(result))
+
+    def _brf_page_count(self, text: str) -> int:
+        from quill.core.brf_document import BRFDocument
+        from quill.core.brf_page_map import build_page_map
+
+        return build_page_map(BRFDocument.from_text_and_suffix(text, "brf")).page_count

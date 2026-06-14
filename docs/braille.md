@@ -93,6 +93,151 @@ A separate optional Braille Pack should include:
 
 This keeps the base editor lightweight.
 
+## Deployment and Packaging the Braille Pack (liblouis)
+
+liblouis is a C library with optional Python bindings and a `lou_translate`
+command-line tool. QUILL never imports liblouis in-process (see the out-of-process
+worker, BR-021); the pack only has to put a liblouis runtime plus the UEB tables
+somewhere the worker subprocess can find them. The remaining question — answered
+here so it is no longer a gap — is how that runtime reaches a user's machine.
+
+### What the pack contains
+
+- The liblouis runtime for the platform: `liblouis.dll` (Windows) or the shared
+  library, **or** the self-contained `lou_translate(.exe)` CLI. QUILL prefers the
+  CLI because it removes all ctypes/binding packaging: the worker simply shells to
+  `lou_translate` with a table name and the text on stdin.
+- The English UEB tables (`en-ueb-g1.ctb`, `en-ueb-g2.ctb`) and **only** their
+  required dependency tables.
+- A small `manifest.json` (pack version, table list, SHA-256 of each file) so
+  `braille_pack_version()` can report a version and the installer can verify
+  integrity.
+- The third-party `LICENSE` files (see Licensing below).
+
+The pack installs into `<install-dir>/braille-pack/` (Windows) or the platform
+data dir. `is_braille_pack_installed()` (BR-020) checks, in order: `lou_translate`
+on `PATH`, the bundled `braille-pack/` location, then an importable `louis`
+module — so any of the three delivery paths below is detected the same way.
+
+### Delivery options
+
+1. **Optional Inno Setup component (recommended default).** Ship the pack as a
+   selectable component in the Windows installer. This is offline, deterministic,
+   needs no hosting, and "just works" for users who opt in at install time.
+2. **Download-on-demand from inside QUILL.** `install_braille_pack()` fetches a
+   pinned, signed pack archive when the user explicitly chooses **Braille →
+   Install Braille Pack…**. This keeps the base installer lean and lets a user who
+   skipped the component add it later.
+3. **System liblouis already on PATH.** Power users (and most Linux installs) can
+   `apt install liblouis-bin` / `brew install liblouis`; detection finds it with
+   no QUILL packaging at all.
+
+**Recommendation: ship 1 and 2 together.** The optional component is the primary,
+offline path; download-on-demand is the fallback for users who skipped it. Both
+resolve to the same detection logic, so the Translation submenu appears whenever
+*any* path succeeded and stays hidden otherwise (never shown disabled).
+
+### Inno Setup specifics
+
+- Add a `[Components]` entry, e.g. `Name: "braillepack"; Description: "Braille
+  translation pack (liblouis + UEB tables)"; Types: full` — left **unchecked in
+  the default/compact install** so the base installer stays small.
+- Tag the pack files in `[Files]` with `Components: braillepack` so they are only
+  laid down when the component is selected, into `{app}\braille-pack\`.
+- The build pipeline vendors a **pinned** liblouis Windows build + tables into the
+  packaging tree and verifies each file's SHA-256 against `manifest.json` before
+  Inno Setup runs. No build ever pulls "latest".
+
+### Download-on-demand constraints (security)
+
+`install_braille_pack()` is currently a no-op stub by design. When the real
+download lands it MUST:
+
+- Be triggered only by the explicit **Install Braille Pack…** action — no
+  auto-prompt, no auto-download, no silent network calls.
+- Fetch a **pinned URL** (a specific QUILL release asset), verify the archive's
+  SHA-256 against an embedded expected hash, and verify a release signature before
+  unpacking.
+- Be added to the network-egress audit (`_REVIEWED_EGRESS`) so the egress gate
+  passes; until then, the stub keeps the gate green.
+- Respect Safe Mode: like AI and the watch folder, the installer and the
+  Translation submenu are hidden when `QUILL_SAFE_MODE=1`.
+
+### Licensing
+
+liblouis is LGPL-2.1-or-later and the UEB tables carry their own (mostly free)
+licenses. Because QUILL invokes liblouis **out of process** (a separate
+executable/process, never linked or imported into QUILL), the LGPL's dynamic
+linking obligations are not triggered for QUILL itself. The pack must still ship
+the upstream `LICENSE`/`COPYING` files and the build must record the exact
+upstream version so corresponding source can be offered on request.
+
+### Deployment script
+
+`scripts/build_braille_pack.py` is the deterministic half of packaging. Given a
+directory of already-vendored liblouis runtime files + tables, it:
+
+1. computes a SHA-256 for every file and writes `manifest.json` (pack version,
+   liblouis version, platform, per-file hash + size);
+2. zips the tree into `quill-braille-pack-<version>-<platform>.zip`;
+3. prints the archive's SHA-256 to pin in `quill.core.braille_pack`.
+
+It never touches the network. A separate, audited **vendor step** populates its
+input directory: download a *pinned* upstream liblouis build and the chosen
+tables, verify their hashes, and drop them in `vendor/braille-pack/`. The release
+CI job runs the vendor step then the build script, and uploads the archive as a
+**QUILL GitHub release asset**. That asset — not an upstream URL — is what QUILL
+downloads, which is the clean answer to "can QUILL pull these directly?": pulling
+straight from liblouis upstream is fragile (no stable, hash-pinned Windows
+binary asset) and a supply-chain risk, so QUILL only ever fetches packs we built,
+hashed, and host ourselves.
+
+### How QUILL obtains a pack (the magic behind the scenes)
+
+`install_braille_pack()` (today a stub) will:
+
+1. Resolve a **pinned URL + expected SHA-256** from a small table shipped in
+   QUILL (keyed by QUILL version), so a build only ever fetches the pack it was
+   tested against.
+2. Download to a temp file through `quill/io/http_transport.py` (verified TLS,
+   size cap, progress callback for the announcement).
+3. Verify the archive SHA-256 against the embedded expected hash (and a release
+   signature if present); refuse to install on mismatch.
+4. Extract atomically into the per-user data dir `braille-pack/` (unzip to a temp
+   dir, then `os.replace`), then re-run detection so the Translation submenu
+   appears (on next menu build / restart).
+
+This call site is registered in the network-egress audit, runs only on the
+explicit **Install Braille Pack…** action, and is disabled in Safe Mode.
+
+### Additional languages (on-demand language packs)
+
+liblouis ships tables for ~all supported languages; the runtime is identical, so
+"another language" is just another table file. Two strategies:
+
+- **Bundle all tables (simplest).** The full liblouis table set is only a few MB,
+  so the base pack can include every table. "Additional languages" then needs no
+  download at all — only UI to choose the table. Recommended unless installer
+  size is critical.
+- **Per-language packs (lean base).** Ship the runtime + English UEB in the base
+  pack and host each extra language as its own small archive. A hosted
+  `language_index.json` (code, name, archive URL, SHA-256, bytes) drives an
+  **Install Braille Language…** picker; selecting one downloads + verifies +
+  extracts that language's tables into `braille-pack/tables/`, reusing the same
+  pinned-URL + hash-verify flow above.
+
+Either way the worker just receives a table name (e.g. `fr-bfu-comp6.utb`); no
+QUILL code is language-specific.
+
+### Implementation status
+
+Phase 5 software is complete: pack detection (`braille_pack.py`), the
+out-of-process worker + client (`braille_worker.py`, `braille_worker_client.py`),
+the Translation submenu and commands, and `scripts/build_braille_pack.py`. The
+remaining work is operational: vendor + host the first signed pack asset, pin its
+URL/hash, and flip `install_braille_pack` from stub to the verified download
+above (with its egress-audit entry).
+
 ## Supported Braille Variants for Initial Release
 
 Initial support should be intentionally narrow:

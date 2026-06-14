@@ -59,6 +59,17 @@ Setting up MLA or Chicago citations has a special talent for going wrong at 2 a.
 
 You provide the facts; QUILL handles the punctuation gymnastics. The goal here is simple and, frankly, a little bit personal for an accessibility-first editor: a screen-reader user should never be at a disadvantage just because citation formatting is finicky visual busywork. Now you are on the same footing as everyone else in the seminar — and you got there without fighting a single hanging indent.
 
+## New: Braille Mode for BRF, BRL, PEF, and UEB files
+
+QUILL now opens and edits formatted braille text files as plain braille ASCII, built for the people who actually proofread transcriptions. The whole point is to move through a braille file the way it is laid out — in braille pages, lines, and cells — with speech that says exactly where you are.
+
+- **It opens braille like braille.** Open a `.brf`, `.brl`, `.pef`, or `.ueb` file and QUILL reads it as NABCC text: it strips a stray byte-order mark, flags any non-braille-ASCII characters, and changes nothing on the way in.
+- **It saves byte-for-byte.** Saving preserves the file exactly — no trailing-space trimming, no line-ending changes, form feeds (the hard page breaks) kept. Open it, save it, and you get an identical file back. If something outside braille ASCII is present, QUILL still saves it as-is and gives you one quiet spoken heads-up.
+- **A braille position cell.** While a braille file is active, the status bar carries a cell that updates as you move — `BRF Pg 12/87 | Ln 14/25 | Cell 31/40 | Print 7` — and a new top-level **Braille** menu gathers the commands: read the status at your chosen verbosity, read the current line and cell, jump to a braille page, step page to page, and insert or remove a braille page break. Bindings are left unset on purpose so nothing fights your screen reader; assign your own or use the Command Palette.
+- **Translation is optional and out-of-process.** Forward and back translation between print and UEB need the optional **QUILL Braille Pack** (liblouis plus the English UEB tables). Until it is installed, the Translation submenu stays hidden rather than greyed out, and an **Install Braille Pack…** item tells you where to get it. When it is present, you can translate a selection or a document to UEB Grade 1 or Grade 2, and back-translate — with the back-translation always labeled a *draft* to review against the BRF. The translator runs in a separate process, so a liblouis hiccup can never take the editor down.
+
+Braille Mode ships with both its core reading/editing phase and its translation phase: the Translation commands, the optional-pack detection, and the out-of-process liblouis bridge are all in place, and a deployment build script (`scripts/build_braille_pack.py`) plus a full packaging and language-pack plan are documented in `docs/braille.md`. What remains is operational — vendoring and hosting the first signed translation pack so **Install Braille Pack…** can fetch it directly — along with print-page detection and the proofing workflow on the roadmap.
+
 ## Smaller additions worth knowing
 
 - **Speak where you are.** From the QUILL key, press **F** to speak the window title, **P** to speak the full file path, or **Q** to speak a short status summary — without leaving the editor.

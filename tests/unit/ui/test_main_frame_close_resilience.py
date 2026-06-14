@@ -87,6 +87,26 @@ def test_on_close_vetoes_when_documents_cannot_close(
     assert skipped == []
 
 
+def test_on_close_closes_even_if_save_prompt_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A raising save-on-close prompt is a bug, not a Cancel; the window must
+    # still close (#210) rather than being trapped open with nothing to force it.
+    frame = _frame_for_close(monkeypatch)
+    frame._can_close_all_documents = _raise  # type: ignore[method-assign]
+    skipped: list[bool] = []
+    vetoed: list[bool] = []
+    event = SimpleNamespace(
+        Skip=lambda: skipped.append(True),
+        Veto=lambda: vetoed.append(True),
+    )
+
+    frame._on_close(event)
+
+    assert skipped == [True]
+    assert vetoed == []
+
+
 class _FakeTimer:
     """Records that a hard-exit watchdog timer was started, without arming it."""
 

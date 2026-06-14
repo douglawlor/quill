@@ -1,3 +1,181 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>braille</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
 <h1 id="quill-braille-mode-plan">QUILL Braille Mode Plan</h1>
 <h2 id="working-title">Working Title</h2>
 <p>QUILL Braille Mode</p>
@@ -78,6 +256,173 @@ huge package?</li>
 <li>Back-translate selection</li>
 </ul>
 <p>This keeps the base editor lightweight.</p>
+<h2 id="deployment-and-packaging-the-braille-pack-liblouis">Deployment
+and Packaging the Braille Pack (liblouis)</h2>
+<p>liblouis is a C library with optional Python bindings and a
+<code>lou_translate</code> command-line tool. QUILL never imports
+liblouis in-process (see the out-of-process worker, BR-021); the pack
+only has to put a liblouis runtime plus the UEB tables somewhere the
+worker subprocess can find them. The remaining question — answered here
+so it is no longer a gap — is how that runtime reaches a user's
+machine.</p>
+<h3 id="what-the-pack-contains">What the pack contains</h3>
+<ul>
+<li>The liblouis runtime for the platform: <code>liblouis.dll</code>
+(Windows) or the shared library, <strong>or</strong> the self-contained
+<code>lou_translate(.exe)</code> CLI. QUILL prefers the CLI because it
+removes all ctypes/binding packaging: the worker simply shells to
+<code>lou_translate</code> with a table name and the text on stdin.</li>
+<li>The English UEB tables (<code>en-ueb-g1.ctb</code>,
+<code>en-ueb-g2.ctb</code>) and <strong>only</strong> their required
+dependency tables.</li>
+<li>A small <code>manifest.json</code> (pack version, table list,
+SHA-256 of each file) so <code>braille_pack_version()</code> can report
+a version and the installer can verify integrity.</li>
+<li>The third-party <code>LICENSE</code> files (see Licensing
+below).</li>
+</ul>
+<p>The pack installs into <code>&lt;install-dir&gt;/braille-pack/</code>
+(Windows) or the platform data dir.
+<code>is_braille_pack_installed()</code> (BR-020) checks, in order:
+<code>lou_translate</code> on <code>PATH</code>, the bundled
+<code>braille-pack/</code> location, then an importable
+<code>louis</code> module — so any of the three delivery paths below is
+detected the same way.</p>
+<h3 id="delivery-options">Delivery options</h3>
+<ol type="1">
+<li><strong>Optional Inno Setup component (recommended
+default).</strong> Ship the pack as a selectable component in the
+Windows installer. This is offline, deterministic, needs no hosting, and
+"just works" for users who opt in at install time.</li>
+<li><strong>Download-on-demand from inside QUILL.</strong>
+<code>install_braille_pack()</code> fetches a pinned, signed pack
+archive when the user explicitly chooses <strong>Braille → Install
+Braille Pack…</strong>. This keeps the base installer lean and lets a
+user who skipped the component add it later.</li>
+<li><strong>System liblouis already on PATH.</strong> Power users (and
+most Linux installs) can <code>apt install liblouis-bin</code> /
+<code>brew install liblouis</code>; detection finds it with no QUILL
+packaging at all.</li>
+</ol>
+<p><strong>Recommendation: ship 1 and 2 together.</strong> The optional
+component is the primary, offline path; download-on-demand is the
+fallback for users who skipped it. Both resolve to the same detection
+logic, so the Translation submenu appears whenever <em>any</em> path
+succeeded and stays hidden otherwise (never shown disabled).</p>
+<h3 id="inno-setup-specifics">Inno Setup specifics</h3>
+<ul>
+<li>Add a <code>[Components]</code> entry, e.g.
+<code>Name: "braillepack"; Description: "Braille translation pack (liblouis + UEB tables)"; Types: full</code>
+— left <strong>unchecked in the default/compact install</strong> so the
+base installer stays small.</li>
+<li>Tag the pack files in <code>[Files]</code> with
+<code>Components: braillepack</code> so they are only laid down when the
+component is selected, into <code>{app}\braille-pack\</code>.</li>
+<li>The build pipeline vendors a <strong>pinned</strong> liblouis
+Windows build + tables into the packaging tree and verifies each file's
+SHA-256 against <code>manifest.json</code> before Inno Setup runs. No
+build ever pulls "latest".</li>
+</ul>
+<h3 id="download-on-demand-constraints-security">Download-on-demand
+constraints (security)</h3>
+<p><code>install_braille_pack()</code> is currently a no-op stub by
+design. When the real download lands it MUST:</p>
+<ul>
+<li>Be triggered only by the explicit <strong>Install Braille
+Pack…</strong> action — no auto-prompt, no auto-download, no silent
+network calls.</li>
+<li>Fetch a <strong>pinned URL</strong> (a specific QUILL release
+asset), verify the archive's SHA-256 against an embedded expected hash,
+and verify a release signature before unpacking.</li>
+<li>Be added to the network-egress audit (<code>_REVIEWED_EGRESS</code>)
+so the egress gate passes; until then, the stub keeps the gate
+green.</li>
+<li>Respect Safe Mode: like AI and the watch folder, the installer and
+the Translation submenu are hidden when
+<code>QUILL_SAFE_MODE=1</code>.</li>
+</ul>
+<h3 id="licensing">Licensing</h3>
+<p>liblouis is LGPL-2.1-or-later and the UEB tables carry their own
+(mostly free) licenses. Because QUILL invokes liblouis <strong>out of
+process</strong> (a separate executable/process, never linked or
+imported into QUILL), the LGPL's dynamic linking obligations are not
+triggered for QUILL itself. The pack must still ship the upstream
+<code>LICENSE</code>/<code>COPYING</code> files and the build must
+record the exact upstream version so corresponding source can be offered
+on request.</p>
+<h3 id="deployment-script">Deployment script</h3>
+<p><code>scripts/build_braille_pack.py</code> is the deterministic half
+of packaging. Given a directory of already-vendored liblouis runtime
+files + tables, it:</p>
+<ol type="1">
+<li>computes a SHA-256 for every file and writes
+<code>manifest.json</code> (pack version, liblouis version, platform,
+per-file hash + size);</li>
+<li>zips the tree into
+<code>quill-braille-pack-&lt;version&gt;-&lt;platform&gt;.zip</code>;</li>
+<li>prints the archive's SHA-256 to pin in
+<code>quill.core.braille_pack</code>.</li>
+</ol>
+<p>It never touches the network. A separate, audited <strong>vendor
+step</strong> populates its input directory: download a <em>pinned</em>
+upstream liblouis build and the chosen tables, verify their hashes, and
+drop them in <code>vendor/braille-pack/</code>. The release CI job runs
+the vendor step then the build script, and uploads the archive as a
+<strong>QUILL GitHub release asset</strong>. That asset — not an
+upstream URL — is what QUILL downloads, which is the clean answer to
+"can QUILL pull these directly?": pulling straight from liblouis
+upstream is fragile (no stable, hash-pinned Windows binary asset) and a
+supply-chain risk, so QUILL only ever fetches packs we built, hashed,
+and host ourselves.</p>
+<h3 id="how-quill-obtains-a-pack-the-magic-behind-the-scenes">How QUILL
+obtains a pack (the magic behind the scenes)</h3>
+<p><code>install_braille_pack()</code> (today a stub) will:</p>
+<ol type="1">
+<li>Resolve a <strong>pinned URL + expected SHA-256</strong> from a
+small table shipped in QUILL (keyed by QUILL version), so a build only
+ever fetches the pack it was tested against.</li>
+<li>Download to a temp file through
+<code>quill/io/http_transport.py</code> (verified TLS, size cap,
+progress callback for the announcement).</li>
+<li>Verify the archive SHA-256 against the embedded expected hash (and a
+release signature if present); refuse to install on mismatch.</li>
+<li>Extract atomically into the per-user data dir
+<code>braille-pack/</code> (unzip to a temp dir, then
+<code>os.replace</code>), then re-run detection so the Translation
+submenu appears (on next menu build / restart).</li>
+</ol>
+<p>This call site is registered in the network-egress audit, runs only
+on the explicit <strong>Install Braille Pack…</strong> action, and is
+disabled in Safe Mode.</p>
+<h3 id="additional-languages-on-demand-language-packs">Additional
+languages (on-demand language packs)</h3>
+<p>liblouis ships tables for ~all supported languages; the runtime is
+identical, so "another language" is just another table file. Two
+strategies:</p>
+<ul>
+<li><strong>Bundle all tables (simplest).</strong> The full liblouis
+table set is only a few MB, so the base pack can include every table.
+"Additional languages" then needs no download at all — only UI to choose
+the table. Recommended unless installer size is critical.</li>
+<li><strong>Per-language packs (lean base).</strong> Ship the runtime +
+English UEB in the base pack and host each extra language as its own
+small archive. A hosted <code>language_index.json</code> (code, name,
+archive URL, SHA-256, bytes) drives an <strong>Install Braille
+Language…</strong> picker; selecting one downloads + verifies + extracts
+that language's tables into <code>braille-pack/tables/</code>, reusing
+the same pinned-URL + hash-verify flow above.</li>
+</ul>
+<p>Either way the worker just receives a table name (e.g.
+<code>fr-bfu-comp6.utb</code>); no QUILL code is language-specific.</p>
+<h3 id="implementation-status">Implementation status</h3>
+<p>Phase 5 software is complete: pack detection
+(<code>braille_pack.py</code>), the out-of-process worker + client
+(<code>braille_worker.py</code>, <code>braille_worker_client.py</code>),
+the Translation submenu and commands, and
+<code>scripts/build_braille_pack.py</code>. The remaining work is
+operational: vendor + host the first signed pack asset, pin its
+URL/hash, and flip <code>install_braille_pack</code> from stub to the
+verified download above (with its egress-audit entry).</p>
 <h2 id="supported-braille-variants-for-initial-release">Supported
 Braille Variants for Initial Release</h2>
 <p>Initial support should be intentionally narrow:</p>
@@ -93,7 +438,7 @@ export</li>
 PDF-to-BRF, DOCX-to-BRF, or eBraille authoring in the first release.</p>
 <h2 id="important-page-concepts-quill-should-understand">Important Page
 Concepts QUILL Should Understand</h2>
-<h3 id="physical-brf-page-break">1. Physical BRF Page Break</h3>
+<h3 id="1-physical-brf-page-break">1. Physical BRF Page Break</h3>
 <p>A BRF page break is usually represented by a form feed character.</p>
 <p>In QUILL, this should be treated as a structural page boundary.</p>
 <p>User-facing command names:</p>
@@ -106,7 +451,7 @@ Concepts QUILL Should Understand</h2>
 </ul>
 <p>Screen reader announcement:</p>
 <p>“Page break. Beginning braille page 12.”</p>
-<h3 id="calculated-braille-page">2. Calculated Braille Page</h3>
+<h3 id="2-calculated-braille-page">2. Calculated Braille Page</h3>
 <p>If a BRF file does not contain form feeds, QUILL should calculate
 braille pages using the active profile.</p>
 <p>Default profile:</p>
@@ -123,7 +468,7 @@ braille pages using the active profile.</p>
 </ul>
 <p>Screen reader announcement:</p>
 <p>“Calculated braille page 12. No form feed found.”</p>
-<h3 id="print-page-number">3. Print Page Number</h3>
+<h3 id="3-print-page-number">3. Print Page Number</h3>
 <p>A braille transcription can show the original print page number,
 usually at the end of line 1.</p>
 <p>QUILL should scan line 1 of each braille page for likely print page
@@ -141,7 +486,7 @@ numbers.</p>
 <p>“Print page 12.”</p>
 <p>or:</p>
 <p>“Print page 12, continuation b.”</p>
-<h3 id="page-change-indicator">4. Page Change Indicator</h3>
+<h3 id="4-page-change-indicator">4. Page Change Indicator</h3>
 <p>When a new print page begins in the middle of a braille page, a page
 change indicator may appear. This is commonly a line of unspaced dots
 3-6 ending with the new print page number.</p>
@@ -159,7 +504,7 @@ number, such as:</p>
 <li>Mark Current Line as Print Page Change</li>
 <li>Remove Print Page Change Mark</li>
 </ul>
-<h3 id="lettered-continuation-print-pages">5. Lettered Continuation
+<h3 id="5-lettered-continuation-print-pages">5. Lettered Continuation
 Print Pages</h3>
 <p>A single print page often occupies multiple braille pages.
 Continuation pages may be marked by an unspaced letter before the print
@@ -174,7 +519,7 @@ page number.</p>
 <p>Status example:</p>
 <p>“Braille page 3 of 87. Print page 1, continuation b. Line 14, cell
 31.”</p>
-<h3 id="braille-page-number">6. Braille Page Number</h3>
+<h3 id="6-braille-page-number">6. Braille Page Number</h3>
 <p>The braille page number is usually placed at the right margin on the
 last line of the braille page.</p>
 <p>QUILL should detect it separately from the print page number.</p>
@@ -182,14 +527,15 @@ last line of the braille page.</p>
 <p>“Print page 12. Braille page 34.”</p>
 <p>This matters because the user may care about either one depending on
 the task.</p>
-<h3 id="transcriber-generated-pages">7. Transcriber-Generated Pages</h3>
+<h3 id="7-transcriber-generated-pages">7. Transcriber-Generated
+Pages</h3>
 <p>Some braille page numbers may be prefixed with <code>t</code>.</p>
 <p>Example:</p>
 <p><code>t1</code></p>
 <p>QUILL should detect these as transcriber-generated pages.</p>
 <p>Status example:</p>
 <p>“Transcriber-generated braille page t3.”</p>
-<h3 id="front-matter-braille-pages">8. Front Matter Braille Pages</h3>
+<h3 id="8-front-matter-braille-pages">8. Front Matter Braille Pages</h3>
 <p>Some front matter braille page numbers may be prefixed with
 <code>p</code>.</p>
 <p>Example:</p>
@@ -197,7 +543,7 @@ the task.</p>
 <p>QUILL should detect these as preliminary/front-matter pages.</p>
 <p>Status example:</p>
 <p>“Front matter braille page p4.”</p>
-<h3 id="running-head">9. Running Head</h3>
+<h3 id="9-running-head">9. Running Head</h3>
 <p>A running head may appear on the first line of many braille
 pages.</p>
 <p>QUILL should not confuse a running head with body text or a page
@@ -211,7 +557,7 @@ number.</p>
 <li>Use Running Head in Status</li>
 <li>Detect Running Head Pattern</li>
 </ul>
-<h3 id="combined-print-page-numbers">10. Combined Print Page
+<h3 id="10-combined-print-page-numbers">10. Combined Print Page
 Numbers</h3>
 <p>A braille page may represent combined or omitted print pages.</p>
 <p>Examples:</p>
@@ -223,7 +569,7 @@ Numbers</h3>
 <p>QUILL should detect these as ranges.</p>
 <p>Status example:</p>
 <p>“Print pages 25 through 29.”</p>
-<h3 id="implied-or-missing-print-page-numbers">11. Implied or Missing
+<h3 id="11-implied-or-missing-print-page-numbers">11. Implied or Missing
 Print Page Numbers</h3>
 <p>Sometimes print page numbers are implied or absent in the original
 print.</p>
@@ -589,7 +935,7 @@ Translation Pack) is intentionally opt-in and depends only on Phase
 <li><strong>Phase 1 (BRF Core)</strong> — open/save, page map, status,
 navigation. Foundation for every later phase.</li>
 <li><strong>Phase 5 (UEB Translation Pack, opt-in)</strong> —
-translation is the most independent phase. It needs Phase 1’s open/save
+translation is the most independent phase. It needs Phase 1's open/save
 round-trip and <code>go_to_page</code> command, but it does not need
 print-page detection or validation. Ship it as soon as Phase 1 is stable
 so English UEB users get the feature without bundling every language and
@@ -597,7 +943,7 @@ table.</li>
 <li><strong>Phase 2 (Page Intelligence)</strong> — print/braille page
 numbers, continuation letters, running heads, detailed status mode. The
 proofing counters in Phase 3 and the warning rules in Phase 4 both read
-Phase 2’s detection signals, so this lands before them.</li>
+Phase 2's detection signals, so this lands before them.</li>
 <li><strong>Phase 3 (Proofing and Progress)</strong> — sidecar, last
 position, mark proofed / needs review, progress summary. The sidecar
 schema lands <em>after</em> Phase 2 so it can include the print-page
@@ -614,12 +960,12 @@ everything above.</li>
 summary voice prompt depends on print-page detection, and the sidecar
 schema would have to be re-migrated to add the print-page field.</li>
 <li><strong>Do not do Phase 4 before Phase 2.</strong> Most warning
-rules are checks on Phase 2’s detection output; building the validator
+rules are checks on Phase 2's detection output; building the validator
 first means either writing rules with no signal to trigger or
 duplicating detection work in the validator.</li>
 <li><strong>Phase 5 can safely land before Phases 2, 3, and 4</strong>
 because translation is opt-in and out-of-process, but it must still wait
-for Phase 1’s open/save and <code>go_to_page</code>.</li>
+for Phase 1's open/save and <code>go_to_page</code>.</li>
 </ul>
 <h3 id="phase-1-brf-core">Phase 1: BRF Core</h3>
 <p>Deliver:</p>
@@ -893,3 +1239,5 @@ Intelligence + Progress Tracking</strong> first. That gives blind
 transcriptionists immediate value without adding a heavy translator.
 Then ship <strong>UEB translation as an optional Braille
 Pack</strong>.</p>
+</body>
+</html>
