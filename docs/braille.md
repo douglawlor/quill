@@ -727,6 +727,49 @@ Everything must be keyboard accessible and screen-reader meaningful.
 
 ## Implementation Phases
 
+The phases below are written in *dependency order* (Phase 1 first, then
+2, 3, 4, 5, 6). The **pragmatic shipping order** — when each phase
+will actually land in the codebase and ship to users — is different
+because Phase 5 (the optional UEB Translation Pack) is intentionally
+opt-in and depends only on Phase 1.
+
+### Pragmatic shipping order
+
+`1 → 5 → 2 → 3 → 4 → 6`
+
+* **Phase 1 (BRF Core)** — open/save, page map, status, navigation.
+  Foundation for every later phase.
+* **Phase 5 (UEB Translation Pack, opt-in)** — translation is the most
+  independent phase. It needs Phase 1's open/save round-trip and
+  `go_to_page` command, but it does not need print-page detection or
+  validation. Ship it as soon as Phase 1 is stable so English UEB
+  users get the feature without bundling every language and table.
+* **Phase 2 (Page Intelligence)** — print/braille page numbers,
+  continuation letters, running heads, detailed status mode. The
+  proofing counters in Phase 3 and the warning rules in Phase 4 both
+  read Phase 2's detection signals, so this lands before them.
+* **Phase 3 (Proofing and Progress)** — sidecar, last position, mark
+  proofed / needs review, progress summary. The sidecar schema lands
+  *after* Phase 2 so it can include the print-page hint field from
+  the start.
+* **Phase 4 (Validation)** — BRF validation engine. Most warnings are
+  about things Phase 2 already detected as suspicious, so the
+  validator lands after the detectors exist.
+* **Phase 6 (Source-to-BRF linking)** — depends on everything above.
+
+What this avoids:
+
+* **Do not do Phase 3 before Phase 2.** The progress summary voice
+  prompt depends on print-page detection, and the sidecar schema
+  would have to be re-migrated to add the print-page field.
+* **Do not do Phase 4 before Phase 2.** Most warning rules are
+  checks on Phase 2's detection output; building the validator
+  first means either writing rules with no signal to trigger or
+  duplicating detection work in the validator.
+* **Phase 5 can safely land before Phases 2, 3, and 4** because
+  translation is opt-in and out-of-process, but it must still wait
+  for Phase 1's open/save and `go_to_page`.
+
 ### Phase 1: BRF Core
 
 Deliver:

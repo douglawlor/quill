@@ -756,6 +756,50 @@ meaningful.</p>
 <li>Progress report should open as plain text</li>
 </ul>
 <h2 id="implementation-phases">Implementation Phases</h2>
+<p>The phases below are written in <em>dependency order</em> (Phase 1
+first, then 2, 3, 4, 5, 6). The <strong>pragmatic shipping
+order</strong> — when each phase will actually land in the codebase and
+ship to users — is different because Phase 5 (the optional UEB
+Translation Pack) is intentionally opt-in and depends only on Phase
+1.</p>
+<h3 id="pragmatic-shipping-order">Pragmatic shipping order</h3>
+<p><code>1 → 5 → 2 → 3 → 4 → 6</code></p>
+<ul>
+<li><strong>Phase 1 (BRF Core)</strong> — open/save, page map, status,
+navigation. Foundation for every later phase.</li>
+<li><strong>Phase 5 (UEB Translation Pack, opt-in)</strong> —
+translation is the most independent phase. It needs Phase 1's open/save
+round-trip and <code>go_to_page</code> command, but it does not need
+print-page detection or validation. Ship it as soon as Phase 1 is stable
+so English UEB users get the feature without bundling every language and
+table.</li>
+<li><strong>Phase 2 (Page Intelligence)</strong> — print/braille page
+numbers, continuation letters, running heads, detailed status mode. The
+proofing counters in Phase 3 and the warning rules in Phase 4 both read
+Phase 2's detection signals, so this lands before them.</li>
+<li><strong>Phase 3 (Proofing and Progress)</strong> — sidecar, last
+position, mark proofed / needs review, progress summary. The sidecar
+schema lands <em>after</em> Phase 2 so it can include the print-page
+hint field from the start.</li>
+<li><strong>Phase 4 (Validation)</strong> — BRF validation engine. Most
+warnings are about things Phase 2 already detected as suspicious, so the
+validator lands after the detectors exist.</li>
+<li><strong>Phase 6 (Source-to-BRF linking)</strong> — depends on
+everything above.</li>
+</ul>
+<p>What this avoids:</p>
+<ul>
+<li><strong>Do not do Phase 3 before Phase 2.</strong> The progress
+summary voice prompt depends on print-page detection, and the sidecar
+schema would have to be re-migrated to add the print-page field.</li>
+<li><strong>Do not do Phase 4 before Phase 2.</strong> Most warning
+rules are checks on Phase 2's detection output; building the validator
+first means either writing rules with no signal to trigger or
+duplicating detection work in the validator.</li>
+<li><strong>Phase 5 can safely land before Phases 2, 3, and 4</strong>
+because translation is opt-in and out-of-process, but it must still wait
+for Phase 1's open/save and <code>go_to_page</code>.</li>
+</ul>
 <h3 id="phase-1-brf-core">Phase 1: BRF Core</h3>
 <p>Deliver:</p>
 <ul>
