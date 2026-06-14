@@ -1031,6 +1031,10 @@ class MainFrame(
         self._bookmarks: dict[str, int] = {}
         self._tray_icon: object | None = None
         self._is_exiting = False
+        # #210: a committed close arms a daemon watchdog that force-exits if the
+        # graceful wx shutdown wedges. Set only on real frames so __new__-built
+        # test frames never arm a real os._exit.
+        self._hard_exit_enabled = True
         self._ipc_timer: object | None = None
         self._status_message = "Ready"
         self._background_task_count = 0
@@ -5247,6 +5251,14 @@ class MainFrame(
             event.Veto()
             return
 
+        # #210: close is committed past the veto checks; arm a daemon hard-exit
+        # before cleanup so a blocking step or stuck main loop cannot trap the
+        # process with no closable window.
+        if getattr(self, "_hard_exit_enabled", False):
+            from quill.stability.shutdown_watchdog import arm_hard_exit
+
+            arm_hard_exit()
+
         # #210: the window must always close. Every shutdown step below runs
         # under its own guard so that one failing or slow step (a watch worker,
         # an SSH socket, a settings write, the recovery lock, the sound backend)
@@ -5265,6 +5277,13 @@ class MainFrame(
 
             sound_manager.shutdown()
 
+        # #210: persist critical state FIRST, before any teardown step that can
+        # block (ssh socket, sound backend). If a later step wedges and the
+        # hard-exit watchdog fires, settings, undo history, and the clean-exit
+        # marker are already written, so the fast exit loses nothing.
+        _safely("save settings", lambda: save_settings(self.settings))
+        _safely("persistent undo flush", self.flush_persistent_undo)
+        _safely("clean-exit marker", lambda: mark_clean_exit(self.session_id))
         # H-3-ui: destroy the modeless Watch Queue Monitor so it does not
         # outlive the main frame and leak a window reference.
         if self._watch_queue_monitor is not None:
@@ -5282,9 +5301,6 @@ class MainFrame(
         prune = getattr(self, "prune_orphaned_github_temp", None)
         if callable(prune):
             _safely("github temp prune", prune)
-        _safely("save settings", lambda: save_settings(self.settings))
-        _safely("persistent undo flush", self.flush_persistent_undo)
-        _safely("clean-exit marker", lambda: mark_clean_exit(self.session_id))
         _safely("sound manager", _shutdown_sound_manager)
         # Destroy any straggler top-level windows (e.g. a modeless Ask Quill
         # chat frame) so they do not keep the wx main loop alive after the main
