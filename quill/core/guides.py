@@ -124,7 +124,7 @@ def build_keyboard_shortcut_html(
     # ----------------------------------------------------------------------
     # QUILL Key Layered Shortcuts (Dynamic)
     # ----------------------------------------------------------------------
-    def binding_lookup(cmd_id):
+    def binding_lookup(cmd_id: str) -> str | None:
         return next((c.keybinding for c in commands if c.id == cmd_id), None)
 
     for mode, title in [(MODE_PREFIX, "QUILL Key Prefix"), (MODE_BROWSE, "QUILL Key Browse Mode")]:
