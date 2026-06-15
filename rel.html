@@ -1,130 +1,447 @@
-<h1 id="quill-0.6.0-release-notes">QUILL 0.6.0 release notes</h1>
-<p>This release sets a new watermark for what an accessible writing
-environment can do. Typed triggers that feel like magic. Extensions with
-real settings you can search and configure by keyboard. Braille editing
-and professional translation built for people who actually need it.
-Compare mode. Code-aware navigation. A sound layer you shape yourself.
-And underneath it all, an extension architecture that lets a small,
-well-declared Quillin feel like a first-class feature of the
-application.</p>
-<p>Everything is built screen-reader-first. Every new view is a real,
-navigable control. Every new action is announced, undoable, and
-keyboard-complete. No surprises, no visual-only flourishes, no mouse
-required.</p>
-<p>If you are upgrading from 0.5.0, the “Things that work a little
-differently now” section near the end lists the few places where a habit
-or a menu location changed.</p>
-<h2 id="new-insert-automation-type-a-trigger-get-magic">New: Insert
-Automation — type a trigger, get magic</h2>
-<p>This is the one that changes how you work day to day.</p>
-<p>Insert Automation is a unified system for typed shortcuts, templates,
-log files, and text generation. It brings together four related ideas —
-abbreviations, smart triggers, document directives, and append anchors —
-into one coherent, keyboard-first platform. Everything is announced,
-undoable, and discoverable. Nothing scans your file silently or runs
-without an exact match.</p>
-<p><strong>Typed abbreviations.</strong> Type a short word and press a
-delimiter (space, comma, period, and more) and QUILL replaces it with
-the full text. The <strong>Smart Insert</strong> Quillin ships five
-right out of the box:</p>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL 0.6.0 Release Notes</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">QUILL 0.6.0 Release Notes</h1>
+</header>
+<h1 id="quill-0.6.0-release-notes">QUILL 0.6.0 Release Notes</h1>
+<p>QUILL 0.6.0 is a major step forward for screen-reader-first writing,
+editing, automation, braille, code review, and extension-powered
+workflows.</p>
+<p>This release is about speed, confidence, and control. You can type a
+short trigger and get a full template. You can open a braille file and
+know exactly where you are by page, line, cell, and progress. You can
+compare two files without visually scanning a diff. You can move through
+code by tokens instead of guessing where words begin and end. You can
+export to Word, inspect encoding problems, generate citations, choose
+better image-description prompts, and shape the sound layer so QUILL
+confirms what happened without talking over your screen reader.</p>
+<p>Under the surface, QUILL 0.6.0 also introduces the most important
+architectural change yet: Quillins are now a real extension platform.
+They can own settings, appear in Preferences search, subscribe to
+document lifecycle events, contribute status-bar cells, declare
+dependencies, restrict network access, and initialize or shut down
+cleanly. The platform is designed so users stay in charge and extension
+authors cannot accidentally ship something unsafe, noisy, or
+inaccessible.</p>
+<p>Everything remains keyboard-first and screen-reader-first. Every new
+view is a real navigable control. Every action is announced, undoable
+where appropriate, and discoverable. No mouse is required. No
+visual-only flourish is required. No silent full-file scanning happens
+behind your back.</p>
+<p>If you are upgrading from QUILL 0.5.0, read <strong>What works
+differently now</strong> near the end. It lists the few places where
+menus, habits, or installer choices changed.</p>
+<h2 id="biggest-changes-at-a-glance">Biggest changes at a glance</h2>
 <ul>
-<li><strong>qbug</strong> — a complete bug report template: Title,
-Build, Screen reader, Windows version, Steps to reproduce, Expected
-result, Actual result, Notes. Type it, press space, and the whole form
-lands at your cursor.</li>
-<li><strong>qmeet</strong> — a meeting notes template with today’s date
-already filled in. Attendees, Purpose, Notes, Action Items.</li>
-<li><strong>qlog</strong> — today’s date and time, for a quick
+<li><strong>Insert Automation</strong> turns typed abbreviations, smart
+triggers, <code>.LOG</code> files, document directives, and append
+anchors into one safe automation system.</li>
+<li><strong>The Quillin Extension Platform</strong> now supports
+settings pages, searchable preferences, tabs, document events, lifecycle
+events, status-bar cells, dependencies, network allowlists, command
+descriptions, developer logging, announcement priority, scaffolding
+tools, and stronger validation.</li>
+<li><strong>Braille Mode</strong> opens and edits braille text files
+while preserving bytes, form feeds, line endings, and layout. It adds
+braille-aware status, page navigation, page tools, and optional
+liblouis-powered translation through the QUILL Braille Pack.</li>
+<li><strong>Compare Mode</strong> is now a first-class keyboard-driven
+workflow with difference navigation, speech announcements, and optional
+sound cues.</li>
+<li><strong>Code-aware editing</strong> adds language profiles, token
+movement, manual language selection, and optional indentation
+tones.</li>
+<li><strong>Text encoding tools</strong> help you find non-ASCII
+characters, jump to them, convert them to HTML entities, and save copies
+in narrower encodings without silent data loss.</li>
+<li><strong>Word and RTF export</strong> lets you save documents as
+<code>.docx</code> or rich text through Pandoc, preserving real Word
+heading structure when the source contains structure.</li>
+<li><strong>Citation insertion</strong> formats MLA 9, Chicago 17, and
+APA 7 citations from a simple labelled form.</li>
+<li><strong>The Vision Prompt Library</strong>, contributed by Kelly
+Ford, gives Describe Image with AI twelve evaluated prompt styles and a
+full management dialog.</li>
+<li><strong>The Dynamic Keyboard Reference</strong> now reflects the
+active command registry, your current bindings, and QUILL key
+layers.</li>
+<li><strong>Sound notifications</strong> and <strong>indentation
+tones</strong> add optional non-speech feedback without making existing
+setups noisier.</li>
+<li><strong>Major accessibility and startup fixes</strong> make bug
+reporting, JAWS focus, image description, first run, the user guide,
+update notifications, and macOS setup more reliable.</li>
+</ul>
+<hr />
+<h2 id="insert-automation-type-a-trigger-get-magic">Insert Automation:
+type a trigger, get magic</h2>
+<p>Insert Automation is the daily-workflow feature that changes how
+QUILL feels in practice. It combines typed shortcuts, templates, log
+files, smart text generation, document directives, and append anchors
+into one coherent keyboard-first system.</p>
+<p>Everything is safe by design. Nothing scans your whole file silently.
+Nothing runs on a partial match. Nothing changes a read-only file. Every
+insertion is announced, discoverable, and one undo step.</p>
+<h3 id="typed-abbreviations">Typed abbreviations</h3>
+<p>Type a short abbreviation, press a delimiter such as space, comma, or
+period, and QUILL replaces the abbreviation with the full text.</p>
+<p>The bundled <strong>Smart Insert</strong> Quillin ships with five
+abbreviations:</p>
+<ul>
+<li><strong>qbug</strong> inserts a complete bug-report template with
+Title, Build, Screen reader, Windows version, Steps to reproduce,
+Expected result, Actual result, and Notes.</li>
+<li><strong>qmeet</strong> inserts a meeting-notes template with today’s
+date already filled in, plus Attendees, Purpose, Notes, and Action
+Items.</li>
+<li><strong>qlog</strong> inserts today’s date and time for a quick
 timestamped entry.</li>
-<li><strong>qtodo</strong> — a short to-do checklist, three blank items
-ready to fill.</li>
-<li><strong>qbrf</strong> — a multi-page BRF test document, generated on
+<li><strong>qtodo</strong> inserts a short three-item to-do checklist
+ready to fill in.</li>
+<li><strong>qbrf</strong> generates a multi-page BRF test document on
 the spot, ready to feed to the braille translator.</li>
 </ul>
-<p>Your own abbreviations always win if there is a conflict.
-Quillin-provided ones are listed in the Insert Automation Reference and
-can be disabled individually.</p>
-<p><strong>Smart text triggers.</strong> Type a command alone on a line
-and press Enter and QUILL replaces the whole line with the result. These
-begin with <code>=</code> so they can never collide with an ordinary
-sentence:</p>
-<pre><code>=bug()            → bug report template
-=meeting()        → meeting notes template
-=journal()        → journal entry with today&#39;s date
-=todo(5)          → five-item to-do checklist
-=logentry()       → timestamp at the cursor, formatted your way
-=rand(3,4)        → three paragraphs of four readable sentences each
-=brftest()        → a complete, predictable BRF test document</code></pre>
-<p>The parser is strict: it only activates when the trigger is alone on
-the line, only accepts the allowed number and type of arguments, and
-rejects anything it does not recognize outright — so typing
-<code>=bug()</code> in the middle of a sentence is always safe. If you
-ask for a very large insertion, QUILL asks for confirmation before
-writing anything.</p>
-<p><strong><code>.LOG</code> file compatibility.</strong> Open a file
-whose first line is <code>.LOG</code> and QUILL does what Notepad does:
-it finds the right spot and inserts a fresh timestamp. If you place a
-<code>QUILL-LOG-APPEND-HERE</code> anchor near the bottom of the file,
-the timestamp lands just before the anchor and the anchor stays in place
-for next time. If the file is read-only, QUILL tells you so rather than
-failing silently.</p>
-<p>The timestamp format is configurable — Long date and time, Short, ISO
-8601, Date only, Time only, or a custom <code>strftime</code> pattern —
-through <strong>Preferences → Smart Insert → Log Mode</strong>.</p>
-<p><strong>Append anchors.</strong> Any file can have a
-<code>QUILL-APPEND-HERE</code> marker near the bottom. Once present,
-generated content is inserted before it — not shoved at the absolute
-end, not after footer notes or metadata. A stable anchor means generated
-content always lands exactly where you want it, every time.</p>
-<p><strong>Every action is safe.</strong> Abbreviations trigger only
-after an exact match and a delimiter. Smart triggers inspect only the
-current line and only activate on Enter. No file is scanned in full on
-open. Quillin-provided triggers run only when the Quillin is enabled.
-Every result is announced, every insertion is one undo step, and nothing
-modifies a read-only file.</p>
-<h2 id="new-the-quillin-extension-platform">New: The Quillin Extension
-Platform</h2>
-<p>QUILL 0.6.0 ships a comprehensive upgrade to the Quillin extension
-framework. What started as a way to contribute commands and snippets is
-now a full extension platform: Quillins can subscribe to events, own
-their settings, display live data in the status bar, declare
-dependencies, restrict network access, and initialize themselves cleanly
-when the user enables them or QUILL shuts down.</p>
-<p>The upgrade covers every layer of the system — the manifest, the
-validator, the JSON schema, the API surface, and the developer tooling —
-all built screen-reader-first and enforced at install time so authors
-cannot accidentally ship a misbehaving extension.</p>
-<h3 id="settings-and-preferences">Settings and preferences</h3>
-<p>Quillins can now contribute their own settings pages. A Quillin
-declares its preferences as structured data in the manifest — control
-type, label, description, default value, validation rules — and QUILL
-renders everything using accessible, keyboard-navigable stock controls.
-The Quillin never touches wxPython directly. QUILL handles layout, tab
-order, focus, keyboard navigation, search, reset, and accessibility
-entirely.</p>
-<p>A Quillin with several settings groups declares <strong>tabs</strong>
-inside its preferences page. Each tab is arrow-key navigable and clearly
-announced. The Smart Insert Quillin ships with five tabs: General, Log
-Mode, Smart Triggers, Abbreviations, and BRF Testing. BRF Tools shows
-what a specialized page looks like — four tabs covering Translation
+<p>Your own abbreviations always win when there is a conflict.
+Quillin-provided abbreviations appear in the Insert Automation Reference
+and can be disabled individually.</p>
+<h3 id="smart-text-triggers">Smart text triggers</h3>
+<p>Type a command alone on a line and press Enter. QUILL replaces the
+whole line with the generated result. Smart triggers begin with
+<code>=</code> so they do not collide with ordinary sentences.</p>
+<pre class="text"><code>=bug()            -&gt; bug report template
+=meeting()        -&gt; meeting notes template
+=journal()        -&gt; journal entry with today&#39;s date
+=todo(5)          -&gt; five-item to-do checklist
+=logentry()       -&gt; timestamp at the cursor, formatted your way
+=rand(3,4)        -&gt; three paragraphs of four readable sentences each
+=brftest()        -&gt; a complete, predictable BRF test document</code></pre>
+<p>The parser is intentionally strict. A trigger activates only when it
+is alone on the current line, only accepts the allowed number and type
+of arguments, and rejects anything it does not recognize. Typing
+<code>=bug()</code> in the middle of a sentence is always safe. If a
+trigger would create a very large insertion, QUILL asks for confirmation
+before writing anything.</p>
+<h3 id="log-file-compatibility"><code>.LOG</code> file
+compatibility</h3>
+<p>Open a file whose first line is <code>.LOG</code> and QUILL behaves
+like Notepad: it finds the correct spot and inserts a fresh
+timestamp.</p>
+<p>If the file contains a <code>QUILL-LOG-APPEND-HERE</code> anchor near
+the bottom, the timestamp lands just before the anchor and the anchor
+remains in place for the next entry. If the file is read-only, QUILL
+tells you rather than failing silently.</p>
+<p>The timestamp format is configurable in <strong>Preferences -&gt;
+Smart Insert -&gt; Log Mode</strong>. Available formats include Long
+date and time, Short, ISO 8601, Date only, Time only, and custom
+<code>strftime</code> patterns.</p>
+<h3 id="append-anchors">Append anchors</h3>
+<p>Any file can include a <code>QUILL-APPEND-HERE</code> marker near the
+bottom. Generated content lands before that marker instead of being
+shoved after footer notes, metadata, or other closing content. A stable
+anchor means generated text always goes exactly where you want it.</p>
+<h3 id="safety-rules">Safety rules</h3>
+<p>Insert Automation follows clear safety boundaries:</p>
+<ul>
+<li>Abbreviations trigger only after an exact match and a
+delimiter.</li>
+<li>Smart triggers inspect only the current line and activate only on
+Enter.</li>
+<li>No file is scanned in full on open.</li>
+<li>Quillin-provided triggers run only while the Quillin is
+enabled.</li>
+<li>Every result is announced.</li>
+<li>Every insertion is one undo step.</li>
+<li>Read-only files are never modified silently.</li>
+</ul>
+<hr />
+<h2
+id="the-quillin-extension-platform-extensions-become-first-class-citizens">The
+Quillin Extension Platform: extensions become first-class citizens</h2>
+<p>QUILL 0.6.0 upgrades Quillins from a command-and-snippet mechanism
+into a full extension platform.</p>
+<p>Quillins can now subscribe to events, own settings, add searchable
+preference pages, display live status-bar data, declare dependencies,
+restrict network access, log to a developer console, and initialize or
+shut down cleanly. The manifest, validator, JSON schema, API surface,
+and developer tooling have all been expanded so accessibility and safety
+are enforced at install and load time.</p>
+<h3 id="quillin-settings-and-preferences-pages">Quillin settings and
+Preferences pages</h3>
+<p>Quillins can contribute their own settings pages. A Quillin declares
+its preferences as structured manifest data: control type, label,
+description, default value, validation rules, and related metadata.
+QUILL renders those settings using accessible, keyboard-navigable stock
+controls.</p>
+<p>The Quillin never touches wxPython directly. QUILL handles layout,
+tab order, focus, keyboard navigation, search, reset, and
+accessibility.</p>
+<p>Quillins with several groups of settings can declare
+<strong>tabs</strong> inside their preference page. Tabs are arrow-key
+navigable and clearly announced.</p>
+<p>Examples included in 0.6.0:</p>
+<ul>
+<li><strong>Smart Insert</strong> ships five tabs: General, Log Mode,
+Smart Triggers, Abbreviations, and BRF Testing.</li>
+<li><strong>BRF Tools</strong> ships four specialized tabs: Translation
 defaults, Page Handling, Status Bar display, and Advanced
-diagnostics.</p>
-<p>Settings are stored per Quillin, survive restarts, and migrate when a
-Quillin updates its manifest. They appear in Preferences search
-alongside QUILL’s own settings, identified by Quillin, page, and
-tab.</p>
-<p>New for 0.6.0: individual settings may carry
-<strong><code>search_keywords</code></strong> — extra synonyms and
-technical terms that surface the setting when users search for a concept
-they know by a different name. For example, a “Date format” setting
-might carry keywords <code>timestamp, iso, strftime</code> so it appears
-for all three search queries.</p>
+diagnostics.</li>
+</ul>
+<p>Quillin settings are stored per Quillin, survive restarts, and
+migrate when a Quillin updates its manifest. They appear in Preferences
+search alongside QUILL’s own settings and are identified by Quillin,
+page, and tab.</p>
+<p>Individual settings may now include
+<strong><code>search_keywords</code></strong>: extra synonyms and
+technical terms that help users find settings by the words they know.
+For example, a Date format setting can include <code>timestamp</code>,
+<code>iso</code>, and <code>strftime</code>, making the setting appear
+for any of those searches.</p>
 <h3 id="document-and-lifecycle-events">Document and lifecycle
 events</h3>
-<p>Quillins can subscribe to document lifecycle events and run code
-automatically when important moments happen — no user action
-required.</p>
-<p><strong>Fourteen events. The full lifecycle covered.</strong></p>
+<p>Quillins can subscribe to document lifecycle events and run
+automatically when important moments occur.</p>
+<p>QUILL 0.6.0 supports fourteen events:</p>
 <table>
 <colgroup>
 <col style="width: 50%" />
@@ -147,19 +464,19 @@ required.</p>
 </tr>
 <tr>
 <td><code>document.before_save</code></td>
-<td>Right before saving — time to validate or transform</td>
+<td>Right before saving; a Quillin can validate or transform</td>
 </tr>
 <tr>
 <td><code>document.after_save</code></td>
-<td>After a successful save — safe to log, sync, or confirm</td>
+<td>After a successful save; safe to log, sync, or confirm</td>
 </tr>
 <tr>
 <td><code>document.before_close</code></td>
-<td>Before a tab closes — safe to warn</td>
+<td>Before a tab closes; safe to warn</td>
 </tr>
 <tr>
 <td><code>document.after_close</code></td>
-<td>After a tab closes — safe to clean up</td>
+<td>After a tab closes; safe to clean up</td>
 </tr>
 <tr>
 <td><code>document.created</code></td>
@@ -195,34 +512,33 @@ required.</p>
 </tr>
 </tbody>
 </table>
-<p>The high-frequency events — text changed, cursor moved, key pressed —
-are deliberately not available. They would let a Quillin observe
-keystrokes, which is both a performance problem and a privacy
-problem.</p>
-<p><strong>Lifecycle events</strong> let Quillins manage their own
-existence. <code>quillin.enabled</code> is ideal for initialization —
-announcing activation, building caches, or registering anything that
-needs the API live. <code>quillin.disabled</code> lets a Quillin clean
-up gracefully. <code>quill.shutdown</code> lets a Quillin flush state
-before the process exits. <code>settings.changed</code> fires
-immediately when the user saves a preference change so Quillins can
-hot-reload their internal config without restarting.</p>
-<p><strong>Event filtering.</strong> Each subscription can declare
-<code>conditions</code> so it only fires for certain file types, path
-patterns, or content signatures. A template inserter can limit itself to
-files under <code>\journal\</code>. A <code>.LOG</code> handler can
-require <code>*.log</code> files. These filters are pure data, with no
-code to debug.</p>
-<p><strong>The capability gate.</strong> A Quillin must declare
-<code>document.events</code> in its capabilities to subscribe to any
-event. Missing the capability or the <code>main</code> module fails
-validation at install time, not at runtime.</p>
-<h3 id="status-bar-contributions">Status bar contributions</h3>
-<p>Quillins can add live cells to the QUILL status bar. Each cell has a
-handler the host calls on demand — after a save, on tab switch, or on a
-timer — and whatever the handler returns becomes the cell text.</p>
-<p>To add a cell, declare <code>ui.status</code> in capabilities,
-provide a <code>main</code> module, and describe the cell:</p>
+<p>High-frequency events such as text changed, cursor moved, and key
+pressed are deliberately not available. They would allow a Quillin to
+observe keystrokes, which creates both privacy and performance
+problems.</p>
+<p>Lifecycle events give Quillins a clean way to manage themselves.
+<code>quillin.enabled</code> is for initialization, activation
+announcements, cache building, or registration that requires the API to
+be live. <code>quillin.disabled</code> allows graceful cleanup.
+<code>quill.shutdown</code> allows state flushing before QUILL exits.
+<code>settings.changed</code> fires immediately when a user saves a
+preference change so the Quillin can hot-reload internal configuration
+without restarting.</p>
+<p>Subscriptions can include <code>conditions</code> so they fire only
+for certain file types, path patterns, or content signatures. A template
+inserter can limit itself to files under <code>\journal\</code>. A
+<code>.LOG</code> handler can require <code>*.log</code> files. These
+filters are pure data, not code.</p>
+<p>The capability gate is enforced. A Quillin must declare
+<code>document.events</code> in its capabilities to subscribe to events.
+Missing that capability, or missing the <code>main</code> module
+required to handle the event, fails validation at install time rather
+than failing later at runtime.</p>
+<h3 id="status-bar-contributions">Status-bar contributions</h3>
+<p>Quillins can add live cells to the QUILL status bar. A cell has a
+handler that QUILL calls on demand, such as after save, on tab switch,
+or on a timer. The handler’s return value becomes the cell text.</p>
+<p>Example manifest contribution:</p>
 <div class="sourceCode" id="cb2"><pre
 class="sourceCode json"><code class="sourceCode json"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;status_bar&quot;</span><span class="er">:</span> <span class="ot">[</span></span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">{</span></span>
@@ -233,86 +549,104 @@ class="sourceCode json"><code class="sourceCode json"><span id="cb2-1"><a href="
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;width&quot;</span><span class="fu">:</span> <span class="dv">12</span></span>
 <span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
 <span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="ot">]</span></span></code></pre></div>
-<p>The cell has a <code>tooltip</code> that is read to screen-reader
-users when the cell receives focus — so the status bar is fully
-navigable and informative without being a visual-only feature.</p>
-<h3 id="categories">Categories</h3>
-<p>Quillins may declare one or more category labels —
-<code>writing</code>, <code>accessibility</code>, <code>braille</code>,
-<code>productivity</code>, <code>developer</code>,
-<code>formatting</code>, <code>navigation</code>, <code>ai</code>,
-<code>integration</code>, <code>education</code>, <code>utilities</code>
-— for filtering in the Quillins Manager. A single manifest line is
-enough:</p>
+<p>To contribute a status cell, a Quillin declares
+<code>ui.status</code> in its capabilities, provides a <code>main</code>
+module, and describes the cell. The <code>tooltip</code> is read to
+screen-reader users when the cell receives focus, so the status bar
+remains navigable and informative rather than visual-only.</p>
+<h3 id="categories-in-quillins-manager">Categories in Quillins
+Manager</h3>
+<p>Quillins can declare one or more category labels for filtering in
+Quillins Manager.</p>
+<p>Available category labels include:</p>
+<ul>
+<li><code>writing</code></li>
+<li><code>accessibility</code></li>
+<li><code>braille</code></li>
+<li><code>productivity</code></li>
+<li><code>developer</code></li>
+<li><code>formatting</code></li>
+<li><code>navigation</code></li>
+<li><code>ai</code></li>
+<li><code>integration</code></li>
+<li><code>education</code></li>
+<li><code>utilities</code></li>
+</ul>
+<p>Example:</p>
 <div class="sourceCode" id="cb3"><pre
 class="sourceCode json"><code class="sourceCode json"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;categories&quot;</span><span class="er">:</span> <span class="ot">[</span><span class="st">&quot;writing&quot;</span><span class="ot">,</span> <span class="st">&quot;productivity&quot;</span><span class="ot">]</span></span></code></pre></div>
-<h3 id="quillin-dependencies">Quillin dependencies</h3>
+<h3 id="dependencies-between-quillins">Dependencies between
+Quillins</h3>
 <p>A Quillin can declare that it requires another Quillin to be
-installed and enabled:</p>
+installed and enabled.</p>
 <div class="sourceCode" id="cb4"><pre
 class="sourceCode json"><code class="sourceCode json"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;requires&quot;</span><span class="er">:</span> <span class="ot">[</span><span class="fu">{</span> <span class="dt">&quot;id&quot;</span><span class="fu">:</span> <span class="st">&quot;com.quill.journalstamp&quot;</span><span class="fu">,</span> <span class="dt">&quot;min_version&quot;</span><span class="fu">:</span> <span class="st">&quot;1.0.0&quot;</span> <span class="fu">}</span><span class="ot">]</span></span></code></pre></div>
-<p>QUILL verifies the dependency at load time. If it is missing or too
-old, the declaring Quillin fails to load with a clear message.</p>
+<p>QUILL verifies dependencies at load time. If a dependency is missing
+or too old, the dependent Quillin is blocked with a clear message.</p>
 <h3 id="network-host-allowlist">Network host allowlist</h3>
-<p>Quillins with the <code>net</code> capability may restrict which
-servers they connect to:</p>
+<p>Quillins with the <code>net</code> capability can restrict which
+servers they are allowed to contact.</p>
 <div class="sourceCode" id="cb5"><pre
 class="sourceCode json"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;net_allowed_hosts&quot;</span><span class="er">:</span> <span class="ot">[</span><span class="st">&quot;api.openweathermap.org&quot;</span><span class="ot">,</span> <span class="st">&quot;*.example.com&quot;</span><span class="ot">]</span></span></code></pre></div>
-<p>When the list is non-empty, QUILL blocks connections to any host not
-on the list, even after the user has granted blanket <code>net</code>
-consent. Wildcards (<code>*.example.com</code>) are supported.</p>
+<p>When the list is non-empty, QUILL blocks connections to any host that
+is not on the list, even after the user has granted blanket
+<code>net</code> consent. Wildcard patterns such as
+<code>*.example.com</code> are supported.</p>
 <h3 id="command-descriptions-and-search">Command descriptions and
 search</h3>
-<p>Commands may carry a <code>description</code> field that appears in
-the keyboard reference and command palette — a one-line summary of what
-the command does, distinct from the menu title:</p>
+<p>Commands can now include a <code>description</code> field. This
+description appears in the keyboard reference and command palette as a
+one-line explanation that is separate from the menu title.</p>
 <div class="sourceCode" id="cb6"><pre
 class="sourceCode json"><code class="sourceCode json"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="st">&quot;description&quot;</span><span class="er">:</span> <span class="st">&quot;Inserts a bug report skeleton with title, steps, expected, and actual fields.&quot;</span></span></code></pre></div>
-<h3 id="developer-logging-api.log">Developer logging
-(<code>api.log</code>)</h3>
-<p>Quillins with the <code>ui.log</code> capability may call
+<h3 id="developer-logging-with-api.log">Developer logging with
+<code>api.log()</code></h3>
+<p>Quillins with the <code>ui.log</code> capability can call
 <code>api.log(message)</code> to write structured log lines to the QUILL
-Developer Console. The console is opened from <strong>Tools → Developer
-Console</strong> (available in dev builds; toggle with
-<code>QUILL_DEV_BUILD=1</code>). <code>api.log()</code> is a no-op in
-production with the console closed, so it adds zero overhead to normal
-usage and never writes to files or speaks to the screen reader.</p>
+Developer Console.</p>
+<p>The Developer Console opens from <strong>Tools -&gt; Developer
+Console</strong> in development builds and can be toggled with
+<code>QUILL_DEV_BUILD=1</code>.</p>
+<p>In production, with the console closed, <code>api.log()</code> is a
+no-op. It adds zero normal-use overhead and never writes to files or
+speaks to the screen reader.</p>
 <h3 id="announcement-priority">Announcement priority</h3>
 <p><code>api.announce()</code> now accepts a <code>priority</code>
-keyword argument:</p>
+keyword argument.</p>
 <div class="sourceCode" id="cb7"><pre
-class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>api.announce(<span class="st">&quot;Saved.&quot;</span>, priority<span class="op">=</span><span class="st">&quot;quiet&quot;</span>)      <span class="co"># queued</span></span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>api.announce(<span class="st">&quot;File not writable.&quot;</span>, priority<span class="op">=</span><span class="st">&quot;urgent&quot;</span>)  <span class="co"># interrupts</span></span></code></pre></div>
-<p>Valid values: <code>quiet</code>, <code>normal</code>,
-<code>urgent</code>. The host maps these to the screen reader’s urgency
-channel. Use <code>quiet</code> for informational messages; use
+class="sourceCode python"><code class="sourceCode python"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>api.announce(<span class="st">&quot;Saved.&quot;</span>, priority<span class="op">=</span><span class="st">&quot;quiet&quot;</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>api.announce(<span class="st">&quot;File not writable.&quot;</span>, priority<span class="op">=</span><span class="st">&quot;urgent&quot;</span>)</span></code></pre></div>
+<p>Valid values are <code>quiet</code>, <code>normal</code>, and
+<code>urgent</code>. The host maps those values to the screen reader’s
+urgency channel. Use <code>quiet</code> for informational messages and
 <code>urgent</code> only for errors that need immediate attention.</p>
-<h3 id="scaffold-tool">Scaffold tool</h3>
-<p>A new command-line tool generates a ready-to-edit Quillin
+<h3 id="quillin-scaffold-tool">Quillin scaffold tool</h3>
+<p>A new command-line scaffold tool creates a ready-to-edit Quillin
 directory:</p>
-<pre><code>python -m quill.tools.quillin_new com.example.myquillin &quot;My Quillin&quot;</code></pre>
-<p>Options include <code>--layer1</code> (snippet-only, no Python),
-<code>--categories</code>, <code>--doc-events</code> (sample lifecycle
-handlers), and <code>--status-bar</code> (sample status cell). The tool
-writes <code>manifest.json</code>, <code>extension.py</code>,
-<code>README.md</code>, and <code>LICENSE</code>, then tells you the
-next three steps. Run <code>quillin_lint</code> on the output to verify
-before publishing.</p>
-<h3 id="user-control-what-you-can-control-and-how">User control — what
-you can control and how</h3>
-<p>One of the design principles of the Quillin framework is that users
-stay in control at every level. Here is how that works in practice in
-0.6.0.</p>
-<p><strong>Enable or disable any Quillin.</strong> Open <strong>Tools →
-Quillins Manager</strong>. Select a Quillin and press
-<strong>Enable</strong> or <strong>Disable</strong>. The change takes
-effect immediately — no restart required. Disabling a Quillin stops all
-its commands, event handlers, and status bar cells from running. Its
-preferences data is preserved so it picks up where it left off if you
-re-enable it.</p>
-<p><strong>Per-action consent for sensitive capabilities.</strong> Four
-capabilities require a dialog confirmation every time a Quillin tries to
-use them:</p>
+<pre class="text"><code>python -m quill.tools.quillin_new com.example.myquillin &quot;My Quillin&quot;</code></pre>
+<p>Options include:</p>
+<ul>
+<li><code>--layer1</code> for snippet-only Quillins with no Python.</li>
+<li><code>--categories</code> to add category metadata.</li>
+<li><code>--doc-events</code> to include sample lifecycle handlers.</li>
+<li><code>--status-bar</code> to include a sample status cell.</li>
+</ul>
+<p>The tool writes <code>manifest.json</code>,
+<code>extension.py</code>, <code>README.md</code>, and
+<code>LICENSE</code>, then tells the author the next three steps.
+Authors should run <code>quillin_lint</code> on the output before
+publishing.</p>
+<h3 id="user-control-and-safety-enforcement">User control and safety
+enforcement</h3>
+<p>The Quillin platform is built around user control.</p>
+<p>Open <strong>Tools -&gt; Quillins Manager</strong> to enable or
+disable any Quillin. Select a Quillin and press <strong>Enable</strong>
+or <strong>Disable</strong>. The change takes effect immediately; no
+restart is required. Disabling a Quillin stops all of its commands,
+event handlers, and status-bar cells. Its preferences are preserved so
+it picks up where it left off if re-enabled.</p>
+<p>Four sensitive capabilities require a confirmation dialog every time
+a Quillin tries to use them:</p>
 <table>
 <thead>
 <tr>
@@ -339,522 +673,676 @@ use them:</p>
 </tr>
 </tbody>
 </table>
-<p>When a Quillin tries to use one of these, QUILL pauses and shows a
-dialog: “A Quillin is requesting the ‘fs.read’ capability for:
-read_file(path). Allow this action?” You choose yes or no. Choosing no
-raises a <code>ConsentDeniedError</code> that the Quillin handles
-gracefully. This dialog fires for every individual action — not once at
-install time — so a Quillin that reads files can never read one you have
-not explicitly approved.</p>
-<p>The remaining capabilities — editor access, UI announcements,
-clipboard, storage, settings.own.*, document events, status bar,
-developer log — are granted once at install time (or pre-granted for
-bundled Quillins) and do not prompt again.</p>
-<p><strong>Per-event toggle in the Quillin Manager.</strong> Each
-document event subscription in the manifest carries an
-<code>enabled_by_default</code> field. When <code>false</code>, the
-subscription starts inactive. Users can change this at any time: open
-the Quillin Manager, select the Quillin, and click <strong>Configure
-Events…</strong> to see every event subscription with a checkbox.
-Turning an event off stops the handler from firing; turning it back on
-resumes it. The per-event state is persisted in <code>state.json</code>
-alongside enable/disable and capability grants.</p>
-<p><strong>Capability declarations are enforced, not advisory.</strong>
-At runtime, if a Quillin calls an API it did not declare in its
-<code>capabilities</code> list, the call is blocked with a
-<code>CapabilityError</code> and the Quillin is notified rather than
-QUILL crashing. Declarations are validated at install time by
-<code>quillin_lint</code> and re-validated at load time by the manifest
-parser.</p>
-<p><strong>Third-party Quillins are locked off.</strong> The SEC-8 gate
-(<code>core.third_party_plugins</code>) is <code>locked_off</code> for
-QUILL 1.0. A shipping build never discovers, loads, or executes
-third-party Quillin code. The Quillin Manager opens and is fully
-navigable — it simply reports that third-party Quillins are disabled.
-This will lift when the third-party publishing and review process is
-ready.</p>
-<p><strong><code>min_quill_version</code> is enforced at load
-time.</strong> When a Quillin declares
-<code>"min_quill_version": "0.6.0"</code> and the running QUILL is
-older, the Quillin is rejected during discovery and listed in the
-Manager with an explanatory error. Users see “requires QUILL 0.6.0
-(running 0.5.x)” rather than a silent failure or a crash.</p>
-<p><strong><code>requires</code> is enforced at load time.</strong> If a
-Quillin declares a dependency (<code>requires</code>) on another Quillin
-that is not installed, or is installed at a version too old to satisfy
-<code>min_version</code>, the dependent Quillin is blocked from loading.
-The Manager shows the specific dependency error so users know what to
-install. Circular dependencies are caught during validation.</p>
-<p><strong><code>net_allowed_hosts</code> is enforced at every fetch
-call.</strong> When a Quillin declares
-<code>"net_allowed_hosts": ["api.example.com"]</code> and then tries to
-fetch from a host not on that list, the call is blocked before reaching
-the network — even if the user has granted the <code>net</code>
-capability. Wildcard patterns (<code>*.example.com</code>) allow any
-subdomain but not the bare domain. An empty
-<code>net_allowed_hosts</code> with the <code>net</code> capability
-keeps the current behavior: any host is reachable with user consent.</p>
-<h3 id="five-bundled-quillins-comprehensive-sample-coverage">Five
-bundled Quillins — comprehensive sample coverage</h3>
-<p>QUILL 0.6.0 ships five bundled Quillins that collectively demonstrate
-every contribution type and framework feature. Each one is a working,
-useful extension first and a reference implementation second.</p>
+<p>When a Quillin requests one of these actions, QUILL pauses and shows
+a dialog like this:</p>
+<pre class="text"><code>A Quillin is requesting the &#39;fs.read&#39; capability for: read_file(path). Allow this action?</code></pre>
+<p>Choosing no raises a <code>ConsentDeniedError</code> that the Quillin
+must handle gracefully. This confirmation appears for every individual
+action, not once at install time. A Quillin that reads files can never
+read one you have not explicitly approved.</p>
+<p>The remaining capabilities are granted once at install time, or
+pre-granted for bundled Quillins. These include editor access, UI
+announcements, clipboard, storage, <code>settings.own.*</code>, document
+events, status bar, and developer log.</p>
+<p>Each document event subscription includes an
+<code>enabled_by_default</code> field. If it is false, the event starts
+inactive. Users can change this any time from Quillins Manager: select
+the Quillin and choose <strong>Configure Events…</strong> to see each
+event subscription with a checkbox. Turning an event off stops the
+handler from firing; turning it back on resumes it. Per-event state is
+persisted in <code>state.json</code> alongside enable/disable and
+capability grants.</p>
+<p>Capability declarations are enforced, not advisory. If a Quillin
+calls an API it did not declare in <code>capabilities</code>, QUILL
+blocks the call with a <code>CapabilityError</code> and notifies the
+Quillin instead of crashing. Declarations are validated by
+<code>quillin_lint</code> at install time and re-validated by the
+manifest parser at load time.</p>
+<p>Third-party Quillins remain locked off for QUILL 1.0. The SEC-8 gate,
+<code>core.third_party_plugins</code>, is <code>locked_off</code>. A
+shipping build never discovers, loads, or executes third-party Quillin
+code. Quillins Manager still opens and remains fully navigable; it
+simply reports that third-party Quillins are disabled. This gate will
+lift when the publishing and review process is ready.</p>
+<p><code>min_quill_version</code> is enforced at load time. If a Quillin
+declares <code>"min_quill_version": "0.6.0"</code> and the running QUILL
+is older, the Quillin is rejected during discovery and listed in the
+Manager with an explanatory error such as
+<code>requires QUILL 0.6.0 (running 0.5.x)</code>.</p>
+<p><code>requires</code> is also enforced at load time. If a Quillin
+depends on another Quillin that is not installed, or is installed at a
+version too old to satisfy <code>min_version</code>, the dependent
+Quillin is blocked. The Manager shows the specific dependency error.
+Circular dependencies are caught during validation.</p>
+<p><code>net_allowed_hosts</code> is enforced at every fetch call. If a
+Quillin declares <code>"net_allowed_hosts": ["api.example.com"]</code>
+and tries to fetch from another host, QUILL blocks the call before it
+reaches the network, even if the user has granted the <code>net</code>
+capability. Wildcard patterns such as <code>*.example.com</code> allow
+subdomains but not the bare domain. An empty
+<code>net_allowed_hosts</code> list with the <code>net</code> capability
+preserves the current behavior: any host is reachable with user
+consent.</p>
+<h3 id="five-bundled-quillins">Five bundled Quillins</h3>
+<p>QUILL 0.6.0 ships five bundled Quillins. Each is both a useful
+extension and a reference implementation for the framework.</p>
 <ul>
-<li><p><strong>Smart Insert</strong>
-(<code>com.quill.smartinsert</code>) — typed abbreviations and smart
-triggers for bug reports, meeting notes, log entries, to-do lists, and
-BRF test documents. Five tabs of configurable preferences. Now carries
-<code>categories: [writing, productivity, formatting]</code> and command
-<code>description</code> fields on every command.</p></li>
-<li><p><strong>BRF Tools</strong> (<code>com.quill.brftools</code>) —
-preferences for braille translation, page handling, and status bar
-display. Now carries
-<code>categories: [braille, accessibility]</code>.</p></li>
-<li><p><strong>Journal Stamp</strong>
-(<code>com.quill.journalstamp</code>) — subscribes to
-<code>document.created</code> (inserts a date header),
-<code>document.after_save</code> (announces word count and daily goal
-progress), <code>document.loaded_from_session</code> (announces which
-document was restored), <code>quillin.enabled</code> (logs activation),
-and <code>settings.changed</code> (hot-reloads preferences). Settings
-include <code>search_keywords</code> on the date format and daily goal
-controls. Categories: <code>writing, productivity</code>.</p></li>
-<li><p><strong>Document Guardian</strong>
-(<code>com.quill.docguardian</code>) — subscribes to
-<code>document.before_close</code> (warns on unfinished docs),
-<code>document.before_save</code> (stamps an <code>Updated:</code>
-line), <code>document.after_save</code> (confirms with file size),
-<code>quillin.enabled</code> (announces and logs activation),
-<code>quillin.disabled</code> (announces deactivation), and
-<code>quill.shutdown</code> (cleans up). Categories:
-<code>writing, productivity</code>.</p></li>
-<li><p><strong>Status Scribe</strong>
-(<code>com.quill.statusscribe</code>) — a live word/character/sentence
-count in the status bar, updated after every save and on tab switch.
-Demonstrates <code>status_bar</code> contribution, <code>ui.log</code>
-developer logging,
-<code>quillin.enabled</code>/<code>quillin.disabled</code>/<code>settings.changed</code>
-lifecycle events, and announcement priority. Categories:
-<code>writing, productivity, accessibility</code>.</p></li>
+<li><strong>Smart Insert</strong> (<code>com.quill.smartinsert</code>)
+provides typed abbreviations and smart triggers for bug reports, meeting
+notes, log entries, to-do lists, and BRF test documents. It includes
+five tabs of configurable preferences, categories <code>writing</code>,
+<code>productivity</code>, and <code>formatting</code>, plus command
+<code>description</code> fields on every command.</li>
+<li><strong>BRF Tools</strong> (<code>com.quill.brftools</code>)
+provides preferences for braille translation, page handling, and
+status-bar display. Its categories are <code>braille</code> and
+<code>accessibility</code>.</li>
+<li><strong>Journal Stamp</strong> (<code>com.quill.journalstamp</code>)
+subscribes to <code>document.created</code>,
+<code>document.after_save</code>,
+<code>document.loaded_from_session</code>, <code>quillin.enabled</code>,
+and <code>settings.changed</code>. It can insert a date header, announce
+word count and daily-goal progress after save, announce restored
+documents, log activation, and hot-reload preferences. Its date-format
+and daily-goal controls include <code>search_keywords</code>. Its
+categories are <code>writing</code> and <code>productivity</code>.</li>
+<li><strong>Document Guardian</strong>
+(<code>com.quill.docguardian</code>) subscribes to
+<code>document.before_close</code>, <code>document.before_save</code>,
+<code>document.after_save</code>, <code>quillin.enabled</code>,
+<code>quillin.disabled</code>, and <code>quill.shutdown</code>. It can
+warn on unfinished documents, stamp an <code>Updated:</code> line,
+confirm saves with file size, announce and log activation, announce
+deactivation, and clean up on shutdown. Its categories are
+<code>writing</code> and <code>productivity</code>.</li>
+<li><strong>Status Scribe</strong> (<code>com.quill.statusscribe</code>)
+adds a live word, character, and sentence count to the status bar. It
+updates after every save and on tab switch. It demonstrates
+<code>status_bar</code> contribution, <code>ui.log</code> developer
+logging, <code>quillin.enabled</code>, <code>quillin.disabled</code>,
+<code>settings.changed</code>, lifecycle events, and announcement
+priority. Its categories are <code>writing</code>,
+<code>productivity</code>, and <code>accessibility</code>.</li>
 </ul>
-<h2 id="new-braille-mode">New: Braille Mode</h2>
-<p>QUILL can now opens and edit formatted braille text files. The point
-is to let a braille proofreader move through a transcription the way it
-is actually laid out, in braille pages and cells, with speech that tells
-you exactly where you are.</p>
-<p><strong>Opening a braille file.</strong> Open any braille file the
-way you open anything else. QUILL reads it as braille text, and the file
-is scanned for any character that is not braille ASCII. Nothing is
-transformed on the way in, what you see is the file’s bytes.</p>
-<p><strong>Saving is byte-for-byte.</strong> When you save a braille
-file, QUILL preserves it exactly: no trailing-space trimming, no
-line-ending normalization, and form feeds (the hard page breaks) are
-kept. If the text contains characters outside the braille-ASCII range,
-QUILL still saves them as-is and gives you a single, non-blocking spoken
-warning so nothing is silently changed. This means a round-trip — open,
-save — gives you back an identical file.</p>
-<p><strong>The braille status cell.</strong> While a braille file is
-active, the status bar carries a braille cell that updates as you move:
-it reads like
-<code>BRF Pg 12/87 | Ln 14/25 | Cell 31/40 | Print 7</code>. That is the
-braille page, the line within the page, the cell within the line, and
-the print page. Print-page detection arrives in a later phase; until
-then the print segment reads <code>Print ?</code>.</p>
-<p><strong>The Braille menu.</strong> Braille commands live under
-<strong>Tools &gt; Braille</strong>. Bindings are intentionally left
-unset so nothing collides with your screen reader or existing editor
-keys; you can assign your own in the keyboard customizer, or run them
-from the Command Palette.</p>
+<h3 id="whats-new-in-the-quillin-platform">What’s new in the Quillin
+platform</h3>
 <ul>
-<li><strong>Status</strong> — Read Braille Status (respects your status
-verbosity), Read Detailed Braille Status, Read Current Line and Cell,
-Read Current Braille Page, Read Current Print Page, and Read Progress
-Summary (how far through the document you are).</li>
-<li><strong>Navigation</strong> — Go to Braille Page… (type a page
-number), Next Braille Page, and Previous Braille Page. Stepping past the
-first or last page tells you there is no more.</li>
-<li><strong>Page Tools</strong> — Insert Braille Page Break (a form
-feed) and Remove Braille Page Break at the cursor, plus Recalculate Page
-Map (rebuild the page map after edits) and a placeholder for Normalize
-Line Endings.</li>
+<li><strong>Timer events (schedule)</strong> — a Quillin can now
+schedule background work every N seconds (minimum 60, maximum 86400).
+Timers run in dedicated threads so the editor never blocks. Status
+Scribe uses this to refresh its word-count cell every 5 minutes without
+a user action.</li>
+<li><strong>File-type contributions (file_types)</strong> — a Quillin
+can declare which file extensions it handles. When a matching file
+opens, the Quillin’s handler fires automatically. BRF Tools announces
+the braille page count when a <code>.brf</code> or <code>.brl</code>
+file opens.</li>
+<li><strong>Snippet gallery (snippet_gallery)</strong> — a Quillin can
+contribute named, parameterized templates to a browseable gallery. Open
+it from <strong>Insert → Snippet Gallery…</strong>, pick a template,
+fill in any prompts, and the text lands at the cursor. Smart Insert
+ships three built-in gallery snippets: a report header, a meeting
+invite, and a Markdown bug report.</li>
+<li><strong>Document lifecycle events now fire</strong> — the 14
+declared events (<code>document.opened</code>,
+<code>document.after_save</code>, <code>quill.shutdown</code>, and the
+rest) now actually dispatch at runtime. Journal Stamp and Status Scribe
+are live.</li>
 </ul>
-<p>Every status and navigation command is safe to run on a non-braille
-document — it simply tells you “This is not a braille document” rather
-than doing anything.</p>
-<p><strong>Translation (Universal QUILL Braille Pack).</strong> Forward
-and back translation between print text and braille require the optional
-<strong>QUILL Braille Pack</strong>, which can be selected during
-installation. The pack uses a three-layer architecture: a full technical
-catalog of every available liblouis table, a set of user-facing profiles
-that map friendly names to the correct tables, and the translation
-runtime itself.</p>
-<p>When the pack is installed, the <strong>Translation</strong> submenu
-is organized into three sections:</p>
+<hr />
+<h2 id="braille-mode-professional-braille-editing-inside-quill">Braille
+Mode: professional braille editing inside QUILL</h2>
+<p>QUILL can now open and edit formatted braille text files. The goal is
+to let a braille proofreader move through a transcription the way it is
+actually laid out: by braille pages, lines, cells, hard page breaks, and
+progress through the document.</p>
+<h3 id="opening-and-saving-braille-files">Opening and saving braille
+files</h3>
+<p>Open a braille file the same way you open any other file. QUILL reads
+it as braille text and scans it for any character that is not braille
+ASCII. Nothing is transformed on the way in; the document reflects the
+file’s bytes.</p>
+<p>Saving is byte-for-byte. QUILL does not trim trailing spaces,
+normalize line endings, or remove form feeds. Hard page breaks are
+preserved. If the text contains characters outside the braille-ASCII
+range, QUILL still saves them as-is and gives one non-blocking spoken
+warning so nothing is silently changed. A round trip of open and save
+returns an identical file.</p>
+<h3 id="braille-status-cell">Braille status cell</h3>
+<p>While a braille file is active, the status bar includes a braille
+cell that updates as you move:</p>
+<pre class="text"><code>BRF Pg 12/87 | Ln 14/25 | Cell 31/40 | Print 7</code></pre>
+<p>That status gives the braille page, line within the page, cell within
+the line, and print page. Print-page detection arrives in a later phase;
+until then the print segment reads <code>Print ?</code>.</p>
+<h3 id="braille-commands">Braille commands</h3>
+<p>Braille commands now live under <strong>Tools -&gt; Braille</strong>.
+Key bindings are intentionally left unset so QUILL does not collide with
+screen-reader keys or existing editor shortcuts. You can assign your own
+bindings in the keyboard customizer or run the commands from the Command
+Palette.</p>
+<p>The Braille menu is organized into three groups.</p>
+<p><strong>Status</strong> includes:</p>
 <ul>
-<li><strong>UEB (Unified English Braille)</strong> — Contracted (Grade
-2), Uncontracted (Grade 1), Translate Selection to UEB, and
-Back-Translate UEB.</li>
-<li><strong>Standard American English (Legacy)</strong> — Contracted
-(Grade 2) and Uncontracted (Grade 1) using the traditional North
-American English tables.</li>
-<li><strong>More Languages</strong> — populated automatically from the
-pack’s profile catalog: German, French, Spanish, Russian, Korean, and
-dozens more. Languages with both contracted and uncontracted variants
-appear as their own sub-group.</li>
+<li>Read Braille Status, respecting your status verbosity.</li>
+<li>Read Detailed Braille Status.</li>
+<li>Read Current Line and Cell.</li>
+<li>Read Current Braille Page.</li>
+<li>Read Current Print Page.</li>
+<li>Read Progress Summary, which reports how far through the document
+you are.</li>
 </ul>
-<p>When the pack is absent, the Translation submenu is hidden entirely —
-you never see disabled items. Forward translation opens the BRF result
-in a new document and tells you how many braille pages it produced.
-Back-translation always opens its result as a clearly labeled
-<strong>draft</strong> because no automatic back-translation is
-authoritative. Translation runs entirely out of process, so a liblouis
-failure can never take QUILL down. The Translation submenu is also
-hidden in Safe Mode.</p>
-<h2 id="new-sound-notifications-you-can-shape">New: sound notifications
-you can shape</h2>
-<p>QUILL can now play short, non-speech audio cues — earcons — at
-meaningful moments: a file saved, a search found, a comparison opened.
-The point is to let your screen reader stay focused on the text while a
-quick sound carries the “something happened” signal.</p>
+<p><strong>Navigation</strong> includes:</p>
 <ul>
-<li><strong>What it is.</strong> Sounds come from a <em>sound pack</em>:
-a folder (or a single <code>.qsp</code> file) of audio clips with a
-small manifest that says which event plays which sound. QUILL ships a
-pack called <strong>Ink</strong>, and you can drop in your own.</li>
-<li><strong>QUILL key confirmation tone.</strong> When you press the
-QUILL key (<code>Ctrl+Shift+Grave</code>) to arm the prefix, QUILL now
-plays a short two-tone ping (<code>quill_key_pressed</code>) — distinct
-from every other earcon — so you get instant audio confirmation that the
-prefix is live, without waiting for speech. This earcon is included in
-all bundled sound packs and can be toggled individually in <strong>Tools
-→ Reading &amp; Dictation → Sound Events…</strong>.</li>
-<li><strong>You are in control.</strong> Open <strong>Tools → Reading
-&amp; Dictation → Sound Events…</strong> to switch individual events on
-or off. They are grouped — Earcons, Compare, and Indentation tones — so
-you can keep the cues you like and silence the rest. <strong>Toggle
-Sound Notifications</strong> turns everything on or off at once and
-plays a short “on” or “off” cue so you know where you landed.</li>
-<li><strong>Why it matters.</strong> For a screen-reader user, a
-well-chosen sound is faster than a spoken phrase and never talks over
-your reader. Because it is all opt-in and per-event, it adds information
-without adding noise.</li>
+<li>Go to Braille Page…, where you type a page number.</li>
+<li>Next Braille Page.</li>
+<li>Previous Braille Page.</li>
 </ul>
-<h3 id="indentation-tones-for-code">Indentation tones for code</h3>
-<p>When you turn on indentation tones (pick a musical scale under the
-<strong>Indentation tones</strong> setting, or leave it Off), QUILL
-plays a pitch that rises as your caret moves deeper into indented code
-and falls as you come back out. Blank lines stay silent and hold the
-last level, so cursoring through gaps does not chirp. It is a quiet,
-ambient way to feel the shape of code without counting spaces.</p>
-<h2 id="new-compare-mode-you-can-navigate-by-ear">New: compare mode you
-can navigate by ear</h2>
-<p>Comparing two files is now a first-class, keyboard-driven experience.
-Open a comparison and move through it with <strong>F8</strong> (next
-difference), <strong>Shift+F8</strong> (previous),
-<strong>Ctrl+F8</strong> (re-announce the current one), and
-<strong>Alt+F8</strong> (hear just the words that changed on a line).
-The differences are presented as a real list you can review one at a
-time with your screen reader.</p>
-<p>If you use a sound pack, compare mode also gives you distinct cues
-for opening and closing a comparison, stepping between differences, and
-bumping against the first or last one — so you can keep your attention
-on the text and let sound tell you where you are.</p>
-<p><strong>Why it matters.</strong> Reviewing edits used to mean a lot
-of careful re-reading. Now you can step difference-to-difference at the
-speed you read, with both speech and optional sound confirming each
-move.</p>
-<h2 id="new-code-aware-editing">New: code-aware editing</h2>
-<p>Open a source file and QUILL loads a <em>language profile</em> from
-the file extension — Python, JavaScript and TypeScript, Kotlin, Shell,
-Markdown, JSON, TOML, and SQL are recognized, with a sensible plain-text
+<p>Moving past the first or last page tells you there is no more.</p>
+<p><strong>Page Tools</strong> includes:</p>
+<ul>
+<li>Insert Braille Page Break, which inserts a form feed.</li>
+<li>Remove Braille Page Break at the cursor.</li>
+<li>Recalculate Page Map, which rebuilds the page map after edits.</li>
+<li>Normalize Line Endings, currently present as a placeholder.</li>
+</ul>
+<p>Every braille status and navigation command is safe to run on a
+non-braille document. QUILL simply says,
+<code>This is not a braille document</code>, and does nothing else.</p>
+<h3 id="translation-with-the-optional-quill-braille-pack">Translation
+with the optional QUILL Braille Pack</h3>
+<p>Forward and back translation between print text and braille require
+the optional <strong>QUILL Braille Pack</strong>, which can be selected
+during installation.</p>
+<p>The pack uses a three-layer architecture:</p>
+<ol type="1">
+<li>A full technical catalog of every available liblouis table.</li>
+<li>User-facing profiles that map friendly names to the correct
+tables.</li>
+<li>The translation runtime itself.</li>
+</ol>
+<p>When the pack is installed, the Translation submenu is organized into
+three sections.</p>
+<p><strong>UEB (Unified English Braille)</strong> includes:</p>
+<ul>
+<li>Contracted, Grade 2.</li>
+<li>Uncontracted, Grade 1.</li>
+<li>Translate Selection to UEB.</li>
+<li>Back-Translate UEB.</li>
+</ul>
+<p><strong>Standard American English (Legacy)</strong> includes:</p>
+<ul>
+<li>Contracted, Grade 2.</li>
+<li>Uncontracted, Grade 1.</li>
+</ul>
+<p>These use the traditional North American English tables.</p>
+<p><strong>More Languages</strong> is populated automatically from the
+pack’s profile catalog. It includes German, French, Spanish, Russian,
+Korean, and dozens more. Languages with both contracted and uncontracted
+variants appear as their own sub-group.</p>
+<p>When the pack is absent, the Translation submenu is hidden entirely;
+you do not see disabled items. The Translation submenu is also hidden in
+Safe Mode.</p>
+<p>Forward translation opens the BRF result in a new document and tells
+you how many braille pages it produced. Back-translation always opens
+its result as a clearly labelled draft because automatic
+back-translation is not authoritative. Translation runs entirely out of
+process, so a liblouis failure cannot take QUILL down.</p>
+<hr />
+<h2 id="compare-mode-review-differences-by-keyboard-and-by-ear">Compare
+Mode: review differences by keyboard and by ear</h2>
+<p>File comparison is now a first-class keyboard-driven workflow.</p>
+<p>Open a comparison and move through it with:</p>
+<ul>
+<li><strong>F8</strong> for next difference.</li>
+<li><strong>Shift+F8</strong> for previous difference.</li>
+<li><strong>Ctrl+F8</strong> to re-announce the current difference.</li>
+<li><strong>Alt+F8</strong> to hear just the words that changed on the
+current line.</li>
+</ul>
+<p>Differences are presented as a real list, so you can review them one
+at a time with your screen reader.</p>
+<p>If you use a sound pack, Compare Mode also provides distinct cues for
+opening a comparison, closing a comparison, stepping between
+differences, and bumping against the first or last difference. The
+result is a faster review loop: speech tells you what changed, and
+optional sound tells you where you are in the comparison.</p>
+<hr />
+<h2
+id="code-aware-editing-move-through-source-files-more-intelligently">Code-aware
+editing: move through source files more intelligently</h2>
+<p>When you open a source file, QUILL loads a language profile from the
+file extension. Recognized profiles include:</p>
+<ul>
+<li>Python</li>
+<li>JavaScript</li>
+<li>TypeScript</li>
+<li>Kotlin</li>
+<li>Shell</li>
+<li>Markdown</li>
+<li>JSON</li>
+<li>TOML</li>
+<li>SQL</li>
+</ul>
+<p>Files with unrecognized extensions use a sensible plain-text
 fallback.</p>
-<ul>
-<li><strong>Move by token.</strong> <strong>Next Token</strong> and
-<strong>Previous Token</strong> (in the Navigate menu) jump the caret to
-the next identifier, keyword, operator, or literal, which is far more
-predictable than word movement when you are reading code by ear.</li>
-<li><strong>Set the language yourself.</strong> <strong>Navigate → Set
-Document Language</strong> overrides the automatic choice — handy for an
-unsaved buffer, an unusual extension, or a snippet pasted into a plain
-file.</li>
-</ul>
+<p><strong>Next Token</strong> and <strong>Previous Token</strong>, both
+in the Navigate menu, move the caret to the next identifier, keyword,
+operator, or literal. This is more predictable than ordinary word
+movement when reading code by ear.</p>
+<p><strong>Navigate -&gt; Set Document Language</strong> lets you
+override the automatic choice. This is useful for unsaved buffers,
+unusual extensions, or snippets pasted into plain files.</p>
 <p>Paired with indentation tones, code-aware editing lets structure come
-through as pitch while you move through the meaning token by token.</p>
-<h2 id="new-text-encoding-tools">New: text encoding tools</h2>
-<p>If you have ever fought a file that was UTF-8 when the next tool
-wanted plain ASCII, these three commands under <strong>Format → HTML
-&amp; Encoding</strong> are for you.</p>
+through as pitch while token movement lets you move through meaning.</p>
+<hr />
+<h2
+id="sound-notifications-and-indentation-tones-optional-audio-feedback-without-extra-speech">Sound
+notifications and indentation tones: optional audio feedback without
+extra speech</h2>
+<p>QUILL can now play short non-speech audio cues, called earcons, at
+meaningful moments such as a file save, a successful search, or opening
+a comparison. The goal is to let your screen reader remain focused on
+text while a quick sound confirms that something happened.</p>
+<h3 id="sound-packs">Sound packs</h3>
+<p>Sounds come from a <strong>sound pack</strong>: either a folder or a
+single <code>.qsp</code> file containing audio clips and a small
+manifest that maps events to sounds. QUILL ships with a bundled pack
+called <strong>Ink</strong>, and you can add your own.</p>
+<h3 id="quill-key-confirmation-tone">QUILL key confirmation tone</h3>
+<p>When you press the QUILL key, <strong>Ctrl+Shift+Grave</strong>, to
+arm the prefix, QUILL now plays a short two-tone ping named
+<code>quill_key_pressed</code>. It is distinct from every other earcon,
+so you receive instant audio confirmation that the prefix is live
+without waiting for speech.</p>
+<p>This earcon is included in all bundled sound packs and can be toggled
+individually in <strong>Tools -&gt; Reading &amp; Dictation -&gt; Sound
+Events…</strong>.</p>
+<h3 id="per-event-control">Per-event control</h3>
+<p>Open <strong>Tools -&gt; Reading &amp; Dictation -&gt; Sound
+Events…</strong> to switch individual sound events on or off. Events are
+grouped into Earcons, Compare, and Indentation tones, so you can keep
+the cues you like and silence the rest.</p>
+<p><strong>Toggle Sound Notifications</strong> turns all sound
+notifications on or off at once and plays a short on or off cue so you
+know where you landed.</p>
+<p>Sound is opt-in. Most earcons remain off until you choose a sound
+pack and enable events, so upgrading does not make your current setup
+noisier.</p>
+<h3 id="indentation-tones-for-code">Indentation tones for code</h3>
+<p>Indentation tones are also opt-in. Pick a musical scale under the
+<strong>Indentation tones</strong> setting, or leave it Off.</p>
+<p>When enabled, QUILL plays a pitch that rises as your caret moves
+deeper into indented code and falls as you move back out. Blank lines
+stay silent and hold the last level, so moving through gaps does not
+chirp. It is a quiet ambient way to feel the shape of code without
+counting spaces.</p>
+<hr />
+<h2 id="text-encoding-tools-find-inspect-convert-and-save-safely">Text
+encoding tools: find, inspect, convert, and save safely</h2>
+<p>New commands under <strong>Format -&gt; HTML &amp; Encoding</strong>
+make character and encoding cleanup accessible from inside QUILL.</p>
+<h3 id="show-non-ascii-characters">Show Non-ASCII Characters</h3>
+<p><strong>Show Non-ASCII Characters</strong> opens a read-only report
+of every character beyond plain ASCII. Each entry includes:</p>
 <ul>
-<li><strong>Show Non-ASCII Characters</strong> opens a read-only report
-of every character beyond plain ASCII — with its line and column,
-codepoint, name, and whether it converts cleanly to Latin-1 and
-Windows-1252 (MS-ANSI). Reviewing that list with your screen reader
-replaces the old trick of running a file through <code>iconv</code> with
-a sentinel string and hunting for what failed.</li>
-<li><strong>Jump to Source Line</strong> — while the report is open,
-move your cursor to any character entry row and invoke this command
-(<strong>Format → HTML &amp; Encoding → Jump to Source Line</strong>) to
-switch to the source document and land on the reported line. Assign it a
-key in the Keymap Editor for faster character-by-character review.</li>
-<li><strong>Jump Back to Non-ASCII Report</strong> — returns focus to
-the report tab so you can continue stepping through the list without
-reaching for the mouse.</li>
-<li><strong>Convert Non-ASCII to HTML Entities</strong> rewrites every
-accented letter or symbol as an HTML entity (<code>&amp;eacute;</code>,
-or <code>&amp;#233;</code> when there is no name), while leaving
-ordinary text and existing markup alone. This is the reliable way to
-feed text to a tool — Pandoc is the classic example — that refuses
-anything with high characters in it.</li>
-<li><strong>Re-encode As…</strong> saves a copy in the encoding you
-choose (UTF-8, UTF-8 with a byte-order mark, Latin-1, Windows-1252, or
-ASCII). Anything that does not fit a narrow target is written as a
-numeric HTML entity instead of a silent question mark, so nothing is
-quietly lost.</li>
+<li>Line and column.</li>
+<li>Codepoint.</li>
+<li>Character name.</li>
+<li>Whether it converts cleanly to Latin-1.</li>
+<li>Whether it converts cleanly to Windows-1252, also known as
+MS-ANSI.</li>
 </ul>
-<p><strong>Why it matters.</strong> This turns a fiddly, error-prone
-command-line ritual into five clear, screen-reader-friendly menu
-commands — and the jump navigation means you can inspect every flagged
-character in place, then come back to decide what to do with it.</p>
-<h2 id="new-hand-it-over-in-word-or-rtf">New: hand it over in Word (or
-RTF)</h2>
-<p>Sooner or later somebody asks for “the Word version.” Now you can
-just give it to them. <strong>File -&gt; Save As…</strong>, pick **Word
-Document (*.docx)** (or Rich Text) from the type list, and QUILL
-converts your document on the way out the door — no copy-paste-into-Word
-dance, no reformatting marathon.</p>
-<p>And because we hand the conversion to Pandoc with real Word styles,
-your headings come out as actual Word headings, not “bold text that
-looks like a heading.” That means the file is navigable by the next
-person’s screen reader too — accessibility doesn’t stop at the export
-button.</p>
-<p>A word to the wise: Word keeps whatever structure your source had.
-Save a richly formatted Markdown or HTML document and it arrives dressed
-for the occasion; save a plain-text file and you get a tidy but
-unadorned document, because there was no structure to carry. QUILL will
-tell you so rather than quietly flattening your work.</p>
-<h2 id="new-citations-without-the-tears">New: citations without the
-tears</h2>
-<p>Setting up MLA or Chicago citations has a special talent for going
-wrong at 2 a.m. the night before a paper is due — a comma in the wrong
-place, an italic that should not be there, a hanging indent that refuses
-to hang. QUILL now does the fussy part for you.</p>
-<p><strong>Insert -&gt; Insert Citation…</strong> opens a plain,
-labelled form: pick your source type (book, journal article, or
-website), pick your style (MLA 9, Chicago 17, or APA 7), type in what
-you know — author, title, year, the usual suspects — and choose whether
-you want the in-text citation, the full bibliography entry, or both.
-QUILL formats it correctly and drops it in at your cursor.</p>
-<p>You provide the facts; QUILL handles the punctuation gymnastics. The
-goal here is simple and, frankly, a little bit personal for an
-accessibility-first editor: a screen-reader user should never be at a
-disadvantage just because citation formatting is finicky visual
-busywork. Now you are on the same footing as everyone else in the
-seminar — and you got there without fighting a single hanging
-indent.</p>
-<h2 id="new-vision-prompt-library-contributed-by-kelly-ford">New: Vision
-Prompt Library — contributed by Kelly Ford</h2>
-<p>QUILL 0.6.0 ships a Vision Prompt Library for the <strong>Describe
-Image with AI</strong> feature, contributed by <a
-href="https://github.com/kellylford">Kelly Ford</a>. Kelly independently
-built and evaluated 12 prompt styles drawn from his <a
+<p>This replaces the old command-line ritual of running a file through
+tools such as <code>iconv</code>, inserting a sentinel string, and
+hunting for what failed.</p>
+<h3 id="jump-between-the-report-and-source">Jump between the report and
+source</h3>
+<p>While the report is open, move to any character entry row and choose
+<strong>Format -&gt; HTML &amp; Encoding -&gt; Jump to Source
+Line</strong>. QUILL switches to the source document and lands on the
+reported line.</p>
+<p>Assign this command a key in the Keymap Editor for faster
+character-by-character review.</p>
+<p><strong>Jump Back to Non-ASCII Report</strong> returns focus to the
+report tab so you can continue reviewing the list without using the
+mouse.</p>
+<h3 id="convert-non-ascii-to-html-entities">Convert Non-ASCII to HTML
+Entities</h3>
+<p><strong>Convert Non-ASCII to HTML Entities</strong> rewrites accented
+letters and symbols as HTML entities, such as <code>&amp;eacute;</code>,
+or numeric entities such as <code>&amp;#233;</code> when no named entity
+exists. Ordinary text and existing markup are left alone.</p>
+<p>This is the reliable command when you need to feed text to a tool,
+such as Pandoc, that refuses high characters.</p>
+<h3 id="re-encode-as">Re-encode As…</h3>
+<p><strong>Re-encode As…</strong> saves a copy in the encoding you
+choose:</p>
+<ul>
+<li>UTF-8.</li>
+<li>UTF-8 with a byte-order mark.</li>
+<li>Latin-1.</li>
+<li>Windows-1252.</li>
+<li>ASCII.</li>
+</ul>
+<p>Anything that does not fit a narrow target is written as a numeric
+HTML entity instead of being silently replaced by a question mark.
+Nothing is quietly lost.</p>
+<hr />
+<h2 id="save-as-word-or-rtf">Save as Word or RTF</h2>
+<p>QUILL can now hand your work over as a Word document or rich text
+file.</p>
+<p>Choose <strong>File -&gt; Save As…</strong>, then select <strong>Word
+Document (<code>*.docx</code>)</strong> or <strong>Rich Text</strong>
+from the type list. QUILL converts the document on the way out, avoiding
+the copy-paste-into-Word routine.</p>
+<p>The conversion is handled through Pandoc with real Word styles. If
+your source has headings, those become actual Word headings, not bold
+text that merely looks like a heading. That keeps the exported file
+navigable for the next person’s screen reader.</p>
+<p>The result reflects the structure of the source. A richly formatted
+Markdown or HTML document exports with that structure. A plain-text file
+exports as a tidy but unadorned document because there was no structure
+to carry. QUILL tells you that instead of quietly flattening your
+work.</p>
+<hr />
+<h2 id="citations-without-the-tears">Citations without the tears</h2>
+<p><strong>Insert -&gt; Insert Citation…</strong> opens a plain labelled
+form for creating citations.</p>
+<p>You choose:</p>
+<ul>
+<li>Source type: book, journal article, or website.</li>
+<li>Style: MLA 9, Chicago 17, or APA 7.</li>
+<li>Output: in-text citation, full bibliography entry, or both.</li>
+</ul>
+<p>Then you fill in the facts you know, such as author, title, year, and
+related fields. QUILL handles the punctuation, ordering, formatting
+details, and insertion at the cursor.</p>
+<p>The point is simple: screen-reader users should not be at a
+disadvantage because citation formatting is visual, finicky, and easy to
+get wrong.</p>
+<hr />
+<h2
+id="vision-prompt-library-better-ai-image-descriptions-contributed-by-kelly-ford">Vision
+Prompt Library: better AI image descriptions, contributed by Kelly
+Ford</h2>
+<p>QUILL 0.6.0 includes a Vision Prompt Library for <strong>Describe
+Image with AI</strong>, contributed by <a
+href="https://github.com/kellylford">Kelly Ford</a>.</p>
+<p>Kelly independently built and evaluated twelve prompt styles drawn
+from his <a
 href="https://github.com/kellylford/Image-Description-Toolkit">Image
-Description Toolkit</a> — a set of experimental tools for accessible
-image interaction that every accessibility developer and practitioner
-should know about.</p>
-<p>Instead of a single hardcoded prompt, you now choose from twelve
-IDT-evaluated styles, each targeting a specific use case: a concise
-identification, a detailed scene description, an alt-text optimized for
-web publishing, a screen-reader-first narrative, a document-context
-interpretation, and more. Styles are evaluated and curated, not randomly
-generated.</p>
+Description Toolkit</a>, an experimental toolkit for accessible image
+interaction.</p>
+<p>Instead of one hardcoded image-description prompt, QUILL now lets you
+choose from twelve IDT-evaluated styles. Each style targets a specific
+use case, such as:</p>
+<ul>
+<li>Concise identification.</li>
+<li>Detailed scene description.</li>
+<li>Alt text optimized for web publishing.</li>
+<li>Screen-reader-first narrative.</li>
+<li>Document-context interpretation.</li>
+<li>Additional curated description styles.</li>
+</ul>
+<p>These styles are evaluated and curated, not randomly generated.</p>
+<h3 id="how-the-library-works">How the library works</h3>
 <ul>
 <li><strong>Zero disruption by default.</strong> If you never change a
-setting, Describe Image behaves exactly as before — the default IDT
-style is applied silently with no extra clicks.</li>
-<li><strong>One click to try a different style.</strong> After a
-description arrives, a <strong>Try a different prompt…</strong> button
-appears in the review dialog. One click re-runs the description with the
-next style in the list. No re-uploading, no dialog re-opening, no extra
+setting, Describe Image behaves exactly as before. The default IDT style
+is applied silently with no extra clicks.</li>
+<li><strong>Try a different prompt.</strong> After a description
+arrives, a <strong>Try a different prompt…</strong> button appears in
+the review dialog. One click re-runs the description with the next style
+in the list. No re-uploading, no dialog re-opening, and no extra
 navigation.</li>
-<li><strong>Opt-in pre-describe picker.</strong> If you want to choose a
-style <em>before</em> describing an image, enable the style picker in
-<strong>Settings → AI</strong>. Once on, you see a focused,
+<li><strong>Opt-in pre-describe picker.</strong> Enable the style picker
+in <strong>Settings -&gt; AI</strong> if you want to choose a prompt
+style before describing an image. Once enabled, QUILL shows a focused
 keyboard-navigable list of the twelve styles before every
 description.</li>
-<li><strong>Manage Image Prompts dialog.</strong> Open <strong>AI Hub →
-Image Prompt Styles…</strong> to see all built-in styles with a
+<li><strong>Manage Image Prompts dialog.</strong> Open <strong>AI Hub
+-&gt; Image Prompt Styles…</strong> to review all built-in styles with a
 read-only preview pane, toggle styles on or off, set the default, and
-add custom prompts of your own. Built-in styles are immutable; custom
-prompts are additive.</li>
+add custom prompts. Built-in styles are immutable; custom prompts are
+additive.</li>
 <li><strong>Settings sync immediately.</strong> A bug where AI Hub
-changes to the vision settings (picker toggle, default style) had no
-effect until restart is fixed. Changes now apply the moment you
+changes to vision settings, including picker toggle and default style,
+did not apply until restart. That is fixed. Changes apply as soon as you
 save.</li>
 </ul>
-<p>Kelly’s Image Description Toolkit is an independent project worth
-bookmarking: <a
-href="https://github.com/kellylford/Image-Description-Toolkit">https://github.com/kellylford/Image-Description-Toolkit</a>.
-He also maintains several other screen-reader-friendly applications — <a
-href="https://github.com/kellylford/QuickMail">QuickMail</a> (an
-accessible IMAP email client), <a
-href="https://github.com/kellylford/rssquick">RSSQuick</a> (an
-accessible WPF RSS reader), and <a
-href="https://github.com/kellylford/ChatViewer">ChatViewer</a> (a GitHub
-Copilot Chat viewer). His work consistently puts the screen-reader user
-first. Thank you, Kelly.</p>
-<h2 id="new-dynamic-keyboard-reference">New: Dynamic Keyboard
-Reference</h2>
-<p>The keyboard reference is no longer a static document. It is now
+<p>Kelly’s Image Description Toolkit is worth bookmarking: <a
+href="https://github.com/kellylford/Image-Description-Toolkit"
+class="uri">https://github.com/kellylford/Image-Description-Toolkit</a>.</p>
+<p>Kelly also maintains several screen-reader-friendly applications:</p>
+<ul>
+<li><a href="https://github.com/kellylford/QuickMail">QuickMail</a>, an
+accessible IMAP email client.</li>
+<li><a href="https://github.com/kellylford/rssquick">RSSQuick</a>, an
+accessible WPF RSS reader.</li>
+<li><a href="https://github.com/kellylford/ChatViewer">ChatViewer</a>, a
+GitHub Copilot Chat viewer.</li>
+</ul>
+<p>Thank you, Kelly, for work that consistently puts screen-reader users
+first.</p>
+<hr />
+<h2 id="dynamic-keyboard-reference">Dynamic Keyboard Reference</h2>
+<p>The keyboard reference is no longer a static document. It is
 generated live from the active command registry and your current feature
 profile.</p>
+<p>The reference now:</p>
 <ul>
-<li><strong>Reflects your actual setup.</strong> If you rebind a key or
-switch to a different keyboard pack, the exported HTML reference updates
-instantly to show exactly what is bound.</li>
-<li><strong>Layer-aware.</strong> The reference now explicitly documents
-the layered nature of the QUILL key, including the prefix chords and the
-dedicated browse mode (Quick Nav) shortcuts.</li>
-<li><strong>Accessible export.</strong> The output is a clean, semantic
-HTML page designed for high-performance screen-reader review.</li>
+<li>Reflects your actual setup. If you rebind a key or switch to a
+different keyboard pack, the exported HTML reference updates to show
+exactly what is bound.</li>
+<li>Documents QUILL’s layered keyboard model, including QUILL key prefix
+chords and dedicated browse-mode, also called Quick Nav, shortcuts.</li>
+<li>Exports as clean semantic HTML designed for high-performance
+screen-reader review.</li>
 </ul>
+<hr />
 <h2 id="smaller-additions-worth-knowing">Smaller additions worth
 knowing</h2>
+<p>QUILL 0.6.0 also includes these practical additions:</p>
 <ul>
-<li><strong>Speak where you are.</strong> From the QUILL key, press
-<strong>F</strong> to speak the window title, <strong>P</strong> to
-speak the full file path, or <strong>Q</strong> to speak a short status
-summary — without leaving the editor.</li>
-<li><strong>Switch documents with Ctrl+Tab</strong> (and Ctrl+Shift+Tab
-to go back), the shortcut your fingers already expect.</li>
-<li><strong>Files open where you work.</strong> Open and Save As now
-start in your Documents folder, and you can set your own default startup
-folder in Preferences — no more landing in the install directory.</li>
-<li><strong>Launch straight to the spot.</strong>
-<code>--goto FILE:LINE:COL</code> opens a file at a position in one
-argument (great when a linter or search result hands you a
-<code>file:line:column</code> string), and
-<code>--diff LEFT RIGHT</code> opens two files straight into compare
-mode.</li>
-<li><strong>A friendlier bug report.</strong> <strong>Help → Report a
-Bug…</strong> now opens focused on the Summary field, remembers your
-name and email so you only type them once, and asks which screen reader
-you use (pre-selected from what QUILL detects) so the team can reproduce
-reader-specific issues.</li>
-<li><strong>Feature search finds more.</strong> Searching the feature
-list now returns copy tray, macros, and abbreviations.</li>
-<li><strong>More file types in Open</strong>, including common developer
-extensions (Kotlin, TypeScript, Go, Rust, and more), and
-<strong>HEIC/HEIF images</strong> are now supported for AI image
+<li>From the QUILL key, press <strong>F</strong> to speak the window
+title, <strong>P</strong> to speak the full file path, or
+<strong>Q</strong> to speak a short status summary without leaving the
+editor.</li>
+<li><strong>Ctrl+Tab</strong> switches to the next document, and
+<strong>Ctrl+Shift+Tab</strong> switches back.</li>
+<li>Open and Save As now start in your Documents folder.</li>
+<li>You can set your own default startup folder in Preferences, so QUILL
+no longer drops you into the install directory.</li>
+<li><code>--goto FILE:LINE:COL</code> opens a file at a specific
+position from one argument, which is useful when a linter or search
+result provides a <code>file:line:column</code> string.</li>
+<li><code>--diff LEFT RIGHT</code> opens two files directly into Compare
+Mode.</li>
+<li><strong>Help -&gt; Report a Bug…</strong> now opens focused on the
+Summary field, remembers your name and email after the first entry, and
+asks which screen reader you use. QUILL preselects the screen reader it
+detects so the team can reproduce reader-specific issues.</li>
+<li>Feature search now finds copy tray, macros, and abbreviations.</li>
+<li>The Open dialog includes more file types, including common developer
+extensions such as Kotlin, TypeScript, Go, Rust, and more.</li>
+<li>HEIC and HEIF images are now supported for AI image
 description.</li>
-<li><strong>The About screen</strong> now credits every GitHub
-contributor, including new project owner Kelly Ford and design
-contributor Ken Perry.</li>
+<li>The About screen now credits every GitHub contributor, including new
+project owner Kelly Ford and design contributor Ken Perry.</li>
 </ul>
+<hr />
 <h2 id="fixes-that-change-the-day-to-day">Fixes that change the
 day-to-day</h2>
-<p>This release also clears out a batch of accessibility and startup
-problems that got in the way day to day.</p>
+<p>This release fixes a group of problems that directly affected
+accessibility, startup reliability, image description, reporting, and
+platform setup.</p>
+<h3 id="report-a-bug-accepts-typing-and-no-longer-freezes-quill">Report
+a Bug accepts typing and no longer freezes QUILL</h3>
+<p>Under NVDA, the bug-report fields were refusing keyboard input. The
+dialog has been rebuilt so every field is editable. It also moved to the
+Help menu, where users expect support-related commands.</p>
+<p>Submitting a report no longer freezes the app while contacting the
+server. That work now happens in the background with a timeout. The
+impact is simple: reporting a problem is no longer itself a problem.</p>
+<h3 id="jaws-focus-is-quieter">JAWS focus is quieter</h3>
+<p>JAWS no longer says stray phrases such as
+<code>splitter window</code> and <code>panel</code> when menus close or
+the app receives focus. The invisible layout container is no longer
+exposed to the screen reader, so focus changes are cleaner and
+quieter.</p>
+<h3 id="describe-image-with-ai-works-again">Describe Image with AI works
+again</h3>
+<p>A small internal error was silently stopping <strong>Describe Image
+with AI</strong> from running. The feature now completes as intended,
+restoring an accessibility feature blind users rely on.</p>
+<h3 id="startup-is-faster-and-quieter">Startup is faster and
+quieter</h3>
+<p>Screen-reader detection now runs in the background instead of
+stalling the first window. A preview warm-up crash is fixed. The title
+bar no longer flashes <code>untitled Quill unavailable</code> before the
+app is ready. The preview pane no longer hangs for minutes with no way
+to close it.</p>
+<h3 id="first-run-is-more-reliable">First run is more reliable</h3>
+<p>The first window now comes to the foreground so the trust and privacy
+dialog is reachable. If you skipped the personalization wizard, you can
+re-open it later. The wizard’s startup beep and Cancel-button focus are
+fixed.</p>
+<h3 id="personalize-quill-wizard-is-cleaner">Personalize Quill wizard is
+cleaner</h3>
+<p>Two setup wizard issues are fixed:</p>
 <ul>
-<li><strong>Report a Bug actually accepts typing now.</strong> Under
-NVDA, the bug-report fields were refusing keyboard input. The dialog has
-been rebuilt so every field is editable, and it moved to the Help menu
-where you would expect it. It also no longer freezes the app while it
-contacts the server — that work happens in the background with a
-timeout. The impact: reporting a problem is no longer itself a
-problem.</li>
-<li><strong>JAWS stops saying “splitter window” and “panel.”</strong>
-Those stray announcements on menu close and when the app took focus are
-gone, because the invisible layout container is no longer exposed to
-your screen reader. Quieter focus changes mean less to wade
-through.</li>
-<li><strong>Describe Image works again.</strong> A small internal error
-was silently stopping the “Describe Image with AI” feature from running.
-It now completes as intended — an accessibility feature blind users rely
-on is dependable again.</li>
-<li><strong>Faster, quieter startup.</strong> Screen-reader detection
-now runs in the background instead of stalling the first window, a crash
-in the preview warm-up is fixed, and the title bar no longer flashes
-“untitled Quill unavailable” before the app is ready. The preview pane
-also no longer hangs for minutes with no way to close it.</li>
-<li><strong>A reliable first run.</strong> The first window now comes to
-the foreground so the trust and privacy dialog is reachable, and you can
-re-open the personalization wizard later if you skipped it. The wizard’s
-startup beep and its Cancel-button focus are fixed too.</li>
-<li><strong>A tidier Personalize Quill wizard.</strong> Two snags in the
-setup wizard are gone: the “Play sounds for mode changes” checkbox on
-step 2 now reads with its label instead of as an unlabeled control, and
-the profile choices on step 3 now wrap when you arrow past the last one
-instead of dumping you onto the Back and Next buttons.</li>
-<li><strong>The user guide opens the right way.</strong> It now opens as
-a read-only page in your browser instead of as an editable Markdown
-document you could accidentally change — and a stray edit can no longer
-throw a <code>0x8007139f</code> browser error. A glossary of QUILL terms
-was added to the guide as well.</li>
-<li><strong>Upgrading from 0.5.0 gets a Braille Pack prompt.</strong>
-The QUILL Braille Pack (braille translation, BRF/BRL export, liblouis
-integration) ships as an optional installer component that many 0.5.0
-users will miss during the upgrade wizard. On the first launch of 0.6.0,
-QUILL now detects if the pack is absent and offers to run the installer
-again so you can add it — without re-downloading, using the copy already
-in your updates folder. Choose “Not Now” and the prompt goes away
-permanently; you can always add it later by re-running the installer and
-checking the Braille Pack component.</li>
-<li><strong>Skipped-update notifications work correctly again.</strong>
-If you had skipped a version using “Skip this update,” the notification
-center was silently reporting “no newer version” instead of reminding
-you that a skipped update was still waiting. Fixed.</li>
-<li><strong>macOS keeps your API keys.</strong> Saving an Ask Quill API
-key on macOS used to crash; keys and tokens are now stored in the login
-Keychain, so you set them up once and on-device or cloud AI just
-works.</li>
-<li><strong>macOS builds install cleanly.</strong> The notarized macOS
-build now signs its bundled image libraries and uses hardened-runtime
-entitlements, so the app installs without security warnings.</li>
+<li>The <strong>Play sounds for mode changes</strong> checkbox on step 2
+now reads with its label instead of as an unlabeled control.</li>
+<li>The profile choices on step 3 now wrap when you arrow past the last
+one instead of dumping focus onto the Back and Next buttons.</li>
 </ul>
-<h2 id="things-that-work-a-little-differently-now">Things that work a
-little differently now</h2>
+<h3 id="user-guide-opens-safely">User guide opens safely</h3>
+<p>The user guide now opens as a read-only page in your browser instead
+of as an editable Markdown document you could accidentally change. A
+stray edit can no longer trigger a <code>0x8007139f</code> browser
+error. A glossary of QUILL terms has also been added to the guide.</p>
+<h3 id="upgrade-prompt-for-the-braille-pack">Upgrade prompt for the
+Braille Pack</h3>
+<p>The QUILL Braille Pack, which provides braille translation, BRF and
+BRL export, and liblouis integration, is an optional installer
+component. Some 0.5.0 users may miss it during upgrade.</p>
+<p>On first launch of 0.6.0, QUILL now detects when the pack is absent
+and offers to run the installer again so you can add it without
+re-downloading. It uses the copy already in your updates folder. Choose
+<strong>Not Now</strong> and the prompt goes away permanently. You can
+still add the pack later by re-running the installer and checking the
+Braille Pack component.</p>
+<h3 id="skipped-update-notifications-work-again">Skipped-update
+notifications work again</h3>
+<p>If you previously used <strong>Skip this update</strong>,
+Notification Center was silently reporting <code>no newer version</code>
+instead of reminding you that a skipped update was still waiting. That
+is fixed.</p>
+<h3 id="macos-keeps-api-keys-correctly">macOS keeps API keys
+correctly</h3>
+<p>Saving an Ask Quill API key on macOS used to crash. Keys and tokens
+are now stored in the login Keychain, so you set them up once and
+on-device or cloud AI continues to work.</p>
+<h3 id="macos-builds-install-cleanly">macOS builds install cleanly</h3>
+<p>The notarized macOS build now signs its bundled image libraries and
+uses hardened-runtime entitlements, so the app installs without security
+warnings.</p>
+<hr />
+<h2 id="what-works-differently-now">What works differently now</h2>
+<p>Most habits carry forward, but a few things moved or changed.</p>
+<h3 id="braille-commands-moved-under-tools">Braille commands moved under
+Tools</h3>
+<p>The top-level <strong>Braille</strong> menu is gone. All braille
+commands now live under <strong>Tools -&gt; Braille</strong>, including
+status, navigation, page tools, and translation. The commands are still
+present; they simply live alongside the other authoring tools.</p>
+<h3 id="translation-menu-is-dynamic">Translation menu is dynamic</h3>
+<p>The old flat list of UEB items has been replaced with a structured
+menu:</p>
 <ul>
-<li><strong>Braille commands moved to Tools.</strong> The top-level
-<strong>Braille</strong> menu is gone. All braille commands — status,
-navigation, page tools, and translation — now live under <strong>Tools
-&gt; Braille</strong>. Everything is still there; it just has a new home
-alongside the other authoring tools.</li>
-<li><strong>Translation menu is now dynamic.</strong> The flat list of
-UEB items has been replaced by a structured menu: a <strong>UEB</strong>
-section, a <strong>Standard American English (Legacy)</strong> section,
-and a <strong>More Languages</strong> submenu built from the installed
-pack’s profiles. If you had a habit of reaching for a specific item by
-position, check the new structure the first time you open it.</li>
-<li><strong>No “Install Braille Pack” in the menu.</strong> That item is
-gone from the Braille menu. The pack is now a selectable component
-during the QUILL installer — check the box there if you want it. Once
-installed, the Translation submenu appears automatically.</li>
-<li><strong>Report a Bug is now just above Check for Updates.</strong>
-It moved from its earlier position in the Help menu to sit immediately
-before <strong>Check for Updates</strong>, which is where most people
-look for support-related items.</li>
-<li><strong>Two entity commands, two jobs.</strong> The older
-<strong>Encode HTML Entities</strong> still escapes only the five markup
-characters (<code>&lt;</code>, <code>&gt;</code>, <code>&amp;</code>,
-<code>"</code>, <code>'</code>). The new <strong>Convert Non-ASCII to
-HTML Entities</strong> is the one that handles accents and symbols. If
-you used to reach for the old command expecting it to fix accented text
-for Pandoc, reach for the new one instead.</li>
-<li><strong>Insert &gt; Date and Time is a submenu now.</strong> The
-flat <strong>Date and Time</strong> and <strong>Calculated
-Date…</strong> items have been replaced by a single <strong>Date and
-Time</strong> submenu that ships three items: <strong>Insert
-Date</strong>, <strong>Insert Time</strong>, and <strong>Insert Date and
-Time</strong>. The bundled <code>com.quill.bundled.insert-tools</code>
-Quillin owns the submenu — this is the canonical home for date/time
-snippets and is the model we use for migrating other built-in
-conveniences into Quillins.</li>
-<li><strong>Sound is opt-in.</strong> Most earcons are off until you
-choose a sound pack and enable events, so nothing about your current
-setup gets noisier on upgrade. Turn sound on from <strong>Preferences →
-Sound</strong> and <strong>Tools → Reading &amp; Dictation → Sound
-Events…</strong>.</li>
-<li><strong>Indentation tones default to Off.</strong> They only play
-once you pick a scale, so code files stay silent unless you ask for the
-tones.</li>
+<li><strong>UEB</strong>.</li>
+<li><strong>Standard American English (Legacy)</strong>.</li>
+<li><strong>More Languages</strong>, built from the installed pack’s
+profiles.</li>
 </ul>
+<p>If you used to reach a translation item by position, check the new
+structure the first time you open it.</p>
+<h3 id="no-install-braille-pack-item-in-the-menu">No Install Braille
+Pack item in the menu</h3>
+<p>The Braille menu no longer includes <strong>Install Braille
+Pack</strong>. The pack is now selected during the QUILL installer.
+Check the Braille Pack component in the installer if you want
+translation. Once installed, the Translation submenu appears
+automatically.</p>
+<h3 id="report-a-bug-moved-near-check-for-updates">Report a Bug moved
+near Check for Updates</h3>
+<p><strong>Report a Bug</strong> now sits immediately before
+<strong>Check for Updates</strong> in the Help menu, matching where most
+people look for support and maintenance items.</p>
+<h3 id="two-entity-commands-now-have-two-different-jobs">Two entity
+commands now have two different jobs</h3>
+<p>The older <strong>Encode HTML Entities</strong> command still escapes
+only the five markup characters: <code>&lt;</code>, <code>&gt;</code>,
+<code>&amp;</code>, <code>"</code>, and <code>'</code>.</p>
+<p>The new <strong>Convert Non-ASCII to HTML Entities</strong> command
+handles accents and symbols. If you previously reached for the old
+command expecting it to fix accented text for Pandoc, use the new
+command instead.</p>
+<h3 id="insert-date-and-time-is-now-a-submenu">Insert Date and Time is
+now a submenu</h3>
+<p>The old flat <strong>Date and Time</strong> and <strong>Calculated
+Date…</strong> items have been replaced by one <strong>Insert -&gt; Date
+and Time</strong> submenu.</p>
+<p>That submenu includes:</p>
+<ul>
+<li>Insert Date.</li>
+<li>Insert Time.</li>
+<li>Insert Date and Time.</li>
+</ul>
+<p>The bundled <code>com.quill.bundled.insert-tools</code> Quillin owns
+this submenu. It is now the canonical home for date and time snippets
+and is the model for migrating other built-in conveniences into
+Quillins.</p>
+<h3 id="sound-remains-opt-in">Sound remains opt-in</h3>
+<p>Most earcons are off until you choose a sound pack and enable events.
+Existing setups should not get noisier on upgrade. Turn sound on from
+<strong>Preferences -&gt; Sound</strong> and <strong>Tools -&gt; Reading
+&amp; Dictation -&gt; Sound Events…</strong>.</p>
+<h3 id="indentation-tones-default-to-off">Indentation tones default to
+Off</h3>
+<p>Indentation tones do not play until you pick a scale. Code files
+remain silent unless you ask QUILL for tone feedback.</p>
+<h2 id="closing-summary">Closing summary</h2>
+<p>QUILL 0.6.0 is more than a feature release. It is a statement about
+what an accessible editor can be when screen-reader users are treated as
+the primary audience, not an afterthought.</p>
+<p>This release brings practical power to everyday writing through
+Insert Automation, typed abbreviations, smart triggers, log mode,
+citations, Word and RTF export, and better encoding tools. It brings
+confidence to specialized work through Braille Mode, the optional QUILL
+Braille Pack, professional translation workflows, page-aware BRF
+navigation, and status information that speaks the way braille readers
+actually work. It brings speed to review and development through compare
+mode, code-aware navigation, indentation tones, dynamic keyboard
+documentation, and command-line launch options for precise
+workflows.</p>
+<p>Underneath those visible improvements, the new Quillin platform gives
+QUILL a foundation for growth: accessible preferences, document
+lifecycle events, status bar contributions, settings search, dependency
+checks, network safeguards, developer logging, bundled reference
+Quillins, and strict user control over what extensions can do.</p>
+<p>Just as important, 0.6.0 fixes the kinds of issues that matter deeply
+in daily use: bug reporting now accepts typing, JAWS announcements are
+quieter, Describe Image works again, startup is faster, first-run
+dialogs are reachable, the user guide opens safely, update notifications
+are more reliable, and macOS builds install and store keys
+correctly.</p>
+<p>The result is a release that feels faster, quieter, more predictable,
+and more empowering. QUILL 0.6.0 gives writers, braille users,
+developers, students, accessibility professionals, and screen-reader
+users of every kind a stronger place to work — one built around keyboard
+control, spoken feedback, user choice, and the belief that accessible
+software can also be powerful, elegant, and joyful to use.</p>
+</body>
+</html>
