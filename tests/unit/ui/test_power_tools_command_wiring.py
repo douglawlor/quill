@@ -70,6 +70,8 @@ _POWER_TOOLS_COMMAND_IDS = [
     "power.encode_all_non_ascii",
     "power.show_non_ascii",
     "power.reencode_file",
+    "power.non_ascii_jump_to_source",
+    "power.non_ascii_jump_to_report",
     "power.shuffle_lines",
     "power.sort_lines_numeric",
     "power.sort_lines_by_length",
@@ -263,6 +265,8 @@ def test_menu_recirculation_preserves_shipped_group_order() -> None:
             "power.encode_all_non_ascii",
             "power.show_non_ascii",
             "power.reencode_file",
+            "power.non_ascii_jump_to_source",
+            "power.non_ascii_jump_to_report",
         ],
         "navigate": [
             "power.go_to_percent",

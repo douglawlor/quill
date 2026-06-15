@@ -273,6 +273,22 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         label="&Re-encode As...",
         separator_before=False,
     )
+    add(
+        id="power.non_ascii_jump_to_source",
+        title="Jump to Source Line",
+        top_level="Format",
+        group="html_encoding",
+        label="&Jump to Source Line",
+        separator_before=True,
+    )
+    add(
+        id="power.non_ascii_jump_to_report",
+        title="Jump Back to Non-ASCII Report",
+        top_level="Format",
+        group="html_encoding",
+        label="Jump &Back to Non-ASCII Report",
+        separator_before=False,
+    )
 
     # Navigate menu ------------------------------------------------------
     add(

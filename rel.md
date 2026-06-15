@@ -38,10 +38,12 @@ Paired with indentation tones, code-aware editing lets structure come through as
 If you have ever fought a file that was UTF-8 when the next tool wanted plain ASCII, these three commands under **Format → HTML & Encoding** are for you.
 
 - **Show Non-ASCII Characters** opens a read-only report of every character beyond plain ASCII — with its line and column, codepoint, name, and whether it converts cleanly to Latin-1 and Windows-1252 (MS-ANSI). Reviewing that list with your screen reader replaces the old trick of running a file through `iconv` with a sentinel string and hunting for what failed.
+- **Jump to Source Line** — while the report is open, move your cursor to any character entry row and invoke this command (**Format → HTML & Encoding → Jump to Source Line**) to switch to the source document and land on the reported line. Assign it a key in the Keymap Editor for faster character-by-character review.
+- **Jump Back to Non-ASCII Report** — returns focus to the report tab so you can continue stepping through the list without reaching for the mouse.
 - **Convert Non-ASCII to HTML Entities** rewrites every accented letter or symbol as an HTML entity (`&eacute;`, or `&#233;` when there is no name), while leaving ordinary text and existing markup alone. This is the reliable way to feed text to a tool — Pandoc is the classic example — that refuses anything with high characters in it.
 - **Re-encode As...** saves a copy in the encoding you choose (UTF-8, UTF-8 with a byte-order mark, Latin-1, Windows-1252, or ASCII). Anything that does not fit a narrow target is written as a numeric HTML entity instead of a silent question mark, so nothing is quietly lost.
 
-**Why it matters.** This turns a fiddly, error-prone command-line ritual into three clear, screen-reader-friendly menu commands — and the "nothing is lost" guarantee means you can convert with confidence.
+**Why it matters.** This turns a fiddly, error-prone command-line ritual into five clear, screen-reader-friendly menu commands — and the jump navigation means you can inspect every flagged character in place, then come back to decide what to do with it.
 
 ## New: hand it over in Word (or RTF)
 

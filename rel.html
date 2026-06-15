@@ -176,7 +176,7 @@
   </style>
 </head>
 <body>
-<h1 id="quill-051-release-notes">QUILL 0.5.1 release notes</h1>
+<h1 id="quill-060-release-notes">QUILL 0.6.0 release notes</h1>
 <p>This release is about feedback you can hear, comparisons you can move
 through by keyboard, smarter handling of code, and a set of practical
 encoding tools for anyone who prepares text for the web. Everything
@@ -260,6 +260,14 @@ codepoint, name, and whether it converts cleanly to Latin-1 and
 Windows-1252 (MS-ANSI). Reviewing that list with your screen reader
 replaces the old trick of running a file through <code>iconv</code> with
 a sentinel string and hunting for what failed.</li>
+<li><strong>Jump to Source Line</strong> — while the report is open,
+move your cursor to any character entry row and invoke this command
+(<strong>Format → HTML &amp; Encoding → Jump to Source Line</strong>) to
+switch to the source document and land on the reported line. Assign it a
+key in the Keymap Editor for faster character-by-character review.</li>
+<li><strong>Jump Back to Non-ASCII Report</strong> — returns focus to
+the report tab so you can continue stepping through the list without
+reaching for the mouse.</li>
 <li><strong>Convert Non-ASCII to HTML Entities</strong> rewrites every
 accented letter or symbol as an HTML entity (<code>&amp;eacute;</code>,
 or <code>&amp;#233;</code> when there is no name), while leaving
@@ -273,9 +281,9 @@ numeric HTML entity instead of a silent question mark, so nothing is
 quietly lost.</li>
 </ul>
 <p><strong>Why it matters.</strong> This turns a fiddly, error-prone
-command-line ritual into three clear, screen-reader-friendly menu
-commands — and the "nothing is lost" guarantee means you can convert
-with confidence.</p>
+command-line ritual into five clear, screen-reader-friendly menu
+commands — and the jump navigation means you can inspect every flagged
+character in place, then come back to decide what to do with it.</p>
 <h2 id="new-hand-it-over-in-word-or-rtf">New: hand it over in Word (or
 RTF)</h2>
 <p>Sooner or later somebody asks for "the Word version." Now you can
@@ -312,52 +320,38 @@ disadvantage just because citation formatting is finicky visual
 busywork. Now you are on the same footing as everyone else in the
 seminar — and you got there without fighting a single hanging
 indent.</p>
-<h2 id="new-braille-mode-for-brf-brl-pef-and-ueb-files">New: Braille
-Mode for BRF, BRL, PEF, and UEB files</h2>
-<p>QUILL now opens and edits formatted braille text files as plain
-braille ASCII, built for the people who actually proofread
-transcriptions. The whole point is to move through a braille file the
-way it is laid out — in braille pages, lines, and cells — with speech
-that says exactly where you are.</p>
+<h2 id="new-universal-brf-pack">New: Universal BRF Pack</h2>
+<p>QUILL now supports a Universal Braille Pack, designed to make
+translation both comprehensive and verifiable. Instead of a flat list of
+tables, it uses a three-layer architecture: a full inventory of every
+available table, a user-facing profile system that maps friendly names
+to technical tables, and a suite of verified translation paths for
+English UEB and international braille.</p>
 <ul>
-<li><strong>It opens braille like braille.</strong> Open a
-<code>.brf</code>, <code>.brl</code>, <code>.pef</code>, or
-<code>.ueb</code> file and QUILL reads it as NABCC text: it strips a
-stray byte-order mark, flags any non-braille-ASCII characters, and
-changes nothing on the way in.</li>
-<li><strong>It saves byte-for-byte.</strong> Saving preserves the file
-exactly — no trailing-space trimming, no line-ending changes, form feeds
-(the hard page breaks) kept. Open it, save it, and you get an identical
-file back. If something outside braille ASCII is present, QUILL still
-saves it as-is and gives you one quiet spoken heads-up.</li>
-<li><strong>A braille position cell.</strong> While a braille file is
-active, the status bar carries a cell that updates as you move —
-<code>BRF Pg 12/87 | Ln 14/25 | Cell 31/40 | Print 7</code> — and a new
-top-level <strong>Braille</strong> menu gathers the commands: read the
-status at your chosen verbosity, read the current line and cell, jump to
-a braille page, step page to page, and insert or remove a braille page
-break. Bindings are left unset on purpose so nothing fights your screen
-reader; assign your own or use the Command Palette.</li>
-<li><strong>Translation is optional and out-of-process.</strong> Forward
-and back translation between print and UEB need the optional
-<strong>QUILL Braille Pack</strong> (liblouis plus the English UEB
-tables). Until it is installed, the Translation submenu stays hidden
-rather than greyed out, and an <strong>Install Braille Pack…</strong>
-item tells you where to get it. When it is present, you can translate a
-selection or a document to UEB Grade 1 or Grade 2, and back-translate —
-with the back-translation always labeled a <em>draft</em> to review
-against the BRF. The translator runs in a separate process, so a
-liblouis hiccup can never take the editor down.</li>
+<li><strong>Verified by default.</strong> Every profile in the pack is
+smoke-tested against golden BRF samples to ensure that "available" means
+"working."</li>
+<li><strong>Easy to expand.</strong> Adding a new language or a legacy
+table is as simple as adding a new entry to the profiles manifest; the
+system handles the mapping to the underlying liblouis tables.</li>
+<li><strong>Surgical precision.</strong> Because translation runs in a
+separate process, a liblouis error cannot crash the editor.</li>
 </ul>
-<p>Braille Mode ships with both its core reading/editing phase and its
-translation phase: the Translation commands, the optional-pack
-detection, and the out-of-process liblouis bridge are all in place, and
-a deployment build script (<code>scripts/build_braille_pack.py</code>)
-plus a full packaging and language-pack plan are documented in
-<code>docs/braille.md</code>. What remains is operational — vendoring
-and hosting the first signed translation pack so <strong>Install Braille
-Pack…</strong> can fetch it directly — along with print-page detection
-and the proofing workflow on the roadmap.</p>
+<h2 id="new-dynamic-keyboard-reference">New: Dynamic Keyboard
+Reference</h2>
+<p>The keyboard reference is no longer a static document. It is now
+generated live from the active command registry and your current feature
+profile.</p>
+<ul>
+<li><strong>Reflects your actual setup.</strong> If you rebind a key or
+switch to a different keyboard pack, the exported HTML reference updates
+instantly to show exactly what is bound.</li>
+<li><strong>Layer-aware.</strong> The reference now explicitly documents
+the layered nature of the QUILL key, including the prefix chords and the
+dedicated browse mode (Quick Nav) shortcuts.</li>
+<li><strong>Accessible export.</strong> The output is a clean, semantic
+HTML page designed for high-performance screen-reader review.</li>
+</ul>
 <h2 id="smaller-additions-worth-knowing">Smaller additions worth
 knowing</h2>
 <ul>
@@ -426,11 +420,6 @@ setup wizard are gone: the "Play sounds for mode changes" checkbox on
 step 2 now reads with its label instead of as an unlabeled control, and
 the profile choices on step 3 now wrap when you arrow past the last one
 instead of dumping you onto the Back and Next buttons.</li>
-<li><strong>Quill actually quits now.</strong> When running from source,
-Quill could refuse to close — the window would shut but the process kept
-running until you killed it from the console. A stray background window
-was holding the door open; it now gets cleaned up on exit, so closing
-the window closes Quill.</li>
 <li><strong>The user guide opens the right way.</strong> It now opens as
 a read-only page in your browser instead of as an editable Markdown
 document you could accidentally change — and a stray edit can no longer
@@ -471,19 +460,6 @@ Events...</strong>.</li>
 <li><strong>Indentation tones default to Off.</strong> They only play
 once you pick a scale, so code files stay silent unless you ask for the
 tones.</li>
-</ul>
-<h2 id="roadmap-whats-coming">Roadmap: what's coming</h2>
-<ul>
-<li><strong>QUILL Braille Mode</strong> is now captured as a six-phase
-roadmap. The full spec lives at <code>docs/braille.md</code>;
-<code>.brf</code>, <code>.brl</code>, <code>.pef</code>, and
-<code>.ueb</code> files are first-class document types in v1.0, with
-English UEB only and liblouis kept strictly out-of-process. Track the
-work through issues #224–#246 (labels <code>braille</code> +
-<code>p1</code>…<code>p6</code>). Implementation begins with Phase 1
-(BRF Core: open, save, page map, status bar, first commands); Phase 5
-(the optional UEB Braille Pack) and Phase 6 (source-to-BRF linking) are
-gated on later phases.</li>
 </ul>
 </body>
 </html>

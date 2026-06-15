@@ -708,8 +708,50 @@ class PowerToolsActionsMixin:
         """Open a read-only report of every non-ASCII character (#197)."""
         from quill.core import encoding_tools
 
+        self._non_ascii_source_tab: object = self._document_tabs[self._current_tab_index()]
         report = encoding_tools.summarize_non_ascii(self.editor.GetValue())
         self._power_tools_open_text_in_new_buffer(report, "Non-ASCII characters")
+        self._non_ascii_report_tab: object = self._document_tabs[self._current_tab_index()]
+
+    def non_ascii_jump_to_source(self) -> None:
+        """From the Non-ASCII report, jump to the referenced line in the source (#197)."""
+        import re
+
+        source_tab = getattr(self, "_non_ascii_source_tab", None)
+        if source_tab is None:
+            self._set_status("Run Show Non-ASCII Characters first.")
+            return
+        text = self.editor.GetValue()
+        pos = self.editor.GetInsertionPoint()
+        line_start = text.rfind("\n", 0, pos) + 1
+        line_end_nl = text.find("\n", pos)
+        line_text = text[line_start:] if line_end_nl == -1 else text[line_start:line_end_nl]
+        match = re.match(r"^(\d+):(\d+)\t", line_text)
+        if not match:
+            self._set_status("Current line is not a character entry (expected line:column format).")
+            return
+        line_num = int(match.group(1))
+        try:
+            src_idx = self._document_tabs.index(source_tab)
+        except ValueError:
+            self._set_status("Source document is no longer open.")
+            return
+        self._non_ascii_report_tab = self._document_tabs[self._current_tab_index()]
+        self._select_tab(src_idx)
+        self.go_to_line_number(line_num)
+
+    def non_ascii_jump_to_report(self) -> None:
+        """From the source document, jump back to the Non-ASCII report (#197)."""
+        report_tab = getattr(self, "_non_ascii_report_tab", None)
+        if report_tab is None:
+            self._set_status("No Non-ASCII report is open. Run Show Non-ASCII Characters first.")
+            return
+        try:
+            rep_idx = self._document_tabs.index(report_tab)
+        except ValueError:
+            self._set_status("Non-ASCII report tab is no longer open.")
+            return
+        self._select_tab(rep_idx)
 
     def encode_all_non_ascii(self) -> None:
         """Replace every non-ASCII character with its HTML entity (#197)."""

@@ -3178,6 +3178,28 @@ Contexts can be combined with `&&` in advanced editing.
 - A "Reset all keybindings" button exists at the bottom of the Keyboard settings page.
 - Recovery: if `keymap.json` is corrupt, Quill renames it to `keymap.broken-<timestamp>.json` and falls back to defaults, announcing what happened.
 
+### 8.10 QUILL key chord dispatch
+
+The QUILL key (`Ctrl+Shift+Grave` by default) operates as a two-layer prefix system managed by `QuillKeyMixin` in `quill/ui/main_frame_quill_key.py`.
+
+**Layer 1 — Prefix armed.** The first press arms a short-lived prefix state (`_quill_key_prefix_pending`). The following keys are handled as hardcoded mode gates and are not reassignable:
+
+- `N` — enter Quick Nav (browse) mode
+- `G` — open Go to Anything
+- QUILL key again — enter sticky browse mode
+- `A` (with selection active) — open selection actions surface
+- `?` — show the prefix cheat sheet
+- `Esc` — cancel without action
+
+**Layer 2 — Chord command dispatch.** Any key pressed while the prefix is armed that is not a mode gate is dispatched via a data-driven lookup: `_chord_command_for_event` scans the live keymap for entries whose binding matches `<prefix>, <second-key>` and runs the matching command via `_run_command`. This means every chord command (read aloud, snippets, headings, copy tray, etc.) is fully reassignable in the Keymap Editor without any code change.
+
+**Key detection.** The QUILL prefix key is recognized by three independent strategies so it works on any keyboard layout and Windows driver:
+1. wxPython key code or Unicode key equals `ord("`")` or `ord("~")`
+2. Windows virtual-key `VK_OEM_3` (0xC0) via `GetRawKeyCode()`
+3. Physical scan code `0x29` (key below Esc / above Tab on PC keyboards) via bits 16–23 of `GetRawKeyFlags()`
+
+**Keymap Editor validation.** Chord bindings (containing `, `) are validated separately from simple bindings: the prefix part must be a known modifier+key combination and the second-key part must be a parseable single key or modifier+key.
+
 ---
 
 ## 9. Accessibility, WCAG 2.2 AA conformance, and certification

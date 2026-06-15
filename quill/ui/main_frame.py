@@ -10390,7 +10390,21 @@ class MainFrame(
                 wx.ICON_ERROR | wx.OK,
             )
             return False
-        if self._parse_keybinding(new_binding) is None:
+        is_chord = ", " in new_binding
+        if is_chord:
+            prefix_part, _, second_part = new_binding.partition(", ")
+            second_valid = (
+                second_part.strip()
+                and self._parse_chord_second_key(second_part.strip()) is not None
+            )
+            if self._parse_keybinding(prefix_part) is None or not second_valid:
+                self._show_message_box(
+                    "Keybinding format is invalid. Chord format: Ctrl+Shift+Grave, Key",
+                    "Keymap Editor",
+                    wx.ICON_ERROR | wx.OK,
+                )
+                return False
+        elif self._parse_keybinding(new_binding) is None:
             self._show_message_box(
                 "Keybinding format is invalid.",
                 "Keymap Editor",

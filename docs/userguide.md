@@ -118,20 +118,25 @@ See [Context-Sensitive Help (F1)](#context-sensitive-help-f1) for full details.
 
 ### The QUILL key
 
-The **QUILL key** is `Ctrl+Shift+Grave` (the back-tick/grave key above Tab). It is a layered prefix chord that opens most of QUILL's power features without ever leaving the keyboard. 
+The **QUILL key** is `Ctrl+Shift+Grave` (the back-tick/grave key above Tab). It is a layered prefix chord that opens most of QUILL's power features without ever leaving the keyboard.
 
 It operates in two primary layers:
-1. **Prefix Mode (One-shot).** Press it once and QUILL arms a short-lived prefix. The next key you press triggers a specific action (like `G` for Go to Anything or `M` for Markdown paste), and then the prefix expires.
+1. **Prefix Mode (One-shot).** Press it once and QUILL arms a short-lived prefix. The next key you press runs a chord command (like `G` for Go to Anything or `M` for Markdown paste), and then the prefix expires.
 2. **Browse Mode (Locked).** Press the QUILL key twice in a row, and QUILL locks **Quick Nav (Browse) mode** on. In this mode, single-letter keys (like `H` for headings, `P` for paragraphs, or `S` for sentences) move the cursor through the document structure. This mode stays active until you press `Esc`.
 
-The QUILL key is its own tiny language: every chord is announced, every chord is remappable in **Preferences → Keyboard**, and the full cheat sheet is one keystroke away (`Ctrl+Shift+Grave, ?`).
+The QUILL key is its own tiny language: every chord is data-driven from the keymap, which means every chord is fully remappable in **Preferences → Keyboard → Keymap Editor**. The full cheat sheet is one keystroke away (`Ctrl+Shift+Grave, ?`).
 
-Common QUILL-key chords:
+**Detection note.** On some keyboards or drivers, Windows reports the grave/back-tick key differently than expected. QUILL now uses three independent detection strategies (character code, Windows virtual key VK_OEM_3, and physical scan code 0x29) so the key is recognized on any layout.
+
+**Reassigning chord commands.** Open **Preferences → Keyboard → Keymap Editor**, find the command you want to move, and type a new chord binding in the form `Ctrl+Shift+Grave, X` (replacing `X` with the key you want). Conflict detection prevents accidental double-bindings.
+
+Default QUILL-key chords:
 
 - `Ctrl+Shift+Grave, N` — enter Quick Nav (browse) mode for the next action. If the `browse_mode_sticky` setting is on, the mode stays locked until `Esc`; otherwise it expires on the QUILL-key timeout. Press the QUILL key again (without a chord) to lock it on regardless of the setting.
 - `Ctrl+Shift+Grave` (pressed twice) — lock Quick Nav mode on until `Esc`. This is the most common path: first press arms the prefix, second press locks browse mode.
 - `Ctrl+Shift+Grave, G` — open **Go to Anything** (Quick Nav search).
 - `Ctrl+Shift+Grave, M` — paste the rich HTML clipboard as Markdown at the cursor.
+- `Ctrl+Shift+Grave, V` — open the browser preview for the current document.
 - `Ctrl+Shift+Grave, Shift+O` — open from remote (FTP / SFTP / HTTPS / WebDAV / S3 / GitHub).
 - `Ctrl+Shift+Grave, W` — save to remote.
 - `Ctrl+Shift+Grave, Shift+M` — manage saved remote sites.
@@ -1154,6 +1159,8 @@ The cleanup commands under **Tools → Convert** are ideal for pasted material, 
 Under **Format → HTML & Encoding**, Quill includes three tools for the encoding friction that comes up when preparing text for the web, where one tool wants UTF-8 and the next insists on plain ASCII:
 
 - **Show Non-ASCII Characters** opens a read-only report listing every character above plain ASCII, with its line and column, codepoint, Unicode name, and whether it converts cleanly to Latin-1 and to Windows-1252 (MS-ANSI). Reviewing that report with a screen reader replaces the old command-line trick of running a file through `iconv` with a sentinel string and hunting for what failed to convert.
+- **Jump to Source Line** — while the Non-ASCII report is open and your cursor is on a character entry row (the format is `line:column` followed by a tab), invoke this command from **Format → HTML & Encoding → Jump to Source Line** to switch to the source document and land on the reported line. You can bind it to a key from the Keymap Editor for faster iteration.
+- **Jump Back to Non-ASCII Report** — returns focus to the report tab after you have reviewed the character in the source. The round-trip lets you step through every flagged character without leaving the keyboard.
 - **Convert Non-ASCII to HTML Entities** rewrites every non-ASCII character as its HTML entity — a named entity such as `&eacute;` where one exists, or a numeric `&#233;` otherwise — while leaving ordinary ASCII (including `&` and `<`) untouched. This is the reliable way to feed text to a tool, such as Pandoc, that refuses to handle high characters. Note that the older **Encode HTML Entities** command only escapes the five markup characters (`<`, `>`, `&`, `"`, `'`); this new command is the one that handles accents and symbols.
 - **Re-encode As...** saves a copy of the document in a chosen encoding — UTF-8, UTF-8 with a byte-order mark, Latin-1, Windows-1252, or ASCII. Anything that does not fit a narrow target is written as a numeric HTML entity rather than a silent question mark, so the conversion is lossless and recoverable.
 
