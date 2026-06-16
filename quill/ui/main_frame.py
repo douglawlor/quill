@@ -8285,6 +8285,7 @@ class MainFrame(
         self._load_persistent_undo_state(target, self.document.text)
         self._record_recent(target)
         self._refresh_title()
+        self._refresh_sessions_menu()
         self._set_status(f"Saved as {target.name} ({format_label_for_path(target)})")
         self._maybe_reload_surface_after_save_as(target)
 

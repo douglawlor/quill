@@ -764,9 +764,10 @@ Customize & Support merges the former separate Support and Customize submenus. A
 
 The **Window** menu is small but useful.
 
-- **Next Document**
-- **Previous Document**
-- **Send to System Tray**
+- **Next Document** (`Ctrl+Tab`) — move to the next open document.
+- **Previous Document** (`Ctrl+Shift+Tab`) — move to the previous open document.
+- **Send to System Tray** — hide QUILL to the notification area without closing it.
+- **1: filename.txt (active)**, **2: other.md**, … — every open document appears directly on the menu, numbered. Press `Alt+W` to open the Window menu and then the number key to jump straight to that document. The active document is marked. The list updates automatically when you open or close a file, and updates the name immediately when you save an untitled document.
 
 When you are juggling multiple notes, extracted files, and audit previews, these commands keep the workspace feeling controlled.
 

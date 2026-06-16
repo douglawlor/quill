@@ -43,7 +43,7 @@ The most important page asks one question: **What kind of writing do you do?** A
 
 After you choose, a second page offers a few optional extras: AI writing assistance, Braille Mode, and typing automation. Only the extras that are not already part of your base choice are shown. Each extra is a single checkbox. Checking one adds a sentence to the preview so you always know what you are committing to.
 
-If you enable AI, a dedicated page collects your provider - Anthropic (Claude), OpenAI (GPT), Google (Gemini), OpenRouter (many models), or Ollama (on-device) - and your API key. The key is stored securely in the Windows Credential Manager, not in a settings file. You can skip this and set the key up later.
+If you enable AI, a dedicated page collects your provider and your API key. Supported providers are Anthropic (Claude), OpenAI (GPT), Google Gemini, OpenRouter (many models), and Ollama - which runs models on your own device or connects to an Ollama-compatible cloud host. The key is stored securely in the Windows Credential Manager, not in a settings file. You can skip this and set the key up later.
 
 The final page is a summary in plain text: your profile name, what features are active, which Quillins are enabled, your keyboard pack, and your sound setting. Read it, then press Finish.
 
@@ -706,7 +706,7 @@ The reference now:
 QUILL 0.6.0 also includes these practical additions:
 
 - From the QUILL key, press **F** to speak the window title, **P** to speak the full file path, or **Q** to speak a short status summary without leaving the editor.
-- **Ctrl+Tab** switches to the next document, and **Ctrl+Shift+Tab** switches back. The **Window** menu now also lists every open document by number and file name, so you can jump directly to any file. Press Alt+W to open the menu, then arrow to Open Documents, and pick the file by its number. The active document is marked. This is available in all profiles.
+- **Ctrl+Tab** switches to the next document, and **Ctrl+Shift+Tab** switches back. The **Window** menu lists every open document by number directly on the menu - no submenu. Press **Alt+W** then a number key to jump straight to that document. The active document is marked. The list updates when files open or close, and renames itself immediately when you save an untitled document.
 
 - Open and Save As now start in your Documents folder.
 - You can set your own default startup folder in Preferences, so QUILL no longer drops you into the install directory.

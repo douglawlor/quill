@@ -403,16 +403,18 @@ class MenuBuilderMixin:
         insert_menu = wx.Menu()
 
         search_menu = wx.Menu()
-        # Search is the cross-file search hub; in-document Find/Replace lives in
-        # the Edit menu (menus.md Phase 3).
-        search_menu.Append(
-            self._id_search_in_files,
-            self._menu_label("Search in &Files...", "tools.search_in_files"),
-        )
-        search_menu.Append(
-            self._id_replace_in_files,
-            self._menu_label("&Replace Across Files...", "tools.replace_in_files"),
-        )
+        # Cross-file search is a regex-level feature; basic profiles only have
+        # in-document Find/Replace (Edit menu). Show Search in Files and Replace
+        # Across Files only when core.search.regex is enabled.
+        if self._feature_enabled("core.search.regex"):
+            search_menu.Append(
+                self._id_search_in_files,
+                self._menu_label("Search in &Files...", "tools.search_in_files"),
+            )
+            search_menu.Append(
+                self._id_replace_in_files,
+                self._menu_label("&Replace Across Files...", "tools.replace_in_files"),
+            )
         # Regular Expression match count/extract and block set-ops make Search the single
         # find / filter / extract-lines hub (Power Tools recirculation, menus.md
         # Phase 4).
@@ -951,21 +953,22 @@ class MenuBuilderMixin:
             self._id_manage_snippets,
             self._menu_label("Manage Snippets...", "format.manage_snippets"),
         )
-        insert_menu.AppendSeparator()
-        insert_menu.Append(
-            self._id_expand_abbreviation,
-            self._menu_label("E&xpand Abbreviation", "format.expand_abbreviation"),
-        )
-        insert_menu.Append(
-            self._id_manage_abbreviations,
-            self._menu_label("Manage Abbrevi&ations...", "format.manage_abbreviations"),
-        )
-        insert_menu.Append(
-            self._id_toggle_abbreviation_expansion,
-            self._menu_label(
-                "&Toggle Abbreviation Expansion", "format.toggle_abbreviation_expansion"
-            ),
-        )
+        if self._feature_enabled("core.abbreviations"):
+            insert_menu.AppendSeparator()
+            insert_menu.Append(
+                self._id_expand_abbreviation,
+                self._menu_label("E&xpand Abbreviation", "format.expand_abbreviation"),
+            )
+            insert_menu.Append(
+                self._id_manage_abbreviations,
+                self._menu_label("Manage Abbrevi&ations...", "format.manage_abbreviations"),
+            )
+            insert_menu.Append(
+                self._id_toggle_abbreviation_expansion,
+                self._menu_label(
+                    "&Toggle Abbreviation Expansion", "format.toggle_abbreviation_expansion"
+                ),
+            )
         # Power Tools recirculation (menus.md Phase 4). The power-tool date/time
         # entries were removed: the bundled ``com.quill.bundled.insert-tools``
         # Quillin is now the single home for Insert Date / Insert Time / Insert
@@ -1001,6 +1004,8 @@ class MenuBuilderMixin:
             self._id_send_to_tray,
             self._menu_label("Send to S&ystem Tray", "view.send_to_tray"),
         )
+        window_menu.AppendSeparator()
+        self._window_menu = window_menu  # doc items appended here dynamically
 
         self._id_word_count = wx.NewIdRef()
         self._id_sticky_notes = wx.NewIdRef()
@@ -1113,6 +1118,7 @@ class MenuBuilderMixin:
         self._id_open_welcome_guide = wx.NewIdRef()
         self._id_open_keyboard_reference = wx.NewIdRef()
         self._id_about_quill = wx.NewIdRef()
+        self._id_enable_braille_mode = wx.NewIdRef()
         self._id_save_diagnostics = wx.NewIdRef()
         self._id_report_bug = wx.NewIdRef()
         self._id_open_logs_folder = wx.NewIdRef()
@@ -1681,6 +1687,11 @@ class MenuBuilderMixin:
             self._id_profile_onboarding,
             self._menu_label("&Personalise QUILL...", "help.startup_wizard"),
         )
+        if not self._feature_enabled("core.braille"):
+            help_menu.Append(
+                self._id_enable_braille_mode,
+                self._menu_label("Enable &Braille Mode...", "help.enable_braille_mode"),
+            )
         help_menu.AppendSeparator()
         help_menu.Append(
             self._id_save_diagnostics,
@@ -1813,6 +1824,11 @@ class MenuBuilderMixin:
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_menu_editor(), id=self._id_menu_editor)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.exit_app(), id=self._id_exit)
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=self._id_about_quill)
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.enable_braille_mode(),
+            id=self._id_enable_braille_mode,
+        )
         # macOS routes the application-menu "About" to wx.ID_ABOUT — wire it to
         # the same custom dialog so the Apple-menu About shows the links too.
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=wx.ID_ABOUT)
@@ -3025,4 +3041,5 @@ class MenuBuilderMixin:
         self.frame.Bind(wx.EVT_MENU, self._on_open_recent)
         self.frame.Bind(wx.EVT_MENU, self._on_session_menu)
         self.frame.Bind(wx.EVT_MENU, self._on_recent_session_menu)
+        self.frame.Bind(wx.EVT_MENU, self._on_window_doc_menu)
         self.frame.Bind(wx.EVT_MENU, self._on_menu_command_activity)
