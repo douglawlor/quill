@@ -114,12 +114,6 @@ def main() -> int:
         help="Optional local Kokoro voices/models directory to bundle under portable\\tools\\speech\\kokoro.",
     )
     parser.add_argument(
-        "--piper-dir",
-        type=Path,
-        default=None,
-        help="Optional local Piper voices/models directory to bundle under portable\\tools\\speech\\piper.",
-    )
-    parser.add_argument(
         "--braille-pack-dir",
         type=Path,
         default=None,
@@ -156,7 +150,6 @@ def main() -> int:
                 "speech/dectalk": args.dectalk_dir,
                 "speech/espeak-ng": args.espeak_dir,
                 "speech/kokoro": args.kokoro_dir,
-                "speech/piper": args.piper_dir,
             }.items()
             if path is not None
         },
@@ -568,8 +561,6 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         " Types: full custom; Flags: checkablealone",
         'Name: "speechkokoro"; Description: "Install bundled Kokoro voices/models";'
         " Types: full custom; Flags: checkablealone",
-        'Name: "speechpiper"; Description: "Install bundled Piper voices/models";'
-        " Types: full custom; Flags: checkablealone",
         'Name: "nodejs"; Description: "Install portable Node.js runtime for Node Quillins'
         " and the Developer Console TypeScript interface (~30 MB);"
         ' not required for Python Quillins";'
@@ -582,7 +573,7 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         "[Files]",
         'Source: "..\\portable\\*"; DestDir: "{app}";'
         " Flags: ignoreversion recursesubdirs createallsubdirs;"
-        ' Excludes: "docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\espeak-ng\\*,tools\\speech\\kokoro\\*,tools\\speech\\piper\\*,tools\\nodejs\\*,vendor\\braille-pack\\*"',
+        ' Excludes: "docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\espeak-ng\\*,tools\\speech\\kokoro\\*,tools\\nodejs\\*,vendor\\braille-pack\\*"',
         "; QUILL Braille Pack: liblouis runtime, translation tables, and BRF profiles.",
         "; Installed to vendor\\braille-pack so QUILL detects it automatically via QUILL_APP_ROOT.",
         'Source: "..\\portable\\vendor\\braille-pack\\*"; DestDir: "{app}\\vendor\\braille-pack";'
@@ -620,9 +611,6 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         'Source: "..\\portable\\tools\\speech\\kokoro\\*"; DestDir: "{app}\\tools\\speech\\kokoro";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: speechkokoro",
-        'Source: "..\\portable\\tools\\speech\\piper\\*"; DestDir: "{app}\\tools\\speech\\piper";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
-        " Components: speechpiper",
         "; Node.js portable runtime (optional). The build script copies a portable",
         "; node.exe distribution into portable\\tools\\nodejs when building with",
         "; --bundle-nodejs. skipifsourcedoesntexist means a build without bundled",
@@ -1113,7 +1101,6 @@ def _speech_asset_manifest(
         "dectalk": "dectalk",
         "espeak": "espeak-ng",
         "kokoro": "kokoro",
-        "piper": "piper",
     }
     for engine, dir_name in engine_dirs.items():
         engine_dir = speech_root / dir_name
@@ -1151,53 +1138,51 @@ def _fetch_latest_github_asset_url(owner: str, repo: str, asset_suffix: str) -> 
 
 
 def _download_and_stage_pandoc(portable_dir: Path) -> Path:
-    """Download Pandoc for Windows and stage pandoc.exe under tools/pandoc/.
+    """Download Pandoc for Windows and return a staging directory for _stage_bundled_tools.
 
     Tries the latest GitHub release first; falls back to the pinned version.
-    If tools/pandoc/ already exists it is reused without re-downloading.
+    Stages to portable/_tool-download/pandoc/ so _stage_bundled_tools() copies
+    from there to tools/pandoc/. Re-uses a prior download to avoid redundant calls.
     """
-    target_dir = portable_dir / "tools" / "pandoc"
-    if (target_dir / "pandoc.exe").exists():
-        print("Pandoc already staged; skipping download.")
-        return target_dir
+    stage_dir = portable_dir / "_tool-download" / "pandoc"
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    if (stage_dir / "pandoc.exe").exists():
+        print("Pandoc already downloaded; skipping.")
+        return stage_dir
 
     url = (
         _fetch_latest_github_asset_url("jgm", "pandoc", "-windows-x86_64.zip") or PANDOC_PINNED_URL
     )
     sha256 = PANDOC_PINNED_SHA256 if url == PANDOC_PINNED_URL else None
 
-    tmp_dir = portable_dir / "_tool-download" / "pandoc"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    archive = tmp_dir / "pandoc-windows-x86_64.zip"
+    archive = stage_dir / "pandoc-windows-x86_64.zip"
     print(f"Downloading Pandoc from {url}...")
     _download_with_verification(url, archive, expected_sha256=sha256)
 
-    target_dir.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as zf:
         for member in zf.namelist():
-            # Extract pandoc.exe from the versioned top-level folder.
             if member.endswith("/pandoc.exe") or member == "pandoc.exe":
-                data = zf.read(member)
-                (target_dir / "pandoc.exe").write_bytes(data)
+                (stage_dir / "pandoc.exe").write_bytes(zf.read(member))
                 break
     archive.unlink(missing_ok=True)
-    if not (target_dir / "pandoc.exe").exists():
+    if not (stage_dir / "pandoc.exe").exists():
         raise RuntimeError("Pandoc zip did not contain pandoc.exe")
-    print(f"Pandoc staged to {target_dir}")
-    return target_dir
+    print(f"Pandoc staged to {stage_dir}")
+    return stage_dir
 
 
 def _download_and_stage_espeak(portable_dir: Path) -> Path:
-    """Download eSpeak-NG for Windows and extract it under tools/speech/espeak-ng/.
+    """Download eSpeak-NG for Windows and return a staging directory for _stage_bundled_tools.
 
     Tries the latest GitHub release first; falls back to the pinned version.
-    If the target directory already exists it is reused without re-downloading.
+    Stages to portable/_tool-download/espeak/stage/ so _stage_bundled_tools()
+    copies from there to tools/speech/espeak-ng/. Re-uses a prior download.
     Uses msiexec /a (administrative extract) to unpack the MSI without installing.
     """
-    target_dir = portable_dir / "tools" / "speech" / "espeak-ng"
-    if (target_dir / "espeak-ng.exe").exists():
-        print("eSpeak-NG already staged; skipping download.")
-        return target_dir
+    stage_dir = portable_dir / "_tool-download" / "espeak" / "stage"
+    if (stage_dir / "espeak-ng.exe").exists():
+        print("eSpeak-NG already downloaded; skipping.")
+        return stage_dir
 
     url = _fetch_latest_github_asset_url("espeak-ng", "espeak-ng", ".msi") or ESPEAK_PINNED_URL
     sha256 = ESPEAK_PINNED_SHA256 if url == ESPEAK_PINNED_URL else None
@@ -1221,16 +1206,15 @@ def _download_and_stage_espeak(portable_dir: Path) -> Path:
     if result.returncode != 0:
         raise RuntimeError(f"msiexec /a failed for eSpeak-NG MSI:\n{result.stderr}")
 
-    # msiexec /a extracts into a subfolder; find espeak-ng.exe wherever it landed.
     exe_candidates = list(extract_dir.rglob("espeak-ng.exe"))
     if not exe_candidates:
         raise RuntimeError("eSpeak-NG MSI did not extract espeak-ng.exe")
     espeak_root = exe_candidates[0].parent
-    target_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(espeak_root, target_dir, dirs_exist_ok=True)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    print(f"eSpeak-NG staged to {target_dir}")
-    return target_dir
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(espeak_root, stage_dir, dirs_exist_ok=True)
+    archive.unlink(missing_ok=True)
+    print(f"eSpeak-NG staged to {stage_dir}")
+    return stage_dir
 
 
 def _download_with_verification(
