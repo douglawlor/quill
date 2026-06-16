@@ -45,7 +45,7 @@ ui = [
     # HEIC/HEIF image support for AI image description (iPhone default format).
     # Registers a PIL opener so HEIC files can be read and converted to JPEG
     # in memory before being sent to the vision API.
-    "pillow-heif>=0.13.0",
+    "pillow-heif>=1.4.0",
     # HTML-to-text converter for intelligent paste cleaning (AccessibleApps, MIT).
     "html_to_text>=0.1.0",
 ]
