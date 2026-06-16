@@ -60,7 +60,7 @@ audio = ["sound_lib>=0.83"]
 ssh = ["paramiko>=3.4"]
 # On-device AI for the Ask Quill chat. Windows/Linux use llama.cpp (CPU, GGUF);
 # a GGUF model (e.g. Phi-4-mini Q4) goes in <app data>/models or QUILL_LLAMA_MODEL.
-ai = ["llama-cpp-python>=0.3.28"]
+ai = ["llama-cpp-python>=0.3.30"]
 dictation = ["SpeechRecognition>=3.16.1"]
 # Native Windows OCR (OCR-1): a thin pip wheel projecting the Windows.Media.Ocr
 # WinRT APIs that ship inside Windows 10/11. The OCR engine itself is a built-in
