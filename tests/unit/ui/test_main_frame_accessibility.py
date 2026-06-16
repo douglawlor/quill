@@ -273,6 +273,7 @@ def _writing_action_frame(editor: _StubEditor) -> MainFrame:
     frame._set_status = frame._status_messages.append
     frame._writing_prompts = []
     frame.open_writing_assistant = frame._writing_prompts.append
+    frame._ai_require_connection = lambda: None  # prevent real AI threads in tests
     return frame
 
 

@@ -101,7 +101,12 @@ def test_verify_disables_button_and_shows_progress(monkeypatch) -> None:
         release.wait(1.0)
         return False, "Could not reach the AI endpoint."
 
+    def fake_show_message_box(msg, caption, style, parent=None, *, announce=None):
+        wx.message_calls.append((msg, caption, style))
+        return 0
+
     monkeypatch.setattr(assistant_tools, "verify_assistant_connection", fake_verify)
+    monkeypatch.setattr(assistant_tools, "show_message_box", fake_show_message_box)
 
     dialog._on_verify_connection(object())
     started.wait(1.0)
