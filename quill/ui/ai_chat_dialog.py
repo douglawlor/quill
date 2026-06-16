@@ -2,11 +2,14 @@
 
 Entry point: open_ask_ai() in MainFrame (Alt+Q / Tools > Ask AI...).
 A11Y-4 hardened: apply_modal_ids, public show()/close(), dialog inventory.
+Status changes are announced via announce_cb so SR users hear validation errors
+and async state updates (finding #43).
 """
 
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import wx
@@ -19,7 +22,7 @@ from quill.core.ai_chat import (
     send_prompt,
 )
 from quill.core.i18n import _, lazy_gettext, ngettext
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, show_message_box
 
 if TYPE_CHECKING:
     from quill.core.settings import Settings
@@ -74,10 +77,17 @@ def _save_api_key(provider_id: str, key: str) -> None:
 class AskAIDialog:
     """Main Ask AI dialog: provider selector, model selector, prompt, Send."""
 
-    def __init__(self, parent: object, settings: Settings) -> None:
+    def __init__(
+        self,
+        parent: object,
+        settings: Settings,
+        *,
+        announce_cb: Callable[[str], None] | None = None,
+    ) -> None:
         self._settings = settings
         self._models: list[AIModel] = []
         self._loading = False
+        self._announce = announce_cb or (lambda _: None)
 
         self.dialog = wx.Dialog(
             parent,
@@ -192,6 +202,11 @@ class AskAIDialog:
         self._select_provider(settings.ai_chat_default_provider)
         wx.CallAfter(self._set_initial_focus)
 
+    def _set_status(self, msg: str) -> None:
+        self._set_status(msg)
+        if msg:
+            self._announce(msg)
+
     def _set_initial_focus(self) -> None:
         pid = self._current_provider_id()
         pdef = PROVIDERS.get(pid, {})
@@ -255,7 +270,7 @@ class AskAIDialog:
         self._model_choice.Append(_("Loading..."))
         self._model_choice.SetSelection(0)
         self._send_btn.Disable()
-        self._status_label.SetLabel(_("Fetching model list..."))
+        self._set_status(_("Fetching model list..."))
         pid = self._current_provider_id()
         key = _load_api_key(pid) or self._key_ctrl.GetValue().strip()
         ollama_url = self._settings.ollama_base_url or "http://localhost:11434"
@@ -289,15 +304,13 @@ class AskAIDialog:
             self._model_choice.SetSelection(0)
             detail = error or _("No models found.")
             if advice:
-                self._status_label.SetLabel(
-                    _("{detail}  See setup advice above.").format(detail=detail)
-                )
+                self._set_status(_("{detail}  See setup advice above.").format(detail=detail))
                 self._advice_ctrl.SetLabel(advice)
                 self._advice_ctrl.Show(True)
                 self._advice_ctrl.Wrap(520)
                 self.dialog.Layout()
             else:
-                self._status_label.SetLabel(detail)
+                self._set_status(detail)
             self._send_btn.Disable()
             return
 
@@ -310,7 +323,7 @@ class AskAIDialog:
                 sel = i
         self._model_choice.SetSelection(sel)
         count = len(models)
-        self._status_label.SetLabel(
+        self._set_status(
             ngettext("{n} model available", "{n} models available", count).format(n=count)
         )
         self._send_btn.Enable()
@@ -325,10 +338,10 @@ class AskAIDialog:
             self._advice_ctrl.SetLabel("")
             self._advice_ctrl.Show(False)
             self.dialog.Layout()
-            self._status_label.SetLabel(_("API key saved. Loading models..."))
+            self._set_status(_("API key saved. Loading models..."))
             self._load_models_async()
         else:
-            self._status_label.SetLabel(_("Paste a key above before clicking Save Key."))
+            self._set_status(_("Paste a key above before clicking Save Key."))
 
     def _current_model_id(self) -> str:
         idx = self._model_choice.GetSelection()
@@ -342,25 +355,25 @@ class AskAIDialog:
     def _on_send(self, _event: object) -> None:
         prompt = self._prompt_ctrl.GetValue().strip()
         if not prompt:
-            self._status_label.SetLabel(_("Enter a prompt before sending."))
+            self._set_status(_("Enter a prompt before sending."))
             self._prompt_ctrl.SetFocus()
             return
         model_id = self._current_model_id()
         if not model_id:
-            self._status_label.SetLabel(_("Select a model first."))
+            self._set_status(_("Select a model first."))
             return
         pid = self._current_provider_id()
         pdef = PROVIDERS.get(pid, {})
         key = _load_api_key(pid) or self._key_ctrl.GetValue().strip()
         if pdef.get("needs_key") and not key:
-            self._status_label.SetLabel(_("Save an API key for this provider first."))
+            self._set_status(_("Save an API key for this provider first."))
             return
 
         ollama_url = self._settings.ollama_base_url or "http://localhost:11434"
         base_url = ollama_url if pid in ("ollama_local", "ollama_cloud") else ""
 
         self._send_btn.Disable()
-        self._status_label.SetLabel(_("Sending to {model}...").format(model=model_id))
+        self._set_status(_("Sending to {model}...").format(model=model_id))
 
         def _do_send() -> None:
             try:
@@ -380,26 +393,25 @@ class AskAIDialog:
 
     def _on_response_received(self, response: str, model_id: str, provider_label: str) -> None:
         self._send_btn.Enable()
-        self._status_label.SetLabel(_("Response received."))
+        self._set_status(_("Response received."))
         dlg = AIResponseDialog(self.dialog, response, model_id, provider_label)
         dlg.show()
         dlg.close()
 
     def _on_send_error(self, error: str) -> None:
         self._send_btn.Enable()
-        self._status_label.SetLabel(_("Error — see details."))
-        from quill.ui.dialog_contract import show_message_box
-
+        self._set_status(_("Error — see details."))
         show_message_box(
             _("AI request failed:\n\n{error}").format(error=error),
             _("Ask AI — Error"),
             wx.OK | wx.ICON_ERROR,
             self.dialog,
+            announce=self._announce,
         )
 
     def _on_clear(self, _event: object) -> None:
         self._prompt_ctrl.SetValue("")
-        self._status_label.SetLabel("")
+        self._set_status("")
         self._prompt_ctrl.SetFocus()
 
     def show(self) -> int:

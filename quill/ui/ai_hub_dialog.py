@@ -797,7 +797,7 @@ class AIHubDialog:
 
     def _on_reset(self, event: object) -> None:
         wx = self._wx
-        result = wx.MessageBox(  # GATE-41-OK: standalone dialog not owned by MainFrame
+        result = wx.MessageBox(  # GATE-41-OK: standalone dialog  # MSGBOX-OK: standalone dialog
             _(
                 "Reset all AI settings to defaults? This clears the provider, model, and host "
                 "settings (but not stored API keys)."

@@ -132,7 +132,11 @@ def test_every_command_is_menu_wired() -> None:
     # The cohesive remainder ships as Tools > Advanced (expanded inline build
     # per §10.3; the power_tools group is still appended via the data-driven helper).
     assert '_append_power_tools_group(power_tools_menu, "power_tools")' in _SOURCE
-    assert 'tools_menu.AppendSubMenu(power_tools_menu, "&Advanced")' in _SOURCE
+    # Accept both i18n-wrapped _("...") and bare string forms.
+    assert (
+        'tools_menu.AppendSubMenu(power_tools_menu, _("&Advanced"))' in _SOURCE
+        or 'tools_menu.AppendSubMenu(power_tools_menu, "&Advanced")' in _SOURCE
+    )
     for helper in (
         "_append_power_tools_insert_items",
         "_append_power_tools_edit_items",

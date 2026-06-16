@@ -772,6 +772,8 @@ class QuillinsMenuMixin:
                 src_path = ddlg.GetPath()
             from pathlib import Path
 
+            from quill.ui.dialog_contract import show_message_box
+
             try:
                 ext_id = install_extension(Path(src_path))
                 self._register_quillin_contributions()
@@ -785,13 +787,12 @@ class QuillinsMenuMixin:
                 refresh_details()
                 self._announce(f"Installed {ext_id}.")
             except Exception as exc:
-                from quill.ui.dialog_contract import show_message_box
-
                 show_message_box(
                     f"Install failed: {exc}",
                     "Install Quillin",
                     wx.OK | wx.ICON_ERROR,
                     dialog,
+                    announce=self._announce,
                 )
 
         def on_configure_events(_event: object) -> None:

@@ -86,6 +86,11 @@ class CommandPaletteDialog:
 
         self._refresh_results()
 
+    def _set_status(self, msg: str) -> None:
+        self.status.SetLabel(msg)
+        if self._announce_fn is not None and msg:
+            self._announce_fn(msg)
+
     def _is_available(self, command: Command) -> bool:
         if self._features is None:
             return True
@@ -163,13 +168,14 @@ class CommandPaletteDialog:
         if labels:
             self.results.SetSelection(0)
             top = self._filtered_commands[0]
-            self.status.SetLabel(
-                f"{len(labels)} command(s). "
+            available_count = sum(1 for cmd in self._filtered_commands if self._is_available(cmd))
+            self._set_status(
+                f"{len(labels)} command(s), {available_count} available. "
                 f"Top match: {top.title}. "
                 "Down/Up to navigate, Enter to run."
             )
             return
-        self.status.SetLabel("No matching commands")
+        self._set_status("No matching commands")
 
     def _on_result_selected(self, _event: object) -> None:
         selected = self.results.GetSelection()
@@ -179,7 +185,7 @@ class CommandPaletteDialog:
             command = self._filtered_commands[selected]
             available = self._is_available(command)
             suffix = "" if available else " (unavailable)"
-            self.status.SetLabel(f"Selected: {command.title}{suffix}")
+            self._set_status(f"Selected: {command.title}{suffix}")
 
     def _run_selected(self) -> None:
         selected = self.results.GetSelection()
@@ -189,11 +195,7 @@ class CommandPaletteDialog:
             return
         command = self._filtered_commands[selected]
         if not self._is_available(command):
-            msg = f"{command.title} is not available in the current context."
-            if self._announce_fn is not None:
-                self._announce_fn(msg)
-            else:
-                self.status.SetLabel(msg)
+            self._set_status(f"{command.title} is not available in the current context.")
             return
         self._last_run_id: str | None = command.id
         self._registry.run(command.id)
@@ -290,6 +292,11 @@ class GoToAnythingDialog:
 
         self._refresh_results("")
 
+    def _set_status(self, msg: str) -> None:
+        self.status.SetLabel(msg)
+        if self._announce_fn is not None and msg:
+            self._announce_fn(msg)
+
     def _cmd_is_available(self, cmd: object) -> bool:
         if self._features is None:
             return True
@@ -360,7 +367,7 @@ class GoToAnythingDialog:
             item = self._filtered_results[sel]
             kind = str(item.get("kind", ""))
             label = str(item.get("label", ""))
-            self.status.SetLabel(f"[{kind}] {label}")
+            self._set_status(f"[{kind}] {label}")
 
     def _refresh_results(self, query: str) -> None:
         q = query.strip()
@@ -397,12 +404,12 @@ class GoToAnythingDialog:
         if labels:
             self.results.SetSelection(0)
             top = results[0]
-            self.status.SetLabel(
+            self._set_status(
                 f"{len(labels)} result(s). Top: [{top['kind']}] {top['label']}. "
                 "Down/Up to navigate, Enter to go."
             )
         else:
-            self.status.SetLabel("No results")
+            self._set_status("No results")
 
     def _activate_selected(self, frame: object) -> None:
         sel = self.results.GetSelection()
@@ -419,11 +426,7 @@ class GoToAnythingDialog:
             if not item.get("available", True):
                 cmd = item.get("cmd")
                 title = getattr(cmd, "title", str(item.get("cmd_id", "")))
-                msg = f"{title} is not available in the current context."
-                if self._announce_fn is not None:
-                    self._announce_fn(msg)
-                else:
-                    self.status.SetLabel(msg)
+                self._set_status(f"{title} is not available in the current context.")
                 return
             cmd_id = str(item.get("cmd_id", ""))
             if cmd_id:

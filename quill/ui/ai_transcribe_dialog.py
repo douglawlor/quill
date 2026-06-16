@@ -161,7 +161,7 @@ class AITranscribeDialog:
         wx = self._wx
         path_str = self._file_path_ctrl.GetValue().strip()
         if not path_str:
-            wx.MessageBox(  # GATE-41-OK: standalone dialog not owned by MainFrame
+            wx.MessageBox(  # GATE-41-OK: standalone dialog  # MSGBOX-OK: standalone dialog
                 "Please select an audio file to transcribe.",
                 "No file selected",
                 wx.OK | wx.ICON_WARNING,
@@ -170,7 +170,7 @@ class AITranscribeDialog:
             return
         path = Path(path_str)
         if not path.exists():
-            wx.MessageBox(  # GATE-41-OK: standalone dialog not owned by MainFrame
+            wx.MessageBox(  # GATE-41-OK: standalone dialog  # MSGBOX-OK: standalone dialog
                 f"File not found: {path}",
                 "File not found",
                 wx.OK | wx.ICON_WARNING,

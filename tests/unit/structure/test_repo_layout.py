@@ -41,6 +41,7 @@ _SANCTIONED_ROOT_MARKDOWN = frozenset({
     "rel.md",
     "report.md",
     "x2.md",
+    "x3.md",
 })
 
 

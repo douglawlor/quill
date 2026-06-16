@@ -54,7 +54,7 @@ from quill.core.assistant_prompts import (
 from quill.core.commands import CommandRegistry
 from quill.core.features import FeatureManager
 from quill.core.python_sandbox import PythonSandboxResult, run_python_sandbox
-from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
+from quill.ui.dialog_contract import apply_modal_ids, show_message_box, show_modal_dialog
 
 
 class RunPythonDialog:
@@ -1197,10 +1197,11 @@ class WritingAssistantDialog:
                 self._open_python_tool()
             return
         if tool.requires_confirmation:
-            answer = self._wx.MessageBox(
+            answer = show_message_box(
                 f"Run '{tool.title}' now?",
                 "Confirm Assistant Action",
-                style=self._wx.YES_NO | self._wx.ICON_WARNING,
+                self._wx.YES_NO | self._wx.ICON_WARNING,
+                self.dialog,
             )
             if answer != self._wx.YES:
                 return
@@ -1410,7 +1411,9 @@ class AIHubDialog:
         self._refresh_summary(verification=message)
         self._announce(message)
         icon = self._wx.ICON_INFORMATION if ok else self._wx.ICON_WARNING
-        self._wx.MessageBox(message, "AI Hub Verification", icon | self._wx.OK)
+        show_message_box(
+            message, "AI Hub Verification", icon | self._wx.OK, self.dialog, announce=self._announce
+        )
 
     def _on_list_models(self, _event: object) -> None:
         self._settings = load_assistant_connection_settings()
@@ -1418,12 +1421,24 @@ class AIHubDialog:
         models, error = list_assistant_models(self._settings, self._api_key)
         if error is not None:
             self.status.SetLabel(error)
-            self._wx.MessageBox(error, "AI Hub Models", self._wx.ICON_WARNING | self._wx.OK)
+            show_message_box(
+                error,
+                "AI Hub Models",
+                self._wx.ICON_WARNING | self._wx.OK,
+                self.dialog,
+                announce=self._announce,
+            )
             return
         if not models:
             message = "No models were returned by the endpoint."
             self.status.SetLabel(message)
-            self._wx.MessageBox(message, "AI Hub Models", self._wx.ICON_INFORMATION | self._wx.OK)
+            show_message_box(
+                message,
+                "AI Hub Models",
+                self._wx.ICON_INFORMATION | self._wx.OK,
+                self.dialog,
+                announce=self._announce,
+            )
             return
         picker = SearchableModelPickerDialog(self.dialog, models)
         selected = picker.show_modal_and_get_selection()
@@ -1804,7 +1819,7 @@ class AssistantConnectionDialog:
             self.verify_button.Enable(True)
         self.connection_status.SetLabel(message)
         icon = self._wx.ICON_INFORMATION if ok else self._wx.ICON_WARNING
-        self._wx.MessageBox(message, "AI Connection Check", icon | self._wx.OK)
+        show_message_box(message, "AI Connection Check", icon | self._wx.OK, self.dialog)
 
     def _on_list_models(self, _event: object) -> None:
         settings = self._current_settings()
@@ -1814,17 +1829,23 @@ class AssistantConnectionDialog:
                 "Enter your key and try again."
             )
             self.connection_status.SetLabel(message)
-            self._wx.MessageBox(message, "Model Discovery", self._wx.ICON_WARNING | self._wx.OK)
+            show_message_box(
+                message, "Model Discovery", self._wx.ICON_WARNING | self._wx.OK, self.dialog
+            )
             return
         models, error = list_assistant_models(settings, self.api_key.GetValue())
         if error is not None:
             self.connection_status.SetLabel(error)
-            self._wx.MessageBox(error, "Model Discovery", self._wx.ICON_WARNING | self._wx.OK)
+            show_message_box(
+                error, "Model Discovery", self._wx.ICON_WARNING | self._wx.OK, self.dialog
+            )
             return
         if not models:
             message = "Connection succeeded, but the endpoint returned no models."
             self.connection_status.SetLabel(message)
-            self._wx.MessageBox(message, "Model Discovery", self._wx.ICON_INFORMATION | self._wx.OK)
+            show_message_box(
+                message, "Model Discovery", self._wx.ICON_INFORMATION | self._wx.OK, self.dialog
+            )
             return
 
         picker = SearchableModelPickerDialog(self.dialog, models)
@@ -1902,7 +1923,7 @@ class AssistantConnectionDialog:
             self.test_chat_button.Enable(True)
         self.connection_status.SetLabel(message)
         icon = self._wx.ICON_INFORMATION if ok else self._wx.ICON_WARNING
-        self._wx.MessageBox(message, "Test Chat", icon | self._wx.OK)
+        self._wx.MessageBox(message, "Test Chat", icon | self._wx.OK)  # MSGBOX-OK: standalone
 
     def _on_forget_provider_key(self, _event: object) -> None:
         provider = self._provider_value()

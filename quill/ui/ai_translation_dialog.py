@@ -199,7 +199,7 @@ class AITranslationDialog:
 
     def _on_lt_help(self, event: object) -> None:
         wx = self._wx
-        wx.MessageBox(  # GATE-41-OK: standalone dialog not owned by MainFrame
+        wx.MessageBox(  # GATE-41-OK: standalone dialog  # MSGBOX-OK: standalone dialog
             _LIBRETRANSLATE_HELP,
             "About LibreTranslate",
             wx.OK | wx.ICON_INFORMATION,

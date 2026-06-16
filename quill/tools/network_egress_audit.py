@@ -175,6 +175,26 @@ _REVIEWED_EGRESS: dict[str, str] = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# PyGithub egress — manually documented (not AST-scannable)
+# ---------------------------------------------------------------------------
+# PyGithub (github.com/PyGithub/PyGithub) makes HTTPS calls internally via
+# urllib3.  Its call sites never appear in quill/ source as direct
+# urllib/socket/requests calls, so the AST scanner cannot find them.
+# The integration surface is documented here for auditability.
+#
+# Entry points (all in quill/core/github/github_provider.py):
+#   get_identity()    - GitHub API: GET /user
+#   get_repository()  - GitHub API: GET /repos/{owner}/{repo}
+#   list_refs()       - GitHub API: GET branches + tags for a repo
+#   get_file()        - GitHub API: GET /repos/{owner}/{repo}/contents/{path}
+#   save_file()       - GitHub API: PUT /repos/{owner}/{repo}/contents/{path}
+#
+# Gating: all calls are triggered by explicit user actions in the GitHub
+# dialogs (File > Open from Remote > GitHub).  A one-time consent dialog fires
+# before any network call on first use.  Tokens are stored in Windows Credential
+# Manager only, never logged.  All PyGithub calls are HTTPS.
+
 
 def _enclosing_function_name(tree: ast.AST, target: ast.AST) -> str:
     """Return the nearest enclosing def/async-def name for ``target``."""

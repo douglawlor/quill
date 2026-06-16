@@ -6537,7 +6537,9 @@ class MainFrame(
         self._region_tracker.enter(caption)
         announce(f"Entered {caption} dialog")
         try:
-            result = self._wx.MessageBox(message, caption, style)
+            result = self._wx.MessageBox(  # MSGBOX-OK: _show_message_box implementation
+                message, caption, style
+            )
         finally:
             announce(f"Exited {caption} dialog")
             self._region_tracker.exit(caption)
@@ -19598,7 +19600,7 @@ class MainFrame(
     def open_ask_ai(self) -> None:
         from quill.ui.ai_chat_dialog import AskAIDialog
 
-        dlg = AskAIDialog(self.frame, self.settings)
+        dlg = AskAIDialog(self.frame, self.settings, announce_cb=self._announce)
         dlg.show()
         dlg.close()
 
@@ -19613,6 +19615,7 @@ class MainFrame(
             selection=str(self.editor.GetStringSelection()),
             document=str(self.editor.GetValue()),
             title=self._current_document_title(),
+            announce_cb=self._announce,
         )
         self._show_modal_dialog(dlg.dialog, "Prompt Library")
         dlg.close()
@@ -19628,6 +19631,7 @@ class MainFrame(
             document=str(self.editor.GetValue()),
             title_text=self._current_document_title(),
             on_insert=self._ai_insert_text,
+            announce_cb=self._announce,
         )
         dlg.dialog.CenterOnParent()
         self._show_modal_dialog(dlg.dialog, "Skill Library")
@@ -22934,6 +22938,7 @@ class MainFrame(
             self.frame,
             self.settings,
             feature_manager,
+            announce_cb=self._announce,
             show_modal_fn=self._show_modal_dialog,
             open_ai_hub=self.open_ai_hub,
         )

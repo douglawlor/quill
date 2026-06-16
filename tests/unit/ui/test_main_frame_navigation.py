@@ -1229,7 +1229,7 @@ def test_profile_choice_label_includes_description() -> None:
     label = frame._profile_choice_label(profile)
 
     assert label.startswith("Essential — ")
-    assert profile.description in label
+    assert str(profile.description) in label
 
 
 def test_print_document_cancel_reports_cancelled() -> None:

@@ -212,6 +212,7 @@ class Settings:
     vision_disabled_builtin_styles: list[str] = field(default_factory=list)
     vision_custom_prompts: list[dict[str, Any]] = field(default_factory=list)
     vision_builtin_overrides: dict[str, str] = field(default_factory=dict)
+    dev_console_consent_accepted: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
@@ -502,6 +503,7 @@ class Settings:
             console_typescript_timeout = int(data.get("console_typescript_timeout", 30))
         except (TypeError, ValueError):
             console_typescript_timeout = 30
+        dev_console_consent_accepted = bool(data.get("dev_console_consent_accepted", False))
         abbreviation_expansion = bool(data.get("abbreviation_expansion", True))
         abbreviation_expansion_sound = bool(data.get("abbreviation_expansion_sound", False))
         abbreviation_expansion_sound_file = str(data.get("abbreviation_expansion_sound_file", ""))
@@ -747,6 +749,7 @@ class Settings:
             vision_disabled_builtin_styles=vision_disabled_builtin_styles,
             vision_custom_prompts=vision_custom_prompts,
             vision_builtin_overrides=vision_builtin_overrides,
+            dev_console_consent_accepted=dev_console_consent_accepted,
         )
 
 

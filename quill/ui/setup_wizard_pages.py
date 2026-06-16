@@ -46,6 +46,18 @@ _log = logging.getLogger(__name__)
 _PREVIEW_MIN_HEIGHT = 230
 _PREVIEW_STYLE = wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP | wx.BORDER_SIMPLE
 
+_PAGE_TITLES = [
+    "Welcome",
+    "Keyboard and Sound",
+    "Feature Profile",
+    "Remote Access",
+    "AI Assistance",
+    "Reading and Accessibility",
+    "Writing Tools",
+    "Startup Behaviour",
+    "Summary",
+]
+
 
 # ---------------------------------------------------------------------------
 # Base
@@ -639,6 +651,7 @@ class SetupWizardDialog(wx.Dialog):
         settings: Settings,
         feature_manager: FeatureManager,
         *,
+        announce_cb: Callable[[str], None] | None = None,
         open_ai_hub: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(
@@ -652,6 +665,7 @@ class SetupWizardDialog(wx.Dialog):
         self._open_ai_hub = open_ai_hub or (lambda: None)
         self._pending_overrides: dict[str, str] = {}
         self._current_idx = 0
+        self._announce = announce_cb or (lambda _: None)
         self.aborted_first_run = False
 
         self._all_pages = self._build_all_pages()
@@ -748,12 +762,16 @@ class SetupWizardDialog(wx.Dialog):
         self._next_btn.Show(idx < total - 1)
         self._finish_btn.Show(idx == total - 1)
 
+        title = _PAGE_TITLES[idx] if idx < len(_PAGE_TITLES) else f"Step {idx + 1}"
+        self._announce(f"Step {idx + 1} of {total}: {title}")
+
         if idx == total - 1:
             summary = self._active[-1]
             if isinstance(summary, _SummaryPage):
                 summary.update_summary(self._settings, self._pending_overrides)
-
-        self._focus_first_page_control()
+            self._finish_btn.SetFocus()
+        else:
+            self._focus_first_page_control()
 
     def _focus_first_page_control(self) -> None:
         """Focus the first interactive child of the current page.

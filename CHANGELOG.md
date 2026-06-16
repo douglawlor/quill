@@ -187,6 +187,48 @@ See `rel.md` for the full narrative release notes.
 - **Per-provider model memory.** AI chat remembers the last selected model per
   provider and restores it on next open.
 
+### Accessibility and screen reader improvements
+
+- **QDC console keyboard control.** `EVT_CHAR_HOOK` at the frame level now handles
+  Esc (close), F1 (help), Ctrl+L (clear), Ctrl+Shift+C (copy transcript), Ctrl+S
+  (save transcript) from any focused element inside the console window.
+- **QDC console focus return.** Closing the console returns caret focus to the
+  document editor via `focus_editor_cb`, not just `parent.SetFocus()`.
+- **QDC history navigation announced.** Up/Down history recall announces
+  "History N of M: entry" so screen reader users hear what was recalled.
+- **QDC TypeScript worker start announced.** "Developer Console ready" is spoken
+  when the Node worker is available. Previously the status bar changed silently.
+- **QDC clipboard copy announced.** Copy-transcript announces success or failure.
+- **QDC TypeScript console opens in TypeScript mode** instead of Python.
+  `open_typescript_console()` calls `win.set_language("TypeScript")`.
+- **AI chat, Skill Library, Prompt Library status changes announced.** All three
+  dialogs now route status updates through `_set_status()` which calls both
+  `SetLabel` and `announce_cb`. 13 status sites in AI chat, 9 in Skill Library,
+  5 in Prompt Library were previously silent.
+- **Command Palette and Go-to-Anything status announced.** Search result counts
+  and unavailable-command messages are now spoken.
+- **GitHub browser status announced.** Loading states, errors, and directory
+  confirmations are spoken via `announce_cb`. Enter key works on the repository
+  name field (`TE_PROCESS_ENTER`). Backspace no longer hijacks while editing the
+  field. Focus moves to the first item after a directory loads.
+- **SSH remote browser path announced.** Directory changes are spoken after each
+  navigation step via `announce_cb` in `RemoteBrowserDialog`.
+- **Setup wizard page transitions announced.** Each of the nine pages announces
+  "Step N of 9: Title" and focus lands on page content rather than the Next button.
+- **All modal dialogs through z-order gate.** Setup wizard, devtools consent,
+  and GitHub URL/commit-message dialogs now route through `_show_modal_dialog` and
+  `_show_message_box`, eliminating the "dialog opens behind main window" class.
+- **Unhandled crash dialog readable by screen readers.** A Win32 `MessageBoxW`
+  (readable by Narrator/NVDA even with no wx running) now shows on any unhandled
+  exception, with the error message and crash report file path.
+- **TTS self-voicing non-blocking.** The pyttsx3 TTS worker now runs on a daemon
+  thread with a queue, so announcements for low-vision users no longer block the
+  UI thread. SR detection result is cached with a 30-second TTL so starting
+  NVDA mid-session stops double-talk within one announcement cycle.
+- **GATE-12 (announce-gap) added.** `check_announce_gap.py` is a pre-commit gate
+  that flags any dialog updating a status `StaticText` via `SetLabel` without an
+  announce call. Triggers on `quill/ui/` and `quill/devtools/` files.
+
 ### Bug fixes and security
 
 - Python console `compile()` now appends trailing `\n` before single-mode
@@ -194,6 +236,24 @@ See `rel.md` for the full narrative release notes.
 - Nuitka build dependency removed entirely (was unreliable; took 44+ min and
   stalled). Purged from `pyproject.toml`, CI, and scripts.
 - Stray `leasey.html` at repo root removed.
+- Safe Mode now gates the Developer Console in addition to AI and Quillins.
+- `write_json_atomic` now fsyncs before `os.replace` to survive power cuts.
+- CLI missing-file paths now print a warning instead of silently skipping.
+- `_screen_reader_active()` re-probes every 30 seconds (was cached forever).
+- `safe_subprocess` passes `CREATE_NO_WINDOW` on Windows to suppress console flash.
+- Redaction now covers GitHub PATs, OpenAI keys, AWS access keys, Slack tokens,
+  and long alphanumeric tokens in addition to the existing bearer/hex patterns.
+- GitHub URL parser rewrote using `urllib.parse` to handle query strings, anchors,
+  and percent-encoded paths.
+- Vendor autoupdate `_version_tuple` handles pre-release version segments.
+- TypeScript console host API calls (`documentText`, `replaceSelection`, etc.) are
+  now marshaled to the UI thread via `wx.CallAfter` + `threading.Event`. Previously
+  they ran on the Node reader thread, violating the wx threading invariant.
+- GitHub temp files now land in a content-addressed slot (`sha256(repo:ref:path)[:16]`)
+  instead of a flat basename. Eliminates wrong-repo commits when two files share a name.
+- GitHub `get_identity()` is no longer called on the UI thread. All three entry points
+  (`Open Repository`, `Open File URL`, `Manage Accounts`) now post it to a daemon thread
+  before showing any dialog, fulfilling the module docstring's threading promise.
 
 ## Security Hardening and UX Delight — 1.0 Release Pass (2026-05-01)
 

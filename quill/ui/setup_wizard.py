@@ -40,6 +40,7 @@ def run_setup_wizard(
     settings: Settings,
     feature_manager: FeatureManager,
     *,
+    announce_cb: Callable[[str], None] | None = None,
     show_modal_fn: Callable[[Any, str], int] | None = None,
     open_ai_hub: Callable[[], None] | None = None,
 ) -> tuple[bool, bool]:
@@ -54,10 +55,13 @@ def run_setup_wizard(
 
     Pass ``show_modal_fn`` (typically ``MainFrame._show_modal_dialog``) so the
     dialog gets screen-reader enter/exit announcements and region tracking.
+    Pass ``announce_cb`` to give the wizard access to the SR announcement channel.
     """
     from quill.ui.setup_wizard_pages import SetupWizardDialog
 
-    dlg = SetupWizardDialog(parent, settings, feature_manager, open_ai_hub=open_ai_hub)
+    dlg = SetupWizardDialog(
+        parent, settings, feature_manager, announce_cb=announce_cb, open_ai_hub=open_ai_hub
+    )
     try:
         if show_modal_fn is not None:
             result = show_modal_fn(dlg, _("Setup Wizard"))

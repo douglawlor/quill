@@ -88,6 +88,8 @@ _MAIN_FRAME = _REPO_ROOT / "quill" / "ui" / "main_frame.py"
 _SAFE_XML = _REPO_ROOT / "quill" / "core" / "safe_xml.py"
 _PACKAGE_ROOT = _REPO_ROOT / "quill"
 _UI_ROOT = _REPO_ROOT / "quill" / "ui"
+_DEVTOOLS_ROOT = _REPO_ROOT / "quill" / "devtools"
+_DIALOG_CONTRACT = _UI_ROOT / "dialog_contract.py"
 
 # Names that, when called as ``<name>.fromstring(...)``, indicate a raw stdlib
 # ElementTree parse instead of the hardened wrapper.
@@ -666,6 +668,82 @@ def _check_dead_region_attrs(paths: Iterable[Path]) -> list[Violation]:
     return violations
 
 
+def _check_non_daemon_thread(paths: Iterable[Path]) -> list[Violation]:
+    """Ban threading.Thread(...) without daemon=True in quill/ui (GATE-15).
+
+    All UI background threads must be daemon threads so they cannot prevent
+    process exit. Use ``daemon=True`` on every ``threading.Thread(...)`` call
+    in UI code, or use ``QuillTaskManager`` for cancellable operations.
+    """
+    violations: list[Violation] = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "Thread"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "threading"
+            ):
+                continue
+            has_daemon = any(
+                kw.arg == "daemon" and isinstance(kw.value, ast.Constant) and kw.value.value is True
+                for kw in node.keywords
+            )
+            if not has_daemon:
+                violations.append(
+                    Violation(
+                        path,
+                        node.lineno,
+                        "threading.Thread without daemon=True; all UI background threads must "
+                        "be daemon=True so they cannot prevent process exit (GATE-15). "
+                        "Use daemon=True or QuillTaskManager for cancellable work.",
+                    )
+                )
+    return violations
+
+
+def _check_wx_messagebox(paths: Iterable[Path]) -> list[Violation]:
+    """Ban raw .MessageBox() calls outside dialog_contract.py (GATE-16).
+
+    Raw ``wx.MessageBox`` / ``self._wx.MessageBox`` calls bypass the z-order
+    parent and screen reader announcement wrapper.  Use
+    ``self._show_message_box`` (MainFrame mixins) or ``show_message_box`` from
+    ``quill.ui.dialog_contract`` (standalone dialogs).
+
+    Existing allowed sites may be exempted with ``# MSGBOX-OK: <reason>`` on
+    the same source line.
+    """
+    violations: list[Violation] = []
+    for path in paths:
+        if path == _DIALOG_CONTRACT:
+            continue
+        source_lines = path.read_text(encoding="utf-8").splitlines()
+        tree = ast.parse("\n".join(source_lines), filename=str(path))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "MessageBox"
+            ):
+                continue
+            line_text = source_lines[node.lineno - 1] if node.lineno <= len(source_lines) else ""
+            if "# MSGBOX-OK:" in line_text:
+                continue
+            violations.append(
+                Violation(
+                    path,
+                    node.lineno,
+                    "raw .MessageBox() bypasses the z-order parent and SR announcement "
+                    "wrapper (GATE-16); use self._show_message_box (MainFrame mixins) or "
+                    "show_message_box from quill.ui.dialog_contract (standalone dialogs). "
+                    "Add '# MSGBOX-OK: <reason>' to exempt a reviewed site.",
+                )
+            )
+    return violations
+
+
 _GATE_A11Y_TAB_MARKER = "# A11Y-TAB-1-OK:"
 
 
@@ -729,8 +807,8 @@ def find_violations() -> list[Violation]:
     violations.extend(_check_dialog_contract(ui_files))
     violations.extend(_check_checklistbox(ui_files))
     violations.extend(_check_dead_region_attrs(ui_files))
-    violations.extend(_check_threading_thread(ui_files))
-    violations.extend(_check_wx_message_box(sorted(_PACKAGE_ROOT.rglob("*.py"))))
+    violations.extend(_check_non_daemon_thread(ui_files))
+    violations.extend(_check_wx_messagebox(sorted(_PACKAGE_ROOT.rglob("*.py"))))
     violations.extend(_check_show_modal_wrapper(ui_files))
     violations.extend(_check_accept_focus_from_keyboard(ui_files))
     violations.extend(_check_dialog_registry())
