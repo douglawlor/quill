@@ -9761,23 +9761,8 @@ class MainFrame(
                 sizer.Add(row, 0, wx.EXPAND | wx.ALL, 6)
                 return ctrl
 
-            def _reset_one(key: str) -> None:
-                writer = writers.get(key)
-                if writer is None:
-                    return
-                writer(registry.default_value(key))
-                spec = registry.find_spec(key)
-                self._set_status(f"Reset {spec.label if spec else key} to default")
-
-            def _reset_button(parent_panel, spec):
-                button = wx.Button(parent_panel, label="Reset", style=wx.BU_EXACTFIT)
-                button.SetName(f"Reset {spec.label} to default")
-                button.Bind(wx.EVT_BUTTON, lambda _e, k=spec.key: _reset_one(k))
-                return button
-
             def _make_control(parent_panel, sizer, spec, page_index: int) -> None:
                 current = registry.get_value(self.settings, spec.key)
-                reset_btn = _reset_button(parent_panel, spec)
                 # preview_browser is stored as text but is best chosen from the
                 # list of installed browsers.
                 if spec.key == "preview_browser":
@@ -9791,9 +9776,7 @@ class MainFrame(
                         c.SetStringSelection(browser_choice_label_for_value(_cur))
                         return c
 
-                    choice = _add_field_row(
-                        parent_panel, sizer, spec.label, _make_browser_choice, reset_btn
-                    )
+                    choice = _add_field_row(parent_panel, sizer, spec.label, _make_browser_choice)
                     readers[spec.key] = lambda c=choice: browser_choice_value_for_label(
                         c.GetStringSelection() or "System default browser"
                     )
@@ -9837,7 +9820,7 @@ class MainFrame(
                         _ref.append(_t)
                         return _row
 
-                    _add_field_row(parent_panel, sizer, spec.label, _make_folder_row, reset_btn)
+                    _add_field_row(parent_panel, sizer, spec.label, _make_folder_row)
                     text = _folder_text_ref[0]
                     readers[spec.key] = lambda c=text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
@@ -9883,7 +9866,7 @@ class MainFrame(
                         _ref.append(_t)
                         return _row
 
-                    _add_field_row(parent_panel, sizer, spec.label, _make_sound_file_row, reset_btn)
+                    _add_field_row(parent_panel, sizer, spec.label, _make_sound_file_row)
                     text = _sound_text_ref[0]
                     readers[spec.key] = lambda c=text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
@@ -9894,10 +9877,7 @@ class MainFrame(
                     cb.SetValue(bool(current))
                     if spec.description:
                         cb.SetName(f"{spec.label}. {spec.description}")
-                    bool_row = wx.BoxSizer(wx.HORIZONTAL)
-                    bool_row.Add(cb, 1, wx.ALIGN_CENTER_VERTICAL)
-                    bool_row.Add(reset_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 8)
-                    sizer.Add(bool_row, 0, wx.EXPAND | wx.ALL, 6)
+                    sizer.Add(cb, 0, wx.EXPAND | wx.ALL, 6)
                     readers[spec.key] = lambda c=cb: bool(c.GetValue())
                     writers[spec.key] = lambda v, c=cb: c.SetValue(bool(v))
                     control_index[spec.key] = (page_index, cb)
@@ -9926,9 +9906,7 @@ class MainFrame(
                         c.SetStringSelection(_lv.get(_cv, _ls[0]))
                         return c
 
-                    choice = _add_field_row(
-                        parent_panel, sizer, spec.label, _make_choice, reset_btn
-                    )
+                    choice = _add_field_row(parent_panel, sizer, spec.label, _make_choice)
                     readers[spec.key] = lambda c=choice, m=value_for_label, d=str(current): m.get(
                         c.GetStringSelection(), d
                     )
@@ -9947,9 +9925,7 @@ class MainFrame(
                         s.SetName(_spec.label)
                         return s
 
-                    spin = _add_field_row(
-                        parent_panel, sizer, spec.label, _make_spin_int, reset_btn
-                    )
+                    spin = _add_field_row(parent_panel, sizer, spec.label, _make_spin_int)
                     readers[spec.key] = lambda c=spin: int(c.GetValue())
                     writers[spec.key] = lambda v, c=spin: c.SetValue(int(v))
                     control_index[spec.key] = (page_index, spin)
@@ -9964,9 +9940,7 @@ class MainFrame(
                         s.SetName(_spec.label)
                         return s
 
-                    spin = _add_field_row(
-                        parent_panel, sizer, spec.label, _make_spin_float, reset_btn
-                    )
+                    spin = _add_field_row(parent_panel, sizer, spec.label, _make_spin_float)
                     readers[spec.key] = lambda c=spin: float(c.GetValue())
                     writers[spec.key] = lambda v, c=spin: c.SetValue(float(v))
                     control_index[spec.key] = (page_index, spin)
@@ -9979,7 +9953,7 @@ class MainFrame(
                     t.SetName(_sl)
                     return t
 
-                text = _add_field_row(parent_panel, sizer, spec.label, _make_text, reset_btn)
+                text = _add_field_row(parent_panel, sizer, spec.label, _make_text)
                 readers[spec.key] = lambda c=text: str(c.GetValue())
                 writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                 control_index[spec.key] = (page_index, text)
