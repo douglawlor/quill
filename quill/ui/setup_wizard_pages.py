@@ -469,19 +469,21 @@ class _KeyboardSoundPage(_WizardPage):
         grid.Add(self._sound_enabled)
 
         self._sound_pack_path = str(getattr(settings, "sound_pack_path", "") or "")
-        pack_row_label = wx.StaticText(self, label="Sound pack:", name="wizard.sound_pack_label")
+        self._pack_row_label = wx.StaticText(
+            self, label="Sound pack:", name="wizard.sound_pack_label"
+        )
         pack_row = wx.BoxSizer(wx.HORIZONTAL)
         self._sound_pack_display = wx.StaticText(
             self, label=self._sound_pack_name(), name="wizard.sound_pack_display"
         )
-        choose_pack = wx.Button(self, label="Choose...", name="wizard.sound_pack_choose")
-        choose_pack.Bind(wx.EVT_BUTTON, self._on_choose_sound_pack)
+        self._choose_pack_btn = wx.Button(self, label="Choose...", name="wizard.sound_pack_choose")
+        self._choose_pack_btn.Bind(wx.EVT_BUTTON, self._on_choose_sound_pack)
         pack_row.Add(self._sound_pack_display, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
-        pack_row.Add(choose_pack, 0)
-        grid.Add(pack_row_label, flag=wx.ALIGN_CENTER_VERTICAL)
+        pack_row.Add(self._choose_pack_btn, 0)
+        grid.Add(self._pack_row_label, flag=wx.ALIGN_CENTER_VERTICAL)
         grid.Add(pack_row, flag=wx.EXPAND)
 
-        indent_label = wx.StaticText(
+        self._indent_label = wx.StaticText(
             self, label="Indentation tones:", name="wizard.indent_tone_label"
         )
         self._indent = wx.Choice(
@@ -494,11 +496,28 @@ class _KeyboardSoundPage(_WizardPage):
             (i for i, (v, _l) in enumerate(self._INDENT_TONE_CHOICES) if v == current_scale), 0
         )
         self._indent.SetSelection(indent_idx)
-        grid.Add(indent_label, flag=wx.ALIGN_CENTER_VERTICAL)
+        grid.Add(self._indent_label, flag=wx.ALIGN_CENTER_VERTICAL)
         grid.Add(self._indent, flag=wx.EXPAND)
+
+        self._sound_enabled.Bind(wx.EVT_CHECKBOX, self._on_sound_toggle)
 
         sizer.Add(grid, flag=wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
         self.SetSizer(sizer)
+        self._apply_sound_enabled_state()
+
+    def _apply_sound_enabled_state(self) -> None:
+        on = self._sound_enabled.GetValue()
+        for ctrl in (
+            self._pack_row_label,
+            self._sound_pack_display,
+            self._choose_pack_btn,
+            self._indent_label,
+            self._indent,
+        ):
+            ctrl.Enable(on)
+
+    def _on_sound_toggle(self, _event: wx.CommandEvent) -> None:
+        self._apply_sound_enabled_state()
 
     def _sound_pack_name(self) -> str:
         if not self._sound_pack_path:
@@ -755,10 +774,18 @@ class SetupWizardDialog(wx.Dialog):
     def _focus_first_page_control(self) -> None:
         """Focus the first interactive child of the current page.
 
-        Falls back to the nav button when the page has no focusable children
-        (e.g. a static-only page).  This lets screen-reader users read the page
-        content without having to back-tab from the navigation row.
+        Always sets the correct default button first so Enter activates the
+        right nav button even when focus is inside a TextCtrl or ListBox.
+        Falls back to focusing the nav button when the page has no focusable
+        children.
         """
+        total = len(self._active)
+        on_last = self._current_idx == total - 1
+        if on_last:
+            self.SetDefaultItem(self._finish_btn)
+        else:
+            self.SetDefaultItem(self._next_btn)
+
         page = self._active[self._current_idx]
         for child in page.GetChildren():
             if child.IsShown() and child.IsEnabled() and child.AcceptsFocusFromKeyboard():
