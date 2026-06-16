@@ -53,19 +53,33 @@ The final page is a summary in plain text: your profile name, what features are 
 
 ### The seven starting profiles
 
-**Just a Text Editor** gives you open, type, and save. Plain text editing, spell check, auto-recovery, find and replace, and recent files. Nothing else runs. No Quillins, no AI, no automation, no abbreviation shortcuts, no snippet packs, no sticky notes. The Search menu has no cross-file options. The system tray has only Show Quill and Exit Quill. Preferences shows only the four settings areas that apply. The command palette shows only the commands you have. This is QUILL at its quietest.
+#### Just a Text Editor
 
-**Writer** adds document-writing tools: RTF and Word formatting, Compare Mode for reviewing drafts, abbreviation shortcuts (type a short phrase and expand it automatically), starter snippet packs for common phrases and templates, sticky notes attached to any document position, Copy Tray with 12 clipboard slots, the Journal Stamp Quillin for date headers and post-save word count announcements, the Document Guardian Quillin that warns you before closing a short or unfinished document, and the Date and Time insert menu. The system tray gains Copy Tray and Sticky Notes. AI and braille are not enabled but can be added any time.
+Open, type, and save. Plain text editing, auto-recovery, find and replace, and recent files. Nothing else runs. No Quillins, no AI, no automation, no abbreviation shortcuts, no snippet packs, no sticky notes. The Search menu has no cross-file options. The system tray has only Show Quill and Exit Quill. Preferences shows only the four settings areas that apply. The command palette shows only the commands you have. This is QUILL at its quietest.
 
-**Markdown and Web Author** adds everything in Writer plus Markdown syntax helpers, the HTML encoding and decoding tools, the Insert Character picker for Unicode symbols, Text Tools for case transforms and whitespace cleanup, Line Tools for joining and filtering, and regular expression search. The menus expand to include Format > HTML and Encoding and additional text transformation items.
+#### Writer
 
-**Accessibility Professional** gives you everything in Writer plus Read Aloud at full prominence, Compare Mode, Document Trust and intake workflow, OCR image-to-text, the character inspector, and the Keymap Editor for remapping shortcuts. This profile is designed for document reviewers, accessibility testers, and anyone who needs to read and check content carefully.
+Adds document-writing tools: RTF and Word formatting, Compare Mode for reviewing drafts, abbreviation shortcuts (type a short phrase and expand it automatically), spell check, starter snippet packs for common phrases and templates, sticky notes attached to any document position, Copy Tray with 12 clipboard slots, the Journal Stamp Quillin for date headers and post-save word count announcements, the Document Guardian Quillin that warns you before closing a short or unfinished document, and the Date and Time insert menu. The system tray gains Copy Tray and Sticky Notes. AI and braille are not enabled but can be added any time.
 
-**Braille Professional** adds everything in Accessibility Professional plus the full Braille Mode: BRF and BRL file support, a braille status bar cell showing your position, Grade 1 and Grade 2 translation via the Braille menu, the BRF Tools Quillin for translation preferences and page handling, and Smart Insert BRF test content. The Braille menu appears in the menu bar.
+#### Markdown and Web Author
 
-**AI-Powered Author** gives you everything in Writer plus Ask Quill (Alt+Q), AI grammar check and rewrite, AI writing prompts, AI writing skills for multi-step tasks, AI image description, the Prompt Library, and Smart Insert typing templates. The AI menu items and the Ask Quill panel are visible. You will be asked to set up a provider and API key during the wizard.
+Adds everything in Writer plus Markdown syntax helpers, the HTML encoding and decoding tools, the Insert Character picker for Unicode symbols, Text Tools for case transforms and whitespace cleanup, Line Tools for joining and filtering, and regular expression search. The menus expand to include Format > HTML and Encoding and additional text transformation items.
 
-**Developer and Power User** turns on everything: regular expression search, macro recorder and playback, shell integration, all text and line transformation tools, Smart Insert, BRF Tools, Markdown Helpers, the Character Picker, GitHub remote file access, the Developer Console, Watch Folder automation, and all other Quillins. The full menu structure is visible.
+#### Accessibility Professional
+
+Adds everything in Writer plus Read Aloud at full prominence, Compare Mode, Document Trust and intake workflow, OCR image-to-text, the character inspector, and the Keymap Editor for remapping shortcuts. Designed for document reviewers, accessibility testers, and anyone who needs to read and check content carefully.
+
+#### Braille Professional
+
+Adds everything in Accessibility Professional plus the full Braille Mode: BRF and BRL file support, a braille status bar cell showing your position, Grade 1 and Grade 2 translation via the Braille menu, the BRF Tools Quillin for translation preferences and page handling, and Smart Insert BRF test content. The Braille menu appears in the menu bar.
+
+#### AI-Powered Author
+
+Adds everything in Writer plus Ask Quill (Alt+Q), AI grammar check and rewrite, AI writing prompts, AI writing skills for multi-step tasks, AI image description, the Prompt Library, and Smart Insert typing templates. The AI menu items and the Ask Quill panel are visible. You will be asked to set up a provider and API key during the wizard.
+
+#### Developer and Power User
+
+Turns on everything: regular expression search, macro recorder and playback, shell integration, all text and line transformation tools, Smart Insert, BRF Tools, Markdown Helpers, the Character Picker, GitHub remote file access, the Developer Console, Watch Folder automation, and all other Quillins. The full menu structure is visible.
 
 ### Menus, Command Palette, Go to Anything, and the system tray all respect your profile
 
