@@ -7,7 +7,7 @@ from typing import Any
 
 from quill.core.feature_catalog import FEATURE_ALIASES, FEATURE_DEFINITIONS, FeatureDefinition
 from quill.core.feature_command_map import COMMAND_FEATURE_MAP
-from quill.core.i18n import lazy_gettext
+from quill.core.i18n import LazyStr, lazy_gettext
 from quill.core.paths import app_data_dir
 from quill.core.storage import read_json, write_json_atomic
 
@@ -25,8 +25,8 @@ PROFILE_FULL_QUILL = "full_quill"
 @dataclass(slots=True)
 class FeatureProfile:
     id: str
-    name: str
-    description: str
+    name: str | LazyStr
+    description: str | LazyStr
     states: dict[str, str] = field(default_factory=dict)
 
 
