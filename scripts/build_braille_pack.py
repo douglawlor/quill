@@ -30,7 +30,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -99,28 +98,18 @@ def classify_table(path: Path, meta: dict[str, str]) -> str:
 def smoke_test(exe: Path, tables_dir: Path, translation_table: str, display_table: str) -> bool:
     """Verify a profile produces non-empty output via lou_translate."""
     try:
-        with tempfile.NamedTemporaryFile(
-            delete=False, mode="w", encoding="utf-8", suffix=".txt"
-        ) as f_in:
-            f_in.write(SMOKE_TEST_STRING)
-            in_path = Path(f_in.name)
-
-        out_path = Path(tempfile.gettempdir()) / "quill_smoke_out.brf"
         t_path = (tables_dir / translation_table.replace("tables/", "")).absolute()
         d_path = (tables_dir / display_table.replace("tables/", "")).absolute()
-
         result = subprocess.run(
-            [str(exe), "-f", f"{t_path},{d_path}", str(in_path), str(out_path)],
+            [str(exe), "-f", f"{t_path},{d_path}"],
+            input=SMOKE_TEST_STRING,
             capture_output=True,
             text=True,
             timeout=5,
         )
-        if result.returncode != 0 or not out_path.exists():
+        if result.returncode != 0:
             return False
-        content = out_path.read_text(encoding="utf-8", errors="ignore")
-        in_path.unlink(missing_ok=True)
-        out_path.unlink(missing_ok=True)
-        return bool(content.strip())
+        return bool(result.stdout.strip())
     except Exception:
         return False
 
