@@ -47,6 +47,20 @@ DECTALK_RELEASE_ZIP_URL = (
 )
 DECTALK_RELEASE_ZIP_SHA256 = "4a778056c109b37f95ade4b3d3e308b9396b22a4b0629f9756ec0e5051b9636d"
 
+# Pinned Pandoc Windows release. _download_and_stage_pandoc() tries the
+# latest GitHub release first and falls back to these if the API is unreachable.
+PANDOC_PINNED_VERSION = "3.10"
+PANDOC_PINNED_URL = (
+    "https://github.com/jgm/pandoc/releases/download/3.10/pandoc-3.10-windows-x86_64.zip"
+)
+PANDOC_PINNED_SHA256 = "bb808d00fd58762299d64582a9b4c3e4b106cd929e62c5f19bcdcb496f1e54ae"
+
+# Pinned eSpeak-NG Windows release. _download_and_stage_espeak() tries the
+# latest GitHub release first and falls back to these if the API is unreachable.
+ESPEAK_PINNED_VERSION = "1.52.0"
+ESPEAK_PINNED_URL = "https://github.com/espeak-ng/espeak-ng/releases/download/1.52.0/espeak-ng.msi"
+ESPEAK_PINNED_SHA256 = "7f673c709ea5dd579d3b5ebb98688cc575328a6ab7438d2bc405b88cedaeafb9"
+
 # GLOW is hidden for 0.5.0 (the core.glow feature is locked off), so the heavy
 # `glow` extra (quill-glow-core[glow], not yet on a public index) is NOT bundled
 # in the shipping build. The vendored contract wheel (see _install_vendored_glow)
@@ -117,11 +131,6 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "--bundle-dectalk-release",
-        action="store_true",
-        help="Download the official dectalk/dectalk vs2022 release and bundle it under portable\\tools\\speech\\dectalk.",
-    )
-    parser.add_argument(
         "--compile-installer",
         action="store_true",
         help="Compile the generated Inno Setup script into an installer executable.",
@@ -140,7 +149,6 @@ def main() -> int:
         bundle_python=args.bundle_python,
         source_root=args.source_root,
         braille_pack_dir=args.braille_pack_dir,
-        bundle_dectalk_release=args.bundle_dectalk_release,
         bundled_tool_dirs={
             tool_id: path
             for tool_id, path in {
@@ -171,7 +179,6 @@ def build_windows_distribution(
     source_root: Path | None = None,
     bundled_tool_dirs: dict[str, Path] | None = None,
     braille_pack_dir: Path | None = None,
-    bundle_dectalk_release: bool = False,
     compile_installer: bool = False,
     iscc_path: Path | None = None,
 ) -> dict[str, str]:
@@ -189,9 +196,17 @@ def build_windows_distribution(
 
     staged_docs = _stage_distribution_docs(portable_dir, resolved_source_root)
     effective_bundled_tools = dict(bundled_tool_dirs or {})
-    if bundle_dectalk_release and "speech/dectalk" not in effective_bundled_tools:
-        downloaded_dectalk_dir = _download_and_stage_dectalk_release(portable_dir)
-        effective_bundled_tools["speech/dectalk"] = downloaded_dectalk_dir
+    # Auto-download Pandoc, DECtalk, and eSpeak-NG unless the caller provided
+    # a local directory for them. Each function tries the latest GitHub release
+    # first and falls back to a pinned version; existing staged files are reused.
+    if "pandoc" not in effective_bundled_tools:
+        effective_bundled_tools["pandoc"] = _download_and_stage_pandoc(portable_dir)
+    if "speech/dectalk" not in effective_bundled_tools:
+        effective_bundled_tools["speech/dectalk"] = _download_and_stage_dectalk_release(
+            portable_dir
+        )
+    if "speech/espeak-ng" not in effective_bundled_tools:
+        effective_bundled_tools["speech/espeak-ng"] = _download_and_stage_espeak(portable_dir)
     bundled_tools = _stage_bundled_tools(portable_dir, effective_bundled_tools)
 
     readme = portable_dir / "README.txt"
@@ -1109,6 +1124,113 @@ def _speech_asset_manifest(
             "downloadable": True,
         }
     return manifest
+
+
+def _fetch_latest_github_asset_url(owner: str, repo: str, asset_suffix: str) -> str | None:
+    """Return the download URL for the first release asset whose name ends with asset_suffix.
+
+    Queries the GitHub releases API. Returns None on any network or parse error so
+    callers can fall back to pinned versions without aborting the build.
+    """
+    import json
+
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+    try:
+        with urllib.request.urlopen(api_url, timeout=15) as resp:  # noqa: S310
+            release = json.loads(resp.read())
+        for asset in release.get("assets", []):
+            if asset.get("name", "").endswith(asset_suffix):
+                tag = release.get("tag_name", "unknown")
+                print(f"Found latest {owner}/{repo} release {tag}: {asset['name']}")
+                return asset["browser_download_url"]
+    except Exception as exc:
+        print(
+            f"Warning: could not fetch latest {owner}/{repo} release ({exc}); using pinned version."
+        )
+    return None
+
+
+def _download_and_stage_pandoc(portable_dir: Path) -> Path:
+    """Download Pandoc for Windows and stage pandoc.exe under tools/pandoc/.
+
+    Tries the latest GitHub release first; falls back to the pinned version.
+    If tools/pandoc/ already exists it is reused without re-downloading.
+    """
+    target_dir = portable_dir / "tools" / "pandoc"
+    if (target_dir / "pandoc.exe").exists():
+        print("Pandoc already staged; skipping download.")
+        return target_dir
+
+    url = (
+        _fetch_latest_github_asset_url("jgm", "pandoc", "-windows-x86_64.zip") or PANDOC_PINNED_URL
+    )
+    sha256 = PANDOC_PINNED_SHA256 if url == PANDOC_PINNED_URL else None
+
+    tmp_dir = portable_dir / "_tool-download" / "pandoc"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    archive = tmp_dir / "pandoc-windows-x86_64.zip"
+    print(f"Downloading Pandoc from {url}...")
+    _download_with_verification(url, archive, expected_sha256=sha256)
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive) as zf:
+        for member in zf.namelist():
+            # Extract pandoc.exe from the versioned top-level folder.
+            if member.endswith("/pandoc.exe") or member == "pandoc.exe":
+                data = zf.read(member)
+                (target_dir / "pandoc.exe").write_bytes(data)
+                break
+    archive.unlink(missing_ok=True)
+    if not (target_dir / "pandoc.exe").exists():
+        raise RuntimeError("Pandoc zip did not contain pandoc.exe")
+    print(f"Pandoc staged to {target_dir}")
+    return target_dir
+
+
+def _download_and_stage_espeak(portable_dir: Path) -> Path:
+    """Download eSpeak-NG for Windows and extract it under tools/speech/espeak-ng/.
+
+    Tries the latest GitHub release first; falls back to the pinned version.
+    If the target directory already exists it is reused without re-downloading.
+    Uses msiexec /a (administrative extract) to unpack the MSI without installing.
+    """
+    target_dir = portable_dir / "tools" / "speech" / "espeak-ng"
+    if (target_dir / "espeak-ng.exe").exists():
+        print("eSpeak-NG already staged; skipping download.")
+        return target_dir
+
+    url = _fetch_latest_github_asset_url("espeak-ng", "espeak-ng", ".msi") or ESPEAK_PINNED_URL
+    sha256 = ESPEAK_PINNED_SHA256 if url == ESPEAK_PINNED_URL else None
+
+    tmp_dir = portable_dir / "_tool-download" / "espeak"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    archive = tmp_dir / "espeak-ng.msi"
+    print(f"Downloading eSpeak-NG from {url}...")
+    _download_with_verification(url, archive, expected_sha256=sha256)
+
+    extract_dir = tmp_dir / "extracted"
+    if extract_dir.exists():
+        shutil.rmtree(extract_dir)
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["msiexec", "/a", str(archive.resolve()), "/qn", f"TARGETDIR={extract_dir.resolve()}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"msiexec /a failed for eSpeak-NG MSI:\n{result.stderr}")
+
+    # msiexec /a extracts into a subfolder; find espeak-ng.exe wherever it landed.
+    exe_candidates = list(extract_dir.rglob("espeak-ng.exe"))
+    if not exe_candidates:
+        raise RuntimeError("eSpeak-NG MSI did not extract espeak-ng.exe")
+    espeak_root = exe_candidates[0].parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(espeak_root, target_dir, dirs_exist_ok=True)
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    print(f"eSpeak-NG staged to {target_dir}")
+    return target_dir
 
 
 def _download_with_verification(
