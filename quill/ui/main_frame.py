@@ -1107,6 +1107,7 @@ class MainFrame(
         self._recent_menu_ids: dict[int, Path] = {}
         self._recent_session_menu_ids: dict[int, Path] = {}
         self._session_menu_ids: dict[int, int] = {}
+        self._window_doc_menu_ids: dict[int, int] = {}
         self._menu_open_depth = 0
         self._pending_menu_refresh = False
         self._recent_sessions = [] if safe_mode else load_recent_sessions()
@@ -2413,7 +2414,7 @@ class MainFrame(
             "tools.profiles_and_features_settings",
             "Profiles and Features...",
             self.open_profiles_and_features_settings,
-            None,
+            self._binding_for("tools.profiles_and_features_settings"),
         )
         self.commands.register(
             "help.undo_last_profile_change",
@@ -2431,6 +2432,12 @@ class MainFrame(
             "help.startup_wizard",
             "Startup Wizard...",
             self.run_startup_wizard,
+            None,
+        )
+        self.commands.register(
+            "help.enable_braille_mode",
+            "Enable Braille Mode...",
+            self.enable_braille_mode,
             None,
         )
         self.commands.register(
@@ -7980,44 +7987,45 @@ class MainFrame(
             return
         menu = wx.Menu()
         show_id = wx.NewIdRef()
-        sticky_id = wx.NewIdRef()
-        new_sticky_id = wx.NewIdRef()
         exit_id = wx.NewIdRef()
         menu.Append(show_id, "Show Quill")
-        menu.AppendSeparator()
-        # Copy Tray submenu — list occupied slots for quick paste
-        ct_sub = wx.Menu()
-        tray = self._tray()
-        has_any = False
-        for n, slot in tray.all_slots():
-            if not slot.is_empty():
-                has_any = True
-                label_part = f" ({slot.label})" if slot.label else ""
-                item_label = f"&{n}.{label_part} {slot.preview(50)}"
-                slot_id = wx.NewIdRef()
-                ct_sub.Append(slot_id, item_label)
-                menu.Bind(
-                    wx.EVT_MENU,
-                    lambda _e, _n=n: self._tray_paste_slot(_n),
-                    id=slot_id,
-                )
-        if not has_any:
-            empty_id = wx.NewIdRef()
-            ct_sub.Append(empty_id, "(all slots empty)")
-            ct_sub.Enable(empty_id, False)
-        ct_sub.AppendSeparator()
-        open_tray_id = wx.NewIdRef()
-        ct_sub.Append(open_tray_id, "Open Copy Tray...")
-        menu.Bind(wx.EVT_MENU, lambda _e: self.open_copy_tray(), id=open_tray_id)
-        menu.AppendSubMenu(ct_sub, "Copy &Tray")
-        menu.AppendSeparator()
-        menu.Append(sticky_id, "Sticky Notes...")
-        menu.Append(new_sticky_id, "New Sticky Note...")
+        menu.Bind(wx.EVT_MENU, lambda _e: self._restore_from_tray(), id=show_id)
+        if self._feature_enabled("core.abbreviations"):
+            menu.AppendSeparator()
+            ct_sub = wx.Menu()
+            tray = self._tray()
+            has_any = False
+            for n, slot in tray.all_slots():
+                if not slot.is_empty():
+                    has_any = True
+                    label_part = f" ({slot.label})" if slot.label else ""
+                    item_label = f"&{n}.{label_part} {slot.preview(50)}"
+                    slot_id = wx.NewIdRef()
+                    ct_sub.Append(slot_id, item_label)
+                    menu.Bind(
+                        wx.EVT_MENU,
+                        lambda _e, _n=n: self._tray_paste_slot(_n),
+                        id=slot_id,
+                    )
+            if not has_any:
+                empty_id = wx.NewIdRef()
+                ct_sub.Append(empty_id, "(all slots empty)")
+                ct_sub.Enable(empty_id, False)
+            ct_sub.AppendSeparator()
+            open_tray_id = wx.NewIdRef()
+            ct_sub.Append(open_tray_id, "Open Copy Tray...")
+            menu.Bind(wx.EVT_MENU, lambda _e: self.open_copy_tray(), id=open_tray_id)
+            menu.AppendSubMenu(ct_sub, "Copy &Tray")
+        if self._feature_enabled("core.notes"):
+            sticky_id = wx.NewIdRef()
+            new_sticky_id = wx.NewIdRef()
+            menu.AppendSeparator()
+            menu.Append(sticky_id, "Sticky Notes...")
+            menu.Append(new_sticky_id, "New Sticky Note...")
+            menu.Bind(wx.EVT_MENU, lambda _e: self.manage_sticky_notes(), id=sticky_id)
+            menu.Bind(wx.EVT_MENU, lambda _e: self.create_sticky_note(), id=new_sticky_id)
         menu.AppendSeparator()
         menu.Append(exit_id, "Exit Quill")
-        menu.Bind(wx.EVT_MENU, lambda _e: self._restore_from_tray(), id=show_id)
-        menu.Bind(wx.EVT_MENU, lambda _e: self.manage_sticky_notes(), id=sticky_id)
-        menu.Bind(wx.EVT_MENU, lambda _e: self.create_sticky_note(), id=new_sticky_id)
         menu.Bind(wx.EVT_MENU, lambda _e: self._exit_from_tray(), id=exit_id)
         self._tray_icon.PopupMenu(menu)
         menu.Destroy()
@@ -8843,50 +8851,75 @@ class MainFrame(
         explicit button.
         """
         wx = self._wx
-        # (label, description, handler) per settings area. The description is
-        # shown in the content pane so arrowing the selector previews each area.
-        areas: list[tuple[str, str, Callable[[], None]]] = [
+        # (label, description, handler, feature_gate | None) per settings area.
+        # Areas whose feature_gate is a disabled feature are hidden so the hub
+        # only shows what is actually available in the current profile.
+        _all_areas: list[tuple[str, str, Callable[[], None], str | None]] = [
             (
                 "General",
                 "Appearance, editing, autosave, updates, and the AI master switch.",
                 self.open_general_preferences,
+                None,
             ),
             (
                 "Profiles and Features",
                 "Turn optional features on or off and switch between feature profiles.",
                 self.open_profiles_and_features_settings,
+                None,
             ),
             (
                 "Status Bar Layout",
                 "Choose which fields appear in the status bar and their order.",
                 self.open_status_bar_settings,
+                None,
             ),
             (
                 "Keymap Editor",
                 "Review and change the keyboard shortcuts for every command.",
                 self.open_keymap_editor,
+                None,
             ),
             (
                 "AI Connection",
                 "Connect an AI provider, enter your key, and verify the connection.",
                 self.open_ai_preferences,
+                "future.ai",
             ),
             (
                 "Watch Folder Automation",
                 "Automate actions when files appear in a folder you watch.",
                 self.open_watch_folder_settings,
+                "core.watch_folder",
             ),
             (
                 "GLOW Accessibility",
                 "Quill's built-in accessibility engine and its optional network features.",
                 self.open_glow_settings,
+                "core.glow",
             ),
             (
                 "Install Starter Snippet Packs",
                 "Add a set of ready-made text snippets you can insert while writing.",
                 self.install_starter_snippet_packs,
+                "core.bundled_quillins",
             ),
         ]
+        areas = [
+            (label, desc, handler)
+            for label, desc, handler, gate in _all_areas
+            if gate is None or self._feature_enabled(gate)
+        ]
+        for _pref_m in self._pref_manifests():
+            _page = _pref_m.contributes.preferences[0]
+            if not isinstance(_page, dict):
+                continue
+            _title = _page.get("title") or _pref_m.name
+            _desc = _page.get("description") or f"Settings for {_pref_m.name}."
+            areas.append((
+                _title,
+                _desc,
+                lambda _m=_pref_m: self.open_quillin_preferences(_m),
+            ))
         # All platforms use a left-hand category list (wx.Listbook, Edge /
         # Windows Settings style). macOS deliberately does NOT use wx.Toolbook:
         # on Cocoa the Toolbook selector is a native wxToolBar that requires a
@@ -9724,13 +9757,19 @@ class MainFrame(
                 # preview_browser is stored as text but is best chosen from the
                 # list of installed browsers.
                 if spec.key == "preview_browser":
-                    choice = wx.Choice(
-                        parent_panel,
-                        choices=[opt.label for opt in available_browser_options()],
+
+                    def _make_browser_choice(_pp=parent_panel, _sl=spec.label, _cur=str(current)):
+                        c = wx.Choice(
+                            _pp,
+                            choices=[opt.label for opt in available_browser_options()],
+                        )
+                        c.SetName(_sl)
+                        c.SetStringSelection(browser_choice_label_for_value(_cur))
+                        return c
+
+                    choice = _add_field_row(
+                        parent_panel, sizer, spec.label, _make_browser_choice, reset_btn
                     )
-                    choice.SetName(spec.label)
-                    choice.SetStringSelection(browser_choice_label_for_value(str(current)))
-                    _add_field_row(parent_panel, sizer, spec.label, choice, reset_btn)
                     readers[spec.key] = lambda c=choice: browser_choice_value_for_label(
                         c.GetStringSelection() or "System default browser"
                     )
@@ -9740,30 +9779,42 @@ class MainFrame(
                     control_index[spec.key] = (page_index, choice)
                     return
                 if spec.key == "startup_folder":
-                    text = wx.TextCtrl(parent_panel)
-                    text.SetValue(str(current))
-                    text.SetName(spec.label)
-                    browse_btn = wx.Button(parent_panel, label="Browse...")
-                    browse_btn.SetName(f"Browse for {spec.label}")
-                    folder_row = wx.BoxSizer(wx.HORIZONTAL)
-                    folder_row.Add(text, 1, wx.EXPAND | wx.RIGHT, 8)
-                    folder_row.Add(browse_btn, 0, wx.ALIGN_CENTER_VERTICAL)
+                    _folder_text_ref: list = []
 
-                    def _on_browse_folder(_evt, _t=text, _pp=parent_panel) -> None:
-                        with wx.DirDialog(
-                            _pp,
-                            "Choose default file-open folder",
-                            defaultPath=_t.GetValue().strip(),
-                            style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST,
-                        ) as ddlg:
-                            if (
-                                self._show_modal_dialog(ddlg, "Default file-open folder")
-                                == wx.ID_OK
-                            ):
-                                _t.SetValue(ddlg.GetPath())
+                    def _make_folder_row(
+                        _pp=parent_panel,
+                        _cur=str(current),
+                        _sl=spec.label,
+                        _ref=_folder_text_ref,
+                    ):
+                        _t = wx.TextCtrl(_pp)
+                        _t.SetValue(_cur)
+                        _t.SetName(_sl)
+                        _b = wx.Button(_pp, label="Browse...")
+                        _b.SetName(f"Browse for {_sl}")
 
-                    browse_btn.Bind(wx.EVT_BUTTON, _on_browse_folder)
-                    _add_field_row(parent_panel, sizer, spec.label, folder_row, reset_btn)
+                        def _on_browse(_evt, __t=_t, __pp=_pp) -> None:
+                            with wx.DirDialog(
+                                __pp,
+                                "Choose default file-open folder",
+                                defaultPath=__t.GetValue().strip(),
+                                style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST,
+                            ) as ddlg:
+                                if (
+                                    self._show_modal_dialog(ddlg, "Default file-open folder")
+                                    == wx.ID_OK
+                                ):
+                                    __t.SetValue(ddlg.GetPath())
+
+                        _b.Bind(wx.EVT_BUTTON, _on_browse)
+                        _row = wx.BoxSizer(wx.HORIZONTAL)
+                        _row.Add(_t, 1, wx.EXPAND | wx.RIGHT, 8)
+                        _row.Add(_b, 0, wx.ALIGN_CENTER_VERTICAL)
+                        _ref.append(_t)
+                        return _row
+
+                    _add_field_row(parent_panel, sizer, spec.label, _make_folder_row, reset_btn)
+                    text = _folder_text_ref[0]
                     readers[spec.key] = lambda c=text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, text)
@@ -9774,27 +9825,42 @@ class MainFrame(
                     "quill_key_sound_move",
                     "quill_key_sound_error",
                 }:
-                    text = wx.TextCtrl(parent_panel)
-                    text.SetValue(str(current))
-                    text.SetName(spec.label)
-                    browse_btn = wx.Button(parent_panel, label="Browse...")
-                    browse_btn.SetName(f"Browse for {spec.label}")
-                    file_row = wx.BoxSizer(wx.HORIZONTAL)
-                    file_row.Add(text, 1, wx.EXPAND | wx.RIGHT, 8)
-                    file_row.Add(browse_btn, 0, wx.ALIGN_CENTER_VERTICAL)
+                    _sound_text_ref: list = []
 
-                    def _on_browse_sound(_evt, _t=text, _pp=parent_panel) -> None:
-                        with wx.FileDialog(
-                            _pp,
-                            "Choose a WAV file",
-                            wildcard="WAV files (*.wav)|*.wav",
-                            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
-                        ) as fdlg:
-                            if self._show_modal_dialog(fdlg, "Choose Keyboard Sound") == wx.ID_OK:
-                                _t.SetValue(fdlg.GetPath())
+                    def _make_sound_file_row(
+                        _pp=parent_panel,
+                        _cur=str(current),
+                        _sl=spec.label,
+                        _ref=_sound_text_ref,
+                    ):
+                        _t = wx.TextCtrl(_pp)
+                        _t.SetValue(_cur)
+                        _t.SetName(_sl)
+                        _b = wx.Button(_pp, label="Browse...")
+                        _b.SetName(f"Browse for {_sl}")
 
-                    browse_btn.Bind(wx.EVT_BUTTON, _on_browse_sound)
-                    _add_field_row(parent_panel, sizer, spec.label, file_row, reset_btn)
+                        def _on_browse(_evt, __t=_t, __pp=_pp) -> None:
+                            with wx.FileDialog(
+                                __pp,
+                                "Choose a WAV file",
+                                wildcard="WAV files (*.wav)|*.wav",
+                                style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+                            ) as fdlg:
+                                if (
+                                    self._show_modal_dialog(fdlg, "Choose Keyboard Sound")
+                                    == wx.ID_OK
+                                ):
+                                    __t.SetValue(fdlg.GetPath())
+
+                        _b.Bind(wx.EVT_BUTTON, _on_browse)
+                        _row = wx.BoxSizer(wx.HORIZONTAL)
+                        _row.Add(_t, 1, wx.EXPAND | wx.RIGHT, 8)
+                        _row.Add(_b, 0, wx.ALIGN_CENTER_VERTICAL)
+                        _ref.append(_t)
+                        return _row
+
+                    _add_field_row(parent_panel, sizer, spec.label, _make_sound_file_row, reset_btn)
+                    text = _sound_text_ref[0]
                     readers[spec.key] = lambda c=text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, text)
@@ -9823,10 +9889,22 @@ class MainFrame(
                     labels = [label for _value, label in spec.choices]
                     value_for_label = {label: value for value, label in spec.choices}
                     label_for_value = {value: label for value, label in spec.choices}
-                    choice = wx.Choice(parent_panel, choices=labels)
-                    choice.SetName(spec.label)
-                    choice.SetStringSelection(label_for_value.get(str(current), labels[0]))
-                    _add_field_row(parent_panel, sizer, spec.label, choice, reset_btn)
+
+                    def _make_choice(
+                        _pp=parent_panel,
+                        _ls=labels,
+                        _lv=label_for_value,
+                        _cv=str(current),
+                        _sl=spec.label,
+                    ):
+                        c = wx.Choice(_pp, choices=_ls)
+                        c.SetName(_sl)
+                        c.SetStringSelection(_lv.get(_cv, _ls[0]))
+                        return c
+
+                    choice = _add_field_row(
+                        parent_panel, sizer, spec.label, _make_choice, reset_btn
+                    )
                     readers[spec.key] = lambda c=choice, m=value_for_label, d=str(current): m.get(
                         c.GetStringSelection(), d
                     )
@@ -9836,32 +9914,48 @@ class MainFrame(
                     control_index[spec.key] = (page_index, choice)
                     return
                 if spec.kind == "int":
-                    spin = wx.SpinCtrl(parent_panel)
-                    if spec.minimum is not None and spec.maximum is not None:
-                        spin.SetRange(int(spec.minimum), int(spec.maximum))
-                    spin.SetValue(int(current))
-                    spin.SetName(spec.label)
-                    _add_field_row(parent_panel, sizer, spec.label, spin, reset_btn)
+
+                    def _make_spin_int(_pp=parent_panel, _spec=spec, _cur=int(current)):
+                        s = wx.SpinCtrl(_pp)
+                        if _spec.minimum is not None and _spec.maximum is not None:
+                            s.SetRange(int(_spec.minimum), int(_spec.maximum))
+                        s.SetValue(_cur)
+                        s.SetName(_spec.label)
+                        return s
+
+                    spin = _add_field_row(
+                        parent_panel, sizer, spec.label, _make_spin_int, reset_btn
+                    )
                     readers[spec.key] = lambda c=spin: int(c.GetValue())
                     writers[spec.key] = lambda v, c=spin: c.SetValue(int(v))
                     control_index[spec.key] = (page_index, spin)
                     return
                 if spec.kind == "float":
-                    spin = wx.SpinCtrlDouble(parent_panel, inc=0.1)
-                    if spec.minimum is not None and spec.maximum is not None:
-                        spin.SetRange(float(spec.minimum), float(spec.maximum))
-                    spin.SetValue(float(current))
-                    spin.SetName(spec.label)
-                    _add_field_row(parent_panel, sizer, spec.label, spin, reset_btn)
+
+                    def _make_spin_float(_pp=parent_panel, _spec=spec, _cur=float(current)):
+                        s = wx.SpinCtrlDouble(_pp, inc=0.1)
+                        if _spec.minimum is not None and _spec.maximum is not None:
+                            s.SetRange(float(_spec.minimum), float(_spec.maximum))
+                        s.SetValue(_cur)
+                        s.SetName(_spec.label)
+                        return s
+
+                    spin = _add_field_row(
+                        parent_panel, sizer, spec.label, _make_spin_float, reset_btn
+                    )
                     readers[spec.key] = lambda c=spin: float(c.GetValue())
                     writers[spec.key] = lambda v, c=spin: c.SetValue(float(v))
                     control_index[spec.key] = (page_index, spin)
                     return
+
                 # text
-                text = wx.TextCtrl(parent_panel)
-                text.SetValue(str(current))
-                text.SetName(spec.label)
-                _add_field_row(parent_panel, sizer, spec.label, text, reset_btn)
+                def _make_text(_pp=parent_panel, _cur=str(current), _sl=spec.label):
+                    t = wx.TextCtrl(_pp)
+                    t.SetValue(_cur)
+                    t.SetName(_sl)
+                    return t
+
+                text = _add_field_row(parent_panel, sizer, spec.label, _make_text, reset_btn)
                 readers[spec.key] = lambda c=text: str(c.GetValue())
                 writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                 control_index[spec.key] = (page_index, text)
@@ -21341,8 +21435,13 @@ class MainFrame(
         locked-off features are omitted because neither is user-toggleable.
         Individual wx.CheckBox controls are used instead of CheckListBox so
         screen readers (NVDA/JAWS) announce checked state on navigation.
+
+        A RadioBox lets the user filter to disabled-only features so they can
+        quickly scan what is available to turn on without wading through the
+        full list.
         """
         wx = self._wx
+        features = self.features
         toggleable = sorted(
             (
                 (feature_id, definition)
@@ -21351,8 +21450,8 @@ class MainFrame(
             ),
             key=lambda item: (item[1].category, item[1].name),
         )
-        feature_ids = [feature_id for feature_id, _definition in toggleable]
-        dialog = wx.Dialog(self.frame, title="Manage Individual Features", size=(700, 640))
+
+        dialog = wx.Dialog(self.frame, title="Manage Individual Features", size=(700, 680))
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
             wx.StaticText(
@@ -21369,61 +21468,112 @@ class MainFrame(
             8,
         )
 
+        # RadioBox filter — wx.RadioBox announces selection and group label to
+        # all major screen readers without any extra ARIA plumbing.
+        filter_box = wx.RadioBox(
+            dialog,
+            label="Show",
+            choices=["All features", "Disabled features only"],
+            style=wx.RA_SPECIFY_ROWS,
+            name="features.filter",
+        )
+        filter_box.SetSelection(0)
+        root.Add(filter_box, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 8)
+
         # Scrolled panel of individual CheckBox controls — NVDA/JAWS announce
         # "checked" / "not checked" natively when focus moves between them,
         # unlike CheckListBox which only announces name without state.
         scroll = wx.ScrolledWindow(dialog, style=wx.VSCROLL)
         scroll.SetScrollRate(0, 20)
         scroll_sizer = wx.BoxSizer(wx.VERTICAL)
-        checkboxes: list[wx.CheckBox] = []
-        for feature_id, definition in toggleable:
-            cb = wx.CheckBox(scroll, label=definition.name)
-            cb.SetValue(self.features.is_enabled(feature_id))
-            checkboxes.append(cb)
-            scroll_sizer.Add(cb, 0, wx.ALL, 3)
         scroll.SetSizer(scroll_sizer)
 
-        detail = wx.TextCtrl(dialog, style=wx.TE_MULTILINE | wx.TE_READONLY)
-        detail.SetValue("Tab to a feature checkbox to see details below.")
+        detail = wx.TextCtrl(
+            dialog,
+            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2,
+            name="features.detail",
+        )
+        detail.SetValue("Arrow to a feature checkbox to read its description here.")
 
-        def sync_checks() -> None:
-            for index, feature_id in enumerate(feature_ids):
-                if index < len(checkboxes):
-                    checkboxes[index].SetValue(self.features.is_enabled(feature_id))
+        # Mutable list tracking the currently visible (feature_id, checkbox) pairs.
+        current_items: list[tuple[str, object]] = []
 
-        def refresh_detail(index: int) -> None:
-            if 0 <= index < len(feature_ids):
-                detail.SetValue(self.features.describe_feature(feature_ids[index]))
-
-        def make_focus_handler(index: int):
+        def make_focus_handler(feature_id: str):
             def _on_focus(_event: object) -> None:
-                refresh_detail(index)
+                detail.SetValue(features.describe_feature(feature_id))
 
             return _on_focus
 
-        def make_toggle_handler(index: int):
+        def make_toggle_handler(feature_id: str):
             def _on_toggle(_event: object) -> None:
-                if index < 0 or index >= len(feature_ids):
+                cb = next((c for fid, c in current_items if fid == feature_id), None)
+                if cb is None:
                     return
-                feature_id = feature_ids[index]
-                enabled = checkboxes[index].GetValue()
-                affected = self.features.set_feature_enabled(feature_id, enabled)
-                announcement = self.features.describe_feature_toggle(feature_id, enabled, affected)
-                sync_checks()
-                refresh_detail(index)
+                enabled = cb.GetValue()  # type: ignore[union-attr]
+                affected = features.set_feature_enabled(feature_id, enabled)
+                announcement = features.describe_feature_toggle(feature_id, enabled, affected)
+                for fid, c2 in current_items:
+                    c2.SetValue(features.is_enabled(fid))  # type: ignore[union-attr]
+                if filter_box.GetSelection() == 1 and enabled:
+                    # Feature just enabled: remove from disabled-only list.
+                    rebuild_list(focus_first=True)
+                else:
+                    detail.SetValue(features.describe_feature(feature_id))
                 self._build_menu()
                 self._apply_accelerators()
                 self._set_status(announcement)
 
             return _on_toggle
 
-        for i, cb in enumerate(checkboxes):
-            cb.Bind(wx.EVT_CHECKBOX, make_toggle_handler(i))
-            cb.Bind(wx.EVT_SET_FOCUS, make_focus_handler(i))
+        def rebuild_list(focus_first: bool = True) -> None:
+            to_destroy = [
+                item.GetWindow()
+                for item in scroll_sizer.GetChildren()
+                if item.GetWindow() is not None
+            ]
+            scroll_sizer.Clear()
+            for win in to_destroy:
+                win.Destroy()
+            current_items.clear()
+
+            show_disabled_only = filter_box.GetSelection() == 1
+            for feature_id, definition in toggleable:
+                if show_disabled_only and features.is_enabled(feature_id):
+                    continue
+                cb = wx.CheckBox(
+                    scroll,
+                    label=definition.name,
+                    name=f"features.cb.{feature_id}",
+                )
+                cb.SetValue(features.is_enabled(feature_id))
+                current_items.append((feature_id, cb))
+                cb.Bind(wx.EVT_CHECKBOX, make_toggle_handler(feature_id))
+                cb.Bind(wx.EVT_SET_FOCUS, make_focus_handler(feature_id))
+                scroll_sizer.Add(cb, 0, wx.ALL, 3)
+
+            scroll_sizer.Layout()
+            scroll.FitInside()
+            dialog.Layout()
+
+            if not current_items:
+                detail.SetValue(
+                    "No disabled features found."
+                    if show_disabled_only
+                    else "No user-toggleable features available."
+                )
+            elif focus_first:
+                wx.CallAfter(current_items[0][1].SetFocus)  # type: ignore[union-attr]
+                detail.SetValue("Arrow to a feature checkbox to read its description here.")
+
+        rebuild_list()
+        filter_box.Bind(wx.EVT_RADIOBOX, lambda _evt: rebuild_list())
 
         root.Add(scroll, 1, wx.ALL | wx.EXPAND, 8)
-        root.Add(detail, 0, wx.ALL | wx.EXPAND, 8)
-        root.SetItemMinSize(detail, (-1, 80))
+        root.Add(
+            wx.StaticText(dialog, label="Feature description:"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 8
+        )
+        root.Add(detail, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 8)
+        root.SetItemMinSize(detail, (-1, 90))
         buttons = dialog.CreateButtonSizer(wx.OK)
         if buttons is not None:
             ok_button = dialog.FindWindowById(wx.ID_OK)
@@ -21433,8 +21583,6 @@ class MainFrame(
             root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
         apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
         dialog.SetSizerAndFit(root)
-        if checkboxes:
-            wx.CallAfter(checkboxes[0].SetFocus)
         self._show_modal_dialog(dialog, "Manage Individual Features")
         self._refresh_title()
 
@@ -21625,17 +21773,9 @@ class MainFrame(
         chooser = wx.ListBox(dialog, choices=[])
         entries: list[tuple[str, str, str]] = []
         summary = wx.TextCtrl(dialog, style=wx.TE_MULTILINE | wx.TE_READONLY)
-        keyboard_pack_choices = keyboard_pack_names(include_custom=True)
-        keyboard_pack_choice = wx.Choice(dialog, choices=keyboard_pack_choices)
-        current_pack = self.settings.keyboard_pack
-        if current_pack not in keyboard_pack_choices:
-            current_pack = KEYBOARD_PACK_DEFAULT
-        keyboard_pack_choice.SetStringSelection(current_pack)
-        keyboard_preview = wx.TextCtrl(
-            dialog,
-            style=wx.TE_MULTILINE | wx.TE_READONLY,
-            size=(-1, 160),
-        )
+        # keyboard_pack_choices, keyboard_pack_choice, and keyboard_preview are
+        # created in the layout section below so their StaticText labels are
+        # created first in Z-order (required for JAWS label-buddy association).
 
         def refresh_profile_list(preferred_id: str | None = None) -> None:
             nonlocal entries
@@ -21661,19 +21801,37 @@ class MainFrame(
             return entries[selection]
 
         def refresh_summary() -> None:
+            from quill.core.onboarding_profiles import list_intent_profiles
+
             entry = selected_entry()
             if entry is None:
                 summary.SetValue(self.features.profile_summary())
                 return
             kind, profile_id, _name = entry
             if kind == "built_in":
-                summary.SetValue(self.features.change_profile_preview(profile_id))
+                # Show the intent-profile preview text when one maps to this
+                # technical profile -- same rich "what you get" description as
+                # the wizard, not a dry feature diff.
+                intent_matches = [
+                    ip for ip in list_intent_profiles() if ip.technical_profile == profile_id
+                ]
+                if intent_matches:
+                    lines: list[str] = []
+                    for ip in intent_matches:
+                        lines.append(ip.preview_text)
+                        if len(intent_matches) > 1:
+                            lines.append("\n" + "-" * 40 + "\n")
+                    summary.SetValue("\n".join(lines).strip())
+                else:
+                    summary.SetValue(self.features.change_profile_preview(profile_id))
+                summary.SetInsertionPoint(0)
                 return
             custom_profile = self._load_custom_profiles().get(profile_id)
             if custom_profile is None:
                 summary.SetValue("Custom profile is no longer available.")
                 return
             summary.SetValue(self._custom_profile_summary(custom_profile))
+            summary.SetInsertionPoint(0)
 
         def refresh_keyboard_preview() -> None:
             pack_name = keyboard_pack_choice.GetStringSelection() or KEYBOARD_PACK_DEFAULT
@@ -21750,15 +21908,43 @@ class MainFrame(
             if not name:
                 self._set_status("Custom profile name cannot be empty")
                 return
-            with wx.TextEntryDialog(
+            # Multi-line description so users can write the same "what you get"
+            # style description shown for built-in intent profiles.
+            with wx.Dialog(
                 dialog,
-                "Optional description:",
-                "Create Custom Profile",
-                value="",
-            ) as description_dialog:
-                if self._show_modal_dialog(description_dialog, "Create Custom Profile") != wx.ID_OK:
+                title="Create Custom Profile - Description",
+                style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
+                size=(520, 360),
+            ) as desc_dlg:
+                desc_root = wx.BoxSizer(wx.VERTICAL)
+                desc_root.Add(
+                    wx.StaticText(
+                        desc_dlg,
+                        label=(
+                            "Write a description for your profile.\n"
+                            "Describe what it is for and what features it includes.\n"
+                            "This text will be shown in the profile chooser."
+                        ),
+                    ),
+                    0,
+                    wx.ALL,
+                    8,
+                )
+                desc_ctrl = wx.TextCtrl(
+                    desc_dlg,
+                    style=wx.TE_MULTILINE | wx.TE_WORDWRAP,
+                    size=(-1, 180),
+                )
+                desc_ctrl.SetName("Profile description")
+                desc_root.Add(desc_ctrl, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+                btn_row = desc_dlg.CreateButtonSizer(wx.OK | wx.CANCEL)
+                if btn_row:
+                    desc_root.Add(btn_row, 0, wx.EXPAND | wx.ALL, 8)
+                desc_dlg.SetSizer(desc_root)
+                apply_modal_ids(desc_dlg, affirmative_id=wx.ID_OK, cancel_id=wx.ID_CANCEL)
+                if self._show_modal_dialog(desc_dlg, "Create Custom Profile") != wx.ID_OK:
                     return
-                description = description_dialog.GetValue().strip()
+                description = desc_ctrl.GetValue().strip()
             built_in_profiles = list(PROFILE_DEFINITIONS.values())
             parent_labels = [self._profile_choice_label(profile) for profile in built_in_profiles]
             with wx.SingleChoiceDialog(
@@ -21920,7 +22106,6 @@ class MainFrame(
             self._refresh_title()
 
         chooser.Bind(wx.EVT_LISTBOX, lambda _e: refresh_summary())
-        keyboard_pack_choice.Bind(wx.EVT_CHOICE, lambda _e: refresh_keyboard_preview())
         switch_button = wx.Button(dialog, label="Switch Profile")
         compare_button = wx.Button(dialog, label="Compare Profiles")
         undo_button = wx.Button(dialog, label="Undo Last Change")
@@ -21962,7 +22147,21 @@ class MainFrame(
             wx.LEFT | wx.RIGHT | wx.TOP | wx.EXPAND,
             8,
         )
+        # Label created before Choice so JAWS finds the right buddy.
+        root.Add(wx.StaticText(dialog, label="Keyboard pack:"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 8)
+        keyboard_pack_choices = keyboard_pack_names(include_custom=True)
+        keyboard_pack_choice = wx.Choice(dialog, choices=keyboard_pack_choices)
+        current_pack = self.settings.keyboard_pack
+        if current_pack not in keyboard_pack_choices:
+            current_pack = KEYBOARD_PACK_DEFAULT
+        keyboard_pack_choice.SetStringSelection(current_pack)
+        keyboard_pack_choice.Bind(wx.EVT_CHOICE, lambda _e: refresh_keyboard_preview())
         root.Add(keyboard_pack_choice, 0, wx.ALL | wx.EXPAND, 8)
+        keyboard_preview = wx.TextCtrl(
+            dialog,
+            style=wx.TE_MULTILINE | wx.TE_READONLY,
+            size=(-1, 160),
+        )
         root.Add(keyboard_preview, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM | wx.EXPAND, 8)
         buttons = wx.BoxSizer(wx.HORIZONTAL)
         buttons.Add(switch_button, 0, wx.RIGHT, 6)
@@ -22027,31 +22226,66 @@ class MainFrame(
         self.open_user_guide(start_anchor=section)
 
     def run_startup_wizard(self, *, first_run: bool = False) -> None:
+        from quill.core.onboarding_profiles import DEFAULT_INTENT_ID, get_intent_profile
         from quill.core.settings import save_settings
         from quill.ui.setup_wizard import run_setup_wizard
 
         feature_manager: FeatureManager = self.features
-        changed = run_setup_wizard(
+        changed, aborted = run_setup_wizard(
             self.frame, self.settings, feature_manager, show_modal_fn=self._show_modal_dialog
         )
         if changed:
+            # Apply Quillin profile from wizard intent choice
+            intent_id = getattr(self.settings, "setup_wizard_intent", DEFAULT_INTENT_ID)
+            wants_ai = bool(getattr(self.settings, "setup_wizard_wants_ai", False))
+            wants_braille = bool(getattr(self.settings, "setup_wizard_wants_braille", False))
+            wants_auto = bool(getattr(self.settings, "setup_wizard_wants_automation", False))
+            self.apply_intent_quillin_profile(
+                intent_id,
+                wants_ai=wants_ai,
+                wants_braille=wants_braille,
+                wants_automation=wants_auto,
+            )
+            # Persist AI provider/key when provided
+            ai_provider = getattr(self.settings, "setup_wizard_ai_provider", "")
+            ai_key = getattr(self.settings, "setup_wizard_ai_key", "")
+            if ai_provider and ai_key:
+                try:
+                    self.ai.save_provider_api_key(ai_provider, ai_key)
+                    self.ai.set_active_provider(ai_provider)
+                except Exception:
+                    pass
             save_settings(self.settings)
             feature_manager.save()
             self._apply_accelerators()
             self._set_status("Personalise QUILL completed")
-        elif first_run:
-            # User pressed Escape or Cancel on the first-run wizard.  Ask
-            # whether they want to stop seeing it on every launch.
-            with self._wx.MessageDialog(
-                self.frame,
-                "The setup wizard will appear again next time QUILL starts.\n\n"
-                "Do you want to disable it so it does not open automatically?",
-                "Setup Wizard",
-                self._wx.YES_NO | self._wx.NO_DEFAULT | self._wx.ICON_QUESTION,
-            ) as dlg:
-                if self._show_modal_dialog(dlg, "Setup Wizard") == self._wx.ID_YES:
-                    self.settings.setup_wizard_completed = True
-                    save_settings(self.settings)
+            self._announce(
+                f"Profile set to {get_intent_profile(intent_id).name}. "
+                "QUILL is ready. You can personalise further any time from Help."
+            )
+        elif first_run and aborted:
+            # User cancelled on first run: apply minimal text_editor profile
+            # so they start with a clean, quiet editor rather than the raw defaults.
+            from quill.core.feature_catalog import FEATURE_DEFINITIONS
+
+            text_editor = get_intent_profile("text_editor")
+            feature_manager.switch_profile(text_editor.technical_profile)
+            for feature_id, state in text_editor.feature_overrides.items():
+                if feature_id not in FEATURE_DEFINITIONS:
+                    continue
+                try:
+                    feature_manager.set_feature_enabled(feature_id, state == "on")
+                except Exception:
+                    pass
+            self.apply_intent_quillin_profile("text_editor")
+            feature_manager.save()
+            self.settings.setup_wizard_completed = True
+            save_settings(self.settings)
+            self._apply_accelerators()
+            self._announce(
+                "Starting with a clean text editor. "
+                "Add features any time from Help > Personalise QUILL."
+            )
 
     def run_profile_onboarding(self) -> None:
         # Backward-compatible alias for older command IDs and automation scripts.
@@ -22120,16 +22354,60 @@ class MainFrame(
             self._first_run_watch_folder_prompt = False
         _focus_editor()
 
+    def enable_braille_mode(self) -> None:
+        """Enable Braille Mode from Help > Enable Braille Mode or the command palette.
+
+        If braille is already active this is a no-op with an announcement. Otherwise
+        it shows a brief description, enables the feature, rebuilds the menu, and
+        optionally triggers the Braille Pack install prompt.
+        """
+        if self._feature_enabled("core.braille"):
+            self._announce(
+                "Braille Mode is already active. Use the Braille menu to access braille tools."
+            )
+            return
+        wx = self._wx
+        msg = (
+            "Braille Mode adds BRF and BRL file support, Grade 1 and Grade 2 "
+            "braille translation, a braille status bar cell, and the Braille "
+            "menu with page navigation and translation commands.\n\n"
+            "The QUILL Braille Pack is a separate optional component that adds "
+            "the translation engine. You can install it after enabling the mode.\n\n"
+            "Enable Braille Mode now?"
+        )
+        with wx.MessageDialog(
+            self.frame,
+            msg,
+            "Enable Braille Mode",
+            wx.YES_NO | wx.YES_DEFAULT | wx.ICON_INFORMATION,
+        ) as dlg:
+            if hasattr(dlg, "SetYesNoLabels"):
+                dlg.SetYesNoLabels("Enable Braille Mode", "Not Now")
+            apply_modal_ids(dlg, affirmative_id=wx.ID_YES, escape_id=wx.ID_NO)
+            result = self._show_modal_dialog(dlg, "Enable Braille Mode")
+        if result != wx.ID_YES:
+            return
+        self.features.set_feature_enabled("core.braille", True)
+        self.features.save()
+        self._build_menu()
+        self._announce("Braille Mode is now active. The Braille menu has been added.")
+        self._set_status("Braille Mode enabled")
+        self._maybe_prompt_braille_pack_install()
+
     def _maybe_prompt_braille_pack_install(self) -> None:
         """One-time post-upgrade prompt when the Braille Pack is absent.
 
         Runs only in a real (non-dev) install, only once per user, only when
-        the pack is actually missing. Offers to re-run the cached installer so
-        the user can add the braillepack component without re-downloading.
+        the pack is actually missing and Braille Mode is enabled. Offers to
+        re-run the cached installer so the user can add the braillepack
+        component without re-downloading. Choosing 'Disable Braille Mode'
+        turns the feature off so the prompt never fires again.
         """
         from quill.core.braille_pack import is_braille_pack_installed
         from quill.core.paths import _DEV_BUILD
 
+        if not self._feature_enabled("core.braille"):
+            return
         if _DEV_BUILD:
             return
         if is_braille_pack_installed():
@@ -22148,23 +22426,32 @@ class MainFrame(
             "and braille display support. It is an optional component included "
             "in the installer.\n\n"
             "Choose 'Install Braille Pack' to run the installer and add it now "
-            "(QUILL will close). Choose 'Not Now' to skip; you can add it later "
-            "by re-running the QUILL installer and selecting the Braille Pack "
-            "component."
+            "(QUILL will close). Choose 'Not Now' to skip; you can install it "
+            "later by re-running the QUILL installer or from Help > Enable "
+            "Braille Mode. Choose 'Disable Braille Mode' if you do not need "
+            "braille tools."
         )
         with wx.MessageDialog(
             self.frame,
             msg,
             "QUILL Braille Pack",
-            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_INFORMATION,
+            wx.YES_NO | wx.CANCEL | wx.NO_DEFAULT | wx.ICON_INFORMATION,
         ) as dlg:
-            if hasattr(dlg, "SetYesNoLabels"):
-                dlg.SetYesNoLabels("Install Braille Pack", "Not Now")
+            if hasattr(dlg, "SetYesNoCancelLabels"):
+                dlg.SetYesNoCancelLabels("Install Braille Pack", "Not Now", "Disable Braille Mode")
             apply_modal_ids(dlg, affirmative_id=wx.ID_YES, escape_id=wx.ID_NO)
             result = self._show_modal_dialog(dlg, "QUILL Braille Pack")
 
+        if result == wx.ID_CANCEL:
+            self.features.set_feature_enabled("core.braille", False)
+            self.features.save()
+            self._build_menu()
+            self._set_status("Braille Mode disabled. Use Help > Enable Braille Mode to re-enable.")
+            return
         if result != wx.ID_YES:
-            self._set_status("Braille Pack install skipped")
+            self._set_status(
+                "Braille Pack install skipped. Use Help > Enable Braille Mode to install later."
+            )
             return
 
         # Look for a cached copy of the installer left in the updates folder.

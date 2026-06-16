@@ -948,7 +948,7 @@ The manager also has **Import** and **Export** buttons for JSON round-trips. Exp
 
 **Sound feedback.** Optional: enable **Play sound on abbreviation expansion** in `Tools > Customize & Support > Preferences > Editing` and optionally point **Abbreviation expansion sound file** to a `.wav` file. Leave the path blank for the default system beep.
 
-**Quillin-contributed abbreviations.** Installed Quillins can add their own abbreviations to the registry. These are listed in the Insert Automation Reference and can be disabled per-Quillin in **Preferences → Quillins**. Your own abbreviations always take priority over Quillin-contributed ones; if two Quillins claim the same trigger, the conflict is visible in the Conflict Manager.
+**Quillin-contributed abbreviations.** Installed Quillins can add their own abbreviations to the registry. These are listed in the Insert Automation Reference and can be disabled per-Quillin in the Quillin's own preferences page (open **Preferences**, Ctrl+Comma, then navigate to the Quillin by name). Your own abbreviations always take priority over Quillin-contributed ones; if two Quillins claim the same trigger, the conflict is visible in the Conflict Manager.
 
 The bundled **Smart Insert** Quillin contributes five abbreviations by default:
 
@@ -989,9 +989,9 @@ The bundled **Smart Insert** Quillin contributes these triggers out of the box:
 
 **How to use.** Type the trigger alone on a line and press Enter. If the trigger matches, QUILL replaces the whole line with the generated text and announces what it inserted. If it does not match, nothing happens and the Enter key behaves normally.
 
-**Large insertions.** If a trigger would produce more text than the configured threshold (default: 50 paragraphs), QUILL asks for confirmation before inserting anything. You can adjust the threshold in **Preferences → Quillins → Smart Insert → General**.
+**Large insertions.** If a trigger would produce more text than the configured threshold (default: 50 paragraphs), QUILL asks for confirmation before inserting anything. You can adjust the threshold in **Preferences → Smart Insert → General tab**.
 
-**Enabling and disabling triggers.** Every trigger can be turned on or off individually in **Preferences → Quillins → Smart Insert → Smart Triggers**. Disabling a trigger means the `=name()` text is simply left as-is rather than replaced.
+**Enabling and disabling triggers.** Every trigger can be turned on or off individually in **Preferences → Smart Insert → Smart Triggers tab**. Disabling a trigger means the `=name()` text is simply left as-is rather than replaced.
 
 #### `.LOG` File Compatibility
 
@@ -1007,7 +1007,7 @@ When you open a `.LOG` file QUILL:
 
 Read-only files are never modified. `.LOG` in the middle of a file does not activate automatically. A UTF-8 BOM before `.LOG` is accepted.
 
-**Timestamp format.** Configure the format under **Preferences → Quillins → Smart Insert → Log Mode**:
+**Timestamp format.** Configure the format under **Preferences → Smart Insert → Log Mode tab**:
 
 - Long date and time (default): `Sunday, June 14, 2026 9:42 PM`
 - Short: `06/14/2026 09:42 PM`
@@ -1361,6 +1361,16 @@ Custom profiles support an explicit inheritance choice:
 
 - **Inherit parent profile** keeps the selected built-in profile as the starting point.
 - **Bare-bones start** opts out of inherited features and starts with only locked core safety features enabled.
+
+### Fine-tuning individual features
+
+**Help > Feature Profiles > Manage Individual Features** gives you per-feature control on top of your active profile. Use it when a profile is almost right but you want to add or remove one or two capabilities without creating a whole new profile.
+
+The dialog shows a checkbox for each user-toggleable feature. A **Show** radio button at the top lets you choose between **All features** and **Disabled features only**. The disabled-only view filters the list down to features that are not currently on, so you can scan and enable specific capabilities without scrolling past everything that is already running.
+
+When you arrow to a checkbox, a read-only description area at the bottom of the dialog explains what the feature does and what it depends on. Enabling a feature automatically enables its dependencies; disabling one turns off the features that depend on it, and QUILL tells you what changed in the status bar.
+
+When you enable a feature in the disabled-only view, it disappears from the list immediately and focus moves to the next disabled item so you can keep going without losing your place.
 
 ### Keyboard packs
 
@@ -1891,11 +1901,11 @@ Quill supports **Quillins** — small, sandboxed extensions that add commands, s
 
 QUILL ships thirteen trusted, first-party Quillins enabled by default:
 
-- **Smart Insert** (`com.quill.smartinsert`) — abbreviations and smart text triggers for everyday templates. Contributes `qbug`, `qmeet`, `qlog`, `qtodo`, and `qbrf` abbreviations, as well as `=bug()`, `=meeting()`, `=journal()`, `=todo()`, `=logentry()`, `=brftest()`, and `=rand()` smart triggers. Settings are under **Preferences → Quillins → Smart Insert**.
-- **BRF Tools** (`com.quill.brftools`) — preferences for braille translation defaults, page handling, status bar display, and diagnostics. Requires the QUILL Braille Pack.
-- **Journal Stamp** (`com.quill.journalstamp`) — inserts a date header when you create a new journal document; announces your word count (and daily goal progress) after every save; announces session restores. Listens to `quillin.enabled` to log activation and `settings.changed` to hot-reload preferences. Settings under **Preferences → Quillins → Journal Stamp**.
-- **Document Guardian** (`com.quill.docguardian`) — warns before closing short or unfinished documents; optionally stamps an `Updated:` line before each save; optionally speaks the file name and size after each save. Uses `quillin.enabled`, `quillin.disabled`, and `quill.shutdown` lifecycle events. Settings under **Preferences → Quillins → Document Guardian**.
-- **Status Scribe** (`com.quill.statusscribe`) — adds a live word/character/sentence count to the status bar. The count updates after every save and when you switch tabs. Uses the `ui.log` capability to write developer messages to the Developer Console. Settings under **Preferences → Quillins → Status Scribe**.
+- **Smart Insert** (`com.quill.smartinsert`) — abbreviations and smart text triggers for everyday templates. Contributes `qbug`, `qmeet`, `qlog`, `qtodo`, and `qbrf` abbreviations, as well as `=bug()`, `=meeting()`, `=journal()`, `=todo()`, `=logentry()`, `=brftest()`, and `=rand()` smart triggers. Settings are under **Preferences → Smart Insert**.
+- **BRF Tools** (`com.quill.brftools`) — preferences for braille translation defaults, page handling, status bar display, and diagnostics. Requires the QUILL Braille Pack. Settings under **Preferences → BRF Tools**.
+- **Journal Stamp** (`com.quill.journalstamp`) — inserts a date header when you create a new journal document; announces your word count (and daily goal progress) after every save; announces session restores. Listens to `quillin.enabled` to log activation and `settings.changed` to hot-reload preferences. Settings under **Preferences → Journal Stamp**.
+- **Document Guardian** (`com.quill.docguardian`) — warns before closing short or unfinished documents; optionally stamps an `Updated:` line before each save; optionally speaks the file name and size after each save. Uses `quillin.enabled`, `quillin.disabled`, and `quill.shutdown` lifecycle events. Settings under **Preferences → Document Guardian**.
+- **Status Scribe** (`com.quill.statusscribe`) — adds a live word/character/sentence count to the status bar. The count updates after every save and when you switch tabs. Uses the `ui.log` capability to write developer messages to the Developer Console. Settings under **Preferences → Status Scribe**.
 - **Text Tools** — advanced text transformations: line numbering, hard-wrap, regex match counting, and block filtering.
 - **Insert Tools** — date, time, and date-and-time snippets in the **Insert → Date and Time** submenu.
 - **Line Tools** — cursor-aware line operations.
@@ -1907,11 +1917,11 @@ QUILL ships thirteen trusted, first-party Quillins enabled by default:
 
 ### Quillin Preferences
 
-Every Quillin that declares settings contributes a preferences page under **Preferences → Quillins → Quillin Name**. You can also open a Quillin's settings directly from the Quillins Manager.
+Every enabled Quillin that declares settings appears as its own entry at the bottom of the Preferences hub (Ctrl+Comma). Navigate to the Quillin by name and press Enter to open its settings dialog.
 
-**Settings tabs.** A Quillin with several groups of settings organizes them into tabs. Use the left and right arrow keys to move between tabs; Tab reaches the tab's controls. Changing tabs does not reset unsaved settings.
+**Settings tabs.** A Quillin with several groups of settings organizes them into tabs. Use the left and right arrow keys to move between tabs; Tab reaches the tab's controls. Changing tabs does not reset unsaved settings; all changes are applied when you press Save.
 
-**Searchable.** Quillin settings appear in Preferences search alongside QUILL's own settings. Search for "timestamp format" and QUILL takes you directly to the right setting, named by Quillin and tab. Settings may also carry `search_keywords` — synonyms the author added so the setting appears under terms a user might naturally try.
+**Accessible labels.** Every labeled control (combo box, text field, numeric spinner) is preceded by its `StaticText` label in Windows Z-order so JAWS and NVDA announce the correct label when you Tab to a field. `wx.CheckBox` controls carry their own label text and are exempt.
 
 ### Document Events
 

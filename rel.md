@@ -4,7 +4,7 @@ QUILL 0.6.0 is a major step forward for screen-reader-first writing, editing, au
 
 This release is about speed, confidence, and control. You can type a short trigger and get a full template. You can open a braille file and know exactly where you are by page, line, cell, and progress. You can compare two files without visually scanning a diff. You can move through code by tokens instead of guessing where words begin and end. You can export to Word, inspect encoding problems, generate citations, choose better image-description prompts, and shape the sound layer so QUILL confirms what happened without talking over your screen reader.
 
-Under the surface, QUILL 0.6.0 also introduces the most important architectural change yet: Quillins are now a real extension platform. They can own settings, appear in Preferences search, subscribe to document lifecycle events, contribute status-bar cells, declare dependencies, restrict network access, and initialize or shut down cleanly. The platform is designed so users stay in charge and extension authors cannot accidentally ship something unsafe, noisy, or inaccessible.
+Under the surface, QUILL 0.6.0 also introduces the most important architectural change yet: Quillins are now a real extension platform. They can own settings, contribute live preference dialogs, subscribe to document lifecycle events, contribute status-bar cells, declare dependencies, restrict network access, and initialize or shut down cleanly. The platform is designed so users stay in charge and extension authors cannot accidentally ship something unsafe, noisy, or inaccessible.
 
 Everything remains keyboard-first and screen-reader-first. Every new view is a real navigable control. Every action is announced, undoable where appropriate, and discoverable. No mouse is required. No visual-only flourish is required. No silent full-file scanning happens behind your back.
 
@@ -12,6 +12,7 @@ If you are upgrading from QUILL 0.5.0, read **What works differently now** near 
 
 ## Biggest changes at a glance
 
+- **Meet People Where They Are** is a complete reimagining of first-run setup. A redesigned startup wizard asks what kind of writing you do and shows a plain-English, screen-reader-readable preview of exactly what you will get. Seven intent profiles replace the old nine technical ones in the wizard. Menus, the Command Palette, and the Go to Anything dialog all reflect your chosen profile instantly - commands for features you have not enabled simply do not appear. Pressing Cancel on first run starts you in the simplest possible editor rather than leaving you with raw defaults.
 - **Insert Automation** turns typed abbreviations, smart triggers, `.LOG` files, document directives, and append anchors into one safe automation system.
 - **The Quillin Extension Platform** now supports settings pages, searchable preferences, tabs, document events, lifecycle events, status-bar cells, dependencies, network allowlists, command descriptions, developer logging, announcement priority, scaffolding tools, and stronger validation.
 - **Braille Mode** opens and edits braille text files while preserving bytes, form feeds, line endings, and layout. It adds braille-aware status, page navigation, page tools, and optional liblouis-powered translation through the QUILL Braille Pack.
@@ -25,6 +26,88 @@ If you are upgrading from QUILL 0.5.0, read **What works differently now** near 
 - **The Dynamic Keyboard Reference** now reflects the active command registry, your current bindings, and QUILL key layers.
 - **Sound notifications** and **indentation tones** add optional non-speech feedback without making existing setups noisier.
 - **Major accessibility and startup fixes** make bug reporting, JAWS focus, image description, first run, the user guide, update notifications, and macOS setup more reliable.
+
+---
+
+## Meet People Where They Are
+
+QUILL has grown into a serious piece of software. That is a good thing. But first-time users who want a reliable plain-text editor should not have to wade through braille menus, AI panels, regex options, a developer console, and a Snippet Gallery before they type a single word.
+
+This release changes that completely. QUILL now starts you at the right level and grows with you.
+
+### The redesigned startup wizard
+
+When you run QUILL for the first time, a short wizard opens. It has five pages and takes about two minutes.
+
+The most important page asks one question: **What kind of writing do you do?** A list of seven starting points is shown. Arrow up and down through the list. As you move, a large read-only text area below the list updates live to tell you, in plain spoken English, exactly what you will have if you choose that option. There are no feature IDs, no jargon about flags, and no list of what you will not get. Just what you get.
+
+After you choose, a second page offers a few optional extras: AI writing assistance, Braille Mode, and typing automation. Only the extras that are not already part of your base choice are shown. Each extra is a single checkbox. Checking one adds a sentence to the preview so you always know what you are committing to.
+
+If you enable AI, a dedicated page collects your provider (Anthropic, OpenAI, Google, OpenRouter, or Ollama) and your API key. The key is stored securely in the Windows Credential Manager, not in a settings file. You can skip this and set the key up later.
+
+The final page is a summary in plain text: your profile name, what features are active, which Quillins are enabled, your keyboard pack, and your sound setting. Read it, then press Finish.
+
+**If you press Cancel or close the wizard on first run**, QUILL starts you in the simplest possible editor - Just a Text Editor - rather than leaving you with an overwhelming set of defaults. You can always run the wizard again from Help > Personalise QUILL.
+
+**Alt+Shift+P** opens the quick profile switcher at any time. It shows the same list of profiles with the same rich description pane so you can switch, read what you are switching to, and confirm - all by keyboard.
+
+### The seven starting profiles
+
+**Just a Text Editor** gives you open, type, and save. Plain text editing, spell check, auto-recovery, find and replace, and recent files. Nothing else runs. No Quillins, no AI, no automation, no abbreviation shortcuts, no snippet packs, no sticky notes. The Search menu has no cross-file options. The system tray has only Show Quill and Exit Quill. Preferences shows only the four settings areas that apply. The command palette shows only the commands you have. This is QUILL at its quietest.
+
+**Writer** adds document-writing tools: RTF and Word formatting, Compare Mode for reviewing drafts, abbreviation shortcuts (type a short phrase and expand it automatically), starter snippet packs for common phrases and templates, sticky notes attached to any document position, Copy Tray with 12 clipboard slots, the Journal Stamp Quillin for date headers and post-save word count announcements, the Document Guardian Quillin that warns you before closing a short or unfinished document, and the Date and Time insert menu. The system tray gains Copy Tray and Sticky Notes. AI and braille are not enabled but can be added any time.
+
+**Markdown and Web Author** adds everything in Writer plus Markdown syntax helpers, the HTML encoding and decoding tools, the Insert Character picker for Unicode symbols, Text Tools for case transforms and whitespace cleanup, Line Tools for joining and filtering, and regular expression search. The menus expand to include Format > HTML and Encoding and additional text transformation items.
+
+**Accessibility Professional** gives you everything in Writer plus Read Aloud at full prominence, Compare Mode, Document Trust and intake workflow, OCR image-to-text, the character inspector, and the Keymap Editor for remapping shortcuts. This profile is designed for document reviewers, accessibility testers, and anyone who needs to read and check content carefully.
+
+**Braille Professional** adds everything in Accessibility Professional plus the full Braille Mode: BRF and BRL file support, a braille status bar cell showing your position, Grade 1 and Grade 2 translation via the Braille menu, the BRF Tools Quillin for translation preferences and page handling, and Smart Insert BRF test content. The Braille menu appears in the menu bar.
+
+**AI-Powered Author** gives you everything in Writer plus Ask Quill (Alt+Q), AI grammar check and rewrite, AI writing prompts, AI writing skills for multi-step tasks, AI image description, the Prompt Library, and Smart Insert typing templates. The AI menu items and the Ask Quill panel are visible. You will be asked to set up a provider and API key during the wizard.
+
+**Developer and Power User** turns on everything: regular expression search, macro recorder and playback, shell integration, all text and line transformation tools, Smart Insert, BRF Tools, Markdown Helpers, the Character Picker, GitHub remote file access, the Developer Console, Watch Folder automation, and all other Quillins. The full menu structure is visible.
+
+### Menus, Command Palette, Go to Anything, and the system tray all respect your profile
+
+When you choose a profile, every surface adjusts immediately. The menus show only items that belong to features you have enabled. The Command Palette and Go to Anything (Ctrl+Shift+`, G) list only commands that are active in your current profile. The system tray right-click menu shows only the tools that apply. There is no visual noise from features you have not asked for, anywhere.
+
+Specific examples of what changes by profile:
+
+- **Just a Text Editor**: the Insert menu has no abbreviation shortcuts. The Search menu has no Search in Files or Replace Across Files. The system tray shows only Show Quill and Exit Quill. Preferences shows only General, Profiles, Status Bar, and Keymap. Install Starter Snippet Packs does not appear because snippets are a writer-level feature.
+
+- **Writer and above**: abbreviation expansion and Manage Abbreviations appear in the Insert menu. The Search menu gains Search in Files and Replace Across Files. The system tray gains Copy Tray and Sticky Notes. Preferences gains AI Connection (when AI is on), Watch Folder, and any other active feature areas.
+
+- **Developer and Power User**: Search in Files and Replace Across Files are always visible. All Insert menu tools are present. The system tray shows all available tools.
+
+As you grow into QUILL and add features from Help > Personalise QUILL, every surface grows with you. Switching from Just a Text Editor to Writer adds abbreviation tools, snippet packs, sticky notes, the Insert menu tools, and the word-count status cell. Switching to Braille Professional adds the Braille menu. Switching to Developer adds everything else.
+
+This is what "meeting people where they are" means in practice: start with what you need, discover the rest when you are ready, and never feel lost in a cockpit before you learn to fly.
+
+### The Alt+Shift+P profile switcher
+
+Press **Alt+Shift+P** at any time to open the quick profile switcher. A list of all profiles is shown on the left. As you arrow through them, a large read-only description pane on the right shows the same plain-English "what you get" text as the wizard. Choose a profile and press Enter to switch. The menus, palette, and status bar update immediately.
+
+Custom profiles you create in Help > Preferences > Profiles and Features also appear in the switcher with the description you wrote when you created them.
+
+### Creating a custom profile
+
+The Profiles and Features dialog (reachable from the Help menu and from Preferences) lets you create custom profiles based on any built-in starting point. The description field is now a full multi-line editor. Write the same kind of plain-English "what you get" summary that the built-in profiles show - it will appear in the Alt+Shift+P switcher description pane so you and others can read it before switching.
+
+### Preferences stay simple too
+
+The Preferences hub shows only the settings areas that matter for your current profile. If AI is not enabled, the AI Connection category does not appear. If Watch Folder Automation is off, that category is gone. If GLOW is off, GLOW Accessibility is not listed. Open Preferences and you see only what applies to the way you have chosen to use QUILL.
+
+As you enable more features - by switching profiles or turning features on individually in Profiles and Features - those areas appear in Preferences automatically. Nothing is permanently hidden; it simply waits until it is relevant.
+
+### Fine-tuning individual features
+
+**Help > Feature Profiles > Manage Individual Features** lets you turn individual capabilities on or off on top of your chosen profile without changing the profile itself. Enabling a feature also enables what it depends on; disabling one turns off the features that depend on it.
+
+The dialog now has a **Show** radio button at the top with two choices: **All features** and **Disabled features only**. Arrow to "Disabled features only" and the list immediately filters down to just the features that are not currently on. You can then tab through that shorter list and turn on exactly what you want, one checkbox at a time, without scrolling past everything that is already running.
+
+When you enable a feature in the filtered view, it disappears from the list immediately because it is no longer disabled, and focus moves to the next disabled item so you can keep going without losing your place.
+
+Below the list, a read-only description area explains the focused feature before you touch its checkbox.
 
 ---
 
@@ -100,18 +183,21 @@ Quillins can now subscribe to events, own settings, add searchable preference pa
 
 Quillins can contribute their own settings pages. A Quillin declares its preferences as structured manifest data: control type, label, description, default value, validation rules, and related metadata. QUILL renders those settings using accessible, keyboard-navigable stock controls.
 
-The Quillin never touches wxPython directly. QUILL handles layout, tab order, focus, keyboard navigation, search, reset, and accessibility.
+The Quillin never touches wxPython directly. QUILL handles layout, tab order, focus, keyboard navigation, and accessibility. StaticText labels are always created before their associated controls in Windows child order so JAWS and other screen readers find the correct label buddy for every field.
 
-Quillins with several groups of settings can declare **tabs** inside their preference page. Tabs are arrow-key navigable and clearly announced.
+Quillins with several groups of settings can declare **tabs** inside their preference page. Tabs are a standard `wx.Notebook` so arrow keys navigate between tabs and the active tab is clearly announced.
 
-Examples included in 0.6.0:
+All five bundled Quillins ship live preference dialogs in 0.6.0. Open **Preferences** (Ctrl+Comma) and navigate to the Quillin by name:
 
-- **Smart Insert** ships five tabs: General, Log Mode, Smart Triggers, Abbreviations, and BRF Testing.
-- **BRF Tools** ships four specialized tabs: Translation defaults, Page Handling, Status Bar display, and Advanced diagnostics.
+- **Smart Insert** — five tabs: General, Log Mode, Smart Triggers, Abbreviations, and BRF Testing. Settings include large-insertion confirmation threshold, default to-do list length, custom timestamp format, and per-trigger enable/disable toggles.
+- **BRF Tools** — four tabs: Translation, Page Handling, Status Bar, and Advanced. Settings include default translation profile, cells per line, lines per page, status bar verbosity, and diagnostic timeout.
+- **Journal Stamp** — three tabs: Date Header, Word Count, and Session Restore. Settings include date format, custom strftime pattern (shown only when Custom is selected), daily word goal, and folder keyword filter.
+- **Document Guardian** — three tabs: Close Guard, Save Stamp, and Save Confirmation. Settings include word count threshold, TODO marker text, save-stamp format, and save-confirmation toggle. Threshold and marker are disabled automatically when Close Guard is turned off.
+- **Status Scribe** — two tabs: Display and Announce. Settings include count mode (Words, Characters, Sentences), label visibility, announce-on-save toggle, and announcement priority. Priority is disabled automatically when announce-on-save is off.
 
-Quillin settings are stored per Quillin, survive restarts, and migrate when a Quillin updates its manifest. They appear in Preferences search alongside QUILL's own settings and are identified by Quillin, page, and tab.
+Quillin settings are stored per Quillin in `%APPDATA%\Quill\quillin_settings\<quillin-id>.json`, written atomically. They survive restarts and are retained when a Quillin is disabled.
 
-Individual settings may now include **`search_keywords`**: extra synonyms and technical terms that help users find settings by the words they know. For example, a Date format setting can include `timestamp`, `iso`, and `strftime`, making the setting appear for any of those searches.
+Individual settings may include **`search_keywords`**: extra synonyms and technical terms that help users find settings by the words they know. For example, a Date format setting can include `timestamp`, `iso`, and `strftime`.
 
 ### Document and lifecycle events
 
@@ -305,10 +391,23 @@ QUILL 0.6.0 ships five bundled Quillins. Each is both a useful extension and a r
 - **File-type contributions (file_types)** — a Quillin can declare which file extensions it handles. When a matching file opens, the Quillin's handler fires automatically. BRF Tools announces the braille page count when a `.brf` or `.brl` file opens.
 - **Snippet gallery (snippet_gallery)** — a Quillin can contribute named, parameterized templates to a browseable gallery. Open it from **Insert → Snippet Gallery...**, pick a template, fill in any prompts, and the text lands at the cursor. Smart Insert ships three built-in gallery snippets: a report header, a meeting invite, and a Markdown bug report.
 - **Document lifecycle events now fire** — the 14 declared events (`document.opened`, `document.after_save`, `quill.shutdown`, and the rest) now actually dispatch at runtime. Journal Stamp and Status Scribe are live.
+- **Quillin preferences now render** — all five bundled Quillins with `contributes.preferences` declarations have live settings dialogs in the Preferences hub. The renderer (`quill/ui/quillin_prefs_dialog.py`) handles boolean, integer, string, and choice controls; conditional `visible_when` and `enabled_when` rules wired to change events; and label-first Z-order throughout so JAWS and NVDA announce the right label for every field.
 
 ---
 
 ## Braille Mode: professional braille editing inside QUILL
+
+### Enabling Braille Mode
+
+Braille Mode is not enabled by default. To turn it on:
+
+- During the startup wizard, choose the **Braille Professional** profile.
+- At any time, open **Help > Enable Braille Mode...** This shows a brief description of what you get and lets you enable it with one keypress. The menu item only appears when Braille Mode is off; once you enable it the Braille menu appears instead.
+- You can also enable it through **Help > Feature Profiles > Manage Individual Features**.
+
+When Braille Mode is enabled and the QUILL Braille Pack is not yet installed, a prompt appears explaining what the pack adds (translation engine, BRF export, braille display support). You can install it, skip it, or choose **Disable Braille Mode** if you do not need braille tools. Choosing Disable Braille Mode turns the feature off and removes the prompt permanently; you can re-enable at any time using Help > Enable Braille Mode.
+
+### Opening and saving braille files
 
 QUILL can now open and edit formatted braille text files. The goal is to let a braille proofreader move through a transcription the way it is actually laid out: by braille pages, lines, cells, hard page breaks, and progress through the document.
 
@@ -607,7 +706,8 @@ The reference now:
 QUILL 0.6.0 also includes these practical additions:
 
 - From the QUILL key, press **F** to speak the window title, **P** to speak the full file path, or **Q** to speak a short status summary without leaving the editor.
-- **Ctrl+Tab** switches to the next document, and **Ctrl+Shift+Tab** switches back.
+- **Ctrl+Tab** switches to the next document, and **Ctrl+Shift+Tab** switches back. The **Window** menu now also lists every open document by number and file name, so you can jump directly to any file. Press Alt+W to open the menu, then arrow to Open Documents, and pick the file by its number. The active document is marked. This is available in all profiles.
+
 - Open and Save As now start in your Documents folder.
 - You can set your own default startup folder in Preferences, so QUILL no longer drops you into the install directory.
 - `--goto FILE:LINE:COL` opens a file at a specific position from one argument, which is useful when a linter or search result provides a `file:line:column` string.
@@ -629,6 +729,12 @@ This release fixes a group of problems that directly affected accessibility, sta
 Under NVDA, the bug-report fields were refusing keyboard input. The dialog has been rebuilt so every field is editable. It also moved to the Help menu, where users expect support-related commands.
 
 Submitting a report no longer freezes the app while contacting the server. That work now happens in the background with a timeout. The impact is simple: reporting a problem is no longer itself a problem.
+
+### JAWS announces Preferences labels correctly (issue #249)
+
+In previous builds, tabbing through General Preferences with JAWS announced combo box and spin field values but not their labels. The cause was Z-order: on Windows, JAWS finds the accessible name for a combo box or text field by looking backward through the parent window's child list for the nearest `StaticText`. Child windows are ordered by creation time, and the code was creating controls before calling a helper that internally creates the `StaticText` label — so the label ended up after the control in Z-order and JAWS could not find it.
+
+The fix is applied throughout General Preferences, the Profiles and Features dialog, the AI Model dialog, and the new Quillin preferences renderer. Every labeled control is now created inside a factory function that runs after the label is created. `wx.CheckBox` and `wx.Button` are exempt because they carry their own label text. Six gating tests in `tests/unit/ui/test_dialog_label_ordering.py` lock in the correct creation order so this class of regression cannot reappear silently.
 
 ### JAWS focus is quieter
 

@@ -81,7 +81,6 @@ INTENT_PROFILES: list[IntentProfile] = [
             "What you have:\n"
             "  - Plain text editing: undo, cut, copy, paste\n"
             "  - Find and Replace\n"
-            "  - Spell check as you type\n"
             "  - Auto-recovery so your work is never lost\n"
             "  - Recent files and session restore\n"
             "  - Fully compatible with NVDA, JAWS, and Narrator\n"
