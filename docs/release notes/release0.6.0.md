@@ -989,6 +989,51 @@ The reference now:
 
 ---
 
+## Experience 14: Quill Eraser — find invisible mechanical problems before you share
+
+This one came directly from the community. Jayson Smith filed issue #258 with a clear observation: screen reader users working primarily with speech can miss mechanical writing problems that are visually obvious to sighted readers. Two spaces between words. A missing space after a period. A sentence that starts with a lowercase letter because a correction went wrong. You would have to read the entire document character by character to catch those — and nobody does that.
+
+Quill Eraser is the answer. It is a deterministic, rule-based mechanical checker. No AI. No network call. The same input always produces the same output. It is a proofreader for the invisible.
+
+Open it from **Tools → Writing & Language → Quill Eraser...**. Quill Eraser scans the document and opens a modeless review dialog — it stays open while you work in the editor. The dialog lists every finding in a navigable list with confidence levels, line numbers, and the exact text involved.
+
+Seven checks ship in the first release:
+
+- **Multiple spaces between words** — catches double and triple spaces where a single space belongs. High confidence.
+- **Trailing spaces at end of line** — finds spaces or tabs left after the last word on a line. High confidence.
+- **Space before punctuation** — finds a space immediately before a comma, period, exclamation mark, question mark, semicolon, or colon. High confidence.
+- **Excessive blank lines** — reports runs of blank lines beyond the configured maximum (default: two). High confidence.
+- **Missing space after sentence-ending punctuation** — a period, exclamation mark, or question mark immediately followed by a letter. Medium confidence.
+- **Missing space after comma, semicolon, or colon** — one of those punctuation marks immediately followed by a letter. Medium confidence.
+- **Sentence or paragraph starts with lowercase** — catches a capital that was accidentally deleted. Medium confidence.
+
+For each finding you can:
+
+- Press **Apply Fix** to accept the suggested correction and move to the next finding in one keystroke.
+- Press **Ignore** to skip it for this session without changing anything.
+- Press **Go to Issue** to jump to that position in the editor — the offending text is selected — so you can decide yourself.
+- Press **Rescan** after you have made manual edits to refresh the list.
+- Press **Previous** or **Next** to move through the list.
+
+Every action is announced. Nothing changes in the document without your explicit confirmation.
+
+**Quill Eraser on Selection...** (also in the same submenu) scopes the check to just the text you have selected. If nothing is selected, it offers to check the whole document.
+
+Quill Eraser never flags content that is legitimately correct. URLs, email addresses, file paths, code spans, decimal numbers, and times are all exempt from every check. When the active document is a Markdown file, fenced code blocks, inline code, YAML front matter, and link URLs are also exempt.
+
+If you open Quill Eraser on a code file — Python, JavaScript, HTML, and so on — a prompt appears before scanning. You can run safe trailing-whitespace checks only, or skip the check entirely. Prose-spacing rules that do not belong in code are suppressed.
+
+Four settings in Preferences let you tune the checker for your writing style:
+
+- **Minimum confidence** — set to `medium` or `low` to see more findings, or keep it at `high` to see only the most certain issues.
+- **Allow two spaces after period** — for writers who prefer the traditional two-space sentence gap, this exception suppresses the multiple-spaces rule when exactly two spaces follow sentence-ending punctuation.
+- **Maximum blank lines** — raise or lower the threshold for the excessive blank lines rule.
+- **Disabled rules** — a comma-separated list of rule IDs if you want to turn off a specific check entirely.
+
+Thank you, Jayson, for a report that was specific, practical, and backed by real daily-use frustration. That is exactly what makes this project better.
+
+---
+
 ## Community contribution spotlight: Math Equations by Robert Danaraj
 
 Robert Danaraj approached the QUILL team with a working integration of LaTeX and MathML equation support — a fork that added screen-reader-friendly equation insertion, MathJax rendering in browser preview and HTML export, and comprehensive unit tests. The integration was thoughtful and well-tested. Rather than merging it as a direct core patch, the team worked with Robert to redesign it as a proper sandboxed Quillin, which is the right architectural home for optional format-specific tools.
