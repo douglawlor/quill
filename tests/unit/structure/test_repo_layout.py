@@ -69,8 +69,8 @@ def test_docs_are_in_their_expected_homes() -> None:
     # files exist in their canonical locations and that old standalone files
     # that were folded into larger documents have not crept back.
     docs = _REPO_ROOT / "docs"
-    # Quillin scripting contract lives at the docs root alongside generated outputs.
-    assert (docs / "quillins.md").is_file(), "missing docs/quillins.md"
+    # Quillin scripting contract lives under docs/quillins/ alongside generated epub/html.
+    assert (docs / "quillins" / "quillins.md").is_file(), "missing docs/quillins/quillins.md"
     # Planning roadmap and braille docs live under docs/planning/
     assert (docs / "planning" / "planning.md").is_file(), "missing docs/planning/planning.md"
     assert (docs / "planning" / "braille.md").is_file(), "missing docs/planning/braille.md"

@@ -55,7 +55,12 @@ class HygieneReviewDialog:
         self._on_apply_fix = on_apply_fix
         self._on_go_to = on_go_to
         self._on_rescan = on_rescan
-        self._dialog = self._build()
+        self._dialog = wx.Dialog(
+            parent,
+            title=_("Quill Eraser Review"),
+            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
+        )
+        self._build(self._dialog)
 
     # ------------------------------------------------------------------
     # Public API
@@ -78,12 +83,7 @@ class HygieneReviewDialog:
     # Build
     # ------------------------------------------------------------------
 
-    def _build(self) -> wx.Dialog:
-        dlg = wx.Dialog(
-            self._parent,
-            title=_("Quill Eraser Review"),
-            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
-        )
+    def _build(self, dlg: wx.Dialog) -> None:
         dlg.SetMinSize((560, 440))
         dlg.SetSize((700, 520))
         dlg.SetName("Quill Eraser Review")
@@ -170,7 +170,6 @@ class HygieneReviewDialog:
 
         self._rebuild_list()
         self._update_buttons()
-        return dlg
 
     # ------------------------------------------------------------------
     # List management

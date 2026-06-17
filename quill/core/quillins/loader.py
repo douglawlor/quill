@@ -25,6 +25,7 @@ This module imports no ``wx`` and no platform code.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import shutil
@@ -211,6 +212,28 @@ def save_state(state: ExtensionState, *, root: Path | None = None) -> None:
     write_json_atomic(_state_path(root=root), state.to_dict(), base=base)
 
 
+def _check_main_has_register(directory: Path, manifest: ExtensionManifest) -> str | None:
+    """Return an error string if the main module lacks a top-level register() function.
+
+    Layer 1 Quillins (``main`` is ``None``) are exempt — they contribute only
+    static metadata and run no Python code.
+    """
+    if manifest.main is None:
+        return None
+    main_path = (directory / manifest.main).resolve()
+    if not main_path.exists():
+        return f"main module '{manifest.main}' not found"
+    try:
+        source = main_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(main_path))
+    except (OSError, SyntaxError) as error:
+        return f"cannot parse main module: {error}"
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "register":
+            return None
+    return "main module defines no register(api) function"
+
+
 def _read_manifest(directory: Path) -> tuple[ExtensionManifest | None, tuple[str, ...]]:
     manifest_path = directory / _MANIFEST_FILENAME
     if not manifest_path.exists():
@@ -229,6 +252,9 @@ def _read_manifest(directory: Path) -> tuple[ExtensionManifest | None, tuple[str
     version_error = _check_min_version_error(manifest)
     if version_error:
         return None, (version_error,)
+    register_error = _check_main_has_register(directory, manifest)
+    if register_error:
+        return manifest, (register_error,)
     return manifest, ()
 
 

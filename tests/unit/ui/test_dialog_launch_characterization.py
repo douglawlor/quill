@@ -58,10 +58,12 @@ def test_open_welcome_guide_opens_markdown_tab_and_resets_navigation() -> None:
     assert frame._status[-1] == "Opened welcome guide"
 
 
-def test_open_third_party_notices_opens_tab_and_announces(monkeypatch) -> None:
+def test_open_third_party_notices_opens_tab_and_announces(monkeypatch, tmp_path) -> None:
     frame = _build_frame()
-    frame._project_root_path = lambda: "ROOT"
-    frame._pyproject_path = lambda: "PYPROJECT"
+    fake_pyproject = tmp_path / "pyproject.toml"
+    fake_pyproject.write_text("")
+    frame._project_root_path = lambda: tmp_path
+    frame._pyproject_path = lambda: fake_pyproject
     monkeypatch.setattr(
         main_frame_module,
         "render_full_third_party_notices",

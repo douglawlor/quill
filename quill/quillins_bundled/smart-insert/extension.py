@@ -115,26 +115,26 @@ def _rand_text(paragraphs: int, lines: int) -> str:
 
 def insert_bug(api: object) -> None:
     text = _bug_template()
-    api.write(text)  # type: ignore[union-attr]
+    api.insert_text(text)  # type: ignore[union-attr]
     api.announce("Inserted bug report template.")  # type: ignore[union-attr]
 
 
 def insert_meeting(api: object) -> None:
     text = _meeting_template()
-    api.write(text)  # type: ignore[union-attr]
+    api.insert_text(text)  # type: ignore[union-attr]
     api.announce("Inserted meeting notes template.")  # type: ignore[union-attr]
 
 
 def insert_journal(api: object) -> None:
     text = _journal_template()
-    api.write(text)  # type: ignore[union-attr]
+    api.insert_text(text)  # type: ignore[union-attr]
     api.announce("Inserted journal entry.")  # type: ignore[union-attr]
 
 
 def insert_todo(api: object) -> None:
     count = int(_get(api, "default_todo_count", 5))
     text = _todo_template(count)
-    api.write(text)  # type: ignore[union-attr]
+    api.insert_text(text)  # type: ignore[union-attr]
     api.announce(f"Inserted to-do list with {count} items.")  # type: ignore[union-attr]
 
 
@@ -151,8 +151,18 @@ def insert_brf_test(api: object) -> None:
     lines_per_page = int(_get(api, "brf_test_lines_per_page", 3))
     line_text = str(_get(api, "brf_test_line_text", "This is predictable BRF test content."))
     text = _brf_test_document(pages, lines_per_page, line_text)
-    api.write(text)  # type: ignore[union-attr]
+    api.insert_text(text)  # type: ignore[union-attr]
     api.announce(f"Inserted BRF test document: {pages} pages, {lines_per_page} lines each.")  # type: ignore[union-attr]
+
+
+def register(api) -> None:
+    api.register_command("insert_bug", insert_bug)
+    api.register_command("insert_meeting", insert_meeting)
+    api.register_command("insert_journal", insert_journal)
+    api.register_command("insert_todo", insert_todo)
+    api.register_command("insert_log_entry", insert_log_entry)
+    api.register_command("insert_brf_test", insert_brf_test)
+    api.register_command("insert_rand", insert_rand)
 
 
 def insert_rand(api: object) -> None:
@@ -161,13 +171,13 @@ def insert_rand(api: object) -> None:
     threshold = int(_get(api, "large_insert_threshold", 50))
     confirm = bool(_get(api, "confirm_large_insertions", True))
     if confirm and paragraphs > threshold:
-        confirmed = api.prompt(  # type: ignore[union-attr]
-            f"This will insert {paragraphs} paragraphs. Continue?",
-            ["Yes", "No"],
+        choice = api.show_choices(  # type: ignore[union-attr]
+            f"Insert {paragraphs} paragraphs of sample text?",
+            ["Yes, insert", "No, cancel"],
         )
-        if confirmed != "Yes":
+        if choice != "Yes, insert":
             api.announce("Smart Insert canceled.")  # type: ignore[union-attr]
             return
     text = _rand_text(paragraphs, lines)
-    api.write(text)  # type: ignore[union-attr]
+    api.insert_text(text)  # type: ignore[union-attr]
     api.announce(f"Inserted {paragraphs} paragraphs of sample text.")  # type: ignore[union-attr]

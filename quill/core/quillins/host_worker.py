@@ -195,6 +195,18 @@ class QuillExtensionApi:
 
         self._worker.call("delete_storage", [key])
 
+    # -- settings (settings.own.read / settings.own.write) --------------------
+    def get_setting(self, key: str, default: Any = None) -> Any:
+        """Read a Quillin preference by key; returns ``default`` when not stored."""
+
+        value = self._worker.call("get_setting", [key])
+        return value if value is not None else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        """Persist a Quillin preference value under ``key``."""
+
+        self._worker.call("set_setting", [key, value])
+
     # -- diagnostics ----------------------------------------------------------
     def log(self, message: str) -> None:
         """Emit a diagnostic line to the host (never document content)."""

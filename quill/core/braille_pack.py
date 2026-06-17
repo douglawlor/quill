@@ -21,16 +21,38 @@ _PACK_EXECUTABLES = ("lou_translate", "louis")
 _PACK_MODULES = ("louis", "lou_translate")
 
 
+def _find_install_root() -> Path | None:
+    """Return the Quill install root when running from a bundled install.
+
+    The Start Menu shortcut calls pythonw.exe -m quill directly (bypassing
+    run-quill.cmd and its QUILL_APP_ROOT export). pythonw.exe lives at
+    {app}\\python\\pythonw.exe, so walk up two levels to reach {app}. Confirm
+    it is actually a Quill install directory by checking for run-quill.cmd.
+    """
+    exe = Path(sys.executable)
+    for candidate in (exe.parent, exe.parent.parent):
+        if (candidate / "run-quill.cmd").exists():
+            return candidate
+    return None
+
+
 def is_braille_pack_installed() -> bool:
     """Return True when a liblouis-backed braille pack is available."""
     import os
 
-    # Fastest check: look for lou_translate.exe in the vendor location set
-    # by the installer (QUILL_APP_ROOT is set by run-quill.cmd).
+    pack_rel = Path("vendor") / "braille-pack" / "lou_translate.exe"
+
+    # Primary: QUILL_APP_ROOT is set by run-quill.cmd for .cmd launches.
     app_root_env = os.environ.get("QUILL_APP_ROOT")
     if app_root_env:
-        pack_exe = Path(app_root_env) / "vendor" / "braille-pack" / "lou_translate.exe"
-        if pack_exe.exists():
+        if (Path(app_root_env) / pack_rel).exists():
+            return True
+
+    # Fallback: Start Menu shortcut calls pythonw.exe directly; infer root
+    # from the executable path so the bundled pack is still found.
+    install_root = _find_install_root()
+    if install_root is not None:
+        if (install_root / pack_rel).exists():
             return True
 
     if any(shutil.which(name) for name in _PACK_EXECUTABLES):

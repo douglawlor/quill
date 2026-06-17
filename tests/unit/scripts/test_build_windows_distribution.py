@@ -89,7 +89,8 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert "PrivilegesRequired=lowest" in script
     assert "WizardStyle=modern" in script
     assert "DisableDirPage=no" in script
-    assert "InfoAfterFile=..\\portable\\README.txt" in script
+    # Installer-specific post-install info (not the portable README).
+    assert "InfoAfterFile=README-installer.txt" in script
     # The amd64 embedded-Python bundle must install 64-bit only, target
     # Windows 10+, and refresh Explorer associations for the assoc tasks.
     assert "ArchitecturesAllowed=x64compatible" in script
@@ -103,17 +104,12 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
         'Name: "pandoc"; Description: "Install bundled Pandoc for document conversion";' in script
     )
     assert 'Name: "speechdectalk"; Description: "Install bundled DECtalk runtime";' in script
-    assert 'Name: "speechdectalk\\voices"; Description: "DECtalk voice selection";' in script
-    assert 'Name: "speechdectalk\\voices\\all_voices"; Description: "All DECtalk voices";' in script
-    assert 'Name: "speechdectalk\\voices\\paul"; Description: "Paul voice";' in script
-    assert 'Name: "speechdectalk\\voices\\harry"; Description: "Harry voice";' in script
-    assert 'Name: "speechdectalk\\voices\\dennis"; Description: "Dennis voice";' in script
-    assert 'Name: "speechdectalk\\voices\\frank"; Description: "Frank voice";' in script
-    assert 'Name: "speechdectalk\\voices\\betty"; Description: "Betty voice";' in script
-    assert 'Name: "speechdectalk\\voices\\ursula"; Description: "Ursula voice";' in script
-    assert 'Name: "speechdectalk\\voices\\rita"; Description: "Rita voice";' in script
-    assert 'Name: "speechdectalk\\voices\\wendy"; Description: "Wendy voice";' in script
-    assert 'Name: "speechdectalk\\voices\\kit"; Description: "Kit voice";' in script
+    # All DECtalk voices ship together under a single component checkbox — no
+    # per-voice sub-components and no voice-selection wizard page.
+    assert 'Name: "speechdectalk\\voices"' not in script
+    assert "DecTalkVoicePage" not in script
+    assert "ShouldInstallAllVoices" not in script
+    assert "ShouldInstallPaulVoice" not in script
     assert 'Name: "speechespeak"; Description: "Install bundled eSpeak-NG runtime";' in script
     assert 'Name: "speechpiper"; Description: "Install bundled Piper neural TTS runtime";' in script
     assert "speechkokoro" not in script
@@ -128,49 +124,11 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
         'Source: "..\\portable\\tools\\speech\\dectalk\\*"; DestDir: "{app}\\tools\\speech\\dectalk";'
         in script
     )
-    assert 'Excludes: "voices\\*"; Components: speechdectalk' in script
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices";'
-        in script
-    )
-    assert "Components: speechdectalk\\voices\\all_voices" in script
-    assert "Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')" in script
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\paul\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\paul";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\harry\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\harry";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\dennis\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\dennis";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\frank\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\frank";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\betty\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\betty";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\ursula\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\ursula";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\rita\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\rita";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\wendy\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\wendy";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\kit\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\kit";'
-        in script
-    )
+    # Single DECtalk entry: no voices exclusion, no per-voice Check: functions.
+    assert 'Excludes: "voices\\*"' not in script
+    assert "Components: speechdectalk" in script
+    assert "Check: ShouldInstallAllVoices()" not in script
+    assert "Check: ShouldInstallPaulVoice()" not in script
     assert (
         'Source: "..\\portable\\tools\\speech\\espeak-ng\\*"; DestDir: "{app}\\tools\\speech\\espeak-ng";'
         in script

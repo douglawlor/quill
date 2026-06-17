@@ -1244,11 +1244,7 @@ class MainFrame(
                         self._set_status,
                         f"Detected screen reader: {detection.name}. Adaptive hints enabled.",
                     )
-                elif not _safe_mode_snap:
-                    self._wx.CallAfter(
-                        self._set_status,
-                        "Ready. Tip: press Ctrl+Shift+P for Command Palette.",
-                    )
+                # No-SR path: "Ready" was already announced in __init__; suppress the repeat.
             except Exception:
                 pass
             if _profile:
@@ -1356,7 +1352,9 @@ class MainFrame(
         out = app_data_dir() / "logs" / "startup_tasks.txt"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("".join(lines), encoding="utf-8")
-        print(f"[profile] startup task timing -> {out}", flush=True)
+        import logging as _logging
+
+        _logging.getLogger(__name__).debug("startup task timing -> %s", out)
 
     def _apply_startup_document_preference(self) -> None:
         if not self.settings.start_with_no_document_open:
@@ -8850,6 +8848,12 @@ class MainFrame(
         except Exception:  # noqa: BLE001
             self._announce("Could not repeat last palette command")
 
+    def _run_command(self, command_id: str) -> None:
+        try:
+            self.commands.run(command_id)
+        except Exception:  # noqa: BLE001
+            self._set_status(f"Command failed: {command_id}")
+
     def create_sticky_note(self) -> None:
         if self._safe_mode:
             self._set_status("Sticky notes are unavailable in safe mode")
@@ -9736,6 +9740,7 @@ class MainFrame(
         # writers set a rendered control back to a given stored value; used by
         # the per-setting Reset buttons (SET-6) to restore a single default.
         writers: dict[str, Callable[[object], None]] = {}
+        _dirty: list[bool] = [False]  # mutable flag shared with _mark_dirty closure
         control_index: dict[str, tuple[int, object]] = {}
         collected: dict[str, object] = {}
         ai_value: bool | None = None
@@ -9789,6 +9794,7 @@ class MainFrame(
                         browser_choice_label_for_value(str(v))
                     )
                     control_index[spec.key] = (page_index, choice)
+                    choice.Bind(wx.EVT_CHOICE, _mark_dirty)
                     return
                 if spec.key == "startup_folder":
                     _folder_text_ref: list = []
@@ -9831,6 +9837,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, text)
+                    text.Bind(wx.EVT_TEXT, _mark_dirty)
                     return
                 if spec.key in {
                     "quill_key_sound_enter",
@@ -9887,6 +9894,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, text)
+                    text.Bind(wx.EVT_TEXT, _mark_dirty)
                     return
                 if spec.key == "language":
 
@@ -9901,6 +9909,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=lang_ctrl: str(c.GetValue())
                     writers[spec.key] = lambda v, c=lang_ctrl: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, lang_ctrl)
+                    lang_ctrl.Bind(wx.EVT_TEXT, _mark_dirty)
                     return
 
                 if spec.key == "abbreviation_expansion_sound_file":
@@ -9953,6 +9962,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=abbr_text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=abbr_text: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, abbr_text)
+                    abbr_text.Bind(wx.EVT_TEXT, _mark_dirty)
                     return
 
                 if spec.key == "sound_pack_path":
@@ -9993,6 +10003,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=sp_text: str(c.GetValue())
                     writers[spec.key] = lambda v, c=sp_text: c.SetValue(str(v))
                     control_index[spec.key] = (page_index, sp_text)
+                    sp_text.Bind(wx.EVT_TEXT, _mark_dirty)
                     return
 
                 if spec.kind == "bool":
@@ -10004,6 +10015,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=cb: bool(c.GetValue())
                     writers[spec.key] = lambda v, c=cb: c.SetValue(bool(v))
                     control_index[spec.key] = (page_index, cb)
+                    cb.Bind(wx.EVT_CHECKBOX, _mark_dirty)
                     if spec.key == "beta_updates":
 
                         def _on_beta_toggle(_event: object, _cb=cb) -> None:
@@ -10037,6 +10049,7 @@ class MainFrame(
                         c.SetStringSelection(m.get(str(v), ls[0]))
                     )
                     control_index[spec.key] = (page_index, choice)
+                    choice.Bind(wx.EVT_CHOICE, _mark_dirty)
                     return
                 if spec.kind == "int":
 
@@ -10052,6 +10065,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=spin: int(c.GetValue())
                     writers[spec.key] = lambda v, c=spin: c.SetValue(int(v))
                     control_index[spec.key] = (page_index, spin)
+                    spin.Bind(wx.EVT_SPINCTRL, _mark_dirty)
                     return
                 if spec.kind == "float":
 
@@ -10071,6 +10085,7 @@ class MainFrame(
                     readers[spec.key] = lambda c=spin: float(c.GetValue())
                     writers[spec.key] = lambda v, c=spin: c.SetValue(float(v))
                     control_index[spec.key] = (page_index, spin)
+                    spin.Bind(wx.EVT_SPINCTRLDOUBLE, _mark_dirty)
                     return
 
                 # text
@@ -10084,6 +10099,7 @@ class MainFrame(
                 readers[spec.key] = lambda c=text: str(c.GetValue())
                 writers[spec.key] = lambda v, c=text: c.SetValue(str(v))
                 control_index[spec.key] = (page_index, text)
+                text.Bind(wx.EVT_TEXT, _mark_dirty)
 
             page_index = 0
             _page_build_fns: list[Callable[[], None]] = []
@@ -10333,6 +10349,13 @@ class MainFrame(
             _btn_row.Add(_apply_btn, 0)
             outer.Add(_btn_row, 0, wx.EXPAND | wx.ALL, 8)
 
+            _apply_btn.Enable(False)
+
+            def _mark_dirty(_evt: object = None) -> None:
+                if not _dirty[0]:
+                    _dirty[0] = True
+                    _apply_btn.Enable(True)
+
             def _do_apply() -> None:
                 _c = {k: r() for k, r in readers.items()}
                 upd = self.settings
@@ -10369,6 +10392,8 @@ class MainFrame(
                         "future.ai_menu_top_level", bool(_tl_cb2.GetValue())
                     )
                 self._settings_dialog_apply_refresh("Settings applied")
+                _dirty[0] = False
+                _apply_btn.Enable(False)
 
             def _on_apply(_evt: object) -> None:
                 _do_apply()
@@ -11434,7 +11459,12 @@ class MainFrame(
     def open_third_party_notices(self) -> None:
         project_root = self._project_root_path()
         pyproject_path = self._pyproject_path()
-        notices = render_full_third_party_notices(pyproject_path, project_root)
+        if not pyproject_path.exists():
+            notices = (
+                "# Third-Party Notices\n\nDependency metadata is not available in this build.\n"
+            )
+        else:
+            notices = render_full_third_party_notices(pyproject_path, project_root)
         self._create_document_tab(
             Document(text=notices, path=None, modified=False),
             select=True,
@@ -11494,9 +11524,12 @@ class MainFrame(
         from quill.core.contributors import contributor_bullet_list
 
         pyproject_path = self._pyproject_path()
-        dependency_rows = build_dependency_notices(pyproject_path)
         bundled_rows = bundled_component_notices()
-        dependency_table = render_dependency_notice_table(dependency_rows)
+        if pyproject_path.exists():
+            dependency_rows = build_dependency_notices(pyproject_path)
+            dependency_table = render_dependency_notice_table(dependency_rows)
+        else:
+            dependency_table = "_Dependency metadata is not available in this build._"
         bundled_table = render_bundled_component_table(bundled_rows)
         try:
             from quill.core.glow import glow_engine_version_summary
@@ -19592,6 +19625,8 @@ class MainFrame(
             get_selection=lambda: self.editor.GetStringSelection(),
             insert_text=self._ai_insert_text,
             replace_selection=self._ai_replace_selection,
+            set_text=self._ai_set_document_text,
+            open_new_document=self._ai_open_new_document,
             run_command=self._ai_run_command,
             tool_catalog=tool_catalog,
             announce=self._set_status,
@@ -20147,6 +20182,13 @@ class MainFrame(
             self.editor.SetInsertionPoint(start + len(text))
         else:
             self.editor.WriteText(text)
+
+    def _ai_set_document_text(self, text: str) -> None:
+        self._replace_document_text(text)
+        self.document.set_text(text)
+
+    def _ai_open_new_document(self, text: str) -> None:
+        self._power_tools_open_text_in_new_buffer(text, "Opened AI response in new document")
 
     def _ai_run_command(self, command_id: str) -> None:
         self.commands.run(command_id)
@@ -22993,6 +23035,23 @@ class MainFrame(
         self.run_startup_wizard()
 
     def _maybe_run_first_run_onboarding(self) -> None:
+        from quill.core.paths import new_install_marker_path
+        from quill.core.settings import save_settings as _save_settings
+
+        # Consume the new-install marker dropped by the installer.  The marker
+        # is written to {app} on every install (including upgrades) so that
+        # setup_wizard_completed in %APPDATA% — which survives reinstalls — does
+        # not silently suppress the first-run wizard after a fresh install.
+        marker = new_install_marker_path()
+        if marker is not None and marker.exists():
+            try:
+                marker.unlink()
+            except OSError:
+                pass
+            if getattr(self.settings, "setup_wizard_completed", False):
+                self.settings.setup_wizard_completed = False
+                _save_settings(self.settings)
+
         def _focus_editor() -> None:
             editor = getattr(self, "editor", None)
             if editor is not None and hasattr(editor, "SetFocus"):

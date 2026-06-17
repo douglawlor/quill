@@ -31,6 +31,14 @@ from pathlib import Path
 from quill.core.shell_verbs import ShellVerb, default_shell_verbs
 from quill.core.storage import write_json_atomic
 
+# Architecture note: all bundled binaries below are amd64/x86_64.  The Inno
+# Setup script uses ArchitecturesAllowed=x64compatible, which covers both
+# genuine x64 hardware and ARM64 Windows (Snapdragon / Surface Pro X), where
+# Windows runs x64 binaries under hardware emulation transparently.  Native
+# ARM64 builds are not produced because none of the three speech engines
+# (DECtalk, Piper, eSpeak-NG) ship ARM64 Windows binaries.  Revisit when any
+# of them do: Python (embed-arm64.zip), Pandoc, and Node all have arm64 assets.
+
 # Pinned Windows embeddable Python. Bumping these values is the only
 # thing needed to ship on a new Python point release.
 EMBEDDED_PYTHON_VERSION = "3.12.6"
@@ -249,6 +257,12 @@ def build_windows_distribution(
     installer_script.write_text(installer_script_text, encoding="utf-8")
     reference_installer_script.write_text(installer_script_text, encoding="utf-8")
 
+    installer_readme = build_installer_readme(version)
+    (installer_dir / "README-installer.txt").write_text(installer_readme, encoding="utf-8")
+    (reference_installer_dir / "README-installer.txt").write_text(
+        installer_readme, encoding="utf-8"
+    )
+
     # Copy LICENSE into the installer dir so ISCC can resolve "LicenseFile=LICENSE"
     # regardless of where output_dir sits relative to the repo root.
     repo_license = resolved_source_root / "LICENSE"
@@ -466,6 +480,44 @@ def build_shell_verb_registry_lines(
     return lines
 
 
+def build_installer_readme(version: str) -> str:
+    """Return the post-install info page shown by the full installer.
+
+    Deliberately separate from portable\\README.txt which targets users
+    running Quill from a USB stick or without an installer.
+    """
+    return (
+        f"Quill {version} — Windows Installer\r\n"
+        "Publisher: Blind Information Technology Solutions (BITS) and Community Access\r\n"
+        "\r\n"
+        "Thank you for installing Quill.\r\n"
+        "\r\n"
+        "WHERE YOUR DATA LIVES\r\n"
+        "Quill stores settings, autosaves, dictionaries, and session data in:\r\n"
+        "  %APPDATA%\\Quill\r\n"
+        "\r\n"
+        "This folder is separate from the install directory. On uninstall you are\r\n"
+        "asked whether to remove it; upgrades never touch it automatically.\r\n"
+        "\r\n"
+        "GETTING STARTED\r\n"
+        "  * Launch Quill from the Start Menu or the Desktop shortcut (if you chose one).\r\n"
+        "  * Press F1 or open Help > User Guide for the full guided manual.\r\n"
+        "  * An onboarding flow runs on first launch to introduce key features.\r\n"
+        "\r\n"
+        "OPTIONAL TOOLS\r\n"
+        "Tools selected during setup (DECtalk, eSpeak-NG, Piper TTS, Pandoc, Braille Pack)\r\n"
+        "are bundled inside the install directory and require no separate installation.\r\n"
+        "To add or remove tools, re-run this installer and choose Modify.\r\n"
+        "\r\n"
+        "PORTABLE EDITION\r\n"
+        "A portable build (no installer, runs from a USB stick or managed machine) is\r\n"
+        "available from the Quill releases page on GitHub.\r\n"
+        "\r\n"
+        "SUPPORT\r\n"
+        "  https://github.com/Community-Access/quill\r\n"
+    )
+
+
 def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> str:
     """Return a production-quality Inno Setup script for the portable bundle.
 
@@ -529,7 +581,7 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         "; runtime is present (e.g. a dev build).",
         "UninstallDisplayIcon={app}\\python\\pythonw.exe",
         "LicenseFile=LICENSE",
-        "InfoAfterFile=..\\portable\\README.txt",
+        "InfoAfterFile=README-installer.txt",
         "SetupLogging=yes",
         "",
         "[Languages]",
@@ -545,27 +597,21 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         ' (OCR, Open, Read aloud) to the file right-click menu";'
         ' GroupDescription: "File associations:"; Flags: unchecked',
         "",
+        "[Types]",
+        "; Full installs everything and skips the component and voice pages.",
+        "; Full is the recommended choice for most users.",
+        'Name: "full"; Description: "Full installation (recommended)"',
+        'Name: "custom"; Description: "Custom installation"; Flags: iscustom',
+        "",
         "[Components]",
         "; Every component below gates real [Files] payload. The Writing",
         "; Assistant and the rest of Quill's core ship unconditionally with the",
         "; main bundle, so there is no separate AI component to toggle here.",
+        "; DECtalk voice selection is handled by a guided wizard page (see [Code]).",
         'Name: "pandoc"; Description: "Install bundled Pandoc for document conversion";'
         " Types: full custom; Flags: checkablealone",
         'Name: "speechdectalk"; Description: "Install bundled DECtalk runtime";'
         " Types: full custom; Flags: checkablealone",
-        'Name: "speechdectalk\\voices"; Description: "DECtalk voice selection";'
-        " Types: full custom; Flags: checkablealone",
-        'Name: "speechdectalk\\voices\\all_voices"; Description: "All DECtalk voices";'
-        " Types: full custom; Flags: checkablealone",
-        'Name: "speechdectalk\\voices\\paul"; Description: "Paul voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\harry"; Description: "Harry voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\dennis"; Description: "Dennis voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\frank"; Description: "Frank voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\betty"; Description: "Betty voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\ursula"; Description: "Ursula voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\rita"; Description: "Rita voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\wendy"; Description: "Wendy voice"; Types: full custom; Flags: checkablealone',
-        'Name: "speechdectalk\\voices\\kit"; Description: "Kit voice"; Types: full custom; Flags: checkablealone',
         'Name: "speechespeak"; Description: "Install bundled eSpeak-NG runtime";'
         " Types: full custom; Flags: checkablealone",
         'Name: "speechpiper"; Description: "Install bundled Piper neural TTS runtime";'
@@ -573,7 +619,7 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         'Name: "nodejs"; Description: "Install portable Node.js runtime for Node Quillins'
         " and the Developer Console TypeScript interface (~30 MB);"
         ' not required for Python Quillins";'
-        " Types: custom; Flags: checkablealone",
+        " Flags: checkablealone",
         'Name: "braillepack"; Description: "Install QUILL Braille Pack'
         " (liblouis translation engine, UEB, Standard American English,"
         ' and international braille profiles, ~15 MB)";'
@@ -591,29 +637,10 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: pandoc",
+        "; All DECtalk voices ship when the DECtalk component is selected.",
         'Source: "..\\portable\\tools\\speech\\dectalk\\*"; DestDir: "{app}\\tools\\speech\\dectalk";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
-        ' Excludes: "voices\\*"; Components: speechdectalk',
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\all_voices",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\paul\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\paul";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\paul; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\harry\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\harry";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\harry; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\dennis\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\dennis";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\dennis; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\frank\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\frank";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\frank; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\betty\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\betty";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\betty; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\ursula\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\ursula";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\ursula; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\rita\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\rita";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\rita; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\wendy\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\wendy";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\wendy; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
-        'Source: "..\\portable\\tools\\speech\\dectalk\\voices\\kit\\*"; DestDir: "{app}\\tools\\speech\\dectalk\\voices\\kit";'
-        " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\\voices\\kit; Check: not WizardIsComponentSelected('speechdectalk\\voices\\all_voices')",
+        " Components: speechdectalk",
         'Source: "..\\portable\\tools\\speech\\espeak-ng\\*"; DestDir: "{app}\\tools\\speech\\espeak-ng";'
         " Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist;"
         " Components: speechespeak",
@@ -692,11 +719,20 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         'Type: filesandordirs; Name: "{app}\\python"',
         "",
         "[Code]",
-        "// After install: if the nodejs component was selected but the portable",
-        "// node.exe bundle was not included in this build (skipifsourcedoesntexist),",
-        "// offer to install Node.js LTS via Windows Package Manager (winget).",
-        "// winget is built into Windows 11 and available on Windows 10 21H2+.",
-        "// MsgBox and Exec are screen-reader accessible native dialogs.",
+        "// -- Skip component page for full installs ------------------------------------",
+        "// Full install: skip component selection (everything is pre-selected).",
+        "function ShouldSkipPage(PageID: Integer): Boolean;",
+        "begin",
+        "  Result := False;",
+        "  if PageID = wpSelectComponents then",
+        "    Result := (WizardSetupType(False) = 'full');",
+        "end;",
+        "",
+        "// -- Post-install: write new-install marker + optional Node.js bootstrap --",
+        "// The new-install marker tells the app to re-run the setup wizard on first",
+        "// launch even when %APPDATA% settings from a prior install say it completed.",
+        "// The Node.js check is opt-in (unchecked by default): fires only when the",
+        "// user explicitly selected it and the portable node.exe was not bundled.",
         "procedure CurStepChanged(CurStep: TSetupStep);",
         "var",
         "  NodePath: String;",
@@ -704,6 +740,7 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         "begin",
         "  if CurStep = ssPostInstall then",
         "  begin",
+        "    SaveStringToFile(ExpandConstant('{app}\\quill-new-install.txt'), 'new-install', False);",
         "    if WizardIsComponentSelected('nodejs') then",
         "    begin",
         "      NodePath := ExpandConstant('{app}\\tools\\nodejs\\node.exe');",
@@ -735,12 +772,7 @@ def build_inno_setup_script(version: str, bundle_braille_pack: bool = False) -> 
         "  end;",
         "end;",
         "",
-        "// Ask, on uninstall, whether to also remove personal data instead of",
-        "// assuming. 'Yes' wipes %APPDATA%\\Quill (settings, dictionaries,",
-        "// autosaves, backups, onboarding/first-run flags, and the IPC lock) so a",
-        "// later reinstall is a clean first run. 'No' keeps everything for a",
-        "// future reinstall. MsgBox is a native dialog, so it is screen-reader",
-        "// accessible.",
+        "// -- Uninstall: ask before wiping personal data ----------------------------",
         "procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);",
         "var",
         "  DataDir: String;",

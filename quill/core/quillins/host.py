@@ -34,6 +34,8 @@ from quill.core.quillins.model import (
     CAP_FS_READ,
     CAP_FS_WRITE,
     CAP_NET,
+    CAP_SETTINGS_OWN_READ,
+    CAP_SETTINGS_OWN_WRITE,
     CAP_STORAGE,
     CAP_UI_ANNOUNCE,
     CAP_UI_CHOICES,
@@ -72,6 +74,8 @@ _METHOD_CAPABILITY: dict[str, str] = {
     "get_storage": CAP_STORAGE,
     "set_storage": CAP_STORAGE,
     "delete_storage": CAP_STORAGE,
+    "get_setting": CAP_SETTINGS_OWN_READ,
+    "set_setting": CAP_SETTINGS_OWN_WRITE,
 }
 
 
@@ -258,6 +262,11 @@ class ApiDispatcher:
             return None
         if method == "delete_storage":
             self._storage.pop(str(args[0]), None)
+            return None
+        if method == "get_setting":
+            return self._storage.get(str(args[0]))
+        if method == "set_setting":
+            self._storage[str(args[0])] = str(args[1])
             return None
         raise QuillinError(f"unhandled method: {method}")
 

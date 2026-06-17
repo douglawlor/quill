@@ -101,13 +101,22 @@ def on_after_save(api, event: dict) -> None:
 
 def on_enabled(api, event: dict) -> None:
     api.log("Document Guardian enabled — monitoring closes, saves, and sessions.")
-    api.announce("Document Guardian is now active.", priority="quiet")
+    api.announce("Document Guardian is now active.")
 
 
 def on_disabled(api, event: dict) -> None:
     api.log("Document Guardian disabled.")
-    api.announce("Document Guardian is now inactive.", priority="quiet")
+    api.announce("Document Guardian is now inactive.")
 
 
 def on_shutdown(api, event: dict) -> None:
     api.log("Document Guardian: QUILL shutting down, nothing to clean up.")
+
+
+def register(api) -> None:
+    api.register_command("on_before_close", on_before_close)
+    api.register_command("on_before_save", on_before_save)
+    api.register_command("on_after_save", on_after_save)
+    api.register_command("on_enabled", on_enabled)
+    api.register_command("on_disabled", on_disabled)
+    api.register_command("on_shutdown", on_shutdown)

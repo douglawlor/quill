@@ -40,7 +40,7 @@ def on_document_created(api, event: dict) -> None:
     else:
         text = f"{header}\n"
 
-    api.editor_insert(text)
+    api.insert_text(text)
     api.announce(f"Journal header: {header}")
 
 
@@ -85,3 +85,11 @@ def on_settings_changed(api, event: dict) -> None:
     key: str = event.get("key", "")
     value = event.get("value")
     api.log(f"Journal Stamp setting updated: {key} = {value!r}")
+
+
+def register(api) -> None:
+    api.register_command("on_document_created", on_document_created)
+    api.register_command("on_after_save", on_after_save)
+    api.register_command("on_session_restore", on_session_restore)
+    api.register_command("on_enabled", on_enabled)
+    api.register_command("on_settings_changed", on_settings_changed)

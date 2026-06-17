@@ -52,7 +52,7 @@ UninstallDisplayName={#AppName} {#AppVersion}
 ; runtime is present (e.g. a dev build).
 UninstallDisplayIcon={app}\python\pythonw.exe
 LicenseFile=LICENSE
-InfoAfterFile=..\portable\README.txt
+InfoAfterFile=README-installer.txt
 SetupLogging=yes
 
 [Languages]
@@ -63,26 +63,22 @@ Name: "desktopicon"; Description: "Create a &Desktop shortcut"; GroupDescription
 Name: "fileassoc"; Description: "Register Quill in the Open With menu for common text formats (.txt, .md, .rst, .log, .csv, .json)"; GroupDescription: "File associations:"; Flags: unchecked
 Name: "shellverbs"; Description: "Add ""Send to Quill"" actions (OCR, Open, Read aloud) to the file right-click menu"; GroupDescription: "File associations:"; Flags: unchecked
 
+[Types]
+; Full installs everything and skips the component and voice pages.
+; Full is the recommended choice for most users.
+Name: "full"; Description: "Full installation (recommended)"
+Name: "custom"; Description: "Custom installation"; Flags: iscustom
+
 [Components]
 ; Every component below gates real [Files] payload. The Writing
 ; Assistant and the rest of Quill's core ship unconditionally with the
 ; main bundle, so there is no separate AI component to toggle here.
+; DECtalk voice selection is handled by a guided wizard page (see [Code]).
 Name: "pandoc"; Description: "Install bundled Pandoc for document conversion"; Types: full custom; Flags: checkablealone
 Name: "speechdectalk"; Description: "Install bundled DECtalk runtime"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices"; Description: "DECtalk voice selection"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\all_voices"; Description: "All DECtalk voices"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\paul"; Description: "Paul voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\harry"; Description: "Harry voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\dennis"; Description: "Dennis voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\frank"; Description: "Frank voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\betty"; Description: "Betty voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\ursula"; Description: "Ursula voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\rita"; Description: "Rita voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\wendy"; Description: "Wendy voice"; Types: full custom; Flags: checkablealone
-Name: "speechdectalk\voices\kit"; Description: "Kit voice"; Types: full custom; Flags: checkablealone
 Name: "speechespeak"; Description: "Install bundled eSpeak-NG runtime"; Types: full custom; Flags: checkablealone
 Name: "speechpiper"; Description: "Install bundled Piper neural TTS runtime"; Types: full custom; Flags: checkablealone
-Name: "nodejs"; Description: "Install portable Node.js runtime for Node Quillins and the Developer Console TypeScript interface (~30 MB); not required for Python Quillins"; Types: custom; Flags: checkablealone
+Name: "nodejs"; Description: "Install portable Node.js runtime for Node Quillins and the Developer Console TypeScript interface (~30 MB); not required for Python Quillins"; Flags: checkablealone
 Name: "braillepack"; Description: "Install QUILL Braille Pack (liblouis translation engine, UEB, Standard American English, and international braille profiles, ~15 MB)"; Types: full custom; Flags: checkablealone
 
 [Files]
@@ -91,17 +87,8 @@ Source: "..\portable\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 ; Installed to vendor\braille-pack so QUILL detects it automatically via QUILL_APP_ROOT.
 Source: "..\portable\vendor\braille-pack\*"; DestDir: "{app}\vendor\braille-pack"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: braillepack
 Source: "..\portable\tools\pandoc\*"; DestDir: "{app}\tools\pandoc"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: pandoc
-Source: "..\portable\tools\speech\dectalk\*"; DestDir: "{app}\tools\speech\dectalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Excludes: "voices\*"; Components: speechdectalk
-Source: "..\portable\tools\speech\dectalk\voices\*"; DestDir: "{app}\tools\speech\dectalk\voices"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\all_voices
-Source: "..\portable\tools\speech\dectalk\voices\paul\*"; DestDir: "{app}\tools\speech\dectalk\voices\paul"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\paul; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\harry\*"; DestDir: "{app}\tools\speech\dectalk\voices\harry"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\harry; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\dennis\*"; DestDir: "{app}\tools\speech\dectalk\voices\dennis"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\dennis; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\frank\*"; DestDir: "{app}\tools\speech\dectalk\voices\frank"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\frank; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\betty\*"; DestDir: "{app}\tools\speech\dectalk\voices\betty"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\betty; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\ursula\*"; DestDir: "{app}\tools\speech\dectalk\voices\ursula"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\ursula; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\rita\*"; DestDir: "{app}\tools\speech\dectalk\voices\rita"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\rita; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\wendy\*"; DestDir: "{app}\tools\speech\dectalk\voices\wendy"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\wendy; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
-Source: "..\portable\tools\speech\dectalk\voices\kit\*"; DestDir: "{app}\tools\speech\dectalk\voices\kit"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk\voices\kit; Check: not WizardIsComponentSelected('speechdectalk\voices\all_voices')
+; All DECtalk voices ship when the DECtalk component is selected.
+Source: "..\portable\tools\speech\dectalk\*"; DestDir: "{app}\tools\speech\dectalk"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechdectalk
 Source: "..\portable\tools\speech\espeak-ng\*"; DestDir: "{app}\tools\speech\espeak-ng"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechespeak
 Source: "..\portable\tools\speech\piper\*"; DestDir: "{app}\tools\speech\piper"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: speechpiper
 ; Node.js portable runtime (optional). The build script copies a portable
@@ -296,11 +283,20 @@ Type: filesandordirs; Name: "{app}\__pycache__"
 Type: filesandordirs; Name: "{app}\python"
 
 [Code]
-// After install: if the nodejs component was selected but the portable
-// node.exe bundle was not included in this build (skipifsourcedoesntexist),
-// offer to install Node.js LTS via Windows Package Manager (winget).
-// winget is built into Windows 11 and available on Windows 10 21H2+.
-// MsgBox and Exec are screen-reader accessible native dialogs.
+// -- Skip component page for full installs ------------------------------------
+// Full install: skip component selection (everything is pre-selected).
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if PageID = wpSelectComponents then
+    Result := (WizardSetupType(False) = 'full');
+end;
+
+// -- Post-install: write new-install marker + optional Node.js bootstrap --
+// The new-install marker tells the app to re-run the setup wizard on first
+// launch even when %APPDATA% settings from a prior install say it completed.
+// The Node.js check is opt-in (unchecked by default): fires only when the
+// user explicitly selected it and the portable node.exe was not bundled.
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   NodePath: String;
@@ -308,6 +304,7 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    SaveStringToFile(ExpandConstant('{app}\quill-new-install.txt'), 'new-install', False);
     if WizardIsComponentSelected('nodejs') then
     begin
       NodePath := ExpandConstant('{app}\tools\nodejs\node.exe');
@@ -338,12 +335,7 @@ begin
   end;
 end;
 
-// Ask, on uninstall, whether to also remove personal data instead of
-// assuming. 'Yes' wipes %APPDATA%\Quill (settings, dictionaries,
-// autosaves, backups, onboarding/first-run flags, and the IPC lock) so a
-// later reinstall is a clean first run. 'No' keeps everything for a
-// future reinstall. MsgBox is a native dialog, so it is screen-reader
-// accessible.
+// -- Uninstall: ask before wiping personal data ----------------------------
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
