@@ -806,6 +806,165 @@ class PowerToolsActionsMixin:
             return
         self._set_status(f"Saved re-encoded copy ({label}) to {target}")
 
+    # -------------------------------------- #256 minimum required encoding
+    def analyze_encoding_requirements(self) -> None:
+        """Report the current vs. minimum-required encoding (#256)."""
+        from quill.core import encoding_tools
+
+        text = self.editor.GetValue()
+        report = encoding_tools.describe_minimum_encoding(text, self.document.encoding)
+        self._power_tools_open_text_in_new_buffer(report + "\n", "Encoding requirements")
+
+    def save_minimum_encoding(self) -> None:
+        """Save a copy of the document in the simplest lossless encoding (#256)."""
+        from quill.core import encoding_tools
+
+        wx = self._wx
+        text = self.editor.GetValue()
+        codec = encoding_tools.minimum_encoding(text)
+        label = encoding_tools.ENCODING_LABELS.get(codec, codec)
+        data = encoding_tools.reencode_text(text, codec)
+
+        default_dir = ""
+        if hasattr(self, "_file_dialog_default_dir"):
+            default_dir = self._file_dialog_default_dir()
+        with wx.FileDialog(
+            self.frame,
+            f"Save copy using minimum required encoding ({label})",
+            defaultDir=default_dir,
+            wildcard="All files (*.*)|*.*",
+            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+        ) as dialog:
+            if self._show_modal_dialog(dialog, "Save Using Minimum Required Encoding") != wx.ID_OK:
+                self._set_status("Save using minimum required encoding cancelled")
+                return
+            target = Path(dialog.GetPath())
+        try:
+            target.write_bytes(data)
+        except OSError as error:
+            self._set_status(f"Could not write file: {error}")
+            return
+        self._set_status(f"Saved copy using minimum required encoding ({label}) to {target}")
+
+    # -------------------------------------- #257 Markdown profiles and table of contents
+    def insert_table_of_contents(self) -> None:
+        """Insert a deterministic table of contents built from headings (#257).
+
+        Non-AI counterpart to AI > Generate Table of Contents: this parses
+        ATX headings directly, with no model call, so it works offline and
+        always matches the document exactly.
+        """
+        from quill.core.markdown_extensions import insert_toc
+
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
+            return
+        text = self.editor.GetValue()
+        updated, heading_count = insert_toc(text)
+        if heading_count == 0:
+            self._set_status("No headings were found to build a table of contents")
+            return
+        self._replace_document_text(updated)
+        self.document.set_text(updated)
+        noun = "heading" if heading_count == 1 else "headings"
+        self._set_status(f"Inserted table of contents ({heading_count} {noun})")
+
+    def select_markdown_profile(self) -> None:
+        """Choose a Markdown profile by plain-language name (#257)."""
+        from quill.core.markdown_profiles import MARKDOWN_PROFILES, describe_profile
+
+        wx = self._wx
+        profile_ids = list(MARKDOWN_PROFILES)
+        labels = [MARKDOWN_PROFILES[pid].name for pid in profile_ids]
+        current = getattr(self.settings, "markdown_profile_id", "standard")
+        current_index = profile_ids.index(current) if current in profile_ids else 0
+        with wx.SingleChoiceDialog(
+            self.frame,
+            "Choose a Markdown profile:",
+            "Markdown Profile",
+            labels,
+        ) as dialog:
+            dialog.SetSelection(current_index)
+            if self._show_modal_dialog(dialog, "Markdown Profile") != wx.ID_OK:
+                self._set_status("Markdown profile selection cancelled")
+                return
+            selected = dialog.GetSelection()
+        if selected < 0 or selected >= len(profile_ids):
+            return
+        self.settings.markdown_profile_id = profile_ids[selected]
+        self._set_status(describe_profile(self.settings.markdown_profile_id))
+
+    def toggle_preserve_line_breaks(self) -> None:
+        """Apply the line-break-preservation transform (#257 nl2br)."""
+        from quill.core.markdown_extensions import apply_nl2br
+
+        self._power_tools_transform_selection_or_document(
+            apply_nl2br, "Preserved single line breaks"
+        )
+
+    def read_markdown_status(self) -> None:
+        """Announce the active Markdown profile and its enabled extensions (#257)."""
+        from quill.core.markdown_profiles import MARKDOWN_PROFILES, describe_profile
+
+        profile_id = getattr(self.settings, "markdown_profile_id", "standard")
+        if profile_id not in MARKDOWN_PROFILES:
+            profile_id = "standard"
+        self._set_status(describe_profile(profile_id))
+
+    def select_citation_style(self) -> None:
+        """Choose the default citation style for the Author or Student profile.
+
+        Markdown footnotes need no extra fields; Academic switches Insert >
+        Insert Citation toward the MLA/Chicago/APA bibliography workflow that
+        already exists in ``quill.core.citations`` (#203) — no new dependency
+        either way.
+        """
+        from quill.core.markdown_profiles import CITATION_STYLES
+
+        wx = self._wx
+        style_ids = [value for value, _label in CITATION_STYLES]
+        labels = [label for _value, label in CITATION_STYLES]
+        current = getattr(self.settings, "citation_style", "footnotes")
+        current_index = style_ids.index(current) if current in style_ids else 0
+        with wx.SingleChoiceDialog(
+            self.frame,
+            "Choose a citation style:",
+            "Citation Style",
+            labels,
+        ) as dialog:
+            dialog.SetSelection(current_index)
+            if self._show_modal_dialog(dialog, "Citation Style") != wx.ID_OK:
+                self._set_status("Citation style selection cancelled")
+                return
+            selected = dialog.GetSelection()
+        if selected < 0 or selected >= len(style_ids):
+            return
+        self.settings.citation_style = style_ids[selected]
+        self._set_status(f"Citation style set to {labels[selected]}")
+
+    # -------------------------------------- text-utility gap fill for 0.6.0
+    def remove_email_quote_markers(self) -> None:
+        self._power_tools_transform_selection_or_document(
+            _fmt.remove_email_quote_markers, "Removed email quote markers"
+        )
+
+    def strip_low_ascii(self) -> None:
+        self._power_tools_transform_selection_or_document(
+            _fmt.strip_low_ascii, "Stripped low ASCII control characters"
+        )
+
+    def strip_high_ascii(self) -> None:
+        self._power_tools_transform_selection_or_document(
+            _fmt.strip_high_ascii, "Stripped high ASCII (non-ASCII) characters"
+        )
+
+    def hex_dump(self) -> None:
+        text = self.editor.GetValue()
+        start, end = self.editor.GetSelection()
+        if start != end:
+            text = text[start:end]
+        self._power_tools_open_text_in_new_buffer(_fmt.hex_dump(text) + "\n", "Hex dump")
+
     # -------------------------------------- EDS-22 line-level TextMonkey transforms
     def trim_blank_lines(self) -> None:
         self._power_tools_transform_selection_or_document(

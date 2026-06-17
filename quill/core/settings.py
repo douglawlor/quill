@@ -80,6 +80,8 @@ class Settings:
     assistant_enabled: bool = False
     assistant_prompt_style: str = "balanced"
     markdown_clipboard_format: str = "html"
+    markdown_profile_id: str = "standard"
+    citation_style: str = "footnotes"
     auto_clean_html_paste: bool = False
     abbreviation_expansion: bool = True
     abbreviation_expansion_sound: bool = False

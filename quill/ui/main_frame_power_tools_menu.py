@@ -69,6 +69,14 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         group="insert",
         label="File &Content...",
     )
+    add(
+        id="power.insert_table_of_contents",
+        title="Insert Table of Contents",
+        top_level="Insert",
+        group="insert",
+        label="&Table of Contents",
+        separator_before=True,
+    )
 
     # Edit menu ----------------------------------------------------------
     add(
@@ -288,6 +296,88 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         group="html_encoding",
         label="Jump &Back to Non-ASCII Report",
         separator_before=False,
+    )
+    add(
+        id="power.analyze_encoding_requirements",
+        title="Analyze Encoding Requirements",
+        top_level="Format",
+        group="html_encoding",
+        label="&Analyze Encoding Requirements",
+        separator_before=True,
+    )
+    add(
+        id="power.save_minimum_encoding",
+        title="Save Using Minimum Required Encoding",
+        top_level="Format",
+        group="html_encoding",
+        label="Save Using &Minimum Required Encoding...",
+        separator_before=False,
+    )
+    add(
+        id="power.remove_email_quote_markers",
+        title="Remove Email Quote Markers",
+        top_level="Format",
+        group="html_encoding",
+        label="Remove E&mail Quote Markers",
+        separator_before=True,
+    )
+    add(
+        id="power.strip_low_ascii",
+        title="Strip Low ASCII Characters",
+        top_level="Format",
+        group="html_encoding",
+        label="Strip &Low ASCII Characters",
+        separator_before=False,
+    )
+    add(
+        id="power.strip_high_ascii",
+        title="Strip High ASCII (Non-ASCII) Characters",
+        top_level="Format",
+        group="html_encoding",
+        label="Strip &High ASCII Characters",
+        separator_before=False,
+    )
+    add(
+        id="power.hex_dump",
+        title="Convert to Hex Dump",
+        top_level="Format",
+        group="html_encoding",
+        label="Convert to &Hex Dump",
+        separator_before=False,
+    )
+
+    # Format > Markdown Profiles (#257) -----------------------------------
+    add(
+        id="power.select_markdown_profile",
+        title="Select Markdown Profile",
+        top_level="Format",
+        group="markdown_profiles",
+        label="&Select Markdown Profile...",
+        separator_before=True,
+    )
+    add(
+        id="power.toggle_preserve_line_breaks",
+        title="Preserve Single Line Breaks",
+        top_level="Format",
+        group="markdown_profiles",
+        label="Preserve Single &Line Breaks",
+        separator_before=False,
+    )
+    add(
+        id="power.read_markdown_status",
+        title="Read Markdown Processing Status",
+        top_level="Format",
+        group="markdown_profiles",
+        label="&Read Markdown Processing Status",
+        separator_before=False,
+    )
+    add(
+        id="power.select_citation_style",
+        title="Select Citation Style",
+        top_level="Format",
+        group="markdown_profiles",
+        label="Select &Citation Style...",
+        separator_before=True,
     )
 
     # Navigate menu ------------------------------------------------------
@@ -570,6 +660,9 @@ class PowerToolsMenuMixin:
 
     def _append_power_tools_html_encoding_items(self, menu: object) -> None:
         self._append_power_tools_group(menu, "html_encoding")
+
+    def _append_power_tools_markdown_profiles_items(self, menu: object) -> None:
+        self._append_power_tools_group(menu, "markdown_profiles")
 
     def _append_power_tools_navigate_items(self, navigate_menu: object) -> None:
         self._append_power_tools_group(navigate_menu, "navigate")

@@ -205,6 +205,43 @@ def encode_html_entities(text: str) -> str:
     return html.escape(text)
 
 
+_EMAIL_QUOTE_PREFIX = re.compile(r"^(?:\s*>+\s?)+")
+
+
+def remove_email_quote_markers(text: str) -> str:
+    """Strip leading ``>`` quote markers (and ``Name>`` prefixes) from each line."""
+    lines = []
+    for line in _split_lines(text):
+        stripped = _EMAIL_QUOTE_PREFIX.sub("", line)
+        if stripped == line:
+            stripped = re.sub(r"^\s*\S+>\s?", "", line, count=1)
+        lines.append(stripped)
+    return "\n".join(lines)
+
+
+def strip_low_ascii(text: str) -> str:
+    """Remove control characters (codepoints below 0x20), keeping tab and newline."""
+    return "".join(ch for ch in text if ord(ch) >= 0x20 or ch in "\t\n\r")
+
+
+def strip_high_ascii(text: str) -> str:
+    """Remove every character above 0x7E (non-ASCII), leaving plain ASCII text."""
+    return "".join(ch for ch in text if ord(ch) <= 0x7E or ch in "\t\n\r")
+
+
+def hex_dump(text: str, *, bytes_per_line: int = 16) -> str:
+    """Render *text* (encoded as UTF-8) as a classic hex + ASCII dump."""
+    data = text.encode("utf-8")
+    lines = []
+    for offset in range(0, len(data), bytes_per_line):
+        chunk = data[offset : offset + bytes_per_line]
+        hex_part = " ".join(f"{byte:02x}" for byte in chunk)
+        hex_part = hex_part.ljust(bytes_per_line * 3 - 1)
+        ascii_part = "".join(chr(byte) if 0x20 <= byte < 0x7F else "." for byte in chunk)
+        lines.append(f"{offset:08x}  {hex_part}  {ascii_part}")
+    return "\n".join(lines)
+
+
 def shuffle_lines(text: str) -> str:
     """Randomly reorder the lines of text."""
     lines, terminal_newline = _split_body_lines(text)

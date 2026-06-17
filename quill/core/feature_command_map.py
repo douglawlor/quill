@@ -285,4 +285,26 @@ COMMAND_FEATURE_MAP: dict[str, str] = {
     "tools.open_typescript_console": "core.developer_console.typescript",
     "tools.copy_diagnostic_summary": "core.developer_console",
     "tools.restart_typescript_worker": "core.developer_console.typescript",
+    # Markdown profiles and table of contents (#257) — deterministic, not AI.
+    "power.insert_table_of_contents": "core.markdown_profiles",
+    "power.select_markdown_profile": "core.markdown_profiles",
+    "power.toggle_preserve_line_breaks": "core.markdown_profiles",
+    "power.read_markdown_status": "core.markdown_profiles",
+    "power.select_citation_style": "core.markdown_profiles",
+    # HTML entities and encoding (#197, #256).
+    "power.strip_html_tags": "core.text_encoding",
+    "power.decode_html_entities": "core.text_encoding",
+    "power.encode_html_entities": "core.text_encoding",
+    "power.encode_all_non_ascii": "core.text_encoding",
+    "power.show_non_ascii": "core.text_encoding",
+    "power.reencode_file": "core.text_encoding",
+    "power.non_ascii_jump_to_source": "core.text_encoding",
+    "power.non_ascii_jump_to_report": "core.text_encoding",
+    "power.analyze_encoding_requirements": "core.text_encoding",
+    "power.save_minimum_encoding": "core.text_encoding",
+    # Text-utility gap fill.
+    "power.remove_email_quote_markers": "core.text_encoding",
+    "power.strip_low_ascii": "core.text_encoding",
+    "power.strip_high_ascii": "core.text_encoding",
+    "power.hex_dump": "core.text_encoding",
 }

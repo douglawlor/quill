@@ -142,9 +142,13 @@ def test_power_tools_manifest_is_consumed_and_conflict_free() -> None:
     # + 2 Copy Tray dialog-level commands (open + clear_all)
     # + 3 encoding tools (#197: encode_all_non_ascii, show_non_ascii, reencode_file)
     # 0.6.0: +2 citation commands (insert_citation, open_citation_manager)
+    # 0.6.0: +11 for #256/#257 (table of contents, markdown profiles, line-break
+    # preservation, markdown status, citation style, analyze/save minimum
+    # encoding, and the email-quote/low-ASCII/high-ASCII/hex-dump text-utility
+    # gap fill)
     registry = build_first_party_registry(POWER_TOOLS_COMMANDS)
-    assert len(POWER_TOOLS_COMMANDS) == 48
-    assert len(registry.commands) == 48
+    assert len(POWER_TOOLS_COMMANDS) == 59
+    assert len(registry.commands) == 59
     assert registry.conflicts == ()
     for menu in registry.menus:
         assert menu.parent in FIRST_PARTY_MENU_PARENTS

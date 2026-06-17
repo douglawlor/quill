@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from quill.core.encoding_tools import (
     ENCODING_CHOICES,
+    can_encode,
+    describe_minimum_encoding,
     encode_non_ascii_to_entities,
     find_non_ascii,
+    minimum_encoding,
     reencode_text,
     summarize_non_ascii,
 )
@@ -87,3 +90,44 @@ def test_encoding_choices_are_well_formed() -> None:
         assert isinstance(label, str) and label
         # Every advertised codec must be usable by reencode_text.
         assert isinstance(reencode_text("test", codec), bytes)
+
+
+class TestCanEncode:
+    def test_ascii_text_fits_ascii(self) -> None:
+        assert can_encode("hello", "ascii") is True
+
+    def test_em_dash_does_not_fit_ascii(self) -> None:
+        assert can_encode("a—b", "ascii") is False
+
+
+class TestMinimumEncoding:
+    def test_pure_ascii_text(self) -> None:
+        assert minimum_encoding("hello world") == "ascii"
+
+    def test_latin1_required(self) -> None:
+        # 13.5: Renée requires Latin-1 (not representable in plain ASCII).
+        assert minimum_encoding("Renée") == "latin-1"
+
+    def test_windows_1252_required_for_smart_quotes_and_dash(self) -> None:
+        # 13.6: smart quotes + em dash are not in Latin-1 but are in cp1252.
+        assert minimum_encoding("“Hello”—said Renée.") == "cp1252"
+
+    def test_utf8_required_for_emoji(self) -> None:
+        # 13.7: emoji require UTF-8.
+        assert minimum_encoding("Hello \U0001f60a") == "utf-8"
+
+
+class TestDescribeMinimumEncoding:
+    def test_no_current_encoding_given(self) -> None:
+        summary = describe_minimum_encoding("hello")
+        assert "Minimum required encoding: ASCII." == summary
+
+    def test_current_encoding_already_sufficient(self) -> None:
+        summary = describe_minimum_encoding("hello", "ascii")
+        assert "saved losslessly as ASCII" in summary
+
+    def test_current_encoding_insufficient_recommends_minimum(self) -> None:
+        # 13.9: ISO-8859-1 cannot hold an em dash; recommend the next encoding up.
+        summary = describe_minimum_encoding("a—b", "latin-1")
+        assert "cannot be saved as ISO-8859-1 / Latin-1" in summary
+        assert "Minimum required encoding: Windows-1252 / MS-ANSI." in summary

@@ -9,17 +9,21 @@ from quill.core.format_ops import (
     delete_lines_containing,
     delete_lines_not_containing,
     encode_html_entities,
+    hex_dump,
     indent_lines,
     normalize_whitespace,
     outdent_lines,
     quote_lines,
     remove_duplicate_lines,
+    remove_email_quote_markers,
     reverse_lines,
     shuffle_lines,
     sort_lines,
     sort_lines_by_length,
     sort_lines_numeric,
+    strip_high_ascii,
     strip_html_tags,
+    strip_low_ascii,
     toggle_block_comment,
     toggle_line_comment,
     trim_blank_lines,
@@ -259,3 +263,37 @@ def test_delete_lines_not_containing_case_insensitive() -> None:
     result = delete_lines_not_containing("Alpha\nbeta", "alpha", case_sensitive=False)
     assert "Alpha" in result
     assert "beta" not in result
+
+
+def test_remove_email_quote_markers_strips_leading_chevrons() -> None:
+    text = "> quoted line\n>> double quoted\nplain line"
+    result = remove_email_quote_markers(text)
+    assert result == "quoted line\ndouble quoted\nplain line"
+
+
+def test_remove_email_quote_markers_strips_name_prefix() -> None:
+    text = "Joe> said hello"
+    assert remove_email_quote_markers(text) == "said hello"
+
+
+def test_strip_low_ascii_removes_control_chars_keeps_tab_and_newline() -> None:
+    text = "a\x07b\tc\nd"
+    assert strip_low_ascii(text) == "ab\tc\nd"
+
+
+def test_strip_high_ascii_keeps_plain_ascii_only() -> None:
+    assert strip_high_ascii("café 中 plain") == "caf  plain"
+
+
+def test_hex_dump_formats_offset_hex_and_ascii() -> None:
+    result = hex_dump("AB")
+    assert result.startswith("00000000  ")
+    assert "41 42" in result
+    assert result.endswith("AB")
+
+
+def test_hex_dump_wraps_at_bytes_per_line() -> None:
+    result = hex_dump("A" * 17)
+    lines = result.splitlines()
+    assert len(lines) == 2
+    assert lines[1].startswith("00000010")

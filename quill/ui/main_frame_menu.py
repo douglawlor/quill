@@ -873,6 +873,11 @@ class MenuBuilderMixin:
         self._append_power_tools_html_encoding_items(html_menu)
         format_menu.AppendSubMenu(html_menu, _("&HTML && Encoding"))
 
+        # --- Markdown submenu (#257: profiles, table of contents, line breaks) ---
+        markdown_menu = wx.Menu()
+        self._append_power_tools_markdown_profiles_items(markdown_menu)
+        format_menu.AppendSubMenu(markdown_menu, _("&Markdown"))
+
         # Quillin-contributed Format items
         self._append_quillin_menu_items(format_menu, "Format")
 

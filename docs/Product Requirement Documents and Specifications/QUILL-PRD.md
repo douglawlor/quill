@@ -220,7 +220,7 @@ Quill’s feature-profile system is a first-class product surface, not a cosmeti
 
 - **Feature Registry**: a central registry assigns every feature an id, category, description, default state, dependencies, conflicts, privacy impact, network impact, accessibility notes, and profile tags.
 - **Profile layering**: user overrides sit above custom profiles, shipped profiles, default registry state, and locked safety rules.
-- **Shipped profiles**: Essential, Writer, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, Low Vision, Braille and Screen Reader Power User, Full Quill, and Custom.
+- **Shipped profiles**: Essential, Casual Writer, Author or Student, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, Low Vision, Braille and Screen Reader Power User, Full Quill, and Custom.
 - **Settings UI**: Profiles and Features page with search, feature table, explain/related commands, compare profiles, and profile management actions.
 - **Custom profile creation**: users can create named custom profiles, select a parent shipped profile, and optionally inherit that parent's feature baseline.
 - **Bare-bones start**: custom profile creation also supports an explicit non-inherited baseline (locked core safety features only), with a warning before commit.
@@ -258,7 +258,7 @@ Quill should stay calm by default and unlock power features intentionally.
 - **Feature states**: `on`, `quiet`, `off`, `locked on`, `locked off`.
 - **Core stays locked on**: editor, open/save, backups, crash recovery, help, accessibility announcements, settings.
 - **Advanced features can be quiet/off**: regex search, regex helper, saved searches, OCR, AI repair, document intake reports, extraction review, character tools, compare/diff helpers, diagnostics, plugin surfaces.
-- **Profiles**: Essential, Writer, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, Low Vision, Braille and Screen Reader Power User, Full Quill, Custom.
+- **Profiles**: Essential, Casual Writer, Author or Student, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, Low Vision, Braille and Screen Reader Power User, Full Quill, Custom.
 - **Settings**: a Profiles and Features page lets the user switch profiles, compare them, and expose quiet features when desired.
 - **Command/menu gating**: menus, palette entries, status-bar cells, help topics, and settings pages only surface features appropriate to the active profile.
 
@@ -2531,7 +2531,7 @@ Quill provides two complementary comparison workflows: an accessible interactive
 - **Difference summary**: users may create a plain-text summary document listing all differences, options used, and short before/after excerpts.
 - **Diff report**: Quill may also generate a unified-diff document in a new editor tab. Diff hunks remain navigable with `Ctrl+]` and `Ctrl+[`.
 - **Extracted document compare**: PDF, DOCX, EPUB, OCR, and repaired text compare against Quill’s extracted text representation, with a warning that extraction quality may affect results.
-- **Feature profiles**: interactive compare is on in Writer, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, and Full Quill; it is quiet in Essential.
+- **Feature profiles**: interactive compare is on in Casual Writer, Author or Student, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, and Full Quill; it is quiet in Essential.
 
 ### 5.58 Ask Quill — on-device AI chat (WebView)
 
@@ -4521,7 +4521,7 @@ The governing rules remain the same throughout the roadmap: local-first processi
 
 - [x] Add a central feature registry module with metadata and dependency graphs.
 - [x] Add layered feature-profile loading and merging.
-- [x] Add shipped profile definitions for Essential, Writer, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, Low Vision, Braille and Screen Reader Power User, and Full Quill.
+- [x] Add shipped profile definitions for Essential, Casual Writer, Author or Student, Reader and Student, Office and Admin, Accessibility Professional, Developer and Power Text, Low Vision, Braille and Screen Reader Power User, and Full Quill.
 - [x] Add a Profiles and Features settings page.
 - [x] Add first-run profile selection onboarding.
 - [x] Add command, menu, status-bar, settings, help, and format-handler feature ID gating.
@@ -4962,6 +4962,146 @@ pack are tracked separately (BR-013 and later). The translation install path is 
 no-op stub until the signed, audited download lands; see the deployment plan in
 `docs/braille.md`.
 
+## §27. Markdown Profiles and Table of Contents (#257)
+
+### §27.1 Overview
+
+A community PRD (issue #257, "Support for Markdown_py-style extensions such
+as nl2br and toc") asked for plain-language Markdown profiles and a
+deterministic table of contents. Before this work, QUILL's only
+table-of-contents generator was the **AI Generate Table of Contents** agent
+task (`assistant_agents.py`, `agent_id="toc"`) — useful, but it requires a
+configured AI provider, a network round trip, and produces a result that is
+only as faithful as the model's read of the document. A screen-reader user
+with AI disabled, working offline, or who simply wants a result guaranteed to
+match the heading text exactly had no alternative.
+
+§27 ships the non-AI alternative and the friendly-naming layer the PRD asked
+for, as Phase 1 of that PRD's four-phase rollout (the PRD's own §23
+"Implementation Phases"). Phases 2-4 (a full Extension Customization dialog,
+EPUB-ready export, and a curated third-party extension ecosystem) remain
+backlog.
+
+### §27.2 What shipped
+
+- **`quill/core/markdown_extensions.py`** (pure, no `wx`): `extract_headings`
+  parses ATX (`#`) headings with the same slug algorithm Browser Preview uses
+  for heading anchors, so a generated table of contents always links to the
+  same IDs the preview renders. `generate_toc` builds a nested Markdown
+  bullet list of links; `insert_toc` either replaces a `[TOC]` marker or
+  inserts after the first heading. `check_heading_structure` is the Phase 1
+  slice of the PRD's accessibility checker (missing H1, skipped heading
+  levels, empty headings). `apply_nl2br` is the `nl2br` extension —
+  paragraph-aware line-break preservation for poetry, lyrics, and transcripts.
+- **`quill/core/markdown_profiles.py`** (pure): a friendly-name catalog
+  (`MARKDOWN_EXTENSIONS`) mapping technical names (`toc`, `nl2br`, `tables`,
+  `fenced_code`, `footnotes`, `task_lists`, `strikethrough`, `def_list`) to
+  plain-language names and descriptions (PRD principle 7.2), and eight
+  built-in profiles (PRD principle 7.3 / §10): Standard Markdown,
+  GitHub-Style Markdown, Documentation, Poetry and Lyrics, Accessible
+  Publishing, Technical Writing, PRD and Release Notes, and Custom.
+  `describe_profile` renders the screen-reader-friendly status line from
+  PRD §13.1/§13.4 (*"Markdown profile: Documentation. 5 extensions enabled.
+  ..."*).
+- **Commands** (Format > Markdown, plus Insert): Insert Table of Contents,
+  Select Markdown Profile, Preserve Single Line Breaks, Read Markdown
+  Processing Status, Select Citation Style. Wired through the same
+  declarative `main_frame_power_tools_menu.py` contribution grammar as every
+  other power-tool command.
+- **Feature tag:** `core.markdown_profiles` (category `"markdown"`). This is
+  the point of the exercise as much as the TOC generator itself: the feature
+  catalog previously had no way to say "this is a deterministic text feature"
+  versus "this calls a model." `core.markdown_profiles` and `future.ai` are
+  now siblings under `FEATURE_DEFINITIONS`, not the same bucket — disabling
+  AI (Safe Mode, or any profile with `future.ai` off) never disables Insert
+  Table of Contents.
+- **Persona profile:** a new **Author or Student** `FeatureProfile`
+  (`quill/core/features.py`) turns `core.markdown_profiles` on by default,
+  alongside the existing citation tooling (§ below, `core.citations`/
+  `quill/core/citations.py`, issue #203) and a configurable citation style
+  (Markdown footnotes, the default, or full MLA/Chicago/APA bibliography
+  entries via the citation module already shipped in 0.5.1 — no new
+  dependency either way). See §27.4.
+
+### §27.3 What already existed and was not duplicated
+
+Tables, fenced code blocks, footnotes, and task lists are already rendered by
+`quill.core.browser_preview` and already have Insert commands
+(`format.insert_table`, `format.insert_code_block`, `format.insert_footnote`,
+`format.insert_task_list`). §27 catalogs them as named extensions (so a user
+can ask "what does the Documentation profile turn on?" and get a real
+answer) without re-implementing a parser QUILL already has.
+
+### §27.4 Persona profiles (Casual Writer, Author or Student)
+
+While closing #257, the **Writer** persona profile was renamed **Casual
+Writer** (id unchanged — `"writer"` — so saved settings and the onboarding
+wizard's `technical_profile="writer"` mapping are unaffected) to make room
+for a more precise sibling: **Author or Student**, a new ninth persona
+profile for long-form writing with a table of contents, footnotes, and
+citations — papers, theses, and class assignments. It turns on
+`core.markdown_profiles` and `core.text_encoding` (§28) by default and keeps
+`core.macros` / `future.regex_library` quiet or off, since that audience
+wants structure and citations, not regex tooling. See §5.1g's shipped-profile
+list for the full nine-persona-plus-Full-Quill catalog.
+
+### §27.5 Non-goals (this phase)
+
+A dedicated Extension Customization dialog (PRD §13.2), per-document
+extension overrides, EPUB export, and curated third-party extensions are
+PRD §257 Phases 2-4 and are not part of this drop. The eight profiles are
+catalog data today (used for `describe_profile` and for gating which
+extensions a persona profile favors); a future phase wires per-profile
+extension toggles into preview/export rendering directly.
+
+## §28. HTML Entity Conversion and Minimum Required Encoding (#256)
+
+### §28.1 Overview
+
+A community PRD (issue #256, "Feature: Convert from HTML entities to
+characters") asked for two things: decode HTML entities (`&eacute;` → `é`)
+and then save the result in the smallest encoding that can represent it
+losslessly, rather than forcing UTF-8. Most of the surrounding machinery
+already existed from issue #197 (`quill/core/encoding_tools.py`: find
+non-ASCII characters, encode them to entities, re-encode to a chosen
+charset) and from the EDS-21 text-transform wave
+(`quill/core/format_ops.py::decode_html_entities`, already wired as
+**Format > HTML & Encoding > Decode HTML Entities**). §256's actual gap was
+narrow: nothing picked the *minimum* encoding automatically.
+
+### §28.2 What shipped
+
+- **`quill/core/encoding_tools.py`** gained `can_encode`, `minimum_encoding`
+  (tries ASCII → Latin-1 → Windows-1252 → UTF-8 in order, per PRD §9.8, and
+  always succeeds because UTF-8 is the guaranteed fallback), and
+  `describe_minimum_encoding` (the screen-reader summary from PRD §9.12: *"Current
+  encoding: ISO-8859-1. Minimum required encoding after recent edits:
+  Windows-1252."*).
+- **Commands** (Format > HTML & Encoding): Analyze Encoding Requirements
+  (opens a read-only report, mirroring the existing Show Non-ASCII
+  Characters command) and Save Using Minimum Required Encoding (computes the
+  minimum codec and saves a copy with it, mirroring the existing Re-encode
+  As flow but without an extra encoding-choice prompt).
+- **Feature tag:** `core.text_encoding` (category `"text"`). The pre-existing
+  `power.*` entity/encoding commands (`strip_html_tags`,
+  `decode_html_entities`, `encode_html_entities`, `encode_all_non_ascii`,
+  `show_non_ascii`, `reencode_file`, the non-ASCII jump pair) were re-tagged
+  onto this feature too, instead of the generic always-on fallback they had
+  before — the same "give it a real, non-AI category" treatment as §27.
+- **Text-utility gap fill:** while auditing encoding-adjacent commands for
+  parity with the established EDS-21/22 text-transform waves, three small
+  gaps were closed: `remove_email_quote_markers` (strip `>` / `Name>` quote
+  prefixes), `strip_low_ascii` / `strip_high_ascii` (control-character and
+  non-ASCII stripping), and `hex_dump` (classic offset/hex/ASCII dump for
+  inspecting a selection's raw bytes).
+
+### §28.3 Non-goals (this phase)
+
+A live preview/details dialog before conversion (PRD §9.4/§9.5), a per-`nbsp`
+handling preference, and an "Always warn before changing file encoding"
+preference toggle are PRD §256 Phases 2-4. `decode_html_entities` already
+satisfies the "never silently destroy unknown entities" requirement for
+free: `html.unescape` leaves unrecognized named entities untouched.
 
 ---
 

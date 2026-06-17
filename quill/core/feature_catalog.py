@@ -363,6 +363,47 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
         maturity="advanced",
         category="power text",
     ),
+    "core.markdown_profiles": FeatureDefinition(
+        "core.markdown_profiles",
+        "Markdown Profiles and Extensions",
+        aliases=(
+            "table of contents",
+            "toc",
+            "markdown profile",
+            "markdown profiles",
+            "markdown extensions",
+            "preserve line breaks",
+            "nl2br",
+        ),
+        description=(
+            "Deterministic Markdown structure tools: table-of-contents generation, "
+            "line-break preservation, and named profiles (Standard, GitHub-Style, "
+            "Documentation, Poetry and Lyrics, Accessible Publishing, Technical "
+            "Writing, PRD and Release Notes, Custom). No model in the loop — this "
+            "is the non-AI counterpart to the AI > Generate Table of Contents agent."
+        ),
+        category="markdown",
+        dependencies=("core.format",),
+    ),
+    "core.text_encoding": FeatureDefinition(
+        "core.text_encoding",
+        "Text Encoding and HTML Entities",
+        aliases=(
+            "html entities",
+            "encoding",
+            "minimum encoding",
+            "latin-1",
+            "windows-1252",
+            "non-ascii",
+        ),
+        description=(
+            "Detects and converts HTML entities, finds non-ASCII characters, and "
+            "picks the simplest encoding (ASCII, Latin-1, Windows-1252, or UTF-8) "
+            "that can represent a document without losing characters."
+        ),
+        category="text",
+        dependencies=("core.file",),
+    ),
     "future.ai": FeatureDefinition(
         "future.ai",
         "AI Assistance",

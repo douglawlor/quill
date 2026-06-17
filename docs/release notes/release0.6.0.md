@@ -120,6 +120,8 @@ Adds everything in Writer plus Ask Quill (Alt+Q), AI grammar check and rewrite, 
 
 Turns on everything: regular expression search, macro recorder and playback, shell integration, all text and line transformation tools, Smart Insert, BRF Tools, Markdown Helpers, the Character Picker, GitHub remote file access, the Developer Console, Watch Folder automation, and all other Quillins. The full menu structure is visible.
 
+The wizard's seven starting profiles are a curated front door, not the whole catalog. **Profiles and Features...** (Preferences) exposes the full set underneath, including this release's new **Author or Student** profile — table of contents, footnotes, and citations for papers and theses — and the renamed **Casual Writer** (formerly **Writer**; nothing about the feature changed, just the name, to make room for Author or Student alongside it).
+
 ### Menus, Command Palette, Go to Anything, and the system tray all respect your profile
 
 When you choose a profile, every surface adjusts immediately. The menus show only items that belong to features you have enabled. The Command Palette and Go to Anything (Ctrl+Shift+`, G) list only commands that are active in your current profile. The system tray right-click menu shows only the tools that apply. There is no visual noise from features you have not asked for, anywhere.
@@ -678,6 +680,35 @@ This is the reliable command when you need to feed text to a tool, such as Pando
 
 Anything that does not fit a narrow target is written as a numeric HTML entity instead of being silently replaced by a question mark. Nothing is quietly lost.
 
+### Decode HTML Entities, and know your minimum encoding
+
+A community request (#256) asked for two things: turn `&eacute;`-style entities back into real characters, and then save in the smallest encoding that still holds everything, instead of always reaching for UTF-8.
+
+**Decode HTML Entities** does the first half — `&eacute;`, `&amp;`, `&#233;`, and `&#xE9;` all become `é` and `&`, while an entity QUILL does not recognize is left exactly as written rather than silently deleted.
+
+Two new commands do the second half:
+
+- **Analyze Encoding Requirements** opens a short report: your current encoding, whether the document still fits it, and — if not — the simplest encoding that would, in the order ASCII, Latin-1, Windows-1252, then UTF-8.
+- **Save Using Minimum Required Encoding...** saves a copy using exactly that encoding. A document that has only ever needed Latin-1 stays Latin-1 instead of being upgraded to UTF-8 by default. You can still choose UTF-8 explicitly any time you want it.
+
+Four small text-utility gaps closed alongside this: **Remove Email Quote Markers** (strips leading `>` and `Name>` prefixes from forwarded threads), **Strip Low ASCII Characters**, **Strip High ASCII Characters**, and **Convert to Hex Dump** (a read-only offset/hex/ASCII view of a selection's raw bytes).
+
+---
+
+## Experience 8b: Markdown profiles and a table of contents that doesn't need AI
+
+A second community request (#257) asked for Markdown_py-style extensions such as `toc` and `nl2br`. QUILL already had an AI agent that can write a table of contents (**AI -> Generate Table of Contents**), but that needs a configured AI provider, a network call, and trusts a model to read your headings correctly. This release adds the deterministic alternative.
+
+**Insert -> Table of Contents** parses your document's headings directly and builds a table of contents from them — no model, no network, and the links always match because they come from the same heading text, not a paraphrase of it. Put a `[TOC]` marker on its own line and the table of contents replaces it there; otherwise it lands right after your first heading.
+
+**Format -> Markdown** adds three more commands:
+
+- **Select Markdown Profile...** — choose Standard Markdown, GitHub-Style Markdown, Documentation, Poetry and Lyrics, Accessible Publishing, Technical Writing, PRD and Release Notes, or Custom, and QUILL tells you in plain language what that profile turns on ("Markdown profile: Documentation. 5 extensions enabled.").
+- **Preserve Single Line Breaks** — keeps every line break as a line break instead of folding it into a paragraph, for poetry, lyrics, speeches, and scripts where the line matters.
+- **Read Markdown Processing Status** — announces your current profile and what it enables, on demand.
+
+Under the hood, this is also the first feature to get its own non-AI feature tag: `core.markdown_profiles` sits in the feature catalog as a sibling of `future.ai`, not underneath it, so turning AI off — Safe Mode, or any profile that keeps `future.ai` quiet — never takes the table of contents with it. The HTML-entity and encoding commands above got the same treatment under a new `core.text_encoding` tag.
+
 ---
 
 ## Experience 9: Save as Word or RTF
@@ -705,6 +736,8 @@ You choose:
 Then you fill in the facts you know, such as author, title, year, and related fields. QUILL handles the punctuation, ordering, formatting details, and insertion at the cursor.
 
 The point is simple: screen-reader users should not be at a disadvantage because citation formatting is visual, finicky, and easy to get wrong.
+
+If you write in the new **Author or Student** profile (see Experience 1), **Format -> Markdown -> Select Citation Style...** chooses how citations default for you: Markdown footnotes for a lighter-weight paper, or Academic to favor the MLA/Chicago/APA bibliography form above.
 
 ---
 

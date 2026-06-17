@@ -1,6 +1,6 @@
-"""Text encoding tools (issue #197).
+"""Text encoding tools (issues #197 and #256).
 
-Three pure, screen-reader-friendly helpers for the encoding friction that
+Four pure, screen-reader-friendly helpers for the encoding friction that
 comes up when preparing text for the web:
 
 1. :func:`find_non_ascii` / :func:`summarize_non_ascii` — locate every
@@ -13,6 +13,15 @@ comes up when preparing text for the web:
 3. :func:`reencode_text` — encode text to a chosen charset, writing any
    character that does not fit as a numeric HTML entity so nothing is
    silently dropped.
+4. :func:`minimum_encoding` / :func:`describe_minimum_encoding` (#256) — pick
+   the simplest encoding in ``ASCII, Latin-1, Windows-1252, UTF-8`` order
+   that can represent the document losslessly, so QUILL never forces UTF-8
+   on a document that a narrower legacy encoding already covers.
+
+Entity *decoding* (the other half of #256 — turning ``&eacute;`` back into
+``é``) already shipped as ``quill.core.format_ops.decode_html_entities``
+(issue EDS-21); this module covers what that one did not: knowing which
+encoding the decoded result can still be saved in.
 
 No ``wx`` imports; pure data and stdlib only.
 """
@@ -154,3 +163,58 @@ def reencode_text(text: str, encoding: str) -> bytes:
     if encoding in ("utf-8", "utf-8-sig"):
         return text.encode(encoding)
     return text.encode(encoding, errors="xmlcharrefreplace")
+
+
+#: Priority order for :func:`minimum_encoding` (#256 PRD section 9.8): try
+#: each codec with strict error handling and stop at the first that fits.
+#: UTF-8 always succeeds for valid text, so it is the guaranteed fallback.
+MINIMUM_ENCODING_PRIORITY: tuple[str, ...] = ("ascii", "latin-1", "cp1252", "utf-8")
+
+#: Human-readable label for each codec in :data:`MINIMUM_ENCODING_PRIORITY`.
+ENCODING_LABELS: dict[str, str] = {
+    "ascii": "ASCII",
+    "latin-1": "ISO-8859-1 / Latin-1",
+    "cp1252": "Windows-1252 / MS-ANSI",
+    "utf-8": "UTF-8",
+    "utf-8-sig": "UTF-8 with byte-order mark",
+}
+
+
+def can_encode(text: str, encoding: str) -> bool:
+    """True if *text* can be losslessly encoded as *encoding*."""
+    try:
+        text.encode(encoding, errors="strict")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def minimum_encoding(text: str, priority: tuple[str, ...] = MINIMUM_ENCODING_PRIORITY) -> str:
+    """Return the simplest codec in *priority* that can represent *text* losslessly.
+
+    UTF-8 is always last in the default priority order and always succeeds
+    for valid Unicode text, so this never raises.
+    """
+    for codec in priority:
+        if can_encode(text, codec):
+            return codec
+    return "utf-8"
+
+
+def describe_minimum_encoding(text: str, current_encoding: str = "") -> str:
+    """Screen-reader-friendly summary of the minimum encoding analysis (#256)."""
+    minimum = minimum_encoding(text)
+    minimum_label = ENCODING_LABELS.get(minimum, minimum)
+    if not current_encoding:
+        return f"Minimum required encoding: {minimum_label}."
+    current_label = ENCODING_LABELS.get(current_encoding, current_encoding)
+    if can_encode(text, current_encoding):
+        return (
+            f"Current encoding: {current_label}. This document can be saved "
+            f"losslessly as {current_label}."
+        )
+    return (
+        f"Current encoding: {current_label}. This document contains characters "
+        f"that cannot be saved as {current_label}. Minimum required encoding: "
+        f"{minimum_label}."
+    )

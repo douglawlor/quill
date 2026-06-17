@@ -17,6 +17,7 @@ FEATURE_STATE_OFF = "off"
 
 PROFILE_ESSENTIAL = "essential"
 PROFILE_WRITER = "writer"
+PROFILE_AUTHOR_STUDENT = "author_or_student"
 PROFILE_DEVELOPER_POWER_TEXT = "developer_power_text"
 PROFILE_ACCESSIBILITY_PROFESSIONAL = "accessibility_professional"
 PROFILE_FULL_QUILL = "full_quill"
@@ -67,6 +68,8 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "core.recovery": FEATURE_STATE_ON,
             "core.ocr": FEATURE_STATE_QUIET,
             "core.intellisense": FEATURE_STATE_OFF,
+            "core.markdown_profiles": FEATURE_STATE_QUIET,
+            "core.text_encoding": FEATURE_STATE_QUIET,
             "future.character_inspector": FEATURE_STATE_OFF,
             "future.cleanup": FEATURE_STATE_OFF,
             "future.regex_library": FEATURE_STATE_OFF,
@@ -75,8 +78,12 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
     ),
     PROFILE_WRITER: FeatureProfile(
         id=PROFILE_WRITER,
-        name=lazy_gettext("Writer"),
-        description=lazy_gettext("Writing, formatting, and cleanup with guided power features."),
+        name=lazy_gettext("Casual Writer"),
+        description=lazy_gettext(
+            "Everyday writing, formatting, and cleanup with guided power features. "
+            "For papers, citations, and a table of contents, try the Author or "
+            "Student profile instead."
+        ),
         states={
             "core.search.regex": FEATURE_STATE_QUIET,
             "core.format": FEATURE_STATE_ON,
@@ -89,9 +96,41 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "core.shell": FEATURE_STATE_QUIET,
             "core.keymap": FEATURE_STATE_QUIET,
             "core.ocr": FEATURE_STATE_QUIET,
+            "core.markdown_profiles": FEATURE_STATE_QUIET,
+            "core.text_encoding": FEATURE_STATE_QUIET,
             "future.character_inspector": FEATURE_STATE_QUIET,
             "future.cleanup": FEATURE_STATE_QUIET,
             "future.regex_library": FEATURE_STATE_QUIET,
+            "future.ai": FEATURE_STATE_QUIET,
+        },
+    ),
+    PROFILE_AUTHOR_STUDENT: FeatureProfile(
+        id=PROFILE_AUTHOR_STUDENT,
+        name=lazy_gettext("Author or Student"),
+        description=lazy_gettext(
+            "Long-form writing with a table of contents, footnotes, and "
+            "MLA / Chicago / APA citations — for papers, theses, and class "
+            "assignments. Choose your citation style from Preferences > "
+            "Profiles and Features."
+        ),
+        states={
+            "core.search.regex": FEATURE_STATE_QUIET,
+            "core.format": FEATURE_STATE_ON,
+            "core.macros": FEATURE_STATE_QUIET,
+            "core.links": FEATURE_STATE_ON,
+            "core.read_aloud": FEATURE_STATE_ON,
+            "core.voice_commands": FEATURE_STATE_ON,
+            "core.watch_folder": FEATURE_STATE_QUIET,
+            "core.analysis": FEATURE_STATE_ON,
+            "core.shell": FEATURE_STATE_QUIET,
+            "core.keymap": FEATURE_STATE_QUIET,
+            "core.ocr": FEATURE_STATE_QUIET,
+            "core.intellisense": FEATURE_STATE_QUIET,
+            "core.markdown_profiles": FEATURE_STATE_ON,
+            "core.text_encoding": FEATURE_STATE_ON,
+            "future.character_inspector": FEATURE_STATE_QUIET,
+            "future.cleanup": FEATURE_STATE_QUIET,
+            "future.regex_library": FEATURE_STATE_OFF,
             "future.ai": FEATURE_STATE_QUIET,
         },
     ),
