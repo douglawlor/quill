@@ -219,3 +219,25 @@ def test_run_setup_wizard_uses_show_modal_fn_when_provided(monkeypatch) -> None:
     assert completed is True
     assert aborted is False
     assert settings.setup_wizard_completed is True
+
+
+def test_welcome_page_preview_text_is_a_real_str() -> None:
+    # #261: wxPython's strict TextCtrl overload checker on Windows rejects a
+    # _LazyString from `lazy_gettext(...)` when passed directly as `value=`.
+    # The exception was swallowed inside SetupWizardDialog.__init__ ->
+    # _WelcomePage.__init__ and surfaced as 'Startup step first-run setup
+    # wizard could not run' even though the user's profile data was never
+    # applied. Pin `value=str(self._PREVIEW)` so the lazy proxy is coerced
+    # at the use site while keeping the module-level constant wrapped with
+    # lazy_gettext for Babel extraction.
+    import re
+
+    src = _wizard_pages_source()
+    match = re.search(
+        r"preview\s*=\s*wx\.TextCtrl\([\s\S]*?\)",
+        src,
+    )
+    assert match is not None, "_WelcomePage preview TextCtrl not found"
+    assert "value=str(self._PREVIEW)" in match.group(0), (
+        "_WelcomePage preview TextCtrl must coerce lazy_gettext proxy to str"
+    )

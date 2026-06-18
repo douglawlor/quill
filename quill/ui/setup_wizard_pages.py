@@ -107,7 +107,7 @@ class _WelcomePage(_WizardPage):
 
         preview = wx.TextCtrl(
             self,
-            value=self._PREVIEW,
+            value=str(self._PREVIEW),
             style=_PREVIEW_STYLE,
             name="wizard.welcome_preview",
         )
