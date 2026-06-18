@@ -106,3 +106,23 @@ def test_close_tab_does_not_hit_undeclared_slot() -> None:
     body = activate_block.group(0)
     assert "_language_profile_pinned" in body
     assert "_language_profile = get_profile_for_path" in body
+
+
+def test_about_dialog_open_handler_calls_show_about_quill() -> None:
+    # #264: the AssertionError dialog the user saw was from
+    # show_about_quill_native asserting isinstance(about_info, AboutInfo).
+    # The handler wired to the Help ▸ About Quill menu must be show_about_quill
+    # — the shim that gathers AboutInfo correctly — not a stale pre-#260 path.
+    menu_src = (
+        Path(__file__).resolve().parents[3] / "quill" / "ui" / "main_frame_menu.py"
+    ).read_text(encoding="utf-8")
+    assert "_id_about_quill" in menu_src
+    assert "show_about_quill" in menu_src
+    # The About menu wiring must route through show_about_quill.
+    assert (
+        re.search(
+            r"self\.frame\.Bind\(\s*wx\.EVT_MENU,\s*lambda _e:\s*self\.show_about_quill\(\),\s*id=self\._id_about_quill",
+            menu_src,
+        )
+        is not None
+    ), "About menu not bound to show_about_quill"
