@@ -1,9 +1,12 @@
 """Braille Mode Phase 1 commands (#234 / BR-011).
 
-A mixin on :class:`~quill.ui.main_frame.MainFrame` holding the Braille menu
-command handlers: status announcements, page navigation, and page-break tools.
-Kept in its own module so the handlers (and their command registrations) do not
-grow ``main_frame.py`` past its GATE-11 budget.
+A mixin on :class:`~quill.ui.main_frame.MainFrame` holding the Phase 1
+Braille menu command handlers: status announcements, page navigation,
+and page-break tools. Kept in its own module so the handlers (and their
+command registrations) do not grow ``main_frame.py`` past its GATE-11
+budget. Phase 2 (print-page detection, print-page navigation, and
+running-head commands) lives in :mod:`main_frame_braille_phase2` so this
+file stays under the GATE-11 module-size budget.
 
 All handlers degrade gracefully when the active document is not a braille file
 (``_active_brf_resolver`` returns None) or when there is no editor, so they are
@@ -80,6 +83,12 @@ class BrailleCommandsMixin:
             self._menu_label("&Previous Braille Page", "braille.previous_page"),
         )
         menu.AppendSubMenu(navigation, "&Navigation")
+        # Stash the inner submenus on ``self`` so mixins that extend the
+        # menu (notably :class:`BraillePhase2CommandsMixin` for the
+        # print-page and running-head items) can append to them after
+        # this base builder returns.
+        self._braille_status_menu = status
+        self._braille_navigation_menu = navigation
 
         page_tools = wx.Menu()
         page_tools.Append(
@@ -425,26 +434,9 @@ class BrailleCommandsMixin:
         if resolved is None:
             self._announce_not_braille()
             return
-        _resolver, position = resolved
-        from quill.core.braille_status import (
-            ConfidenceLevel,
-            PrintPageInfo,
-            ProofingStatus,
-            detailed_status,
-        )
+        resolver, position = resolved
 
-        self._say(
-            detailed_status(
-                position,
-                position.page_count,
-                PrintPageInfo(),
-                None,
-                None,
-                ProofingStatus(),
-                ConfidenceLevel(),
-                self.settings,
-            )
-        )
+        self._say(self._compose_detailed_status(resolver, position))
 
     def read_current_line_and_cell(self) -> None:
         resolved = self._braille_position()
@@ -461,14 +453,6 @@ class BrailleCommandsMixin:
             return
         _resolver, p = resolved
         self._say(f"Braille page {p.page} of {p.page_count}.")
-
-    def read_current_print_page(self) -> None:
-        resolved = self._braille_position()
-        if resolved is None:
-            self._announce_not_braille()
-            return
-        # Print-page detection lands in Phase 2 (BR-013); report unknown.
-        self._say("Print page unknown.")
 
     def read_progress_summary(self) -> None:
         resolved = self._braille_position()

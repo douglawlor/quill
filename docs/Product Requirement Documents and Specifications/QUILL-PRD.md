@@ -4912,9 +4912,10 @@ The tab's `source_label` is set to `GitHub: owner/repo (branch)` and shown in th
 ## §26. Braille Mode (BRF/BRL/PEF/UEB)
 
 Braille Mode makes QUILL a first-class proofreading environment for formatted
-braille text files. The full plan lives in `docs/braille.md`; this section
-captures the shipped requirements. The detailed engine design and the liblouis
-deployment/packaging plan are in `docs/braille.md`.
+braille text files. The full plan lives in `docs/planning/planning.md` under
+"Feature: Braille Mode"; this section captures the shipped requirements. The
+detailed engine design and the liblouis deployment/packaging plan are also in
+that planning section.
 
 ### Requirements
 
@@ -4932,12 +4933,43 @@ deployment/packaging plan are in `docs/braille.md`.
 - **Status bar (BR-010).** While a braille document is active the status bar
   carries a braille cell — `BRF Pg p/P | Ln l/L | Cell c/C | Print n` — rebuilt
   from a cached `BraillePositionResolver` and refreshed on caret movement. The
-  print-page segment reads `Print ?` until print-page detection (BR-013) lands.
+  print-page segment is filled in by the Phase 2 print-page detector
+  (BR-013) when one is available, or reads `Print ?` when the detector
+  cannot locate a print-page anchor for the caret page.
 - **Commands and menu (BR-011).** A top-level **Braille** menu groups Status,
   Navigation, and Page Tools commands. Default bindings are intentionally unset
   so nothing collides with screen-reader or editor shortcuts; commands are
   reachable from the menu, the Command Palette, and any user-assigned key. Every
   command degrades to a spoken "not a braille document" on non-braille files.
+- **Print-page and running-head detection (BR-013).** `quill/core/brf_page_detection.py`
+  is a pure module that walks the page map once and emits a confidence-labelled
+  print-page indicator per detected boundary (`high`, `medium`, or `low`).
+  * High confidence: a print-page-change separator line
+    (`---------#ab` / `---------#12a` / `---------#1`) is the canonical anchor;
+    a right-margin number on line 1 that matches the previous detected page
+    and carries a continuation letter is also high. * Medium: a right-aligned
+    number on line 1 with no other anchor; a consistent sequence across
+    several pages. * Low: an ambiguous right-margin number; a short page with
+    multiple candidates. The detector also produces a `BraillePageMarker` per
+    page (the right-margin number on the last line) and a `RunningHead` per
+    page (the leading text of line 1).
+- **Detailed status and print-page navigation (BR-014).** Six new commands
+  wire the detector into the editor surface:
+  * `Go to Print Page…` opens a `wx.TextEntryDialog` for a print-page number,
+    snaps the caret to the start of the braille page that hosts it, and
+    announces the new braille page and print page.
+  * `Next Print Page Change` / `Previous Print Page Change` step the caret
+    to the next / previous print-page boundary in the detector output.
+  * `Announce Running Head` reads the running head of the caret page aloud
+    (or "No running head detected for this page." when the line-1 text is
+    empty or absent).
+  * `Include Running Head in Status` / `Omit Running Head from Status` set
+    the `braille_include_running_head` setting.
+  `read_detailed_braille_status` now composes the full example string from
+  the spec — print page, continuation letter, running head, proofing state,
+  and detection confidence — pulling live data from the new detector.
+  `read_current_print_page` no longer hard-codes "Print page unknown"; it
+  announces the most recent detected print page at or before the caret.
 - **Translation, optional and out-of-process (BR-020/021/022).** Forward and
   back UEB translation require the optional **Braille Pack** (liblouis + UEB
   tables). 
@@ -4957,10 +4989,10 @@ deployment/packaging plan are in `docs/braille.md`.
 
 ### Non-goals (this phase)
 
-Print-page detection, the proofing/sidecar workflow, and the bundled translation
-pack are tracked separately (BR-013 and later). The translation install path is a
-no-op stub until the signed, audited download lands; see the deployment plan in
-`docs/braille.md`.
+The proofing/sidecar workflow (Phase 3) and the bundled translation
+pack install path remain tracked separately (BR-015 and later). The translation
+install path is a no-op stub until the signed, audited download lands; see the
+deployment plan in `docs/planning/planning.md` (Feature: Braille Mode).
 
 ## §27. Markdown Profiles and Table of Contents (#257)
 

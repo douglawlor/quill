@@ -482,6 +482,7 @@ from quill.ui.html_paste_cleaner import analyze_paste
 from quill.ui.main_frame_abbreviations import AbbreviationsMixin
 from quill.ui.main_frame_ai_actions import AiActionsMixin
 from quill.ui.main_frame_braille import BrailleCommandsMixin
+from quill.ui.main_frame_braille_phase2 import BraillePhase2CommandsMixin
 from quill.ui.main_frame_browse import BrowseModeMixin
 from quill.ui.main_frame_copy_tray import CopyTrayMixin
 from quill.ui.main_frame_devtools import DevToolsMixin
@@ -778,6 +779,7 @@ class _IntellisensePopup:
 class MainFrame(
     AbbreviationsMixin,
     AiActionsMixin,
+    BraillePhase2CommandsMixin,
     BrailleCommandsMixin,
     HygieneMixin,
     ImageCaptureMixin,

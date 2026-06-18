@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — Braille Mode Phase 2: Print-Page Detection (2026-06-18)
+
+### Braille Mode
+
+- **Print-page and running-head detection (BR-013).** `quill/core/brf_page_detection.py` walks the BRF page map once and emits confidence-labelled indicators: high (separator line with anchor, or right-margin continuation), medium (right-aligned number), low (ambiguous). The detector also produces a `BraillePageMarker` per page and a `RunningHead` per page. When the detector has no anchor for the caret page, the status bar's print segment reads `Print ?` so the fallback is visible, not silent. Pure module — imports nothing from `wx` — covered by 12 unit tests including a real-world corpus test against the 5-page sample at `tests/corpus/braille/one_crazy_night.brf`.
+- **Detailed status and print-page navigation (BR-014).** Six new Braille menu commands: Go to Print Page, Next/Previous Print Page Change, Announce Running Head, Include/Omit Running Head in Status. `Read Detailed Braille Status` now composes the full example string from the spec (print page, continuation letter, running head, proofing state, detection confidence) and `Read Current Print Page` no longer hard-codes "Print page unknown". Default key bindings intentionally left unset (matching the Phase 1 convention). Phase 2 is split into its own `main_frame_braille_phase2.py` mixin to keep `main_frame_braille.py` under the GATE-11 module-size budget.
+- **Planning consolidation.** The 6,700-line `docs/planning/braille.md` was rolled into `docs/planning/planning.md` under "Feature: Braille Mode" so the live roadmap stays the single source of truth; the standalone file and its `.html`/`.epub` siblings were deleted; structure tests now assert it cannot reappear.
+
 ## 0.6.0 — Insert Automation, Quillin Platform, Braille Mode, AI Writing Toolkit (2026-06-17)
 
 ### Text hygiene

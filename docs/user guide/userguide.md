@@ -2069,8 +2069,8 @@ QUILL opens and edits formatted braille text files — `.brf`, `.brl`, `.pef`, a
 
 **The Braille menu.** Braille commands live under **Tools > Braille**. Bindings are intentionally left unset so nothing collides with your screen reader or existing editor keys; you can assign your own in the keyboard customizer, or run them from the Command Palette.
 
-- **Status** — Read Braille Status (respects your status verbosity), Read Detailed Braille Status, Read Current Line and Cell, Read Current Braille Page, Read Current Print Page, and Read Progress Summary (how far through the document you are).
-- **Navigation** — Go to Braille Page… (type a page number), Next Braille Page, and Previous Braille Page. Stepping past the first or last page tells you there is no more.
+- **Status** — Read Braille Status (respects your status verbosity), Read Detailed Braille Status (includes print page, continuation letter, running head, proofing state, and detection confidence), Read Current Line and Cell, Read Current Braille Page, Read Current Print Page, Read Progress Summary (how far through the document you are), Announce Running Head, Include Running Head in Status, and Omit Running Head from Status.
+- **Navigation** — Go to Braille Page… (type a page number), Next Braille Page, Previous Braille Page, Go to Print Page… (type a print-page number from the detector's output), Next Print Page Change (jumps to the next detected print-page boundary), and Previous Print Page Change. Stepping past the first or last boundary tells you there is no more.
 - **Page Tools** — Insert Braille Page Break (a form feed) and Remove Braille Page Break at the cursor, plus Recalculate Page Map (rebuild the page map after edits) and a placeholder for Normalize Line Endings.
 
 Every status and navigation command is safe to run on a non-braille document — it simply tells you "This is not a braille document" rather than doing anything.
