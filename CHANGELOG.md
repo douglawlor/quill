@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.6.1 — Braille Mode Phase 2: Print-Page Detection (2026-06-18)
+## 0.7.0 — Meet You Where You Are, with Braille Mode Phase 2 (2026-06-18)
 
-### Braille Mode
+QUILL 0.7.0 folds the 0.6.0 work and the 0.6.1 Braille Mode Phase 2 work into a single release. We never publicly shipped 0.6.0; the 0.6.1 Braille Mode work (BR-013 print-page detection and BR-014 detailed status and print-page navigation) is included here alongside the 0.6.0 narrative release notes. The GitHub Pages update feed remains pointed at 0.5.0 so testers checking for updates do not see a phantom bump.
+
+### Braille Mode (originally 0.6.1)
 
 - **Print-page and running-head detection (BR-013).** `quill/core/brf_page_detection.py` walks the BRF page map once and emits confidence-labelled indicators: high (separator line with anchor, or right-margin continuation), medium (right-aligned number), low (ambiguous). The detector also produces a `BraillePageMarker` per page and a `RunningHead` per page. When the detector has no anchor for the caret page, the status bar's print segment reads `Print ?` so the fallback is visible, not silent. Pure module — imports nothing from `wx` — covered by 12 unit tests including a real-world corpus test against the 5-page sample at `tests/corpus/braille/one_crazy_night.brf`.
 - **Detailed status and print-page navigation (BR-014).** Six new Braille menu commands: Go to Print Page, Next/Previous Print Page Change, Announce Running Head, Include/Omit Running Head in Status. `Read Detailed Braille Status` now composes the full example string from the spec (print page, continuation letter, running head, proofing state, detection confidence) and `Read Current Print Page` no longer hard-codes "Print page unknown". Default key bindings intentionally left unset (matching the Phase 1 convention). Phase 2 is split into its own `main_frame_braille_phase2.py` mixin to keep `main_frame_braille.py` under the GATE-11 module-size budget.
