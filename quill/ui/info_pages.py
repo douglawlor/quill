@@ -6,56 +6,122 @@ switch between Browse mode and Forms/Application mode.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from typing import Any
-
-
-def _md_to_plain(text: str) -> str:
-    """Convert the subset of Markdown used in QUILL info pages to plain text."""
-    lines: list[str] = []
-    for line in text.splitlines():
-        m = re.match(r"^(#{1,6})\s+(.*)", line)
-        if m:
-            heading = m.group(2).strip()
-            underline = ("=" if len(m.group(1)) == 1 else "-") * min(len(heading), 60)
-            lines.append(heading)
-            lines.append(underline)
-            continue
-        lines.append(line)
-    result = "\n".join(lines)
-    result = re.sub(r"\*\*(.+?)\*\*", r"\1", result)
-    result = re.sub(r"`(.+?)`", r"\1", result)
-    result = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1 (\2)", result)
-    return result.strip()
 
 
 def show_about_quill_native(
     parent: Any,
     wx: Any,
-    markdown_text: str,
+    about_info: Any,
     open_notices_fn: Callable[[], None],
     show_modal_dialog: Callable[[Any, str], int],
 ) -> None:
-    """Modal About Quill dialog backed by a read-only TextCtrl."""
+    """Modal About Quill dialog backed by a ``wx.Notebook``.
+
+    Three tabs surface the version, dependencies, and links as navigable
+    controls so JAWS in Forms mode reads them as distinct elements rather
+    than a flattened blob (#260).
+    """
+    from quill.core.about_info import AboutInfo
     from quill.ui.dialog_contract import apply_modal_ids
 
-    text = _md_to_plain(markdown_text)
+    assert isinstance(about_info, AboutInfo)
     dialog = wx.Dialog(
         parent,
         title="About Quill",
         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
     )
-    dialog.SetSize((660, 580))
+    dialog.SetSize((760, 580))
     sizer = wx.BoxSizer(wx.VERTICAL)
-    body = wx.TextCtrl(
-        dialog,
-        value=text,
-        style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_AUTO_URL | wx.TE_RICH2,
-        name="about_body",
+
+    notebook = wx.Notebook(dialog, name="about_notebook")
+
+    # --- Overview tab ---
+    overview = wx.Panel(notebook)
+    ov_sizer = wx.BoxSizer(wx.VERTICAL)
+    overview_lines = [
+        about_info.headline(),
+        "",
+        about_info.tagline,
+        "",
+        about_info.glow_summary,
+        "",
+        *about_info.overview_paragraphs,
+    ]
+    overview_text = wx.TextCtrl(
+        overview,
+        value="\n".join(overview_lines),
+        style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
+        name="about_overview",
     )
-    body.SetMinSize((-1, 300))
-    sizer.Add(body, 1, wx.EXPAND | wx.ALL, 12)
+    overview_text.SetMinSize((-1, 320))
+    ov_sizer.Add(overview_text, 1, wx.EXPAND | wx.ALL, 8)
+    overview.SetSizer(ov_sizer)
+    notebook.AddPage(overview, "Overview")
+
+    # --- Dependencies tab ---
+    deps_panel = wx.Panel(notebook)
+    deps_sizer = wx.BoxSizer(wx.VERTICAL)
+    if about_info.dependencies_available:
+        deps_list = _build_dependency_list(deps_panel, wx, about_info.dependencies)
+        deps_sizer.Add(deps_list, 1, wx.EXPAND | wx.ALL, 8)
+    else:
+        deps_msg = wx.StaticText(
+            deps_panel,
+            label="Dependency metadata is not available in this build.",
+            name="about_dependencies_missing",
+        )
+        deps_sizer.Add(deps_msg, 1, wx.EXPAND | wx.ALL, 12)
+    if about_info.bundled_components:
+        bundled_label = wx.StaticText(
+            deps_panel,
+            label="Bundled components and data sources",
+            name="about_bundled_label",
+        )
+        bundled_label.SetFont(bundled_label.GetFont().Bold())
+        deps_sizer.Add(bundled_label, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+        bundled_list = _build_dependency_list(deps_panel, wx, about_info.bundled_components)
+        deps_sizer.Add(bundled_list, 1, wx.EXPAND | wx.ALL, 8)
+    deps_panel.SetSizer(deps_sizer)
+    notebook.AddPage(deps_panel, "Dependencies")
+
+    # --- Links tab ---
+    links_panel = wx.Panel(notebook)
+    links_sizer = wx.BoxSizer(wx.VERTICAL)
+    org_label = wx.StaticText(links_panel, label="Organizations", name="about_orgs_label")
+    org_label.SetFont(org_label.GetFont().Bold())
+    links_sizer.Add(org_label, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 8)
+    org_list = _build_link_list(links_panel, wx, about_info.org_links)
+    links_sizer.Add(org_list, 1, wx.EXPAND | wx.ALL, 8)
+
+    contrib_label = wx.StaticText(links_panel, label="Project on GitHub", name="about_github_label")
+    contrib_label.SetFont(contrib_label.GetFont().Bold())
+    links_sizer.Add(contrib_label, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+    contrib_list = _build_link_list(links_panel, wx, about_info.github_links)
+    links_sizer.Add(contrib_list, 1, wx.EXPAND | wx.ALL, 8)
+
+    contrib_people_label = wx.StaticText(
+        links_panel, label="Contributors", name="about_contributors_label"
+    )
+    contrib_people_label.SetFont(contrib_people_label.GetFont().Bold())
+    links_sizer.Add(contrib_people_label, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
+    contributors_list = _build_link_list(links_panel, wx, about_info.contributors)
+    links_sizer.Add(contributors_list, 1, wx.EXPAND | wx.ALL, 8)
+
+    link_buttons = wx.BoxSizer(wx.HORIZONTAL)
+    visit_btn = wx.Button(links_panel, label="Visit", name="about_link_visit")
+    copy_btn = wx.Button(links_panel, label="Copy", name="about_link_copy")
+    link_buttons.Add(visit_btn, 0, wx.RIGHT, 8)
+    link_buttons.Add(copy_btn, 0)
+    links_sizer.Add(link_buttons, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
+
+    _bind_link_buttons(wx, visit_btn, copy_btn, org_list, contrib_list, contributors_list)
+    links_panel.SetSizer(links_sizer)
+    notebook.AddPage(links_panel, "Links")
+
+    sizer.Add(notebook, 1, wx.EXPAND | wx.ALL, 8)
+
     btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
     btn_sizer.AddStretchSpacer()
     notices_btn = wx.Button(dialog, wx.ID_HELP, label="Open Third-Party Notices")
@@ -66,15 +132,94 @@ def show_about_quill_native(
     btn_sizer.Add(notices_btn, 0, wx.RIGHT, 8)
     btn_sizer.Add(close_btn, 0)
     sizer.Add(btn_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
+
     dialog.SetSizer(sizer)
     apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
-    wx.CallAfter(body.SetFocus)
+    wx.CallAfter(notebook.SetFocus)
     try:
         result = show_modal_dialog(dialog, "About Quill")
     finally:
         dialog.Destroy()
     if result == wx.ID_HELP:
         open_notices_fn()
+
+
+def _build_dependency_list(parent: Any, wx: Any, rows: Any) -> Any:
+    list_ctrl = wx.ListCtrl(
+        parent,
+        style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES | wx.LC_HRULES,
+        name="about_dependency_list",
+    )
+    list_ctrl.AppendColumn("Dependency", width=200)
+    list_ctrl.AppendColumn("Version", width=140)
+    list_ctrl.AppendColumn("License", width=160)
+    list_ctrl.AppendColumn("Homepage", width=220)
+    for i, row in enumerate(rows):
+        list_ctrl.InsertItem(i, row.name)
+        list_ctrl.SetItem(i, 1, row.version)
+        list_ctrl.SetItem(i, 2, row.license)
+        list_ctrl.SetItem(i, 3, row.homepage)
+    return list_ctrl
+
+
+def _build_link_list(parent: Any, wx: Any, links: Any) -> Any:
+    list_ctrl = wx.ListCtrl(
+        parent,
+        style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_HRULES,
+        name="about_link_list",
+    )
+    list_ctrl.AppendColumn("Name", width=260)
+    list_ctrl.AppendColumn("URL", width=420)
+    for i, link in enumerate(links):
+        list_ctrl.InsertItem(i, link.name)
+        list_ctrl.SetItem(i, 1, link.url)
+    return list_ctrl
+
+
+def _bind_link_buttons(
+    wx: Any,
+    visit_btn: Any,
+    copy_btn: Any,
+    *lists: Any,
+) -> None:
+    """Bind Visit (open URL in browser) and Copy (URL to clipboard).
+
+    Enter on a row also activates Visit so keyboard users get a single
+    press path. The focused list at the time of the click determines
+    which URL is acted on; clicking Visit with no focused list is a
+    no-op rather than a confusing error.
+    """
+
+    def _selected_url() -> str:
+        for lst in lists:
+            idx = lst.GetFirstSelected()
+            if idx >= 0:
+                return lst.GetItem(idx, 1).GetText()
+        return ""
+
+    def _on_visit(_event: Any) -> None:
+        url = _selected_url()
+        if not url:
+            return
+        import webbrowser
+
+        webbrowser.open(url)
+
+    def _on_copy(_event: Any) -> None:
+        url = _selected_url()
+        if not url:
+            return
+        if not wx.TheClipboard.IsOpened():
+            wx.TheClipboard.Open()
+        try:
+            wx.TheClipboard.SetData(wx.TextDataObject(url))
+        finally:
+            wx.TheClipboard.Close()
+
+    visit_btn.Bind(wx.EVT_BUTTON, _on_visit)
+    copy_btn.Bind(wx.EVT_BUTTON, _on_copy)
+    for lst in lists:
+        lst.Bind(wx.EVT_LIST_ITEM_ACTIVATED, _on_visit)
 
 
 def show_startup_wizard_page_native(

@@ -97,10 +97,6 @@ from quill.core.bw_speech import (
 )
 from quill.core.commands import CommandRegistry
 from quill.core.compliance import (
-    build_dependency_notices,
-    bundled_component_notices,
-    render_bundled_component_table,
-    render_dependency_notice_table,
     render_full_third_party_notices,
 )
 from quill.core.context_menu import (
@@ -11500,122 +11496,21 @@ class MainFrame(
         self._refresh_title()
         self._set_status("Opened third-party notices")
 
-    # Org links shown in the About dialog.
-    _ABOUT_LINKS: tuple[tuple[str, str], ...] = (
-        ("Community Access", "https://community-access.org"),
-        ("Blind Information Technology Solutions (BITS)", "https://bits-acb.org"),
-        ("Techopolis", "https://techopolis.app"),
-        ("GLOW (Community Access)", "https://letitglow.app"),
-        ("AccessibleApps (Christopher Toth)", "https://github.com/accessibleapps"),
-    )
-
-    # Contributor / project profiles on GitHub.
-    _ABOUT_GITHUB_LINKS: tuple[tuple[str, str], ...] = (
-        ("QUILL on GitHub", "https://github.com/Community-Access/quill"),
-        ("Community Access on GitHub", "https://github.com/Community-Access"),
-        ("Taylor Arndt on GitHub", "https://github.com/taylorarndt"),
-        ("Michael Doise on GitHub", "https://github.com/mikedoise"),
-        ("Becky K on GitHub", "https://github.com/BeckyK102125"),
-        ("Doug Langley on GitHub", "https://github.com/douglangley"),
-        ("Kelly Ford on GitHub", "https://github.com/kellylford"),
-        (
-            "Kelly Ford: Image Description Toolkit",
-            "https://github.com/kellylford/Image-Description-Toolkit",
-        ),
-        (
-            "Kelly Ford: QuickMail (accessible IMAP client)",
-            "https://github.com/kellylford/QuickMail",
-        ),
-        ("Kelly Ford: RSSQuick (accessible RSS reader)", "https://github.com/kellylford/rssquick"),
-        (
-            "Kelly Ford: ChatViewer (Copilot Chat viewer)",
-            "https://github.com/kellylford/ChatViewer",
-        ),
-        (
-            "wx-accessible-webview on GitHub",
-            "https://github.com/Community-Access/wx-accessible-webview",
-        ),
-    )
-
     def _project_root_path(self) -> Path:
         return Path(__file__).resolve().parent.parent.parent
 
     def _pyproject_path(self) -> Path:
         return self._project_root_path() / "pyproject.toml"
 
-    def _about_markdown(self) -> str:
-        def md_links(links: tuple[tuple[str, str], ...]) -> str:
-            return "\n".join(f"- [{name}]({url})" for name, url in links)
-
-        from quill.core.contributors import contributor_bullet_list
-
-        pyproject_path = self._pyproject_path()
-        bundled_rows = bundled_component_notices()
-        if pyproject_path.exists():
-            dependency_rows = build_dependency_notices(pyproject_path)
-            dependency_table = render_dependency_notice_table(dependency_rows)
-        else:
-            dependency_table = "_Dependency metadata is not available in this build._"
-        bundled_table = render_bundled_component_table(bundled_rows)
-        try:
-            from quill.core.glow import glow_engine_version_summary
-
-            glow_summary = glow_engine_version_summary()
-        except Exception:
-            glow_summary = "GLOW engine: unknown"
-        return (
-            f"# Quill {__version__} Beta\n\n"
-            f"Quill {__version__} Beta is a screen-reader-first writing and document environment "
-            "for Windows and Mac from Blind Information Technology Solutions (BITS) "
-            "and Community Access.\n\n"
-            "With sincere thanks to our contributors and beta testers: "
-            "Techopolis, Taylor Arndt, Michael Doise, Kayla Bentas, "
-            "Shane Popplestone, Doug Langley, Becky K, and Kelly Ford.\n\n"
-            "**Special thanks to Kelly Ford** ([@kellylford](https://github.com/kellylford)) "
-            "for contributing the Vision Prompt Library in QUILL 0.6.0 — 12 IDT-evaluated "
-            "image description styles, the retry-in-dialog workflow, and the Manage Image Prompts "
-            "dialog. Kelly is also the creator of the "
-            "[Image Description Toolkit](https://github.com/kellylford/Image-Description-Toolkit), "
-            "an independent project for accessible image interaction that everyone in the "
-            "accessibility space should know about. His other screen-reader-first tools "
-            "include [QuickMail](https://github.com/kellylford/QuickMail), "
-            "[RSSQuick](https://github.com/kellylford/rssquick), and "
-            "[ChatViewer](https://github.com/kellylford/ChatViewer).\n\n"
-            "Special thanks to **AccessibleApps** (Christopher Toth, "
-            "https://github.com/accessibleapps) for the open-source accessibility libraries "
-            "that QUILL builds on: `app_updater`, `smart_list`, `accessible_output2`, "
-            "`html_to_text`, `app_elements`, `platform_utils`, and `keyboard_handler`.\n\n"
-            f"{glow_summary}\n\n"
-            "## BITS Whisperer\n\n"
-            "BITS Whisperer brings speech and dictation integration to Quill, arriving in "
-            "phases: a speech-model manager with machine-aware recommendations, a provider "
-            "center with local-first and cloud planning, readiness checks, and a download "
-            "queue. Bundled Read Aloud voices (DECtalk and eSpeak NG) play immediately with "
-            "no downloads; Piper and Kokoro models install through the Speech Center.\n\n"
-            "## Links\n\n" + md_links(self._ABOUT_LINKS) + "\n\n"
-            "## Contributors\n\n"
-            "Everyone who has contributed to Quill on GitHub:\n\n"
-            + contributor_bullet_list()
-            + "\n\n"
-            "## Project on GitHub\n\n" + md_links(self._ABOUT_GITHUB_LINKS) + "\n\n"
-            "## Dependencies and attributions\n\n"
-            "The tables below are generated from declared project metadata and "
-            "installed package metadata. "
-            "They include dependency versions, licenses, and upstream links.\n\n"
-            "### Declared dependencies\n\n" + dependency_table + "\n\n"
-            "### Bundled components and data sources\n\n" + bundled_table + "\n\n"
-            "For full license texts and expanded notices, open "
-            "**Help -> Open Third-Party Notices**.\n\n"
-            "Copyright (c) Blind Information Technology Solutions (BITS) and Community Access"
-        )
-
     def show_about_quill(self) -> None:
+        from quill.core.about_info import gather_about_info
         from quill.ui.info_pages import show_about_quill_native
 
+        about_info = gather_about_info()
         show_about_quill_native(
             self.frame,
             self._wx,
-            self._about_markdown(),
+            about_info,
             self.open_third_party_notices,
             self._show_modal_dialog,
         )
