@@ -71,9 +71,14 @@ def test_docs_are_in_their_expected_homes() -> None:
     docs = _REPO_ROOT / "docs"
     # Quillin scripting contract lives under docs/quillins/ alongside generated epub/html.
     assert (docs / "quillins" / "quillins.md").is_file(), "missing docs/quillins/quillins.md"
-    # Planning roadmap and braille docs live under docs/planning/
+    # Planning roadmap lives under docs/planning/. The braille spec used to be a
+    # standalone file here; it was rolled into planning.md on 2026-06-18, so
+    # braille.md must not reappear.
     assert (docs / "planning" / "planning.md").is_file(), "missing docs/planning/planning.md"
-    assert (docs / "planning" / "braille.md").is_file(), "missing docs/planning/braille.md"
+    assert not (docs / "planning" / "braille.md").is_file(), (
+        "docs/planning/braille.md was rolled into planning.md; "
+        "restore the planning section instead."
+    )
     # User guide lives under docs/user guide/
     assert (docs / "user guide" / "userguide.md").is_file(), "missing docs/user guide/userguide.md"
     # PRD lives under docs/Product Requirement Documents and Specifications/

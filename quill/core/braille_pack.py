@@ -128,7 +128,10 @@ def install_braille_pack(progress_cb: Callable[[str], None] | None = None) -> bo
     installer in a later PR MUST register its download site in the network-egress
     audit (``_REVIEWED_EGRESS``) before adding any network call.
     """
-    message = "Download the QUILL Braille Pack from docs/braille.md (Phase 5, optional)."
+    message = (
+        "Download the QUILL Braille Pack — see docs/planning/planning.md, "
+        "Feature: Braille Mode (Phase 5, optional)."
+    )
     if progress_cb is not None:
         progress_cb(message)
     return False

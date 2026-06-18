@@ -13,7 +13,7 @@ testable. The shape of :class:`BraillePosition` matches
 :mod:`quill.core.braille_position`; the other dataclasses are defined
 here to keep the public surface self-contained.
 
-Example outputs (per ``docs/braille.md``):
+Example outputs (per ``docs/planning/planning.md`` under "Feature: Braille Mode"):
 
 * ``brief_status``:
   ``"Page 12. Line 14. Cell 31."``
