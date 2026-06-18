@@ -469,17 +469,39 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         keywords=("quill key", "timeout", "prefix"),
     ),
     SettingSpec(
-        "browse_mode_followon_timeout_seconds",
-        "Browse mode follow-on key timeout (seconds)",
+        "browse_mode_followon_timeout",
+        "Browse mode follow-on timeout",
         "navigation",
-        "float",
+        "choice",
         (
             "How long browse mode stays active between follow-on keypresses "
-            "after entering with N. 0 means no timeout."
+            "after entering with N. Pick a preset or choose Custom to set "
+            "your own value in milliseconds."
         ),
-        minimum=0.0,
-        maximum=60.0,
-        keywords=("quill key", "browse", "timeout"),
+        choices=(
+            ("instant", "Instant (0 ms)"),
+            ("fast", "Fast (1500 ms)"),
+            ("normal", "Normal (4000 ms)"),
+            ("slow", "Slow (8000 ms)"),
+            ("custom", "Custom..."),
+            ("unlimited", "Unlimited (no timeout)"),
+        ),
+        feature_id="core.navigate",
+        keywords=("quill key", "browse", "timeout", "follow-on"),
+    ),
+    SettingSpec(
+        "browse_mode_followon_custom_ms",
+        "Browse mode follow-on timeout — custom value (milliseconds)",
+        "navigation",
+        "int",
+        (
+            "Used when 'Browse mode follow-on timeout' is set to Custom. "
+            "0 means no timeout."
+        ),
+        minimum=0,
+        maximum=60000,
+        feature_id="core.navigate",
+        keywords=("quill key", "browse", "timeout", "custom", "milliseconds"),
     ),
     # --- Accessibility -----------------------------------------------------
     # --- External file-change watch and safe reload (FEAT-19) --------------

@@ -10077,6 +10077,94 @@ class MainFrame(
 
                         cb.Bind(wx.EVT_CHECKBOX, _on_beta_toggle)
                     return
+                if spec.key == "browse_mode_followon_timeout":
+                    # Choice + sibling SpinCtrl: the spin is only enabled
+                    # when the user picks "Custom..." so the two controls
+                    # behave as one logical row.
+                    from quill.core.settings_specs import SETTING_SPECS as _ALL_SPECS
+
+                    custom_spec = next(
+                        (s for s in _ALL_SPECS if s.key == "browse_mode_followon_custom_ms"),
+                        None,
+                    )
+                    labels = [label for _value, label in spec.choices]
+                    value_for_label = {label: value for value, label in spec.choices}
+                    label_for_value = {value: label for value, label in spec.choices}
+                    try:
+                        custom_current = int(
+                            registry.get_value(
+                                self.settings, "browse_mode_followon_custom_ms"
+                            )
+                        )
+                    except (TypeError, ValueError):
+                        custom_current = 4000
+
+                    custom_max = int(getattr(custom_spec, "maximum", 60000) or 60000)
+                    custom_min = int(getattr(custom_spec, "minimum", 0) or 0)
+                    custom_label = str(
+                        getattr(custom_spec, "label", "Custom value (milliseconds)")
+                    )
+                    custom_choice_label = value_for_label.get("custom", "Custom...")
+
+                    def _make_timeout_row(
+                        _pp=parent_panel,
+                        _ls=labels,
+                        _lv=label_for_value,
+                        _cv=str(current),
+                        _sl=spec.label,
+                        _cmax=custom_max,
+                        _cmin=custom_min,
+                        _cur=custom_current,
+                        _custom_sl=custom_label,
+                        _custom_label_value=custom_choice_label,
+                    ):
+                        c = wx.Choice(_pp, choices=_ls)
+                        c.SetName(_sl)
+                        c.SetStringSelection(_lv.get(_cv, _ls[0]))
+                        spin = wx.SpinCtrl(_pp, min=_cmin, max=_cmax, value=str(_cur))
+                        spin.SetName(_custom_sl)
+                        ms_label = wx.StaticText(_pp, label="ms")
+                        ms_label.SetName(_custom_sl + " (milliseconds)")
+                        # Wire enable/disable of the spin to the chooser.
+                        spin.Enable(_lv.get(_cv, _ls[0]) == _custom_label_value)
+                        c.Bind(
+                            wx.EVT_CHOICE,
+                            lambda _evt, _c=c, _s=spin, _custom_label_value=_custom_label_value: (
+                                _s.Enable(_c.GetStringSelection() == _custom_label_value)
+                            ),
+                        )
+                        return c, spin, ms_label
+
+                    # Build the row manually — _add_field_row only lays out
+                    # one control, but this row needs three (choice, spin,
+                    # "ms" label) so the user sees the relationship.
+                    row = wx.BoxSizer(wx.HORIZONTAL)
+                    row.Add(
+                        wx.StaticText(parent_panel, label=spec.label),
+                        0,
+                        wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+                        8,
+                    )
+                    choice, spin, ms_label = _make_timeout_row()
+                    row.Add(choice, 1, wx.EXPAND | wx.RIGHT, 8)
+                    row.Add(spin, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 4)
+                    row.Add(ms_label, 0, wx.ALIGN_CENTER_VERTICAL)
+                    sizer.Add(row, 0, wx.EXPAND | wx.ALL, 6)
+                    readers[spec.key] = lambda c=choice, m=value_for_label, d=str(current): m.get(
+                        c.GetStringSelection(), d
+                    )
+                    writers[spec.key] = lambda v, c=choice, m=label_for_value, ls=labels: (
+                        c.SetStringSelection(m.get(str(v), ls[0]))
+                    )
+                    readers["browse_mode_followon_custom_ms"] = lambda s=spin: int(s.GetValue())
+                    writers["browse_mode_followon_custom_ms"] = lambda v, s=spin: s.SetValue(
+                        int(v)
+                    )
+                    control_index[spec.key] = (page_index, choice)
+                    control_index["browse_mode_followon_custom_ms"] = (page_index, spin)
+                    choice.Bind(wx.EVT_CHOICE, _mark_dirty)
+                    spin.Bind(wx.EVT_SPINCTRL, _mark_dirty)
+                    return
                 if spec.kind == "choice":
                     labels = [label for _value, label in spec.choices]
                     value_for_label = {label: value for value, label in spec.choices}
@@ -10105,7 +10193,11 @@ class MainFrame(
                     choice.Bind(wx.EVT_CHOICE, _mark_dirty)
                     return
                 if spec.kind == "int":
-
+                    # #265 follow-up: the custom-ms spec is rendered as a
+                    # sibling SpinCtrl of browse_mode_followon_timeout's
+                    # chooser above; skip its own row to avoid duplication.
+                    if spec.key == "browse_mode_followon_custom_ms":
+                        return
                     def _make_spin_int(_pp=parent_panel, _spec=spec, _cur=int(current)):
                         s = wx.SpinCtrl(_pp)
                         if _spec.minimum is not None and _spec.maximum is not None:

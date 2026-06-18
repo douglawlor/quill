@@ -25,6 +25,17 @@ from quill.core.quill_key_help import (
 )
 from quill.ui.dialog_contract import apply_modal_ids
 
+#: Named presets for the browse-mode follow-on timeout (seconds).
+#: Tokens match the values in ``settings_specs.SETTING_SPECS`` for
+#: ``browse_mode_followon_timeout``. ``"instant"``,
+#: ``"unlimited"`` and ``"custom"`` are resolved separately in
+#: :meth:`QuillKeyMixin._browse_mode_timeout`.
+_BROWSE_TIMEOUT_PRESETS: dict[str, float] = {
+    "fast": 1.5,
+    "normal": 4.0,
+    "slow": 8.0,
+}
+
 
 class QuillKeyMixin:
     def _handle_quill_key_mode_event(self, event: object) -> bool:
@@ -253,16 +264,37 @@ class QuillKeyMixin:
 
         The follow-on timeout governs how long browse mode stays active
         between follow-on keypresses after entering with N. It is separate
-        from ``_quill_key_timeout`` so the prefix-decision window stays
-        snappy while browse mode gives users a generous window to find the
-        next key.
+        from :meth:`_quill_key_timeout` so the prefix-decision window
+        stays snappy while browse mode gives users a generous window to
+        find the next key.
+
+        Resolution rules (see the
+        ``browse_mode_followon_timeout`` setting spec):
+
+        - ``instant`` -> a tiny positive timeout (``0.001`` s) so
+          :meth:`_browse_mode_timed_out` fires on the very next check;
+          ``0`` is reserved for "no timeout"
+        - ``fast`` / ``normal`` / ``slow`` -> preset seconds
+        - ``custom`` -> ``browse_mode_followon_custom_ms / 1000``,
+          clamped to ``>= 0`` (``0`` means no timeout)
+        - ``unlimited`` and any unknown token -> ``0`` (no timeout)
         """
-        raw = getattr(self.settings, "browse_mode_followon_timeout_seconds", 4.0)
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            value = 4.0
-        return max(value, 0.0)
+        token = str(
+            getattr(self.settings, "browse_mode_followon_timeout", "unlimited")
+        ).strip().lower()
+        if token == "instant":
+            return 0.001
+        if token in _BROWSE_TIMEOUT_PRESETS:
+            return _BROWSE_TIMEOUT_PRESETS[token]
+        if token == "custom":
+            try:
+                ms = float(
+                    getattr(self.settings, "browse_mode_followon_custom_ms", 4000)
+                )
+            except (TypeError, ValueError):
+                ms = 4000.0
+            return max(ms / 1000.0, 0.0)
+        return 0.0
 
     def _parse_quill_key_binding(self, binding: str | None) -> tuple[bool, bool, bool, int] | None:
         """Parse the configurable QUILL key binding into (ctrl, shift, alt, key_code).

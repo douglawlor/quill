@@ -50,7 +50,8 @@ def _build_frame(
     *,
     binding: str = "Ctrl+Shift+Grave",
     timeout: float = 1.5,
-    browse_followon_timeout: float = 4.0,
+    browse_followon_timeout: str = "unlimited",
+    browse_followon_custom_ms: int = 4000,
     announce_mode_changes: bool = True,
     keymap: dict[str, str] | None = None,
 ) -> MainFrame:
@@ -65,7 +66,8 @@ def _build_frame(
     frame.settings = SimpleNamespace(
         quill_key_binding=binding,
         quill_key_timeout_seconds=timeout,
-        browse_mode_followon_timeout_seconds=browse_followon_timeout,
+        browse_mode_followon_timeout=browse_followon_timeout,
+        browse_mode_followon_custom_ms=browse_followon_custom_ms,
         announce_mode_changes=announce_mode_changes,
     )
     frame.keymap = keymap if keymap is not None else {}
@@ -133,14 +135,18 @@ def test_sticky_mode_ignores_timeout() -> None:
 
 
 def test_zero_timeout_disables_browse_expiry() -> None:
-    frame = _build_frame(timeout=0, browse_followon_timeout=0)
+    # #265 follow-up: 'unlimited' disables the timeout entirely.
+    frame = _build_frame(timeout=0, browse_followon_timeout="unlimited")
     frame._enter_quill_key_mode()
     frame._quill_key_mode_started_at = time.monotonic() - 10
     assert frame._quill_key_mode_timed_out() is False
 
 
 def test_positive_timeout_expires_browse_mode() -> None:
-    frame = _build_frame(timeout=0.5)
+    # #265 follow-up: the browse-mode timeout is set via the new chooser
+    # tokens; 'fast' (1.5 s) is the shortest preset that still has a
+    # positive timeout.
+    frame = _build_frame(browse_followon_timeout="fast")
     frame._enter_quill_key_mode()
     frame._quill_key_mode_started_at = time.monotonic() - 10
     assert frame._quill_key_mode_timed_out() is True
@@ -318,37 +324,36 @@ def test_question_mark_via_unicode_key_is_recognized() -> None:
 
 
 def test_browse_mode_uses_separate_followon_timeout() -> None:
-    # #265: browse-mode follow-on timeout is separate from the prefix
-    # timeout. A 4-second follow-on window gives users time to find the
-    # next key after N without expiring at 1.5s.
-    frame = _build_frame(timeout=1.5, browse_followon_timeout=4.0)
+    # #265 follow-up: the 'slow' preset gives an 8s follow-on window,
+    # separate from the 1.5s prefix-decision window.
+    frame = _build_frame(timeout=1.5, browse_followon_timeout="slow")
     frame._enter_quill_key_mode()
-    frame._quill_key_mode_started_at = time.monotonic() - 3.0
+    frame._quill_key_mode_started_at = time.monotonic() - 7.0
     assert frame._browse_mode_timed_out() is False
-    frame._quill_key_mode_started_at = time.monotonic() - 5.0
+    frame._quill_key_mode_started_at = time.monotonic() - 9.0
     assert frame._browse_mode_timed_out() is True
 
 
 def test_browse_mode_followon_timeout_zero_disables_expiry() -> None:
-    # #265: setting browse_mode_followon_timeout_seconds to 0 disables
-    # the browse-mode timeout entirely.
-    frame = _build_frame(browse_followon_timeout=0.0)
+    # #265 follow-up: the 'unlimited' preset disables the browse-mode
+    # timeout entirely.
+    frame = _build_frame(browse_followon_timeout="unlimited")
     frame._enter_quill_key_mode()
     frame._quill_key_mode_started_at = time.monotonic() - 60
     assert frame._browse_mode_timed_out() is False
 
 
 def test_browse_mode_followon_timeout_returns_configured_value() -> None:
-    # #265: _browse_mode_timeout() reads the configured
-    # browse_mode_followon_timeout_seconds, clamped to a non-negative value.
-    frame = _build_frame(browse_followon_timeout=3.0)
-    assert frame._browse_mode_timeout() == 3.0
-    frame.settings.browse_mode_followon_timeout_seconds = -5
+    # #265 follow-up: _browse_mode_timeout() returns the configured preset
+    # in seconds, 'unlimited' and unknown tokens resolve to 0.
+    frame = _build_frame(browse_followon_timeout="normal")
+    assert frame._browse_mode_timeout() == 4.0
+    frame.settings.browse_mode_followon_timeout = "fast"
+    assert frame._browse_mode_timeout() == 1.5
+    frame.settings.browse_mode_followon_timeout = "instant"
+    assert frame._browse_mode_timeout() == 0.001
+    frame.settings.browse_mode_followon_timeout = "garbage"
     assert frame._browse_mode_timeout() == 0.0
-    frame.settings.browse_mode_followon_timeout_seconds = 120
-    # Out-of-range values are clamped at the settings-loader level; the
-    # accessor returns the configured value as-is.
-    assert frame._browse_mode_timeout() == 120.0
 
 
 def test_quill_key_cheat_sheet_includes_chord_groups() -> None:
@@ -372,3 +377,61 @@ def test_quill_key_cheat_sheet_includes_chord_groups() -> None:
     assert "Navigate" in text
     assert "View" in text
     assert "File" in text
+
+
+def test_browse_mode_unlimited_preset_disables_timeout() -> None:
+    # #265 follow-up: 'Unlimited (no timeout)' is the new default; the
+    # follow-on timeout is disabled regardless of how long the user pauses.
+    frame = _build_frame(browse_followon_timeout="unlimited")
+    frame._enter_quill_key_mode()
+    frame._quill_key_mode_started_at = time.monotonic() - 60
+    assert frame._browse_mode_timed_out() is False
+
+
+def test_browse_mode_fast_preset_expires_at_1_5s() -> None:
+    # #265 follow-up: 'Fast (1500 ms)' preset maps to 1.5s.
+    frame = _build_frame(browse_followon_timeout="fast")
+    frame._enter_quill_key_mode()
+    frame._quill_key_mode_started_at = time.monotonic() - 1.6
+    assert frame._browse_mode_timed_out() is True
+    frame._quill_key_mode_started_at = time.monotonic() - 1.0
+    assert frame._browse_mode_timed_out() is False
+
+
+def test_browse_mode_slow_preset_expires_at_8s() -> None:
+    # #265 follow-up: 'Slow (8000 ms)' preset maps to 8s.
+    frame = _build_frame(browse_followon_timeout="slow")
+    frame._enter_quill_key_mode()
+    frame._quill_key_mode_started_at = time.monotonic() - 7.5
+    assert frame._browse_mode_timed_out() is False
+    frame._quill_key_mode_started_at = time.monotonic() - 8.5
+    assert frame._browse_mode_timed_out() is True
+
+
+def test_browse_mode_custom_value_used() -> None:
+    # #265 follow-up: 'custom' preset reads browse_mode_followon_custom_ms.
+    frame = _build_frame(
+        browse_followon_timeout="custom", browse_followon_custom_ms=2500
+    )
+    frame._enter_quill_key_mode()
+    frame._quill_key_mode_started_at = time.monotonic() - 2.0
+    assert frame._browse_mode_timed_out() is False
+    frame._quill_key_mode_started_at = time.monotonic() - 3.0
+    assert frame._browse_mode_timed_out() is True
+
+
+def test_browse_mode_unknown_token_disables_timeout() -> None:
+    # #265 follow-up: unknown tokens fall through to the unlimited branch
+    # so the consumer never crashes on a stale settings file.
+    frame = _build_frame(browse_followon_timeout="garbage")
+    frame._enter_quill_key_mode()
+    frame._quill_key_mode_started_at = time.monotonic() - 60
+    assert frame._browse_mode_timed_out() is False
+
+
+def test_browse_mode_instant_preset_times_out_immediately() -> None:
+    # #265 follow-up: 'Instant (0 ms)' is the shortest preset.
+    frame = _build_frame(browse_followon_timeout="instant")
+    frame._enter_quill_key_mode()
+    frame._quill_key_mode_started_at = time.monotonic() - 0.05
+    assert frame._browse_mode_timed_out() is True

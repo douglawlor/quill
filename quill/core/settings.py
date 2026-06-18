@@ -36,7 +36,8 @@ class Settings:
     browse_mode_preload_cache: bool = True
     quill_key_binding: str = "Ctrl+Shift+Grave"
     quill_key_timeout_seconds: float = 1.5
-    browse_mode_followon_timeout_seconds: float = 4.0
+    browse_mode_followon_timeout: str = "unlimited"
+    browse_mode_followon_custom_ms: int = 4000
     csv_open_mode: str = "prompt"
     word_open_mode: str = "prompt"
     editor_surface: str = "plain"
@@ -250,16 +251,32 @@ class Settings:
             quill_key_timeout_seconds = 0.0
         if quill_key_timeout_seconds > 60:
             quill_key_timeout_seconds = 60.0
+        # #265 follow-up: replace float seconds with a string-valued choice
+        # (preset token) plus an integer custom-ms override. Unknown tokens
+        # fall back to 'unlimited' so the consumer treats them as no
+        # timeout. Custom-ms clamps to [0, 60000] ms = [0, 60] s.
+        browse_mode_followon_timeout = str(
+            data.get("browse_mode_followon_timeout", "unlimited")
+        ).strip().lower()
+        if browse_mode_followon_timeout not in {
+            "instant",
+            "fast",
+            "normal",
+            "slow",
+            "custom",
+            "unlimited",
+        }:
+            browse_mode_followon_timeout = "unlimited"
         try:
-            browse_mode_followon_timeout_seconds = float(
-                data.get("browse_mode_followon_timeout_seconds", 4.0)
+            browse_mode_followon_custom_ms = int(
+                data.get("browse_mode_followon_custom_ms", 4000)
             )
         except (TypeError, ValueError):
-            browse_mode_followon_timeout_seconds = 4.0
-        if browse_mode_followon_timeout_seconds < 0:
-            browse_mode_followon_timeout_seconds = 0.0
-        if browse_mode_followon_timeout_seconds > 60:
-            browse_mode_followon_timeout_seconds = 60.0
+            browse_mode_followon_custom_ms = 4000
+        if browse_mode_followon_custom_ms < 0:
+            browse_mode_followon_custom_ms = 0
+        if browse_mode_followon_custom_ms > 60000:
+            browse_mode_followon_custom_ms = 60000
         csv_open_mode = str(data.get("csv_open_mode", "prompt")).strip().lower()
         if csv_open_mode not in {"prompt", "text", "grid"}:
             csv_open_mode = "prompt"
@@ -634,7 +651,8 @@ class Settings:
             browse_mode_preload_cache=browse_mode_preload_cache,
             quill_key_binding=quill_key_binding,
             quill_key_timeout_seconds=quill_key_timeout_seconds,
-            browse_mode_followon_timeout_seconds=browse_mode_followon_timeout_seconds,
+            browse_mode_followon_timeout=browse_mode_followon_timeout,
+            browse_mode_followon_custom_ms=browse_mode_followon_custom_ms,
             csv_open_mode=csv_open_mode,
             word_open_mode=word_open_mode,
             editor_surface=editor_surface,
