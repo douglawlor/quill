@@ -619,6 +619,17 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         feature_id="core.accessibility",
         keywords=("trace", "diagnostics", "announcement"),
     ),
+    SettingSpec(
+        "announcement_startup_tips_enabled",
+        "Speak startup readiness and theme contrast announcements",
+        "accessibility",
+        "bool",
+        "When enabled, QUILL speaks the 'Ready' tip after startup and the "
+        "contrast ratio after each theme change. Off by default to keep "
+        "startup quiet; the announcements still appear in the status bar.",
+        feature_id="core.accessibility",
+        keywords=("announcement", "startup", "speech", "contrast"),
+    ),
     # --- Sound notifications (QSP) ----------------------------------------
     SettingSpec(
         "sound_enabled",

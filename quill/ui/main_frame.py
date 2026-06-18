@@ -585,6 +585,8 @@ class _DocumentTab:
     source_label: str = ""
     read_only_remote: bool = False
     _indent_tone_last_level: int = -1
+    _language_profile: object = None
+    _language_profile_pinned: bool = False
 
 
 @dataclass(slots=True)
@@ -1172,7 +1174,11 @@ class MainFrame(
         if safe_mode:
             self._set_status("Safe mode enabled. Optional state is disabled.")
         else:
-            self._set_status("Ready. Tip: press Ctrl+Shift+P for Command Palette.")
+            ready_tip = "Ready. Tip: press Ctrl+Shift+P for Command Palette."
+            if self.settings.announcement_startup_tips_enabled:
+                self._set_status(ready_tip)
+            else:
+                self._set_status_quiet(ready_tip)
         # This tail runs right after the startup tip is announced; never let it
         # take down construction (that was a "reads the tip then crashes" path).
         try:
@@ -3401,6 +3407,7 @@ class MainFrame(
             "tools.glow_fix_selection": self._id_glow_fix_selection,
             "help.save_diagnostics": self._id_save_diagnostics,
             "help.report_bug": self._id_report_bug,
+            "help.view_startup_logs": self._id_view_startup_logs,
             "help.open_logs_folder": self._id_open_logs_folder,
             "help.open_diagnostics_folder": self._id_open_diagnostics_folder,
             "help.status_page": self._id_help_status_page,
@@ -5301,6 +5308,16 @@ class MainFrame(
         logs_path.mkdir(parents=True, exist_ok=True)
         self._reveal_in_explorer(logs_path)
 
+    def open_startup_logs(self) -> None:
+        """Help > View Startup Logs... — open logs/startup-errors.log directly."""
+        log_path = app_data_dir() / "logs" / "startup-errors.log"
+        if not log_path.exists():
+            self._set_status(
+                "No startup log entries yet. Logs are written when a startup task fails."
+            )
+            return
+        self._reveal_in_explorer(log_path)
+
     def open_diagnostics_folder(self) -> None:
         diagnostics_path = app_data_dir() / "diagnostics"
         diagnostics_path.mkdir(parents=True, exist_ok=True)
@@ -5859,7 +5876,11 @@ class MainFrame(
                 grade = "AA large text"
             else:
                 grade = "below AA"
-            self._set_status(f"Theme applied. Contrast ratio: {ratio:.1f}:1 ({grade})")
+            msg = f"Theme applied. Contrast ratio: {ratio:.1f}:1 ({grade})"
+            if self.settings.announcement_startup_tips_enabled:
+                self._set_status(msg)
+            else:
+                self._set_status_quiet(msg)
         except Exception:  # noqa: BLE001
             pass
 
@@ -5880,7 +5901,10 @@ class MainFrame(
             else:
                 grade = "below AA (insufficient)"
             msg = f"Contrast ratio: {ratio:.1f}:1, WCAG grade: {grade}"
-            self._announce(msg)
+            if self.settings.announcement_startup_tips_enabled:
+                self._announce(msg)
+            else:
+                self._set_status(msg)
         except Exception:  # noqa: BLE001
             self._set_status("Could not calculate contrast ratio")
 

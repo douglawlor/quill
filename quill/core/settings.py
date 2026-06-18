@@ -77,6 +77,7 @@ class Settings:
     read_aloud_espeak_voice: str = "en"
     read_aloud_espeak_rate: int = 175
     announcement_trace_enabled: bool = False
+    announcement_startup_tips_enabled: bool = False
     assistant_enabled: bool = False
     assistant_prompt_style: str = "balanced"
     markdown_clipboard_format: str = "html"
@@ -348,6 +349,9 @@ class Settings:
         if announcement_backend not in {"auto", "prism", "status_only"}:
             announcement_backend = "auto"
         announcement_trace_enabled = bool(data.get("announcement_trace_enabled", False))
+        announcement_startup_tips_enabled = bool(
+            data.get("announcement_startup_tips_enabled", False)
+        )
         assistant_enabled = bool(data.get("assistant_enabled", False))
         assistant_prompt_style = str(data.get("assistant_prompt_style", "balanced")).strip().lower()
         if assistant_prompt_style not in {"balanced", "concise", "gentle", "technical"}:
@@ -660,6 +664,7 @@ class Settings:
             read_aloud_espeak_voice=read_aloud_espeak_voice,
             read_aloud_espeak_rate=read_aloud_espeak_rate,
             announcement_trace_enabled=announcement_trace_enabled,
+            announcement_startup_tips_enabled=announcement_startup_tips_enabled,
             assistant_enabled=assistant_enabled,
             assistant_prompt_style=assistant_prompt_style,
             markdown_clipboard_format=markdown_clipboard_format,

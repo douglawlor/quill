@@ -1835,6 +1835,11 @@ class MenuBuilderMixin:
             self._id_save_diagnostics,
             self._menu_label(_("Save &Diagnostics..."), "help.save_diagnostics"),
         )
+        self._id_view_startup_logs = wx.NewIdRef()
+        help_menu.Append(
+            self._id_view_startup_logs,
+            self._menu_label(_("View &Startup Logs..."), "help.view_startup_logs"),
+        )
         help_menu.AppendSeparator()
         profiles_menu = wx.Menu()
         profiles_menu.Append(
@@ -3139,6 +3144,11 @@ class MenuBuilderMixin:
             wx.EVT_MENU,
             lambda _e: self.save_diagnostics_bundle(),
             id=self._id_save_diagnostics,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.open_startup_logs(),
+            id=self._id_view_startup_logs,
         )
         self.frame.Bind(
             wx.EVT_MENU,
