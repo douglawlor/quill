@@ -45,15 +45,24 @@
       "F6 - Move to status bar",
       "F1 - Help on this control",
       "Ctrl+F1 - Open User Guide",
-      "Shift+F1 - What Can I Do Here?"
+      "Shift+F1 - What Can I Do Here?",
+      "Ctrl+Alt+1..6 - Convert the caret line to heading level 1..6 (Markdown / HTML only)",
+      "Alt+Shift+Down - Move the current heading section below its next sibling (Markdown / HTML only)",
+      "Alt+Shift+Up - Move the current heading section above its previous sibling (Markdown / HTML only)",
+      "Ctrl+Alt+7 - Toggle a bullet list at the caret (Markdown / HTML only)",
+      "Ctrl+Alt+8 - Toggle a numbered list at the caret (Markdown / HTML only)"
     ],
     "user_guide_section": "writing-and-editing"
   },
   {
     "id": "main.status_line",
     "title": "Status Bar",
-    "body": "The status bar shows live information about your document: line and column, word count, encoding, autosave state, and active tasks. Press F6 to move focus into it, then arrow left and right between cells. Press Enter or Space on a cell to activate it.",
-    "keystrokes": ["F6 - Enter status bar", "Arrow keys - Move between cells", "Enter - Activate cell"],
+    "body": "The status bar shows live information about your document: line and column, word count, encoding, autosave state, and active tasks. Press F6 to move focus into it, then arrow left and right between cells. Press Enter or Space on a cell to activate it. The Section cell (hidden by default, opt in via Preferences -> Status Bar) reads 'Section: Heading N (ordinal of total)' whenever the caret is on a heading in a Markdown or HTML document; plain-text documents and non-heading lines show nothing in the cell.",
+    "keystrokes": [
+      "F6 - Enter status bar",
+      "Arrow keys - Move between cells",
+      "Enter - Activate cell"
+    ],
     "user_guide_section": "the-main-window"
   },
   {

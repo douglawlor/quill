@@ -8,7 +8,7 @@ research) were consolidated into a previous version of this file and are
 preserved in git history — see [Historical planning archive](#historical-planning-archive-pointer)
 at the bottom.
 
-**Target release:** QUILL 1.0. **Current version:** 0.6.1. **Last refreshed:** 2026-06-18.
+**Target release:** QUILL 1.0. **Current version:** 0.6.1. **Last refreshed:** 2026-06-19.
 
 ## How to read this document
 
@@ -695,6 +695,69 @@ cannot land in the current environment.
 
 Newest first. This is the running tally of what shipped since the 0.5.0
 push; git log is the authoritative source for individual commits.
+
+### 2026-06-19: EdSharp port — heading / list chord pairs and section-move
+
+- **`Ctrl+Alt+1..6` heading chords** — six new default-on chord pairs
+  (`Ctrl+Alt+1` through `Ctrl+Alt+6`) that dispatch to
+  `format.heading_1..6` and produce H1..H6 on the current line. The
+  pre-existing QUILL-key chord `Ctrl+Shift+Grave, 1..6` is retired from
+  the default keymap; users with a saved QUILL-key binding migrate
+  silently via `legacy_rebindings` (`keymap.py:303-333`).
+- **`Ctrl+Alt+7` / `Ctrl+Alt+8` list toggle** — `format.toggle_bullet_list`
+  and `format.toggle_numbered_list` are new commands that insert on
+  first press and strip on second press. `9` is intentionally absent;
+  `Ctrl+K` already covers link insertion. Numbered-list auto-fill is
+  gated by a three-way OR: the document is markdown, the user opted
+  into `list_auto_fill_numbers` in `Settings → Editing → Lists`, or
+  the user just toggled a numbered list on this document (per-document
+  arming flag, five-minute TTL).
+- **`Alt+Shift+Up` / `Alt+Shift+Down` section-move** — the existing
+  `edit.expand_selection` / `edit.shrink_selection` chords are
+  migrated to `Ctrl+Shift+Grave, E` and `Ctrl+Shift+Grave, Shift+E`;
+  the freed chords become `format.move_section_up` /
+  `format.move_section_down` and reorder the current heading section
+  with the previous/next sibling. Section-move is enabled in
+  **markdown and html** documents only; plain text is announced
+  ("Section move is only available in Markdown or HTML documents")
+  and the buffer is left untouched. Fence-aware — `# fake heading`
+  inside a fenced code block is not promoted to a section.
+- **§10.8 contract change** — `quill/tools/menu_lint.py` gains a
+  renamed allowlist `_CTRL_ALT_DOCUMENTED` (frozenset of
+  `(command_id, justification)` tuples) and an inline escape hatch:
+  any `Ctrl+Alt+` binding line in `keymap.py` that ends with
+  `# §edsharp-ok` is treated as documented even if not in the
+  allowlist. The new allowlist includes the six `format.heading_*`
+  ids, `format.insert_bullet_list`, `format.insert_numbered_list`,
+  `view.send_to_tray`, and `view.toggle_tab_control`. Each entry
+  carries a justification naming the screen-reader binding it
+  overrides (e.g. "overrides NVDA switch-to-synth-N"). Tests:
+  `test_ctrl_alt_edsharp_heading_permitted` (allowlist path) and
+  `test_ctrl_alt_uncommented_still_fails` (regression check that
+  the gate still fires for unlisted `Ctrl+Alt+` bindings).
+- **Section status bar cell** — `STATUS_BAR_ITEMS` gains
+  `section_heading` (hidden by default; users can flip it on in
+  `Preferences → Status Bar`). When the caret is on a heading in a
+  markdown or html document, the cell reads
+  `Section: Heading 2 (3 of 7)`; when the caret is on a body line,
+  the cell reports the parent section; for plain text or documents
+  with no headings, the cell is empty. Wrapped in `try/except
+  RuntimeError` to tolerate a dead editor widget.
+- **Tests** — `tests/unit/ui/test_main_frame_section_move.py` (8
+  cases), `tests/unit/ui/test_main_frame_list_toggle.py` (15 cases),
+  `tests/unit/ui/test_main_frame_statusbar_context.py` (8 new cases),
+  and `tests/unit/tools/test_menu_lint.py` (2 new cases). Property
+  tests for `parse_heading_blocks` and `move_section` cover fence
+  safety and round-trip up-then-down.
+- **Docs** — `docs/keybinding-standard.md` (new) codifies the
+  revised §10.8 contract: the eight currently documented
+  `Ctrl+Alt+` bindings with justifications, the three legacy
+  `Ctrl+Alt+` migrations to QUILL-key chords, the new section-move
+  pair, and the process for adding a new `Ctrl+Alt+` binding.
+  `CONTROL_REFERENCE.md` (and regenerated `.html` / `.epub`),
+  `quill/core/help/topics.json`, the user guide, the PRD, the
+  release notes for 0.7.0, and `CHANGELOG.md` all reflect the
+  new chord pairs.
 
 ### 2026-06-18: Braille Mode 0.6.1 — Phase 2 (Page Intelligence + Detailed Status)
 
