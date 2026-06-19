@@ -260,6 +260,34 @@ def test_question_mark_via_shift_slash_is_recognized() -> None:
     assert frame._help_shown[0][0] == MODE_PREFIX  # type: ignore[attr-defined]
 
 
+def test_bare_shift_keydown_before_question_mark_does_not_clear_prefix() -> None:
+    # Regression: wx fires a separate EVT_CHAR_HOOK for the Shift keydown
+    # itself, ahead of the "?" character it produces. That bare modifier
+    # event was previously read as an unrecognized second key, clearing the
+    # pending prefix before the real "?" arrived.
+    frame = _build_frame()
+    _wire_help_stubs(frame)
+    frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
+    bare_shift_handled = frame._handle_quill_key_mode_event(_Event(-11, shift=True))
+    assert bare_shift_handled is True
+    assert frame._quill_key_prefix_pending is True
+    handled = frame._handle_quill_key_mode_event(_Event(ord("?")))
+    assert handled is True
+    assert frame._help_shown[0][0] == MODE_PREFIX  # type: ignore[attr-defined]
+
+
+def test_bare_shift_keydown_in_browse_mode_does_not_exit() -> None:
+    # Regression: the same bare-modifier EVT_CHAR_HOOK was misread as "a
+    # modified key with no matching browse action" and exited browse mode
+    # before e.g. Shift+Tab or Shift+1 ever completed.
+    frame = _build_frame()
+    _wire_help_stubs(frame)
+    frame._enter_quill_key_mode()
+    handled = frame._handle_quill_key_mode_event(_Event(-11, shift=True))
+    assert handled is True
+    assert frame._quill_key_mode_active is True
+
+
 def test_browse_mode_question_mark_shows_browse_cheat_sheet_and_stays() -> None:
     # QK-2/QK-9: inside browse mode, question mark shows the browse cheat sheet
     # with live counts and does not leave browse mode.

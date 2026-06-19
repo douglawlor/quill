@@ -166,7 +166,7 @@ def _ensure_tts_worker() -> None:
 
 
 def prewarm_pyttsx3_engine() -> None:
-    """Kick off pyttsx3 engine construction on a background thread now.
+    """Start the TTS worker thread now so it builds its engine ahead of time.
 
     SAPI/COM voice enumeration is the expensive part of "the first
     announcement of the session" (hundreds of ms, sometimes much more).
@@ -174,13 +174,21 @@ def prewarm_pyttsx3_engine() -> None:
     ever presses the QUILL key, instead of during it — previously that
     delay ate into the quill_key_timeout_seconds window and the prefix
     could expire before the user's next keystroke arrived.
+
+    The engine must be built on the same thread that later calls
+    ``engine.say()``/``runAndWait()``: pyttsx3's sapi5 driver is a
+    COM/STA object, and using it from a thread other than the one that
+    created it deadlocks `runAndWait()` instead of raising. So this just
+    starts the worker thread early rather than constructing the engine on
+    a separate throwaway thread.
     """
     if pyttsx3 is None:
         return
-    threading.Thread(target=_get_pyttsx3_engine, daemon=True, name="quill-tts-prewarm").start()
+    _ensure_tts_worker()
 
 
 def _tts_worker_loop() -> None:
+    _get_pyttsx3_engine()
     while True:
         msg = _tts_queue.get()
         if msg is None:

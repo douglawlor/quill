@@ -44,6 +44,14 @@ class QuillKeyMixin:
         timeout = self._quill_key_timeout()
         if not self._quill_key_mode_active:
             if self._quill_key_prefix_pending:
+                # A bare modifier keydown (e.g. pressing Shift before the "/"
+                # in Shift+/ to type "?") fires its own EVT_CHAR_HOOK ahead of
+                # the actual character. Without this guard it was treated as
+                # the chord's second key, fell through to "Unrecognized QUILL
+                # key chord", and cleared the pending prefix before the real
+                # follow-on key ever arrived.
+                if self._is_bare_modifier_key(key_code):
+                    return True
                 if timeout > 0 and (time.monotonic() - self._quill_key_prefix_started_at) > timeout:
                     self._quill_key_prefix_pending = False
                     self._quill_key_prefix_started_at = 0.0
@@ -160,6 +168,13 @@ class QuillKeyMixin:
             self._exit_quill_key_mode("QUILL browse mode timed out")
             if self._event_has_modifiers(event):
                 event.Skip()
+            return True
+
+        # Same bare-modifier issue as the prefix-pending branch above: a lone
+        # Shift keydown ahead of e.g. Shift+Tab or Shift+1 would otherwise
+        # read as "a modified key with no matching action" and exit browse
+        # mode before the real combo ever arrived.
+        if self._is_bare_modifier_key(key_code):
             return True
 
         if key_code in {getattr(wx, "WXK_ESCAPE", 27), 27}:
@@ -348,6 +363,24 @@ class QuillKeyMixin:
 
     def _event_has_modifiers(self, event: object) -> bool:
         return bool(event.ControlDown() or event.AltDown() or event.ShiftDown())
+
+    def _is_bare_modifier_key(self, key_code: int) -> bool:
+        """True when ``key_code`` is a modifier key pressed on its own.
+
+        wx fires EVT_CHAR_HOOK for the modifier keydown itself (e.g. Shift
+        going down just before the "/" that makes "?"), separately from the
+        combo it's part of. Chord/browse-mode dispatch must ignore these or
+        they get misread as an unrecognized second key.
+        """
+        wx = self._wx
+        return key_code in {
+            getattr(wx, "WXK_SHIFT", -11),
+            getattr(wx, "WXK_CONTROL", -10),
+            getattr(wx, "WXK_ALT", -12),
+            getattr(wx, "WXK_RAW_CONTROL", -13),
+            getattr(wx, "WXK_WINDOWS_LEFT", -14),
+            getattr(wx, "WXK_WINDOWS_RIGHT", -15),
+        }
 
     def _quill_key_action_for_event(self, event: object) -> str | None:
         wx = self._wx
