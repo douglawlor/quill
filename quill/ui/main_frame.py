@@ -449,7 +449,7 @@ from quill.io.pandoc import (
 )
 from quill.io.text import read_text_document
 from quill.platform.windows.high_contrast import is_high_contrast_enabled
-from quill.platform.windows.prism_bridge import AnnouncementEngine
+from quill.platform.windows.prism_bridge import AnnouncementEngine, prewarm_pyttsx3_engine
 from quill.platform.windows.shell_integration import (
     apply_shell_verb_settings,
     build_shell_integration_plan,
@@ -1077,6 +1077,7 @@ class MainFrame(
         self._compare_ignore_line_endings = True
         self._empty_workspace_active = False
         self._announcement_engine = AnnouncementEngine(self.settings.announcement_backend)
+        prewarm_pyttsx3_engine()
         self._announcement_error_reported = ""
         self._read_aloud = ReadAloudController()
         self._dictation = DictationController()

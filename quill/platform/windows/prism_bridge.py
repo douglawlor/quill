@@ -165,6 +165,21 @@ def _ensure_tts_worker() -> None:
         t.start()
 
 
+def prewarm_pyttsx3_engine() -> None:
+    """Kick off pyttsx3 engine construction on a background thread now.
+
+    SAPI/COM voice enumeration is the expensive part of "the first
+    announcement of the session" (hundreds of ms, sometimes much more).
+    Calling this at app startup means that cost is paid before the user
+    ever presses the QUILL key, instead of during it — previously that
+    delay ate into the quill_key_timeout_seconds window and the prefix
+    could expire before the user's next keystroke arrived.
+    """
+    if pyttsx3 is None:
+        return
+    threading.Thread(target=_get_pyttsx3_engine, daemon=True, name="quill-tts-prewarm").start()
+
+
 def _tts_worker_loop() -> None:
     while True:
         msg = _tts_queue.get()
@@ -268,17 +283,20 @@ class AnnouncementEngine:
                 and pyttsx3 is not None
                 and (force_speech or not _screen_reader_active())
             ):
-                engine = _get_pyttsx3_engine()
-                if engine is not None:
-                    # Queue speech to a worker thread — never block the UI thread.
-                    _ensure_tts_worker()
-                    _tts_queue.put_nowait(message)
-                    self._state = replace(
-                        self._state,
-                        active_backend="speech",
-                        backend_name="System Speech",
-                        last_error="",
-                    )
+                # Queue speech to the worker thread without resolving the
+                # engine here: pyttsx3.init() costs 100-300ms+ the first time
+                # (longer on some machines) and the worker resolves/builds the
+                # singleton engine itself, so calling it here would block the
+                # caller (the UI thread) for that long on the first
+                # announcement of the session.
+                _ensure_tts_worker()
+                _tts_queue.put_nowait(message)
+                self._state = replace(
+                    self._state,
+                    active_backend="speech",
+                    backend_name="System Speech",
+                    last_error="",
+                )
             return None
         speak = getattr(self._runtime_backend, "speak", None)
         if not callable(speak):

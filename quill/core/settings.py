@@ -35,7 +35,7 @@ class Settings:
     browse_mode_feedback: str = "speech"
     browse_mode_preload_cache: bool = True
     quill_key_binding: str = "Ctrl+Shift+Grave"
-    quill_key_timeout_seconds: float = 1.5
+    quill_key_timeout_seconds: float = 2.5
     browse_mode_followon_timeout: str = "unlimited"
     browse_mode_followon_custom_ms: int = 4000
     csv_open_mode: str = "prompt"
@@ -264,9 +264,9 @@ class Settings:
         if not quill_key_binding:
             quill_key_binding = "Ctrl+Shift+Grave"
         try:
-            quill_key_timeout_seconds = float(data.get("quill_key_timeout_seconds", 1.5))
+            quill_key_timeout_seconds = float(data.get("quill_key_timeout_seconds", 2.5))
         except (TypeError, ValueError):
-            quill_key_timeout_seconds = 1.5
+            quill_key_timeout_seconds = 2.5
         if quill_key_timeout_seconds < 0:
             quill_key_timeout_seconds = 0.0
         if quill_key_timeout_seconds > 60:
