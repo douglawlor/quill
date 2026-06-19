@@ -56,6 +56,9 @@ _CTRL_ALT_DOCUMENTED: frozenset[str] = frozenset({
     "format.heading_4",
     "format.heading_5",
     "format.heading_6",
+    # EdSharp port: list-toggle shortcuts override NVDA review-cursor.
+    "format.toggle_bullet_list",  # Ctrl+Alt+7
+    "format.toggle_numbered_list",  # Ctrl+Alt+8
 })
 
 # §10.3 binding-spec cluster labels that must appear as AppendSubMenu

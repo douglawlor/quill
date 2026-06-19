@@ -267,6 +267,10 @@ COMMAND_FEATURE_MAP: dict[str, str] = {
     "format.join_lines": "core.format",
     "format.insert_bullet_list": "core.format",
     "format.insert_numbered_list": "core.format",
+    # PR3 (EdSharp port): list-toggle variants that strip or insert a list
+    # depending on the caret context, instead of always inserting.
+    "format.toggle_bullet_list": "core.format",
+    "format.toggle_numbered_list": "core.format",
     "format.insert_task_list": "core.format",
     "format.insert_code_block": "core.format",
     "format.insert_footnote": "core.format",

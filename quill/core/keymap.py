@@ -165,6 +165,8 @@ DEFAULT_KEYMAP: dict[str, str] = {
     "format.heading_6": "Ctrl+Alt+6",  # §edsharp-ok — overrides NVDA switch-to-synth-6
     "format.decrease_heading_level": "Alt+Shift+Left",
     "format.increase_heading_level": "Alt+Shift+Right",
+    "format.toggle_bullet_list": "Ctrl+Alt+7",  # §edsharp-ok — overrides NVDA review-cursor
+    "format.toggle_numbered_list": "Ctrl+Alt+8",  # §edsharp-ok — overrides NVDA review-cursor
     "format.insert_html_tag": "Ctrl+Shift+Grave, H",
     "format.insert_markdown_tag": "",  # M is reserved for paste-HTML-as-Markdown
     "power.paste_html_as_markdown": "Ctrl+Shift+Grave, M",

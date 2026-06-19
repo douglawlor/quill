@@ -3526,6 +3526,18 @@ The rename from `_CTRL_ALT_ALLOWED` to `_CTRL_ALT_DOCUMENTED` makes the narrower
 
 The full audit lives in the new `docs/keybinding-standard.md` document.  The new EdSharp-port chord pairs (heading 1..6, list 7/8, section-move Alt+Shift+Up/Down) are all documented there with their justification comments and the screen-reader bindings they override.
 
+### 8.12 The list-toggle chord pair (revised 0.7.0)
+
+`Ctrl+Alt+7` and `Ctrl+Alt+8` are the EdSharp-port toggle variants of the existing `format.insert_bullet_list` / `format.insert_numbered_list` commands.  Each chord inspects the caret: if it is on a line that is already a list item, the markers are stripped and the line returns to plain text; otherwise a new list is inserted.  This decision is encoded in the pure helper `is_caret_inside_list` so the toggle behaviour can be tested without spinning up a `MainFrame`.  Plain-text documents announce the chord is unavailable; the action is skipped.
+
+Numbered-list insertion is governed by a new `list_auto_fill_numbers` setting (`SettingsGroup` = "editing", default off) and a per-document five-minute arming flag.  The three OR together in `should_auto_fill_numbers()`:
+
+1. The active document surface is markdown (the default-experience rule — a user who explicitly authored a Markdown file wants filled markers).
+2. The `list_auto_fill_numbers` setting is on.
+3. The user just toggled a numbered list on the active document — the arming flag is set to `time.monotonic() + 300` the first time the chord runs in the document and cleared on document close.
+
+Outside of the three conditions, today's behaviour of one marker on the first item is preserved, so the change is strictly opt-in.  `Ctrl+Alt+9` for link insertion is intentionally not added because `Ctrl+K` already covers that command.
+
 ---
 
 ## 9. Accessibility, WCAG 2.2 AA conformance, and certification

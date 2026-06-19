@@ -1366,6 +1366,12 @@ The six heading shortcuts move from the QUILL-key chord space to `Ctrl+Alt+1` th
 
 Users who want both behaviours can keep the QUILL-key chord in their personal keymap; the legacy_rebindings entry rewrites the older `Ctrl+Shift+Grave, 1..6` saved binding to the new `Ctrl+Alt+1..6` automatically on load.
 
+### List toggle at `Ctrl+Alt+7` and `Ctrl+Alt+8`
+
+`Ctrl+Alt+7` toggles a bullet list and `Ctrl+Alt+8` toggles a numbered list. Each chord inspects the caret: if it is on a line that is already a list item, the markers are stripped and the line returns to plain text; otherwise a new list is inserted. The announcements are short and consistent — "Bullet List removed", "Numbered list applied (with numbers)" — so screen-reader users get immediate confirmation without scanning a long status string.
+
+A new setting, `list_auto_fill_numbers`, controls the numbered-list auto-fill behaviour. When the active document is markdown the inserted list always gets `1. `, `2. `, `3. ` … markers (the markdown surface rule). When the setting is on, auto-fill applies in any markup kind. A third path — pressing `Ctrl+Alt+8` once on a document — sets a per-document five-minute arming flag so subsequent insertions keep filling even when the writer navigates away from the chord. All three paths OR together in `should_auto_fill_numbers()`; outside of them, today's behaviour of one marker on the first item is preserved. `Ctrl+Alt+9` for link insertion is intentionally not added because `Ctrl+K` already covers that command.
+
 ### The revised §10.8 Ctrl+Alt+ policy
 
 The original §10.8 policy banned `Ctrl+Alt+` outright. The 0.7.0 revision relaxes the rule but keeps the gate strict: a `Ctrl+Alt+` binding may enter `DEFAULT_KEYMAP` when it is in the `_CTRL_ALT_DOCUMENTED` allowlist **or** carries an inline `# §edsharp-ok` justification comment naming the screen-reader binding it overrides. Unjustified bindings still fail the gate.

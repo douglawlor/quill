@@ -88,6 +88,7 @@ class Settings:
     markdown_profile_id: str = "standard"
     citation_style: str = "footnotes"
     auto_clean_html_paste: bool = False
+    list_auto_fill_numbers: bool = False
     abbreviation_expansion: bool = True
     abbreviation_expansion_sound: bool = False
     abbreviation_expansion_sound_file: str = ""

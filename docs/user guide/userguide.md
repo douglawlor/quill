@@ -1645,6 +1645,8 @@ For section-level reorganisation in Markdown and HTML, press `Alt+Shift+Down` wh
 
 The previous `Alt+Shift+Up` / `Alt+Shift+Down` bindings (expand/shrink selection) live on `Ctrl+Shift+Grave, J` and `Ctrl+Shift+Grave, Shift+J` now; saved keymaps from older builds migrate automatically.
 
+For list toggling, press `Ctrl+Alt+7` to insert or strip a bullet list, or `Ctrl+Alt+8` to insert or strip a numbered list. The chord inspects the caret's current line: if it is already a list item, the markers are stripped and the line returns to plain text; otherwise a new list is inserted at the caret. Numbered-list insertion honours the `list_auto_fill_numbers` setting (Preferences -> Editing -> Lists) — when the setting is on, every item gets `1. `, `2. `, `3. ` markers; when it is off, only the first item does. The chord is always available in markdown and HTML surfaces; plain-text documents announce the chord is unavailable and the action is skipped.
+
 ### Citations and bibliographies
 
 For research writing, **Insert -> Insert Citation...** builds correctly formatted citations from details you type, so you do not have to wrestle with the punctuation and indentation rules by hand.

@@ -835,6 +835,9 @@ class MenuBuilderMixin:
         self._id_unquote_lines = wx.NewIdRef()
         self._id_insert_bullet_list = wx.NewIdRef()
         self._id_insert_numbered_list = wx.NewIdRef()
+        # EdSharp port: toggle variants that strip or insert based on caret context.
+        self._id_toggle_bullet_list = wx.NewIdRef()
+        self._id_toggle_numbered_list = wx.NewIdRef()
         self._id_insert_task_list = wx.NewIdRef()
         self._id_open_list_manager = wx.NewIdRef()
         self._id_insert_code_block = wx.NewIdRef()
@@ -1065,6 +1068,16 @@ class MenuBuilderMixin:
         list_menu.Append(
             self._id_insert_numbered_list,
             self._menu_label(_("&Numbered"), "format.insert_numbered_list"),
+        )
+        # EdSharp port: toggle variants — strip the list if the caret is
+        # already inside one, otherwise insert.  Bound to Ctrl+Alt+7/8.
+        list_menu.Append(
+            self._id_toggle_bullet_list,
+            self._menu_label(_("Toggle &Bullet"), "format.toggle_bullet_list"),
+        )
+        list_menu.Append(
+            self._id_toggle_numbered_list,
+            self._menu_label(_("Toggle &Numbered"), "format.toggle_numbered_list"),
         )
         list_menu.Append(
             self._id_insert_task_list,
@@ -2847,6 +2860,17 @@ class MenuBuilderMixin:
             wx.EVT_MENU,
             lambda _e: self.format_insert_numbered_list(),
             id=self._id_insert_numbered_list,
+        )
+        # EdSharp port: toggle variants bound to Ctrl+Alt+7/8.
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.toggle_bullet_list(),
+            id=self._id_toggle_bullet_list,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.toggle_numbered_list(),
+            id=self._id_toggle_numbered_list,
         )
         self.frame.Bind(
             wx.EVT_MENU,

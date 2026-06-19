@@ -237,6 +237,13 @@ from quill.core.link_inventory import collect_link_inventory, render_link_invent
 from quill.core.links import build_link_text, find_link_at_cursor, infer_markup_kind
 from quill.core.locations import LocationRing
 from quill.core.macros import MacroManager
+from quill.core.markdown_sections import (
+    _LIST_AUTO_FILL_ARM_SECONDS,
+    fill_numbered_markers,
+    is_caret_inside_list,
+    should_auto_fill_numbers,
+    strip_list_markers,
+)
 from quill.core.marks import MarkRing, NamedMarks, line_column_for_position
 from quill.core.menu_customization import (
     MenuCustomization,
@@ -1147,6 +1154,13 @@ class MainFrame(
         self._active_tab_index = -1
         self._statusbar_cells: list[_StatusBarCell] = []
         self._active_statusbar_cell_index = 0
+        # EdSharp port: per-document arming flag for numbered-list auto-fill.
+        # Set to time.monotonic() + _LIST_AUTO_FILL_ARM_SECONDS the first time
+        # the user toggles a numbered list on the active document; cleared on
+        # document close.  The flag means the three-way auto-fill gate in
+        # should_auto_fill_numbers() returns True even when the surface is
+        # not markdown and the setting is off.
+        self._numbered_list_armed_until = 0.0
         self._documents_sizer.Add(self.notebook, 1, wx.EXPAND)
         self._entries_panel = NotebookEntriesPanel(self._main_splitter, wx)
         self._entries_panel.panel.Bind(wx.EVT_SET_FOCUS, self._on_container_focus)
@@ -3091,6 +3105,21 @@ class MainFrame(
             "Insert Numbered List",
             self.format_insert_numbered_list,
             None,
+        )
+        # EdSharp port: list-toggle variants strip an existing list or insert
+        # a new one based on the caret context.  See _toggle_list in this
+        # module for the insert-vs-strip decision.
+        self.commands.register(
+            "format.toggle_bullet_list",
+            "Toggle Bullet List",
+            self.toggle_bullet_list,
+            self._binding_for("format.toggle_bullet_list"),
+        )
+        self.commands.register(
+            "format.toggle_numbered_list",
+            "Toggle Numbered List",
+            self.toggle_numbered_list,
+            self._binding_for("format.toggle_numbered_list"),
         )
         self.commands.register(
             "format.insert_task_list",
@@ -6593,8 +6622,10 @@ class MainFrame(
                 self._id_heading_5,
                 self._id_heading_6,
                 getattr(self, "_id_style_headings", None),
-                self._id_insert_bullet_list,
-                self._id_insert_numbered_list,
+                getattr(self, "_id_insert_bullet_list", None),
+                getattr(self, "_id_insert_numbered_list", None),
+                getattr(self, "_id_toggle_bullet_list", None),
+                getattr(self, "_id_toggle_numbered_list", None),
                 self._id_insert_task_list,
                 getattr(self, "_id_open_list_manager", None),
                 self._id_insert_code_block,
@@ -21266,6 +21297,83 @@ class MainFrame(
 
     def format_insert_numbered_list(self) -> None:
         self._insert_structure("Numbered List", "Inserted numbered list")
+
+    def toggle_bullet_list(self) -> None:
+        """Insert a bullet list, or strip one if the caret is inside it.
+
+        Bound to Ctrl+Alt+7 (EdSharp port).  HTML and plain-text
+        documents announce the chord is unavailable and the action is
+        skipped.  Strip mode reads the current selection (or the whole
+        document when there is no selection) so the writer can collapse
+        a list without leaving the chord.
+        """
+        self._toggle_list("Bullet List", strip_kind="bullet")
+
+    def toggle_numbered_list(self) -> None:
+        """Insert a numbered list with auto-filled markers, or strip one.
+
+        Bound to Ctrl+Alt+8 (EdSharp port).  When the three-way auto-fill
+        gate (markdown surface OR list_auto_fill_numbers setting OR
+        per-document arming flag) holds, the inserted list gets
+        ``1. ``, ``2. ``, ``3. `` ... markers.  Otherwise only the first
+        item gets a marker (today's behaviour).  Toggling also arms the
+        document for 5 minutes so the writer can stay in fill mode
+        without re-pressing the chord.
+        """
+        surface = self._active_markup_surface()
+        if surface is not None:
+            # Arm the document so subsequent insertions auto-fill for
+            # 5 minutes (covers the case where the writer opens the menu,
+            # toggles the chord, and continues typing).
+            self._numbered_list_armed_until = time.monotonic() + _LIST_AUTO_FILL_ARM_SECONDS
+        self._toggle_list("Numbered List", strip_kind="numbered")
+
+    def _toggle_list(self, kind: str, *, strip_kind: str) -> None:
+        if not self._feature_enabled("core.format"):
+            self._set_status(f"{kind} is unavailable in this profile")
+            return
+        surface = self._active_markup_surface()
+        if surface is None:
+            self._set_status(f"{kind} is only available in Markdown or HTML documents")
+            return
+        try:
+            text = self.editor.GetValue()
+            caret = self.editor.GetInsertionPoint()
+        except RuntimeError:
+            return
+        try:
+            inside = is_caret_inside_list(text, caret, markup_kind=surface)
+        except Exception:
+            inside = False
+        if inside:
+            stripped = strip_list_markers(text)
+            try:
+                self.editor.SetValue(stripped)
+                self.editor.SetInsertionPoint(min(caret, len(stripped)))
+                self.editor.SetFocus()
+            except RuntimeError:
+                return
+            self._announce(f"{kind} removed")
+            return
+        # Insert path
+        selected_text = self.editor.GetStringSelection()
+        if surface == "markdown":
+            result = build_markdown_insertion(kind, selected_text)
+            if kind == "Numbered List" and should_auto_fill_numbers(
+                self.settings, surface, armed_until=self._numbered_list_armed_until
+            ):
+                rewritten = fill_numbered_markers(result.inserted_text)
+                result = type(result)(inserted_text=rewritten, caret_offset=result.caret_offset)
+        else:
+            result = self._build_html_structure(kind, selected_text)
+        self._apply_insertion_result(result)
+        if kind == "Numbered List" and surface == "markdown":
+            if should_auto_fill_numbers(
+                self.settings, surface, armed_until=self._numbered_list_armed_until
+            ):
+                self._announce("Numbered list applied (with numbers)")
+                return
+        self._set_status(f"Inserted {kind.lower()} ({surface})")
 
     def format_insert_task_list(self) -> None:
         self._insert_structure("Task List", "Inserted task list")

@@ -313,6 +313,19 @@ SETTING_SPECS: tuple[SettingSpec, ...] = (
         keywords=("abbreviation", "sound", "wav", "audio"),
     ),
     SettingSpec(
+        "list_auto_fill_numbers",
+        "Auto-fill numbered list markers",
+        "editing",
+        "bool",
+        "When inserting a Markdown numbered list, fill in the leading "
+        "'1. ', '2. ', '3. ' markers for each item instead of leaving the "
+        "first marker only. Auto-fill is also enabled automatically while "
+        "the caret is in a Markdown document, or for 5 minutes after you "
+        "toggle a numbered list on the active document.",
+        keywords=("list", "numbered", "auto", "fill", "markdown"),
+        feature_id="core.format",
+    ),
+    SettingSpec(
         "abbreviation_backspace_behavior",
         "Backspace after expansion",
         "editing",
