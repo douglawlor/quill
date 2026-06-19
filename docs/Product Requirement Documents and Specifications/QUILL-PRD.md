@@ -430,7 +430,7 @@ Post-conversion prompt rule (issue #262): when the target format is editable in 
 
 ##### 5.3a.1.2 Batch Conversion wizard
 
-**Tools > Batch Conversion...** (or **QUILL key, B**) opens a hand-rolled `wx.Dialog` modeled on `setup_wizard_pages.py`. Four pages: Introduction (with live Pandoc version probe), Folder and options (folder picker, recursive checkbox, output-layout radio, overwrite radio), Format and profile (direction radio, Tier-1 source/target lists, profile picker), Review and start (human-readable summary).
+**File > Import > Batch Conversion...** and **File > Export > Batch Conversion...** (or **QUILL key, B**) open a hand-rolled `wx.Dialog` modeled on `setup_wizard_pages.py`. Four pages: Introduction (with live Pandoc version probe), Folder and options (folder picker, recursive checkbox, output-layout radio, overwrite radio), Format and profile (direction radio, Tier-1 source/target lists, profile picker), Review and start (human-readable summary).
 
 Defaults come from `Settings.import_export_recursive`, `import_export_output_layout`, `import_export_overwrite`, and the wizard-overridable `import_export_last_folder`. The wizard can override any of these per run; the Preferences dialog is the canonical place to change defaults.
 

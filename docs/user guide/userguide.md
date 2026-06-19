@@ -1201,7 +1201,7 @@ A few minutes of muscle memory covers most workflows:
 
 ### Batch Conversion
 
-When you have a folder full of documents to convert, opening them one at a time is not the right tool. **Tools > Batch Conversion...** (or **QUILL key, B**) opens a four-page wizard that converts a whole folder of files on a background thread.
+When you have a folder full of documents to convert, opening them one at a time is not the right tool. **File > Import > Batch Conversion...** (or **File > Export > Batch Conversion...** - both lead to the same wizard) opens a four-page wizard that converts a whole folder of files on a background thread. The chord is **QUILL key, B**.
 
 **The wizard, page by page.**
 

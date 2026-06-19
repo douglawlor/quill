@@ -69,7 +69,8 @@ class MenuBuilderMixin:
         self._id_export_pdf = wx.NewIdRef()
         self._id_export_plain_text = wx.NewIdRef()
         self._id_export_other = wx.NewIdRef()  # "Other Pandoc Format..."
-        self._id_batch_convert = wx.NewIdRef()
+        self._id_batch_convert_import = wx.NewIdRef()
+        self._id_batch_convert_export = wx.NewIdRef()
         self._id_advanced_pandoc = wx.NewIdRef()  # placeholder for Tier-2/3
         self._sessions_menu = wx.Menu()
         self._open_documents_menu = wx.Menu()
@@ -178,6 +179,11 @@ class MenuBuilderMixin:
         )
         import_menu.AppendSeparator()
         import_menu.Append(
+            self._id_batch_convert_import,
+            self._menu_label(_("&Batch Conversion..."), "file.batch_conversion_import"),
+        )
+        import_menu.AppendSeparator()
+        import_menu.Append(
             self._id_import_other,
             self._menu_label(_("Other Pandoc Format..."), "file.import_other_pandoc"),
         )
@@ -215,6 +221,11 @@ class MenuBuilderMixin:
         export_menu.Append(
             self._id_export_plain_text,
             self._menu_label(_("Plain &Text..."), "file.export_plain_text"),
+        )
+        export_menu.AppendSeparator()
+        export_menu.Append(
+            self._id_batch_convert_export,
+            self._menu_label(_("&Batch Conversion..."), "file.batch_conversion_export"),
         )
         export_menu.AppendSeparator()
         export_menu.Append(
@@ -1310,10 +1321,6 @@ class MenuBuilderMixin:
             self._menu_label(_("&Command Palette..."), "app.command_palette"),
         )
         tools_menu.Append(
-            self._id_batch_convert,
-            self._menu_label(_("&Batch Conversion..."), "tools.batch_conversion"),
-        )
-        tools_menu.Append(
             self._id_advanced_pandoc,
             self._menu_label(_("&Pandoc Conversion Center..."), "tools.advanced_pandoc"),
         )
@@ -2125,7 +2132,14 @@ class MenuBuilderMixin:
             wx.EVT_MENU, lambda _e: self.export_document_other(), id=self._id_export_other
         )
         self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.run_batch_conversion_wizard(), id=self._id_batch_convert
+            wx.EVT_MENU,
+            lambda _e: self.run_batch_conversion_wizard(),
+            id=self._id_batch_convert_import,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.run_batch_conversion_wizard(),
+            id=self._id_batch_convert_export,
         )
         self.frame.Bind(
             wx.EVT_MENU,

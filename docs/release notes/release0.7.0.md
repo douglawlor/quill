@@ -833,7 +833,7 @@ When the target format is editable in QUILL — Markdown, CommonMark, GFM, HTML,
 
 ### The Batch Conversion wizard
 
-**Tools -> Batch Conversion...** (or **QUILL key, B**) opens a four-page wizard. Each page is keyboard-navigable end to end, every field is labelled in JAWS / NVDA order, and Back / Next / Start / Cancel are stock `wx.Button` controls under the standard modal-id contract.
+**File -> Import -> Batch Conversion...** and **File -> Export -> Batch Conversion...** (or **QUILL key, B**) open a four-page wizard. Each page is keyboard-navigable end to end, every field is labelled in JAWS / NVDA order, and Back / Next / Start / Cancel are stock `wx.Button` controls under the standard modal-id contract.
 
 1. **Introduction.** The first page reads a short summary of what the wizard does, then probes Pandoc. When Pandoc is detected, the version appears live in the page text. When it is not, the page says so and Start stays disabled until Pandoc is installed.
 2. **Folder and options.** A folder picker, an *Include subfolders* checkbox, an output-layout radio (Same folder as source, or Output subfolder per source folder), and an overwrite radio (Ask each time, Never, Always). Defaults are read from Settings so the wizard respects your preferences the moment it opens. The last folder you used is remembered for next time.
