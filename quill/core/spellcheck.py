@@ -18,6 +18,7 @@ set and the suggestion corpus.
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from pathlib import Path
 
 from quill.core.paths import app_data_dir
 from quill.core.storage import read_json, write_json_atomic
+
+logger = logging.getLogger(__name__)
 
 _WORD_PATTERN = re.compile(r"[A-Za-z][A-Za-z']*")
 
@@ -391,6 +394,7 @@ def load_scope_dictionary(
         return set()
     raw = read_json(path, default=[])
     if not isinstance(raw, list):
+        logger.warning("Scope dictionary %s is malformed; falling back to empty set", path)
         return set()
     return {item.strip().lower() for item in raw if isinstance(item, str) and item.strip()}
 
