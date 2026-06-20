@@ -797,11 +797,14 @@ Footnote</strong>, <strong>Insert Table...</strong>, <strong>Insert HTML
 Tag...</strong>, and <strong>Insert Markdown Tag...</strong>.</li>
 <li><strong>Insert Snippet...</strong> and <strong>Manage
 Snippets...</strong> for reusable text with placeholders.</li>
-<li><strong>Special Character...</strong>, <strong>Date and
-Time</strong> submenu, and <strong>File Content...</strong> insert
-symbols, timestamps (date, time, and date and time), and the contents of
-another file. The <strong>Date and Time</strong> submenu is provided by
-the bundled <code>com.quill.bundled.insert-tools</code> Quillin.</li>
+<li><strong>Special Character...</strong> opens a symbol picker.</li>
+<li><strong>Date and Time</strong> submenu inserts a date, time, or both
+at the cursor. The bundled <code>com.quill.bundled.insert-tools</code>
+Quillin owns this submenu; it is the canonical home for date and time
+snippets. See <a href="#date-and-time-submenu">Date and Time submenu</a>
+below.</li>
+<li><strong>File Content...</strong> inserts the contents of another
+file at the cursor.</li>
 <li><strong>Insert Equation...</strong> (<code>Ctrl+Shift+E</code>)
 opens a two-step prompt for inserting a LaTeX or MathML equation. Type
 the formula in LaTeX notation — for example <code>E=mc^2</code> or
@@ -844,7 +847,25 @@ triggers while typing</strong> as needed.</li>
 <p>Snippets support placeholders such as <code>${input:name}</code>,
 <code>${choice:a|b}</code>, <code>${date}</code>, <code>${time}</code>,
 and <code>${cursor}</code>.</p>
-<h3 id="format">Format</h3>
+<h4 id="date-and-time-submenu">Date and Time submenu</h4>
+<p><strong>Insert -&gt; Date and Time</strong> is a submenu, not a
+single command. The bundled <code>com.quill.bundled.insert-tools</code>
+Quillin owns it and contributes three snippet-backed items:</p>
+<ul>
+<li><strong>Insert Date</strong> — inserts today's date at the cursor
+using the project's current <code>${date}</code> format.</li>
+<li><strong>Insert Time</strong> — inserts the current time at the
+cursor using <code>${time}</code>.</li>
+<li><strong>Insert Date and Time</strong> — inserts both, separated by a
+single space.</li>
+</ul>
+<p>The submenu is built by routing Quillin contributions whose
+<code>parent</code> is <code>Date and Time</code>. If you disable the
+bundled <code>insert-tools</code> Quillin, the submenu is still present
+but its items go with it. Enable or disable it from <strong>Preferences
+-&gt; Quillins</strong> if you want to replace these with your own
+date/time snippets.</p>
+<h4 id="format">Format</h4>
 <p>The <strong>Format</strong> menu handles presentation and
 markup-aware editing of existing text.</p>
 <p>Case operations live in the <strong>Change Case</strong> submenu:</p>

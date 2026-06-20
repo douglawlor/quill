@@ -346,7 +346,9 @@ The **Insert** menu adds structured content at the cursor.
 - **List** submenu: **Bullet**, **Numbered**, **Task**, and **List Manager...**.
 - **Insert Code Block**, **Insert Footnote**, **Insert Table...**, **Insert HTML Tag...**, and **Insert Markdown Tag...**.
 - **Insert Snippet...** and **Manage Snippets...** for reusable text with placeholders.
-- **Special Character...**, **Date and Time** submenu, and **File Content...** insert symbols, timestamps (date, time, and date and time), and the contents of another file. The **Date and Time** submenu is provided by the bundled `com.quill.bundled.insert-tools` Quillin.
+- **Special Character...** opens a symbol picker.
+- **Date and Time** submenu inserts a date, time, or both at the cursor. The bundled `com.quill.bundled.insert-tools` Quillin owns this submenu; it is the canonical home for date and time snippets. See [Date and Time submenu](#date-and-time-submenu) below.
+- **File Content...** inserts the contents of another file at the cursor.
 - **Insert Equation...** (`Ctrl+Shift+E`) opens a two-step prompt for inserting a LaTeX or MathML equation. Type the formula in LaTeX notation — for example `E=mc^2` or `\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}` — or paste a MathML fragment. If the input is LaTeX, a second step asks whether to display it inline (`$...$`) or as a block (`$$...$$`). If a LaTeX equation is already selected when you press `Ctrl+Shift+E`, the delimiters are stripped and the bare formula pre-fills the prompt. MathML input (starting with `<math`) is inserted verbatim without a mode step. Browser Preview and HTML export render equations using MathJax 3.
 
 Quill treats Markdown and HTML as working surfaces, not special-purpose export formats, so tag insertion lives here beside the structural inserts.
@@ -368,7 +370,17 @@ For setup and maintenance:
 
 Snippets support placeholders such as `${input:name}`, `${choice:a|b}`, `${date}`, `${time}`, and `${cursor}`.
 
-### Format
+#### Date and Time submenu
+
+**Insert -> Date and Time** is a submenu, not a single command. The bundled `com.quill.bundled.insert-tools` Quillin owns it and contributes three snippet-backed items:
+
+- **Insert Date** — inserts today's date at the cursor using the project's current `${date}` format.
+- **Insert Time** — inserts the current time at the cursor using `${time}`.
+- **Insert Date and Time** — inserts both, separated by a single space.
+
+The submenu is built by routing Quillin contributions whose `parent` is `Date and Time`. If you disable the bundled `insert-tools` Quillin, the submenu is still present but its items go with it. Enable or disable it from **Preferences -> Quillins** if you want to replace these with your own date/time snippets.
+
+#### Format
 
 The **Format** menu handles presentation and markup-aware editing of existing text.
 
