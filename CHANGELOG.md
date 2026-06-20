@@ -19,6 +19,10 @@ QUILL 0.7.0 folds the 0.6.0 work and the 0.6.1 Braille Mode Phase 2 work into a 
 - **Detailed status and print-page navigation (BR-014).** Six new Braille menu commands: Go to Print Page, Next/Previous Print Page Change, Announce Running Head, Include/Omit Running Head in Status. `Read Detailed Braille Status` now composes the full example string from the spec (print page, continuation letter, running head, proofing state, detection confidence) and `Read Current Print Page` no longer hard-codes "Print page unknown". Default key bindings intentionally left unset (matching the Phase 1 convention). Phase 2 is split into its own `main_frame_braille_phase2.py` mixin to keep `main_frame_braille.py` under the GATE-11 module-size budget.
 - **Planning consolidation.** The 6,700-line `docs/planning/braille.md` was rolled into `docs/planning/planning.md` under "Feature: Braille Mode" so the live roadmap stays the single source of truth; the standalone file and its `.html`/`.epub` siblings were deleted; structure tests now assert it cannot reappear.
 
+### Bug fixes (post-review triage)
+
+- **Keymap: dead legacy-preview migration deleted.** `merge_keymaps`'s `legacy_preview_conflict` block checked the new chord defaults instead of the legacy ones, so it never fired for a real saved keymap; `legacy_rebindings` already migrates the same case correctly. Deleted per the locked decision on #274. Also removed an exact-duplicate comment block (#282) and added a debug log when `list_keymap_profiles` drops a malformed profile JSON instead of silently skipping it (#299).
+
 ## 0.6.0 — Insert Automation, Quillin Platform, Braille Mode, AI Writing Toolkit (2026-06-17)
 
 ### Text hygiene
