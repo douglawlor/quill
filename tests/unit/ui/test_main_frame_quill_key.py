@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
+from quill.branding import QUILL_KEY_LABEL
 from quill.core.quill_key_help import MODE_BROWSE, MODE_PREFIX
 from quill.ui.main_frame import MainFrame
 
@@ -325,7 +326,7 @@ def test_prefix_press_announces_quill_key() -> None:
     handled = frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
     assert handled is True
     assert frame._announcements  # type: ignore[attr-defined]
-    assert frame._announcements[0] == "QUILL key"  # type: ignore[attr-defined]
+    assert frame._announcements[0] == QUILL_KEY_LABEL  # type: ignore[attr-defined]
 
 
 def test_prefix_press_silent_when_announce_mode_changes_disabled() -> None:

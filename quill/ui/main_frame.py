@@ -204,6 +204,7 @@ from quill.core.keymap import (
     export_keyboard_pack,
     export_keymap,
     find_keymap_conflict,
+    format_binding_for_display,
     import_keyboard_pack,
     import_keymap,
     keyboard_pack_description,
@@ -6453,8 +6454,29 @@ class MainFrame(
         label = self._ensure_menu_customization().item_label(command_id, title)
         binding = self.commands.keybinding_for(command_id)
         if binding is None:
+            # Runtime gap check: a menu item that has no binding AND
+            # no visible label produces a blank slot in the menu. The
+            # customization layer can legitimately return a custom
+            # label (we cannot tell that from the resolved label
+            # alone), so we only warn when the original `title` is
+            # empty too. This is loud at first menu build and lets the
+            # CI audit gate (menu_lint) catch the same pattern
+            # statically.
+            if not (title or "").strip():
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "menu item %r has no binding AND no visible label",
+                    command_id,
+                )
             return label
-        return f"{label}\t{binding}"
+        # Route the binding through the chord-prefix display rewriter
+        # so QUILL Key chords show as "QUILL Key + S" instead of the
+        # raw "Ctrl+Shift+Grave, S" grammar. The stored binding
+        # itself is unchanged.
+        prefix = getattr(self.settings, "quill_key_binding", "Ctrl+Shift+Grave")
+        display = format_binding_for_display(binding, prefix=prefix)
+        return f"{label}\t{display}"
 
     def _ensure_menu_customization(self) -> MenuCustomization:
         """Return the loaded menu customization, loading it on first use."""

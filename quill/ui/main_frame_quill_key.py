@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import time
 
+from quill.branding import QUILL_KEY_LABEL
+
 try:
     import winsound as _winsound  # type: ignore[import]
 except ImportError:  # pragma: no cover - non-Windows fallback
@@ -55,7 +57,7 @@ class QuillKeyMixin:
                 if timeout > 0 and (time.monotonic() - self._quill_key_prefix_started_at) > timeout:
                     self._quill_key_prefix_pending = False
                     self._quill_key_prefix_started_at = 0.0
-                    self._set_status_quiet("QUILL key timed out")
+                    self._set_status_quiet(f"{QUILL_KEY_LABEL} timed out")
                     self._refresh_statusbar()
                     return False
                 if key_code in {getattr(wx, "WXK_ESCAPE", 27), 27}:
@@ -134,21 +136,22 @@ class QuillKeyMixin:
                 self._quill_key_prefix_pending = False
                 self._quill_key_prefix_started_at = 0.0
                 self._refresh_statusbar()
-                self._set_status_quiet("Unrecognized QUILL key chord. Press ? for help.")
-                self._announce("Unrecognized QUILL key chord", force=True)
+                self._set_status_quiet(f"Unrecognized {QUILL_KEY_LABEL} chord. Press ? for help.")
+                self._announce(f"Unrecognized {QUILL_KEY_LABEL} chord", force=True)
                 return True
             if self._quill_key_prefix_matches(event):
                 self._quill_key_prefix_pending = True
                 self._quill_key_prefix_started_at = time.monotonic()
                 message = (
-                    "QUILL key prefix active. N for browse mode, press QUILL key again for "
-                    "sticky mode, G for quick nav, then any configured chord key, ? for help"
+                    f"{QUILL_KEY_LABEL} prefix active. N for browse mode, press "
+                    f"{QUILL_KEY_LABEL} again for sticky mode, G for quick nav, "
+                    "then any configured chord key, ? for help"
                 )
                 if self._has_active_selection():
                     message = (
-                        "QUILL key prefix active. N for browse mode, press QUILL key again for "
-                        "sticky mode, G for quick nav, A for selection actions, "
-                        "then any configured chord key, ? for help"
+                        f"{QUILL_KEY_LABEL} prefix active. N for browse mode, press "
+                        f"{QUILL_KEY_LABEL} again for sticky mode, G for quick nav, "
+                        "A for selection actions, then any configured chord key, ? for help"
                     )
                 self._set_status_quiet(message)
                 self._refresh_statusbar()
@@ -156,7 +159,7 @@ class QuillKeyMixin:
                 # the chord sound. Gated by announce_mode_changes so users in
                 # quiet / no-speech profiles keep the prefix silent.
                 if bool(getattr(self.settings, "announce_mode_changes", True)):
-                    self._announce("QUILL key", force=True)
+                    self._announce(QUILL_KEY_LABEL, force=True)
                 from quill.core.sound_events import SoundEvent
                 from quill.ui.sound_manager import post_sound
 
@@ -477,7 +480,7 @@ class QuillKeyMixin:
         runner = mapping.get(action)
         if runner is None:
             self._quill_feedback(
-                f"No QUILL key action mapped to {action}",
+                f"No {QUILL_KEY_LABEL} action mapped to {action}",
                 status_message="No browse action mapped",
                 sound_kind="error",
             )
@@ -634,7 +637,7 @@ class QuillKeyMixin:
             binding_lookup=self._binding_for,
             counts=counts,
             selection_active=self._has_active_selection(),
-            quill_key_label="QUILL key",
+            quill_key_label=QUILL_KEY_LABEL,
             chord_map=self.keymap,
             prefix=str(getattr(self.settings, "quill_key_binding", "Ctrl+Shift+Grave")),
         )
@@ -648,7 +651,9 @@ class QuillKeyMixin:
     def _present_quill_key_help(self, mode: str, text: str) -> None:
         """Show the cheat sheet in an accessible, read-only dialog."""
         wx = self._wx
-        title = "QUILL Key Help" if mode == MODE_BROWSE else "QUILL Key Prefix Help"
+        title = (
+            f"{QUILL_KEY_LABEL} Help" if mode == MODE_BROWSE else f"{QUILL_KEY_LABEL} Prefix Help"
+        )
         dialog = wx.Dialog(
             self.frame,
             title=title,
@@ -661,7 +666,7 @@ class QuillKeyMixin:
                 wx.StaticText(
                     dialog,
                     label=(
-                        "Follow-on keys for the QUILL key, grouped by purpose. "
+                        f"Follow-on keys for the {QUILL_KEY_LABEL}, grouped by purpose. "
                         "Counts show how many of each element are in this document."
                     ),
                 ),
