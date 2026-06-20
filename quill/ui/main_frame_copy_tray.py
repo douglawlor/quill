@@ -293,7 +293,9 @@ class CopyTrayMixin:
         from quill.ui.copy_tray_dialog import CopyTrayDialog
 
         tray = self._tray()
-        dlg = CopyTrayDialog(self.frame, tray, self._get_editor_selection())
+        dlg = CopyTrayDialog(
+            self.frame, tray, self._get_editor_selection(), announce_cb=self._announce
+        )
         result = self._show_modal_dialog(dlg.dialog, "Copy Tray")
         if result == wx.ID_OK and (text := dlg.selected_text_to_paste()):
             n = dlg.selected_slot()

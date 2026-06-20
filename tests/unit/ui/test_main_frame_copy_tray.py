@@ -25,3 +25,7 @@ def test_search_dialog_announces_selection_change() -> None:
 
 def test_search_tray_slots_passes_announce_fn() -> None:
     assert "_TraySearchDialog(self.frame, tray, announce_fn=self._announce)" in SOURCE
+
+
+def test_open_copy_tray_passes_announce_cb() -> None:
+    assert "announce_cb=self._announce" in SOURCE
