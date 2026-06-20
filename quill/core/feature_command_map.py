@@ -107,6 +107,7 @@ COMMAND_FEATURE_MAP: dict[str, str] = {
     "tools.next_misspelling": "core.spellcheck",
     "tools.misspelling_list": "core.spellcheck",
     "tools.dictionary_status": "core.spellcheck",
+    "tools.thesaurus": "core.dictionary",
     "tools.ocr_image": "core.ocr",
     "tools.ocr_clipboard": "core.ocr",
     "tools.ocr_screen": "core.ocr",
