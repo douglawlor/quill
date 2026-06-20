@@ -65,13 +65,34 @@ def test_installer_filename_matches_inno_setup() -> None:
     assert feed_mod._installer_filename("0.7.0 Beta 1") == ("Quill-for-All-Setup-0.7.0 Beta 1.exe")
 
 
+def test_github_release_asset_name_rewrites_space() -> None:
+    """GitHub's release-asset CDN rewrites spaces in the asset filename to dots.
+
+    The Inno Setup step keeps the space in the on-disk filename, but the URL
+    the running build hits must match what GitHub serves. ``.Beta.1.exe`` is
+    what the asset URL actually is for a 0.7.0 Beta 1 release.
+    """
+    assert (
+        feed_mod._github_release_asset_name("Quill-for-All-Setup-0.7.0 Beta 1.exe")
+        == "Quill-for-All-Setup-0.7.0.Beta.1.exe"
+    )
+    # A stable release has no space, so the helper must be a no-op.
+    assert (
+        feed_mod._github_release_asset_name("Quill-for-All-Setup-0.7.0.exe")
+        == "Quill-for-All-Setup-0.7.0.exe"
+    )
+
+
 def test_build_payload_derives_url_from_toml(tmp_path: Path) -> None:
     _write_version_toml(tmp_path, base="0.7.0", channel="beta", pre=1)
 
     payload = feed_mod.build_payload(source_root=tmp_path, tag="v0.7.0-beta.1")
 
     assert payload["version"] == "0.7.0 Beta 1"
-    assert payload["download_url"].endswith("/v0.7.0-beta.1/Quill-for-All-Setup-0.7.0 Beta 1.exe")
+    # GitHub's release-asset CDN rewrites the space in the installer filename
+    # to a dot, so the URL we point users at must match what GitHub serves
+    # (not what Inno Setup wrote to disk).
+    assert payload["download_url"].endswith("/v0.7.0-beta.1/Quill-for-All-Setup-0.7.0.Beta.1.exe")
     assert payload["signature"]
 
 
@@ -127,5 +148,5 @@ def test_main_writes_feed_file(tmp_path: Path, monkeypatch) -> None:
     assert rc == 0
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["version"] == "0.7.0 Beta 1"
-    assert payload["download_url"].endswith("/v0.7.0-beta.1/Quill-for-All-Setup-0.7.0 Beta 1.exe")
+    assert payload["download_url"].endswith("/v0.7.0-beta.1/Quill-for-All-Setup-0.7.0.Beta.1.exe")
     assert payload["signature"]

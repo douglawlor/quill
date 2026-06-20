@@ -71,6 +71,18 @@ def _installer_filename(display_version: str) -> str:
     return f"Quill-for-All-Setup-{display_version}.exe"
 
 
+def _github_release_asset_name(installer_name: str) -> str:
+    """Return the asset name as GitHub's release-asset CDN serves it.
+
+    GitHub's release asset URLs normalise the filename: any character that
+    is unsafe in a URL path (most commonly the space in ``"0.7.0 Beta 1"``)
+    is rewritten to a dot. The Inno Setup step keeps the space in the
+    on-disk filename, but the URL the running build hits must match what
+    GitHub serves, not what Inno Setup wrote.
+    """
+    return installer_name.replace(" ", ".")
+
+
 def _default_published_at() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -93,10 +105,11 @@ def build_payload(
     """
     resolved_version = (version or _resolve_version(source_root)).strip()
     installer_name = _installer_filename(resolved_version)
+    asset_name = _github_release_asset_name(installer_name)
     resolved_url = (
         download_url.strip()
         if download_url
-        else f"https://github.com/Community-Access/quill/releases/download/{tag}/{installer_name}"
+        else f"https://github.com/Community-Access/quill/releases/download/{tag}/{asset_name}"
     )
     payload: dict[str, str] = {
         "version": resolved_version,
