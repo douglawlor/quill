@@ -46,12 +46,13 @@ The QUILL Key is the editor's signature feature — a `Ctrl+Shift+\`` prefix tha
 
 ## Installation
 
-This release ships two artifacts:
+This release ships three artifacts:
 
 - **`Quill-for-All-Setup-0.7.0 Beta 1.exe`** — the Windows installer for QUILL for All. Run it as Administrator.
-- **`Quill-Portable-v0.7.0-beta.1.zip`** — the portable bundle with embedded Python and all bundled tools (Pandoc, DECtalk, eSpeak-NG, Piper, Kokoro). Extract and run `run-quill.cmd`.
+- **`Quill-Portable-v0.7.0-beta.1.zip`** — the Windows portable bundle with embedded Python and all bundled tools (Pandoc, DECtalk, eSpeak-NG, Piper, Kokoro). Extract and run `run-quill.cmd`.
+- **`Quill-macOS-0.7.0-beta.1.dmg`** — the macOS disk image for macOS 12 or later (Apple Silicon and Intel). Open the DMG and drag QUILL to Applications.
 
-The portable zip is for users who cannot or prefer not to install.
+The portable zip is for users who cannot or prefer not to install on Windows.
 
 ## Running from source
 
