@@ -4194,8 +4194,11 @@ class MainFrame(
 
     def _on_editor_caret_activity(self, event: object) -> None:
         self._refresh_statusbar()
-        self._maybe_announce_indent()
-        self._maybe_play_indent_tone()
+        try:
+            self._maybe_announce_indent()
+            self._maybe_play_indent_tone()
+        except RuntimeError:  # #603/#269: editor can be a dead TextCtrl mid-event.
+            pass
         event.Skip()
 
     def _on_editor_key_up(self, event: object) -> None:

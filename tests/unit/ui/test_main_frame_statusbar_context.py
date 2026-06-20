@@ -210,6 +210,40 @@ def test_statusbar_text_for_item_returns_empty_when_editor_is_dead() -> None:
     assert frame._statusbar_text_for_item("selection") == "Sel 0"
 
 
+class _DeadEditorAnyAttr:
+    """Every attribute access raises, like a destroyed wx TextCtrl (#269)."""
+
+    def __getattr__(self, _name: str) -> object:  # pragma: no cover - always raises
+        raise RuntimeError("wrapped C/C++ object of type TextCtrl has been deleted")
+
+
+class _StubEvent:
+    def __init__(self) -> None:
+        self.skipped = False
+
+    def Skip(self) -> None:
+        self.skipped = True
+
+
+def test_on_editor_caret_activity_survives_dead_editor() -> None:
+    """#603: ctrl+W on the last document can leave a caret/focus event in
+    flight after DeletePage() destroys self.editor's C++ TextCtrl. Both
+    _maybe_announce_indent and _maybe_play_indent_tone read straight from
+    self.editor; a RuntimeError there must not crash the event handler."""
+
+    frame = MainFrame.__new__(MainFrame)
+    frame._refresh_statusbar = lambda: None  # type: ignore[method-assign]
+    frame.settings = Settings()
+    frame.settings.indent_tone_scale = "pentatonic"
+    frame._power_tools_indent_announce = True
+    frame.editor = _DeadEditorAnyAttr()  # type: ignore[assignment]
+
+    event = _StubEvent()
+    frame._on_editor_caret_activity(event)
+
+    assert event.skipped is True
+
+
 # ---------------------------------------------------------------------------
 # EdSharp port PR4: status-bar "Section" cell
 # ---------------------------------------------------------------------------
