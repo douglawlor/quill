@@ -16,11 +16,11 @@ if:
 * any of the 12 expected bindings is claimed by a *different* command
   in the resolved keymap (after the profile overlay is applied).
 
-The check covers ``DEFAULT_KEYMAP`` plus the two bundled JSON profiles
-(``profile_default.json``, ``profile_sr_friendly.json``).  User-saved
-keymaps at ``%APPDATA%/quill/keymap.json`` are not in scope — users are
-explicitly allowed to remap their own keys, but the shipped defaults
-must not change without seeing this warning.
+The check covers ``DEFAULT_KEYMAP`` plus every bundled ``profile_*.json``
+under ``quill/core/keymap/``.  User-saved keymaps at
+``%APPDATA%/quill/keymap.json`` are not in scope — users are explicitly
+allowed to remap their own keys, but the shipped defaults must not change
+without seeing this warning.
 
 Run directly or via ``tests/unit/tools/test_check_copy_tray_binding.py``.
 Exit code is non-zero when any violation is found.
@@ -29,12 +29,20 @@ Exit code is non-zero when any violation is found.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _KEYMAP_DIR = _REPO_ROOT / "quill" / "core" / "keymap"
-_PROFILES = ("profile_default.json", "profile_sr_friendly.json")
+
+
+def _discover_profiles() -> tuple[str, ...]:
+    """Return the bundled ``profile_*.json`` filenames, sorted for stable output."""
+    return tuple(sorted(p.name for p in _KEYMAP_DIR.glob("profile_*.json")))
+
 
 # The 12 Copy Tray paste slots and the chord each one owns.  Order matches
 # the slot number so error messages read naturally.
@@ -70,7 +78,8 @@ def _resolved_keymap(profile_path: Path) -> dict[str, str]:
         return merged
     try:
         data = json.loads(profile_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Could not parse keymap profile %s: %s", profile_path.name, exc)
         return merged
     if not isinstance(data, dict):
         return merged
@@ -123,7 +132,7 @@ def run_checks() -> list[str]:
         return [f"Cannot import DEFAULT_KEYMAP from quill.core.keymap: {exc}"]
 
     errors.extend(_check_resolved("DEFAULT_KEYMAP", DEFAULT_KEYMAP))
-    for profile_name in _PROFILES:
+    for profile_name in _discover_profiles():
         resolved = _resolved_keymap(_KEYMAP_DIR / profile_name)
         errors.extend(_check_resolved(profile_name, resolved))
     return errors
