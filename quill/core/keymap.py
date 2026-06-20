@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from quill.core.keymap_packs import (
@@ -38,6 +39,8 @@ __all__ = [
     "reset_keymap",
     "save_keymap",
 ]
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_KEYMAP: dict[str, str] = {
     "file.new": "Ctrl+N",
@@ -128,8 +131,6 @@ DEFAULT_KEYMAP: dict[str, str] = {
     "edit.list_marks": "Alt+M",
     "edit.select_paragraph": "",  # Ctrl+Alt+P removed (§10.8 screen-reader-hostile)
     "edit.select_block": "Ctrl+Shift+B",
-    # PR1 (EdSharp port): section move takes the Alt+Shift+Up/Down slot. The
-    # previous expand/shrink selection pair migrates to the QUILL-key chord.
     # PR1 (EdSharp port): section move takes the Alt+Shift+Up/Down slot. The
     # previous expand/shrink selection pair migrates to the QUILL-key chord.
     # J and Shift+J were free in the QUILL-key second-key space (verified
@@ -291,6 +292,8 @@ def list_keymap_profiles() -> list[str]:
         data = read_json(path, default={})
         if isinstance(data, dict) and "_name" in data:
             profiles.append(str(data["_name"]))
+        else:
+            logger.debug("Dropping malformed keymap profile: %s", path.name)
     return profiles
 
 
@@ -349,17 +352,9 @@ def merge_keymaps(raw: object) -> dict[str, str]:
         "edit.expand_selection": ("ALT+SHIFT+UP", "Ctrl+Shift+Grave, J"),
         "edit.shrink_selection": ("ALT+SHIFT+DOWN", "Ctrl+Shift+Grave, Shift+J"),
     }
-    legacy_preview_conflict = (
-        str(raw.get("view.preview", "")).strip().upper() == "CTRL+SHIFT+P"
-        and str(raw.get("view.browser_preview", "")).strip().upper() == "CTRL+SHIFT+V"
-    )
     for command_id, binding in raw.items():
         if isinstance(command_id, str) and isinstance(binding, str):
             normalized = binding
-            if legacy_preview_conflict and command_id == "view.preview":
-                normalized = "Ctrl+Shift+V"
-            elif legacy_preview_conflict and command_id == "view.browser_preview":
-                normalized = "Ctrl+Alt+Shift+V"
             legacy_binding = legacy_rebindings.get(command_id)
             if legacy_binding is not None and normalized.strip().upper() == legacy_binding[0]:
                 normalized = legacy_binding[1]
