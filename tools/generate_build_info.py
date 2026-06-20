@@ -38,6 +38,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import tomli as tomllib  # type: ignore[no-redef]
 
+from quill.branding import APP_DISPLAY_NAME, APP_ORGANIZATION
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION_FILE = ROOT / "build" / "version.toml"
@@ -92,8 +93,8 @@ def main() -> int:
 
     config = tomllib.loads(VERSION_FILE.read_text(encoding="utf-8"))
 
-    product_name = str(config.get("product_name", "QUILL for All"))
-    publisher = str(config.get("publisher", "Community Access"))
+    product_name = str(config.get("product_name", APP_DISPLAY_NAME))
+    publisher = str(config.get("publisher", APP_ORGANIZATION))
     website = str(config.get("website", "https://quillforall.org"))
     base = str(config["base_version"])
     channel = str(config.get("channel", "dev"))

@@ -42,6 +42,23 @@ def test_resolve_version_falls_back_when_toml_missing(tmp_path: Path) -> None:
     assert feed_mod._resolve_version(tmp_path) == "1.2.3"
 
 
+def test_resolve_product_name_falls_back_to_branding_constant(tmp_path: Path) -> None:
+    # When build/version.toml is absent, the product name must come from
+    # the single branding source of truth (quill.branding.APP_DISPLAY_NAME)
+    # rather than a hard-coded string in this script. If the product is
+    # ever rebranded, only quill/branding.py needs to change.
+    from quill.branding import APP_DISPLAY_NAME
+
+    assert feed_mod._resolve_product_name(tmp_path) == APP_DISPLAY_NAME
+
+
+def test_resolve_product_name_uses_toml_value(tmp_path: Path) -> None:
+    _write_version_toml(tmp_path, base="0.7.0", channel="beta", pre=1)
+    # _write_version_toml writes product_name = "QUILL for All" so the
+    # TOML path returns it directly.
+    assert feed_mod._resolve_product_name(tmp_path) == "QUILL for All"
+
+
 def test_installer_filename_matches_inno_setup() -> None:
     """The feed publisher must agree with the installer's OutputBaseFilename."""
     # The string is hard-coded so a rename on either side fails this test.

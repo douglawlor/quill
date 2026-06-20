@@ -3,8 +3,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+# Allow this script to import from the quill package when run directly
+# (e.g. ``python scripts/generate_update_feed.py``) without a prior
+# ``pip install -e .``.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from quill.branding import APP_DISPLAY_NAME
 
 _SIGNATURE_SALT = "quill-manifest-signature-v1"
 
@@ -51,7 +59,7 @@ def _resolve_product_name(source_root: Path) -> str:
         name = str(data.get("product_name", "")).strip()
         if name:
             return name
-    return "QUILL for All"
+    return APP_DISPLAY_NAME
 
 
 def _installer_filename(display_version: str) -> str:

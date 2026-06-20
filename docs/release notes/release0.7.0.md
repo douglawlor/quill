@@ -1474,7 +1474,7 @@ Some readers want to look at the code, run a fresh build before it lands on the 
 ### Clone and create a virtual environment
 
 ```text
-git clone https://github.com/cse-designs/quill.git
+git clone https://github.com/community-access/quill.git
 cd quill
 python -m venv .venv
 
@@ -1575,7 +1575,7 @@ Three environment variables matter when you run from source. They are honoured o
 - `docs/QUILL-PRD.md` is the long-form product requirements document.
 - `docs/keybinding-standard.md` documents the keyboard model and the `Ctrl+Alt+` allowlist policy.
 - `docs/planning/` carries the detailed design notes for features that have not shipped yet.
-- The GitHub issue tracker is the right place to file bugs, ask questions, or propose a Quillin: <https://github.com/cse-designs/quill/issues>.
+- The GitHub issue tracker is the right place to file bugs, ask questions, or propose a Quillin: <https://github.com/community-access/quill/issues>.
 
 If you find something wrong, **Help -> Report a Bug...** from inside the editor is the friendliest path. The dialog lives in the Help menu now, accepts typing in every field, and submits in the background so the editor does not freeze. Include the output of `python -m quill --version` and, if you can, the crash-report bundle referenced in the dialog.
 

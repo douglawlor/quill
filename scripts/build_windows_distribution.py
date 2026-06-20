@@ -32,6 +32,12 @@ from pathlib import Path
 from quill.core.shell_verbs import ShellVerb, default_shell_verbs
 from quill.core.storage import write_json_atomic
 
+# Product-name fallback. The canonical source is build/version.toml; this
+# constant from quill.branding is the safety default when the TOML is
+# absent or missing the ``product_name`` field.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from quill.branding import APP_DISPLAY_NAME, APP_ORGANIZATION  # noqa: E402
+
 # Architecture note: all bundled binaries below are amd64/x86_64.  The Inno
 # Setup script uses ArchitecturesAllowed=x64compatible, which covers both
 # genuine x64 hardware and ARM64 Windows (Snapdragon / Surface Pro X), where
@@ -534,8 +540,8 @@ def build_installer_readme(version: str, identity: BuildIdentity) -> str:
 def build_inno_setup_script(
     version: str,
     *,
-    product_name: str = "QUILL for All",
-    publisher: str = "Community Access",
+    product_name: str = APP_DISPLAY_NAME,
+    publisher: str = APP_ORGANIZATION,
     bundle_braille_pack: bool = False,
 ) -> str:
     """Return a production-quality Inno Setup script for the portable bundle.
@@ -1371,14 +1377,14 @@ def _build_identity(source_root: Path) -> BuildIdentity:
         base = str(data.get("base_version", "")).strip()
         channel = str(data.get("channel", "dev")).strip().lower()
         pre = int(data.get("prerelease_number", 0))
-        product_name = str(data.get("product_name", "QUILL for All"))
-        publisher = str(data.get("publisher", "Community Access"))
+        product_name = str(data.get("product_name", APP_DISPLAY_NAME))
+        publisher = str(data.get("publisher", APP_ORGANIZATION))
     else:
         base = _base_version_from_init_py(source_root)
         channel = "dev"
         pre = 0
-        product_name = "QUILL for All"
-        publisher = "Community Access"
+        product_name = APP_DISPLAY_NAME
+        publisher = APP_ORGANIZATION
     display = _display_version(base, channel, pre)
     return BuildIdentity(
         base_version=base,
