@@ -27,6 +27,7 @@ QUILL 0.7.0 folds the 0.6.0 work and the 0.6.1 Braille Mode Phase 2 work into a 
 - **Removed orphaned `whisperer.about` menu-id scaffolding.** A `wx.NewIdRef()` and its `Bind()` call had no menu item wired to them; deleted both plus the stale `_command_to_menu_id_map` entry. The command itself remains live via Command Palette / Go to Anything (#284).
 - **`kqp_validator._validate_file` renamed to `validate_file`.** The function is imported across the core/tools boundary, so the leading underscore was misleading (#290).
 - **Copy Tray binding gate now discovers bundled profiles instead of hard-coding them.** `check_copy_tray_binding` previously checked only two named profile files; it now globs `profile_*.json`, so `profile_minimal.json` and any future bundled profile are covered automatically (#285).
+- **Removed two never-shipped `future.*` feature placeholders; fixed `core.dictionary`'s dead command mapping.** `future.character_inspector` and `future.regex_library` had zero backing commands anywhere in the codebase and were deleted from the catalog and profile tables. `core.dictionary` (Dictionary and Thesaurus) was a real dead mapping: `tools.thesaurus` is now mapped to it in `feature_command_map.py`, so disabling the feature correctly hides the command from the Command Palette (#306).
 
 ## 0.6.0 — Insert Automation, Quillin Platform, Braille Mode, AI Writing Toolkit (2026-06-17)
 
