@@ -24,10 +24,10 @@ jobs:
       - name: Fetch upstream
         run: git fetch upstream
 
-      - name: Save fork workflows
+      - name: List fork workflow files
         run: |
           mkdir -p /tmp/fork-workflows
-          cp -r .github/workflows/* /tmp/fork-workflows/ 2>/dev/null || true
+          ls .github/workflows/ > /tmp/fork-workflows/list.txt 2>/dev/null || true
 
       - name: Merge upstream/main
         run: |
@@ -35,12 +35,24 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git merge upstream/main --no-edit -m "Sync with upstream"
 
-      - name: Restore fork workflows
+      - name: Remove new upstream workflow files
         run: |
-          cp -r /tmp/fork-workflows/* .github/workflows/ 2>/dev/null || true
-          git add .github/workflows
+          # Remove any workflow files that were added by the merge but don't exist in the fork
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -e "$f" ] || continue
+            basename=$(basename "$f")
+            if ! grep -q "^$basename$" /tmp/fork-workflows/list.txt 2>/dev/null; then
+              echo "Removing upstream-only workflow: $f"
+              git rm "$f"
+            fi
+          done
+
+      - name: Commit workflow cleanup
+        run: |
           if ! git diff --cached --quiet; then
-            git commit -m "Restore fork workflow files"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Remove upstream-only workflow files"
           fi
 
       - name: Push changes
