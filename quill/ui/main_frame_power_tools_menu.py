@@ -39,9 +39,17 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
     Commands are declared grouped by their recirculated menu home (menus.md
     Phase 4). Within each ``group`` the declaration order is the live menu order,
     and ``separator_before`` reproduces the visual grouping; one data-driven
-    helper appends each group. None carry a default keybinding — their original
-    shortcuts collide with QUILL's curated keymap, so users bind them from the
-    Keymap Editor instead.
+    helper appends each group.
+
+    Most carry no default keybinding: their original shortcuts collided with
+    QUILL's curated keymap, so users bind them from the Keymap Editor. Three do
+    as of 2026-09-16 -- Hard-Wrap Lines (``Alt+Shift+W``), Delete Lines
+    Containing (``Alt+Shift+X``) and Line Statistics (``Ctrl+Alt+G``) -- because
+    QUILL Lite gave the first two those exact chords and both were free here, and
+    because a verb reachable only by walking a menu is a cost a screen-reader
+    user pays on every visit (bad.md P1.1, rule 8). The keys live in
+    ``DEFAULT_KEYMAP`` and arrive through ``_binding_for``; nothing in this
+    manifest names a chord.
     """
 
     registrar = FirstPartyRegistrar()
@@ -55,6 +63,16 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         group="insert",
         label="Special &Character...",
         separator_before=True,
+    )
+    # A hard break is a marker at the end of a line and both of its spellings
+    # are impossible to type with confidence -- two invisible spaces, or a
+    # backslash nobody remembers. Shift+Enter is what Word uses (#1488).
+    add(
+        id="power.insert_line_break",
+        title="Insert Line Break",
+        top_level="Insert",
+        group="insert",
+        label="&Line Break",
     )
     # NOTE: Power-tool date/time items (``power.insert_date_time`` and
     # ``power.calculate_and_insert_date``) used to live on the Insert menu next to
@@ -77,6 +95,16 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         label="&Table of Contents",
         separator_before=True,
     )
+    # Insert Image (#899): mandatory alt text (or an explicit decorative
+    # flag) at the one insertion path built specifically for it.
+    add(
+        id="power.insert_image",
+        title="Insert Image",
+        top_level="Insert",
+        group="insert",
+        label="&Image...",
+        separator_before=False,
+    )
 
     # Edit menu ----------------------------------------------------------
     add(
@@ -85,6 +113,14 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         top_level="Edit",
         group="edit",
         label="Paste &HTML as Markdown",
+        separator_before=False,
+    )
+    add(
+        id="power.paste_markdown_as_html",
+        title="Paste Markdown as HTML",
+        top_level="Edit",
+        group="edit",
+        label="Paste Mar&kdown as HTML",
         separator_before=False,
     )
     add(
@@ -119,6 +155,22 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         label="Explain A&bbreviation...",
         separator_before=False,
     )
+    add(
+        id="edit.repeat_command",
+        title="Repeat Next Command",
+        top_level="Edit",
+        group="edit",
+        label="&Repeat Next Command...",
+        separator_before=True,
+    )
+    add(
+        id="edit.restore_deletion",
+        title="Restore Deleted Text",
+        top_level="Edit",
+        group="edit",
+        label="Restore &Deleted Text...",
+        separator_before=False,
+    )
 
     # File menu ----------------------------------------------------------
     add(
@@ -135,6 +187,24 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         top_level="File",
         group="file_ops",
         label="Dele&te Current File...",
+        separator_before=False,
+    )
+    # Send / Copy as Email (#900): the selection, or the whole document when
+    # nothing is selected, rendered per the content_handoff_format setting.
+    add(
+        id="power.send_as_email",
+        title="Send as Email",
+        top_level="File",
+        group="file_ops",
+        label="Sen&d as Email...",
+        separator_before=True,
+    )
+    add(
+        id="power.copy_as_email_body",
+        title="Copy as Email Body",
+        top_level="File",
+        group="file_ops",
+        label="Copy as E&mail Body",
         separator_before=False,
     )
 
@@ -203,6 +273,24 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         label="Delete to Document En&d",
         separator_before=False,
     )
+    # AutoOutline (#894): literal-text heading numbering, driven by the
+    # auto_outline_style setting (numeric or legal).
+    add(
+        id="power.apply_auto_outline_numbering",
+        title="Update Outline Numbering",
+        top_level="Format",
+        group="format_line",
+        label="&Update Outline Numbering",
+        separator_before=True,
+    )
+    add(
+        id="power.remove_auto_outline_numbering",
+        title="Remove Outline Numbering",
+        top_level="Format",
+        group="format_line",
+        label="Re&move Outline Numbering",
+        separator_before=False,
+    )
 
     # Format > Sort & Filter -------------------------------------------
     add(
@@ -222,20 +310,20 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         separator_before=False,
     )
     add(
+        id="power.sort_lines_by_date",
+        title="Sort Lines by Date",
+        top_level="Format",
+        group="sort_filter",
+        label="Sort Lines by &Date",
+        separator_before=False,
+    )
+    add(
         id="power.sort_lines_by_length",
         title="Sort Lines by Length",
         top_level="Format",
         group="sort_filter",
         label="Sort Lines by &Length",
         separator_before=False,
-    )
-    add(
-        id="power.keep_unique_lines",
-        title="Keep Unique Lines",
-        top_level="Format",
-        group="sort_filter",
-        label="&Keep Unique Lines",
-        separator_before=True,
     )
     add(
         id="power.delete_lines_containing",
@@ -257,10 +345,30 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
     # Format > Whitespace (trim blank lines) ---------------------------
     add(
         id="power.trim_blank_lines",
-        title="Trim Blank Lines",
+        title="Trim Blank Lines at the Ends",
         top_level="Format",
         group="trim_blank",
-        label="Trim &Blank Lines",
+        label="Trim &Blank Lines at the Ends",
+        separator_before=False,
+    )
+    # Its companion, and deliberately a separate command: trimming the two ends
+    # is what you want before pasting a fragment, removing all of them is what
+    # you want after a copy out of a web page, and one item that did whichever
+    # would be an item nobody could predict. Added with the shared
+    # ``format_ops.remove_blank_lines`` that QUILL Lite needed -- see
+    # PowerToolsActionsMixin.remove_blank_lines for why it lands here too.
+    #
+    # The two names say where rather than how much (2026-09-10). "Trim" and
+    # "Remove" are near-synonyms read aloud one after the other, and two adjacent
+    # menu items whose difference is a verb choice is a menu you have to try to
+    # understand -- so the titles carry "at the Ends" and "Every", which is the
+    # actual difference between them.
+    add(
+        id="power.remove_blank_lines",
+        title="Remove Every Blank Line",
+        top_level="Format",
+        group="trim_blank",
+        label="Remove Every Blan&k Line",
         separator_before=False,
     )
 
@@ -541,11 +649,40 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         separator_before=False,
     )
     add(
+        id="edit.copy_to_tray_slot",
+        title="Copy to Tray Slot",
+        top_level="Edit",
+        group="copy_tray",
+        label="Copy to Tray &Slot...",
+        separator_before=False,
+    )
+    add(
         id="edit.clear_all_tray_slots",
         title="Clear All Tray Slots",
         top_level="Edit",
         group="copy_tray",
         label="C&lear All Tray Slots",
+        separator_before=False,
+    )
+
+    # Edit > Clip Library (#895) -- a rolling history beneath Copy Tray's
+    # curated 12 slots, sharing the same "copy_tray" menu group/section since
+    # it's the natural neighbor. keep_selection_in_clip_library /
+    # open_clip_library live in main_frame_clip_library.py's ClipLibraryMixin.
+    add(
+        id="edit.keep_selection_in_clip_library",
+        title="Keep Selection in Clip Library",
+        top_level="Edit",
+        group="copy_tray",
+        label="&Keep Selection in Clip Library",
+        separator_before=True,
+    )
+    add(
+        id="edit.open_clip_library",
+        title="Open Clip Library",
+        top_level="Edit",
+        group="copy_tray",
+        label="Open Clip &Library...",
         separator_before=False,
     )
 
@@ -608,6 +745,30 @@ def _build_power_tools_registrar() -> FirstPartyRegistrar:
         group="power_tools",
         label="&Line Statistics",
         separator_before=True,
+    )
+    add(
+        id="power.describe_character",
+        title="Describe Character at Cursor",
+        top_level="Tools",
+        group="power_tools",
+        label="Describe &Character at Cursor",
+        separator_before=True,
+    )
+    add(
+        id="power.describe_character_detail",
+        title="Character Details",
+        top_level="Tools",
+        group="power_tools",
+        label="Character De&tails...",
+        separator_before=False,
+    )
+    add(
+        id="power.describe_image_at_cursor",
+        title="Describe Image at Cursor",
+        top_level="Tools",
+        group="power_tools",
+        label="Describe &Image at Cursor",
+        separator_before=False,
     )
     return registrar
 

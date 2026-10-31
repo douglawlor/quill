@@ -1,0 +1,110 @@
+"""Level, mute and boost for the podcast player.
+
+Three numbers that have to stay honest about each other:
+
+* ``volume_percent`` is what the listener set, and what the sleep timer will
+  restore. It never reflects a boost -- restoring a boosted number is how a
+  fade-out quietly becomes a permanent volume change.
+* ``_pre_mute_volume`` is what mute has to give back, exactly.
+* ``_volume_boost`` is live gain for quiet audio (0.5x-3.0x), applied only on
+  the way to the engine.
+
+Same shape and same words as ``RadioPlayerController``'s own volume handling,
+so the two players cannot drift into behaving differently.
+"""
+
+from __future__ import annotations
+
+from quill.core.audio.channel_mode import normalize as normalize_channel_mode
+
+
+class PodcastPlayerVolumeMixin:
+    """Volume, mute and playback gain for :class:`PodcastPlayerController`."""
+
+    def set_volume(self, percent: int) -> None:
+        self._muted = False
+        self._volume_percent = max(0, min(100, percent))
+        self._apply_engine_volume()
+
+    def toggle_mute(self) -> None:
+        """Mirrors ``RadioPlayerController.toggle_mute``: silence without
+        losing the level, restored exactly on the next toggle."""
+        if self._muted:
+            self._muted = False
+            self._volume_percent = self._pre_mute_volume
+        else:
+            self._pre_mute_volume = self._volume_percent
+            self._muted = True
+            self._volume_percent = 0
+        self._apply_engine_volume()
+
+    @property
+    def muted(self) -> bool:
+        return self._muted
+
+    def set_volume_boost(self, factor: float) -> None:
+        """Live playback gain (0.5x - 3.0x, clamped) for quiet audio; scales
+        the engine volume only. ``volume_percent`` keeps reporting the
+        unboosted value so the sleep timer's restore stays honest."""
+        self._volume_boost = max(0.5, min(3.0, float(factor)))
+        self._apply_engine_volume()
+
+    def _apply_engine_volume(self) -> None:
+        """Send the engine the boosted volume, capped where boost stops helping.
+
+        Capped at ``volume_boost.MAX_PERCENT`` rather than at 100 (list.md
+        2.8). The old ceiling of 100 was not wrong below it -- 40 at 1.5x was
+        60, as it should be -- but it meant a podcast already playing at 100
+        could not be boosted at all, which is precisely the badly-mastered
+        show a per-podcast boost exists for. Quill Radio's boost has always
+        gone past 100 on the mpv engine; this makes the two agree.
+
+        150 and no further: past about there a spoken-word recording stops
+        getting louder and starts distorting. An engine that cannot exceed 100
+        clamps it itself, which is why sending the boosted number is safe
+        everywhere.
+        """
+        if self._engine is not None:
+            from quill.core.podcasts.volume_boost import MAX_PERCENT
+
+            boosted = round(self._volume_percent * self._volume_boost)
+            self._engine.set_volume(min(MAX_PERCENT, boosted))
+
+    @property
+    def volume_percent(self) -> int:
+        return self._volume_percent
+
+    # -- where the sound comes out ----------------------------------------
+    #
+    # Moved here from player_controller.py under GATE-11 (extract, never
+    # rebaseline) when the family's output-device work pushed that module
+    # past its ceiling. It belongs beside the volume controls: both answer
+    # "what does this sound like", and channel mode is an accessibility
+    # setting before a sound one -- mono keeps hard-panned content audible
+    # to someone listening with one ear, and the single-ear modes leave the
+    # other ear free for a screen reader.
+
+    def channel_mode(self) -> str:
+        """Where the audio is currently coming out (stereo/mono/left/right)."""
+        return self._channel_mode
+
+    def set_channel_mode(self, mode: str) -> str:
+        """Change only the channel mode, keeping your place. Returns it.
+
+        Changing it means restarting the ffmpeg relay -- there is no way to
+        alter a running one -- so this reloads at the current position rather
+        than from the top. Someone forty minutes into an episode who switches
+        to mono must not be sent back to the beginning to get there.
+        """
+        resolved = normalize_channel_mode(mode)
+        if resolved == self._channel_mode:
+            return resolved
+        self.set_enhancement(
+            bass_db=self._eq_bass_db,
+            mid_db=self._eq_mid_db,
+            treble_db=self._eq_treble_db,
+            compressor_enabled=self._compressor_enabled,
+            smart_speed_enabled=self._smart_speed_enabled,
+            channel_mode=resolved,
+        )
+        return resolved

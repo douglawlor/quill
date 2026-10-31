@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Media Player — User Guide</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-media-player--user-guide">QUILL Media Player — User
+Guide</h1>
+<p>The QUILL Media Player is an accessible audiobook and media player
+built for people who read with a screen reader and a braille display.
+Everything works from the keyboard, everything important is spoken, and
+nothing hides behind a mouse-only control. This guide explains every
+feature and every shortcut, names every safeguard, and states honestly
+what is available today versus rolling out.</p>
+<p>You can use the player two ways — both run the same code and share
+the same library, bookmarks, resume positions, and settings:</p>
+<ul>
+<li><strong>Inside QUILL</strong> — from the Tools menu / command
+palette.</li>
+<li><strong>As its own app</strong> — <strong>Quill Media
+Player</strong>, a tray-resident window you can open on its own (Start
+Menu, or the QuillVille launcher).</li>
+</ul>
+<p>A book you start in one continues in the other, at the same
+place.</p>
+<blockquote>
+<p><strong>What’s available now.</strong> Nearly everything in this
+guide is built: playback and <strong>chapter navigation as a
+tree</strong>, resume, bookmarks, <strong>Go to Position
+(H:M:S)</strong>, the <strong>10-band equalizer and DSP</strong>,
+<strong>DAISY navigation</strong> (single- and multi-file), the
+<strong>Book Library</strong> (LibriVox), the <strong>sleep
+timer</strong>, the <strong>mini-player</strong>, the
+<strong>multi-field status bar</strong> (F6 review), the Magical
+<strong>welcome-back</strong> recap, the <strong>AI chapter
+summary/recap</strong>, and <strong>voice commands</strong> — both
+hands-free (offline, with QUILL’s speech engines) and say-or-type. Still
+to come: an <strong>always-on hotword</strong> and <strong>BARD
+sources</strong> (pending the NLS contract). Where a feature is still
+future, this guide says so.</p>
+</blockquote>
+<hr />
+<h2 id="1-getting-started">1. Getting started</h2>
+<h3 id="install-and-launch">Install and launch</h3>
+<ul>
+<li><strong>From source (developers):</strong> from the repository root,
+<code>pip install -e ".[ui]"</code>, then run
+<code>python -m quill.apps.player</code> (or, inside the standalone
+folder, <code>python -m quill_media_player</code>).</li>
+<li><strong>Installed build:</strong> open <strong>Quill Media
+Player</strong> from the Start Menu, or choose it from any QuillVille
+app’s <strong>QuillVille</strong> menu (it offers to download and
+install it the first time if it isn’t present). Until Quill Media Player
+is released, the QuillVille menus of the other apps do not list it yet;
+open it from the Start Menu or from source instead.</li>
+<li>If you type <code>! python -m quill.apps.player</code> in QUILL’s
+prompt, it launches in this session so its output lands right here.</li>
+</ul>
+<h3 id="first-run">First run</h3>
+<p>When the player opens, focus lands on the <strong>playback
+controls</strong>. Until you open a book, the Now Playing area reads
+“Open a file or a folder to begin.” Press <strong>Ctrl+O</strong> to
+choose a file.</p>
+<hr />
+<h2 id="2-the-window-by-ear">2. The window, by ear</h2>
+<p>Moving through the window with Tab (or your screen reader’s
+controls), you meet these regions in order:</p>
+<ol type="1">
+<li><strong>Menu bar</strong> - File, Navigation, Playback, View,
+QuillVille, Help and Window. Press Alt (or F10) to reach it, Left and
+Right to move between the menus, and Down to open one. For example, to
+set the sleep timer, press Alt, Right twice to Playback, Down, then T
+for Sleep Timer.</li>
+<li><strong>Now Playing</strong> — a review-only line with the title,
+and (as they arrive) author/narrator, source, and format. Arrow through
+it to read it.</li>
+<li><strong>Playback controls</strong> — Play/Pause, Stop, Previous/Next
+chapter, Rewind, Forward, “Where am I?”, the position slider, and the
+volume slider.</li>
+<li><strong>Content area</strong> - three pages: Chapters, Bookmarks and
+Audio. Press Ctrl+Tab to move between them. The Book Library is a window
+of its own (File &gt; Book Library…, Ctrl+L); a play queue is not built
+yet.</li>
+<li><strong>Status bar</strong> — live state you can review field by
+field (Section 11).</li>
+</ol>
+<hr />
+<h2 id="3-opening-books">3. Opening books</h2>
+<ul>
+<li><strong>Open File</strong> — <strong>Ctrl+O</strong>. Choose an
+audio file or audiobook (MP3, M4B, M4A, AAC, OGG/Opus, FLAC, WAV, and
+more).</li>
+<li><strong>Open Folder as Book</strong> — File menu. Point it at a
+folder of audio and it plays them as one book.</li>
+<li><strong>Open DAISY Book</strong> — <strong>File &gt; Open DAISY
+Book…</strong>. Choose the book’s <code>.ncx</code>; the player reads
+its heading structure into the Chapters tree (single- and multi-file
+DAISY audio books).</li>
+<li><strong>Book Library</strong> — <strong>File &gt; Book
+Library…</strong>. Search the free <strong>LibriVox</strong> catalog,
+pick a book, and press <strong>Play</strong>; its sections appear in the
+Chapters tree.</li>
+<li><strong>From inside QUILL</strong> — open the player from
+<strong>Tools &gt; Media &gt; Media Player</strong>; it launches this
+same app and shares your library, bookmarks, and positions. That row
+appears in QUILL once Quill Media Player is released.</li>
+<li><strong>BARD</strong> — arriving once the NLS BARD contract
+lands.</li>
+</ul>
+<p>When you open a book you’ve heard before, it <strong>resumes exactly
+where you left off</strong> — you don’t have to find your place again.
+Your place is saved every fifteen seconds while you listen and again the
+moment you close the Player, so closing never loses the last few
+seconds.</p>
+<hr />
+<h2 id="4-playback-and-the-keyboard">4. Playback and the keyboard</h2>
+<p>Core transport needs no chord: the single letters in the next section
+(X, C, V, B, Z, T and the arrows) play, pause, stop, step and seek from
+anywhere in the window except a text field. The player controls are also
+buttons you can Tab to and press with Space: Play/Pause, Stop, Previous
+chapter, Next chapter, Rewind, Forward, Where am I?, Mute, and the
+Speed, Position and Volume controls. These keys are fixed; the
+standalone player has no Keyboard Shortcuts editor yet.</p>
+<h3 id="alt-letters-in-the-window">Alt letters in the window</h3>
+<p>Every button and labelled control in the window has its own Alt
+letter, and none of them is a letter the menu bar uses. That matters
+because Windows sends Alt plus a letter to a button before a menu when
+both claim it: until 2026-10-17, Alt+P pressed Play instead of opening
+the Playback menu, and Alt+V, Alt+W, Alt+F and Alt+N did the same to
+View, Window, File and Navigation. Now the menus keep their letters and
+the buttons moved:</p>
+<table>
+<thead>
+<tr>
+<th>Alt+</th>
+<th>Opens or presses</th>
+<th>Alt+</th>
+<th>Opens or presses</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F</td>
+<td>File menu</td>
+<td>A</td>
+<td>Play or Pause button</td>
+</tr>
+<tr>
+<td>N</td>
+<td>Navigation menu</td>
+<td>T</td>
+<td>Stop</td>
+</tr>
+<tr>
+<td>P</td>
+<td>Playback menu</td>
+<td>C</td>
+<td>Previous chapter</td>
+</tr>
+<tr>
+<td>V</td>
+<td>View menu</td>
+<td>X</td>
+<td>Next chapter</td>
+</tr>
+<tr>
+<td>Q</td>
+<td>QuillVille menu</td>
+<td>R</td>
+<td>Rewind</td>
+</tr>
+<tr>
+<td>H</td>
+<td>Help menu</td>
+<td>O</td>
+<td>Forward</td>
+</tr>
+<tr>
+<td>W</td>
+<td>Window menu</td>
+<td>I</td>
+<td>Where am I?</td>
+</tr>
+<tr>
+<td>D</td>
+<td>Speed</td>
+<td>U</td>
+<td>Mute or Unmute</td>
+</tr>
+<tr>
+<td>M</td>
+<td>Add Bookmark (Bookmarks page)</td>
+<td>K</td>
+<td>Remove Bookmark (Bookmarks page)</td>
+</tr>
+<tr>
+<td>E</td>
+<td>Equalizer preset (Audio page)</td>
+<td>B</td>
+<td>Volume boost (Audio page)</td>
+</tr>
+<tr>
+<td>L</td>
+<td>Normalize loudness (Audio page)</td>
+<td>S</td>
+<td>Skip silence (Audio page)</td>
+</tr>
+</tbody>
+</table>
+<p>The Play button says Play or Pause depending on what is happening,
+and the Mute button says Mute or Unmute, but each keeps one letter, so
+Alt+A and Alt+U always work. For example: press Alt+P and the Playback
+menu opens; press Escape, then Alt+A, and the book plays or pauses. The
+Bookmarks and Audio letters work while that page is the one showing
+(Ctrl+Tab moves between pages).</p>
+<h3 id="arrows-in-the-chapters-tree-sliders-and-page-tabs">Arrows in the
+Chapters tree, sliders and page tabs</h3>
+<p>Left and Right seek five seconds back and forward (Shift with them,
+thirty seconds) from anywhere in the window except where the focused
+control needs them itself. In the <strong>Chapters</strong> tree, Left
+closes a part and Right opens it, as in any tree, so a DAISY book’s
+parts and chapters can be opened and closed from the keyboard. On the
+<strong>position</strong> and <strong>volume</strong> sliders the arrows
+move the slider, so Left on the volume slider makes it quieter rather
+than going back in the book. On the page tabs (Chapters, Bookmarks,
+Audio) Left and Right change the page. Text fields keep every key, as
+before. For example: Tab to the Chapters tree, press Right on “Part One”
+to open it, Down to a chapter and Enter to play it; then Tab to a button
+and Right goes forward five seconds. The limit: letter keys such as X, C
+and B are still the player’s in the tree, so typing a chapter’s first
+letter does not jump to it there.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C</td>
+<td>Play / Pause</td>
+<td>V</td>
+<td>Stop</td>
+</tr>
+<tr>
+<td>Left / Right</td>
+<td>Back / forward 5 seconds</td>
+<td>Z / B</td>
+<td>Previous / Next track or chapter</td>
+</tr>
+<tr>
+<td>Ctrl+Up / Ctrl+Down</td>
+<td>Volume up / down</td>
+<td>T</td>
+<td>Time elapsed or remaining</td>
+</tr>
+<tr>
+<td>Ctrl+B</td>
+<td>Add bookmark</td>
+<td>Ctrl+Shift+B</td>
+<td>Add bookmark with a note</td>
+</tr>
+<tr>
+<td>Ctrl+G</td>
+<td>Go to Position (H:M:S)</td>
+<td>Ctrl+O</td>
+<td>Open file</td>
+</tr>
+<tr>
+<td>F6</td>
+<td>Review the status bar</td>
+<td>Ctrl+W</td>
+<td>Minimize to tray</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Slider Keys: which way the arrows move a slider.</strong> On
+the position and volume sliders Right is always more and Left less. Up
+and Down, Page Up and Page Down, and Home and End follow one choice made
+for every Quill app at once: open <strong>File &gt;
+Preferences…</strong> (<strong>Ctrl+,</strong>) and choose the
+<strong>Slider Keys…</strong> button.</p>
+<ul>
+<li><strong>Up is more</strong>, the default: Up, Page Up and Home raise
+a slider, Home being the top (100 percent on a volume), and Down, Page
+Down and End lower it, End being 0.</li>
+<li><strong>As Windows sliders</strong>: the keys a standard Windows
+slider uses. Down, Page Down and End raise it (End is 100 percent), and
+Up, Page Up and Home lower it (Home is 0).</li>
+</ul>
+<p>Change it in any Quill app and every other app follows at your next
+key press. Each key press tells your screen reader the new value, so it
+is never read from before the key. Ctrl+Up and Ctrl+Down, the volume
+keys that work from anywhere in the window, are not changed.</p>
+<p><strong>Where am I?</strong> is a button in the player controls: it
+speaks the title, current chapter, how far in you are, and how much
+remains. It has no key of its own; for a quick reading without leaving
+where you are, press <strong>T</strong>, which says the time elapsed or,
+pressed again, the time remaining. For example, while a book plays,
+press T and you hear something like “1 minute 40 seconds of 58
+minutes”.</p>
+<h3 id="winamps-classic-keys">Winamp’s classic keys</h3>
+<p>If you came to Windows audio through Winamp, its main-window letter
+keys are almost certainly still in your fingers. They work here,
+unchanged, on the same letters Quill Radio’s Recordings player and QUILL
+Cast already answer to — one shared map, so nothing has to be relearned
+per app.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>X</td>
+<td>Play, or resume what is paused</td>
+</tr>
+<tr>
+<td>C</td>
+<td>Pause / unpause</td>
+</tr>
+<tr>
+<td>V</td>
+<td>Stop</td>
+</tr>
+<tr>
+<td>Shift+V</td>
+<td>Stop (Winamp’s fade-out; this engine has no fade, so it stops
+cleanly)</td>
+</tr>
+<tr>
+<td>B</td>
+<td>Next track</td>
+</tr>
+<tr>
+<td>Z</td>
+<td>Previous track</td>
+</tr>
+<tr>
+<td>Left / Right</td>
+<td>Back / forward 5 seconds</td>
+</tr>
+<tr>
+<td>Shift+Left / Shift+Right</td>
+<td>Back / forward 30 seconds</td>
+</tr>
+<tr>
+<td>T</td>
+<td>Elapsed time, or time remaining — press again to swap</td>
+</tr>
+<tr>
+<td>J</td>
+<td>Jump to a track: type any part of its title</td>
+</tr>
+<tr>
+<td>Ctrl+J</td>
+<td>Go to Position</td>
+</tr>
+<tr>
+<td>L</td>
+<td>Open File…</td>
+</tr>
+<tr>
+<td>Ctrl+Up / Ctrl+Down</td>
+<td>Volume up / down</td>
+</tr>
+</tbody>
+</table>
+<p>Two things worth knowing:</p>
+<ul>
+<li><strong>B and Z step through the book’s tracks</strong> when the
+book is one file per chapter. A book that is a <em>single</em> file with
+chapter marks has no track list, so they step by chapter instead — the
+same intent against the other shape.</li>
+<li><strong>Ctrl+J opens the Go to Position dialog</strong> you already
+have on Ctrl+G, rather than a second, lesser prompt. It is the
+accessible one: labelled Hours, Minutes and Seconds spin controls, plus
+a timecode field for <code>1:23:45</code>.</li>
+</ul>
+<p>Every key says what it did, and positions are spoken as words (“1
+minute 40 seconds of 58 minutes”), never as a clock face — read aloud,
+<code>1:40</code> is a time of day, not a duration. Letters are never
+swallowed while a text field has focus.</p>
+<p>The <strong>position slider</strong> speaks human time as you move it
+(“2 hours 14 minutes of 11 hours”), not a meaningless tick number.</p>
+<p>Playback speed, the <strong>Speed</strong> choice in the player
+controls, ranges from 0.5× to 3× and preserves pitch so voices don’t
+turn squeaky.</p>
+<hr />
+<h2 id="5-chapters">5. Chapters</h2>
+<p>Chapters come from M4B chapter atoms, MP3 chapter tags, Podcasting
+2.0 lists, and <strong>DAISY</strong> navigation. They appear as a
+<strong>tree</strong>, so a multi-level table of contents (common in
+DAISY) keeps its hierarchy — parts with their chapters nested beneath —
+while a flat book shows a single level.</p>
+<ul>
+<li>Move by chapter with <strong>Z</strong> and <strong>B</strong>
+(previous and next), or the Previous chapter and Next chapter buttons;
+entering a new chapter is announced (“Chapter 12: The Return”). In a
+book of one file per chapter, Z and B step by file, which is the same
+thing.</li>
+<li>Open the <strong>Chapters</strong> tree, arrow through it (in and
+out of levels), and press <strong>Enter</strong> to jump. Each row reads
+as a full sentence with its title and time.</li>
+<li>For a book split across several files (LibriVox sections, multi-file
+DAISY), activating a node loads that file and moves you there.</li>
+<li><strong>Continuous play</strong> — when one track (a LibriVox
+section, or a file of a multi-file book) finishes, the player
+automatically rolls into the next.</li>
+</ul>
+<p><strong>DAISY talking books</strong> add navigation by heading — open
+one via <strong>File &gt; Open DAISY Book…</strong> (single- and
+multi-file books). Full DAISY 3 read-along (text + audio sync) is a
+future item.</p>
+<hr />
+<h2 id="6-go-to-position-hms">6. Go to Position (H:M:S)</h2>
+<p>Press <strong>Ctrl+G</strong> to jump to an exact time.</p>
+<ul>
+<li>Enter <strong>Hours</strong>, <strong>Minutes</strong>, and
+<strong>Seconds</strong> in three labeled fields — each is a spin
+control you can adjust with the arrow keys, and each announces its
+value.</li>
+<li>Or type a <strong>timecode</strong> into the single field:
+<code>1:23:45</code>, <code>83:45</code> (minutes and seconds),
+<code>5025</code> (whole seconds), or <code>1h23m45s</code> all
+work.</li>
+<li>Press <strong>Enter</strong> to jump. The player announces where you
+landed (“Jumped to 1 hour 23 minutes 45 seconds”).</li>
+<li>If you ask for a time past the end, it says so and moves you to the
+end instead (“Beyond the end — moved to 11:14:00”).</li>
+</ul>
+<hr />
+<h2 id="6a-picking-up-where-you-left-off">6a. Picking up where you left
+off</h2>
+<p>Open a book you have listened to before and Quill Media Player takes
+you back to where you stopped, announcing it as a “welcome back” rather
+than silently jumping. Your position is saved every fifteen seconds
+while you listen, and again when you close the player, so an unexpected
+shutdown costs you seconds rather than the session.</p>
+<p>Your place is tied to the <strong>audio itself</strong>, not to where
+the file happens to sit. Move the book to another drive, rename it, or
+reorganise your whole library, and your position follows it. That also
+means the same recording on two different computers is recognised as the
+same book — the groundwork for carrying your place between machines. Two
+<em>different</em> recordings of the same title stay separate, which is
+what you want: your place in one narrator’s reading says nothing about
+another’s.</p>
+<p>A position right at the start is not remembered. “Three seconds in”
+is the beginning, and being asked whether to resume there is a question
+with no useful answer.</p>
+<h2 id="7-bookmarks">7. Bookmarks</h2>
+<p>Bookmarks mark a moment you want to return to, with an optional label
+and note.</p>
+<ul>
+<li><strong>Add a bookmark</strong> at the current spot —
+<strong>Ctrl+B</strong> (or the Add Bookmark button). The player
+confirms the time it saved.</li>
+<li><strong>Add a bookmark with a note</strong> —
+<strong>Ctrl+Shift+B</strong>. Type a note; it shows in the Bookmarks
+list next to the time.</li>
+<li><strong>Edit a bookmark’s note</strong> — select it and choose
+<strong>Navigation &gt; Edit Bookmark Note…</strong> (Ctrl+Alt+N).</li>
+<li><strong>Jump to a bookmark</strong> — press
+<strong>Ctrl+Alt+M</strong> (<strong>Navigation &gt; Go to Bookmarks
+List</strong>) to land in the Bookmarks list, arrow to one, press
+<strong>Enter</strong>. <strong>Ctrl+Alt+P</strong> (<strong>Navigation
+&gt; Go to Player Controls</strong>) takes you back.</li>
+<li><strong>Remove</strong> — select it and press the <strong>Remove
+Bookmark</strong> button below the list.</li>
+<li><strong>Send a bookmark into your document</strong> —
+<strong>Ctrl+Shift+C</strong> copies a paste-ready line
+(<code>[1:23:45] your note — Title</code>) to the clipboard; paste it
+into your QUILL document or a Sticky Note. (A direct insert into a
+running QUILL is a future refinement.)</li>
+<li><strong>Export bookmarks</strong> — <strong>File &gt; Bookmarks
+&amp; Sync &gt; Export Bookmarks…</strong> writes the book’s bookmarks
+to a Markdown file.</li>
+<li><strong>Sync across devices</strong> — <strong>Export / Import Sync
+Bundle</strong> moves your bookmarks between machines as a portable file
+(merged on import, never overwriting). Automatic server-side sync
+(QuilleSync) is a future item.</li>
+</ul>
+<p>Bookmarks are saved per book and survive between sessions.</p>
+<h3 id="hearing-your-notes-as-you-reach-them">Hearing your notes as you
+reach them</h3>
+<p>A note you left at 14:32 is read to you when playback gets there, so
+a note is something you can make <em>while listening</em> and be
+reminded of while listening – rather than something you have to stop and
+open a list to find.</p>
+<ul>
+<li>It is <strong>on by default</strong>, under <strong>Playback &gt;
+Read My Notes Aloud as I Reach Them</strong>. Writing the note is the
+opt-in: if you took the trouble to leave one, you meant to hear it.</li>
+<li>Only bookmarks that <strong>have a note</strong> speak. A plain
+bookmark is a place to jump to, so announcing it with nothing to say
+would be noise.</li>
+<li>A bookmark with a label speaks the label first – “Chapter 4: the
+argument starts here” – and one without says “Note:” so a sentence
+spoken over an audiobook is never mistaken for part of the book.</li>
+<li><strong>Seeking never triggers it.</strong> Dragging the scrubber
+across an hour does not read out every note it passed, skipping back
+does not repeat one you just heard, and pausing does not announce the
+same note over and over. You only hear a note when you genuinely listen
+through it.</li>
+<li>Switching it back on part-way through a book does not replay the
+notes you passed while it was off.</li>
+</ul>
+<p>No timestamp is spoken with the note: you are at that moment already,
+and a spoken “14:32” is ambiguous in a way the written form is not.</p>
+<hr />
+<h2 id="8-sound-speed-and-the-equalizer">8. Sound, speed, and the
+equalizer</h2>
+<ul>
+<li><strong>Volume</strong> — <strong>Ctrl+Up</strong> and
+<strong>Ctrl+Down</strong> from anywhere in the window, or Up and Down
+on the Volume slider (Home is full volume and End silence, unless you
+chose the Windows slider keys under <strong>Slider Keys…</strong>); the
+<strong>Mute</strong> button mutes, and unmuting restores your level.
+Volume is remembered per book.</li>
+<li><strong>Speed</strong> — the Speed choice in the player controls,
+from 0.5× to 3×, pitch-preserving.</li>
+<li><strong>Volume boost / normalization</strong> lifts quiet recordings
+(Audio page).</li>
+<li><strong>Equalizer</strong> — a 10-band graphic EQ with presets
+(Flat, Voice, Bass, Treble, Night, Podcast); each band is a labeled
+slider whose value <strong>is</strong> the gain in decibels, so your
+screen reader speaks a real number.</li>
+<li><strong>Skip silence</strong> shortens long gaps.</li>
+</ul>
+<p>Find these on the <strong>Audio</strong> page of the notebook.</p>
+<p>The rich audio effects (EQ, boost, skip-silence, gapless) run on the
+bundled <strong>libmpv</strong> engine. On the rare system where libmpv
+can’t load, those controls are disabled and the player tells you why —
+core playback still works.</p>
+<hr />
+<h2 id="9-sleep-timer">9. Sleep timer</h2>
+<p><strong>Playback &gt; Sleep Timer</strong> stops the player after 15,
+30, or 60 minutes, or at the <strong>End of Chapter</strong>. When it
+fires it pauses, saves your place, and says “goodnight,” so you never
+lose your spot overnight. (A gentle fade-out is a future
+refinement.)</p>
+<hr />
+<h2 id="10-announcements-earcons-and-braille">10. Announcements,
+earcons, and braille</h2>
+<ul>
+<li><strong>Earcons</strong> — short non-speech cues for what the player
+does. Turn them all off and on with <strong>Alt+Shift+M</strong>
+(<strong>Playback &gt; App Sounds</strong>), and choose where they play
+in Preferences (see the next section).</li>
+<li><strong>Braille</strong> — everything the player announces also goes
+to your braille display, through your screen reader.</li>
+</ul>
+<p>Not built yet in the standalone player, though the PRD plans them: a
+verbosity choice (Minimal, Normal, Verbose), separate switches and a
+choice of personality for each earcon, a dedicated braille status line,
+and self-voicing without a screen reader. Nothing in its menus or
+Preferences sets these today.</p>
+<hr />
+<h2 id="10a-where-the-players-own-sounds-play">10a. Where the player’s
+own sounds play</h2>
+<p>Quill Media Player makes short sounds of its own, the earcons
+described above. You choose where they play, and you can turn them
+off.</p>
+<ul>
+<li><strong>Alt+Shift+M</strong> turns Quill Media Player’s sounds off.
+Press it again and they come back, on the same sound card as before. You
+hear a short sound as they go off, and another where they now play when
+they come back on, and both are spoken too. <strong>Playback &gt; App
+Sounds</strong> has a check mark that shows whether they are on.</li>
+<li><strong>App Sounds Play On…</strong>, a button in the Preferences
+window, lets you pick where they play. Open <strong>File &gt;
+Preferences…</strong> (Ctrl+,) and Tab to the button, or type “sounds”
+in its Find a setting box. The choices are:
+<ul>
+<li><strong>Same as its audio</strong>. This is where it starts. The
+sounds go wherever the book plays, and follow it when you move it to
+another sound card. The choice names the device it means right now.</li>
+<li><strong>System default</strong>. The sounds go where Windows sends
+sound.</li>
+<li><strong>None (no sounds)</strong>. Quill Media Player makes no
+sounds at all. Everything it tells you is still spoken.</li>
+<li><strong>Any sound card or headset in the list.</strong> The sounds
+get a device of their own.</li>
+</ul></li>
+</ul>
+<p>After you choose, one sound plays on the new device, so you know
+straight away where it went.</p>
+<p>If the device you chose is unplugged or asleep, you still hear every
+sound, on the system default, and Quill Media Player tells you once.
+When the device comes back, the sounds go back to it by themselves.</p>
+<p>This changes Quill Media Player only. Your other QUILL apps keep
+their own choice, unless you have checked “Share these choices with my
+other Quill apps”, which copies a change here to the others that share.
+Your screen reader is never moved.</p>
+<h2 id="11-the-status-bar">11. The status bar</h2>
+<p>The status bar mirrors QUILL’s own multi-field status bar, so it
+reviews the same way you already know. Its fields:
+<strong>State</strong>, <strong>Position</strong>,
+<strong>Chapter</strong>, <strong>Sleep</strong>, and
+<strong>Backend</strong>.</p>
+<ul>
+<li><strong>F6</strong> (<strong>Navigation &gt; Review Status
+Field</strong>) moves across the fields; each is announced with its
+label (“Chapter: 12 of 14, The Return”).</li>
+<li><strong>Shift+F6</strong> (<strong>Navigation &gt; Read Status
+Bar</strong>) speaks all fields at once.</li>
+</ul>
+<hr />
+<h2 id="12-system-tray-and-media-keys">12. System tray and media
+keys</h2>
+<p>On Windows, the player lives in the <strong>notification-area
+tray</strong>:</p>
+<ul>
+<li>Its tooltip shows what’s playing.</li>
+<li>Double-click the tray icon to bring the window back. You can also
+choose a key that shows and hides the player from any program:
+<strong>File &gt; Show and Hide Key…</strong> (Ctrl+Alt+Shift+H). There
+is no key until you choose one. Type the key you want, or leave the box
+empty for none. If another QuillVille app already uses it, the player
+tells you whose it is and lets you try another. If you used an earlier
+version, Ctrl+Alt+Shift+P did this; other QuillVille apps use that key,
+so it is off now, and the player tells you once after you update.</li>
+<li>Right-click it, or press the Applications key on it, for its menu:
+<strong>Show Quill Media Player</strong> and <strong>Exit Quill Media
+Player</strong>. Playback commands are not on the tray menu yet; use the
+window.</li>
+<li><strong>File &gt; Minimize to Tray</strong> (Ctrl+W) tucks the
+window into the tray and playback carries on. Closing the window saves
+your place; there is no setting yet to choose between asking, going to
+the tray and exiting when you close it, so use Minimize to Tray when you
+want to keep listening. A deliberate <strong>Exit</strong> (Ctrl+Q)
+always quits.</li>
+</ul>
+<p>Because the tray icon and its menu are historically hard for screen
+readers, the tray is a convenience, never the only way: everything is in
+the window and its menus. The standalone player does not yet take the
+keyboard’s media keys (Play/Pause, Next, Previous) when another program
+is in front. On macOS there is no notification-area tray (the app uses
+the Dock instead).</p>
+<hr />
+<h2 id="13-mini-player-magical-mode-and-voice-control">13. Mini-player,
+Magical Mode, and voice control</h2>
+<ul>
+<li><strong>Mini-player</strong> — <strong>View &gt; Mini
+Player</strong> opens a compact, always-on-top window (Play/Pause,
+Previous/Next chapter) so playback stays reachable while you work
+elsewhere. <strong>View &gt; Compact Mode</strong> shrinks the main
+window to just the transport. <em>(Available now.)</em></li>
+<li><strong>Summarize This Chapter (AI)</strong> — <strong>Playback &gt;
+Summarize This Chapter (AI)</strong> asks your configured AI for a one-
+or two-sentence summary and speaks it (also shown in a dialog you can
+read).</li>
+<li><strong>AI Recap of Where I Am</strong> — <strong>Playback &gt; AI
+Recap of Where I Am</strong> recaps the passage up to your current point
+(“here’s what’s been happening”), so you can pick a book back up after a
+break. Both use the AI: for a book with a text layer (DAISY/EPUB) they
+summarize the text directly; for pure audio they transcribe the passage
+first, so that needs the offline speech engine installed. Both require
+an AI provider set up in QUILL’s AI Hub, are off in Safe Mode, and never
+run on protected BARD content. <em>(Available now.)</em></li>
+<li><strong>Magical Mode</strong> — <strong>View &gt; Magical
+Mode</strong> turns on opt-in flourishes. Today it gives a warm spoken
+<strong>welcome-back recap</strong> when you reopen a book (“Welcome
+back. The Return, resuming at 6 hours 42 minutes”). Richer touches —
+spoken chapter intros with chimes, an ambient soundscape, listening
+streaks — are future items, and everything turns off in Safe Mode.
+<em>(Welcome-back is built; the rest arrive.)</em></li>
+<li><strong>Voice control</strong> — two ways to command the player by
+voice, both built:
+<ul>
+<li><strong>Hands-free: Listen for a Command (Ctrl+Shift+L).</strong>
+Press once and the player starts listening (you’ll hear a “Listening”
+cue and the book quietens); say your command; press Ctrl+Shift+L again
+to stop. The player transcribes what you said <strong>on your own
+computer</strong> (offline, with a small, fast speech model) and carries
+it out — announcing the result. The book is <em>ducked, never
+paused</em>, so you don’t lose your place, and it restores the moment
+the command finishes. If nothing is recognized the player tells you what
+it heard so you can try again. A safety timer closes the microphone
+automatically if you forget to stop. It uses the speech engine you chose
+in QUILL (Tools ▸ Speech ▸ Speech and Dictation…) and that engine’s
+smallest fast model, because a command is only a few words. If that
+engine has no model, it tries Whisper.cpp, then the QUILL speech models
+(where it prefers the built-in Moonshine tiny), then Faster Whisper. If
+none has a model, you hear “Voice listening needs a microphone and an
+installed speech model. Open QUILL and download a small Whisper model
+first.” Open QUILL, press Alt+T, H, S, and download Whisper.cpp’s Tiny
+or Base model once. Vosk is not used for voice commands.</li>
+<li><strong>Type it: Type a Voice Command (Ctrl+Shift+V).</strong> Opens
+a box; type the command — or speak it in with your operating system’s
+dictation — for when you’d rather not talk aloud.</li>
+<li>Either way the commands are the same: <em>“next chapter”</em>,
+<em>“skip back thirty”</em>, <em>“go to 1:20:00”</em>, <em>“bookmark
+this”</em>, <em>“how much is left”</em>, <em>“sleep in twenty”</em>,
+<em>“summarize”</em>, <em>“recap”</em>. Unrecognized input is announced,
+never guessed, and every voice command also has a key or a menu row (the
+sleep timer, for one, is <strong>Playback &gt; Sleep Timer</strong>), so
+voice is purely additive. <em>(An always-on hotword — no key press to
+start listening — is a future addition.)</em></li>
+</ul></li>
+</ul>
+<hr />
+<h2 id="13a-lyrics">13a. Lyrics</h2>
+<p><strong>Playback &gt; Lyrics…</strong> (Ctrl+Alt+L) shows the words
+of the song you are playing, from LRCLIB (lrclib.net), a free community
+catalogue of song lyrics. The song is found from the file’s own tags
+(artist, title, album and length), or from a file name shaped like
+“Artist - Title”.</p>
+<ol type="1">
+<li>While a song is open, press <strong>Ctrl+Alt+L</strong>. You hear
+“Looking up lyrics for” and the song.</li>
+<li>The Lyrics window opens, titled “Lyrics:” and the song, with your
+cursor in the words (<strong>Lyrics</strong>, Alt+L). Arrow through
+them; <strong>Ctrl+C</strong> copies what you select.</li>
+<li>When the words are timed, <strong>Current line</strong> (Alt+U)
+shows the line being sung now, and <strong>Follow playback</strong>
+(Alt+F, on to start with) keeps the cursor in the words on that line.
+Turn Follow playback off to read back without being moved; turn it on
+again and it catches up.</li>
+<li>Nothing is read out as the lines change. <strong>Say Current
+Line</strong> (Alt+S) speaks the line being sung, once, when you want to
+hear it.</li>
+<li>Press <strong>Escape</strong>, <strong>Ctrl+W</strong> or
+<strong>Ctrl+F4</strong> to close.</li>
+</ol>
+<p>When a song has words but no timings, the words still appear, Follow
+playback is unavailable, and Current line says so. When there are no
+words you hear why instead of a window: no lyrics found, the song is an
+instrumental, or the file does not say its artist and title.</p>
+<p>Lyrics are looked up only when you ask, never in the background and
+never in Safe Mode, and they are kept in memory only: nothing is written
+to your computer.</p>
+<hr />
+<h2 id="14-settings">14. Settings</h2>
+<p><strong>File &gt; Preferences…</strong> (Ctrl+,) gathers the player’s
+settings in one window: <strong>Audio Output Device…</strong>,
+<strong>App Sounds Play On…</strong> and <strong>Slider Keys…</strong>
+(buttons that open their own windows; Slider Keys is described under
+“Arrows in the Chapters tree, sliders and page tabs”), and, in a box
+labelled <strong>This session only</strong>, Compact mode, Magical mode,
+Always on top and the Sleep timer, which reset when the player closes.
+Each does exactly what its menu row does. Its <strong>Find a
+setting</strong> box searches these and the settings that stay in the
+main window: type “skip silence”, press Down to the match and press
+Enter, and Preferences closes, the Audio page comes forward and the
+focus lands on Skip silence.</p>
+<p>The same settings are also in the menus: the <strong>Audio</strong>
+page for the equalizer, boost, normalize, and skip-silence;
+<strong>Playback &gt; Sleep Timer</strong>; <strong>Playback &gt; Audio
+Output Device…</strong> (Ctrl+Shift+K); and the <strong>View</strong>
+menu for Mini Player (Ctrl+Shift+M), Compact Mode (Ctrl+Alt+K), Magical
+Mode (Ctrl+Shift+G), and Always on Top (Ctrl+Shift+T). Your listening
+position, per-book volume, and bookmarks are remembered
+automatically.</p>
+<p>Per-book overrides and importing or exporting settings, specified in
+the PRD (Section 10), are not built yet.</p>
+<hr />
+<h2 id="15-privacy-and-safety">15. Privacy and safety</h2>
+<ul>
+<li>The player makes <strong>no network calls</strong> except to the
+sources you choose; there is no telemetry.</li>
+<li><strong>Lyrics</strong> are fetched from LRCLIB only when you open
+the Lyrics window, sending the song’s artist, title, album and length,
+and are kept in memory only.</li>
+<li><strong>Safe Mode</strong> disables all network sources — local
+playback still works.</li>
+<li>Protected BARD content is handled only through the sanctioned
+mechanism; a decrypted copy is never written to disk.</li>
+<li>Your BARD sign-in and any keys live only in your operating system’s
+secure vault, never in a settings file or the app itself.</li>
+</ul>
+<hr />
+<h2 id="16-accessibility-notes">16. Accessibility notes</h2>
+<ul>
+<li>Every control is keyboard-operable and screen-reader- and
+braille-announced.</li>
+<li>Sliders are arrow-adjustable and speak their values: Up and Right
+mean more (louder, further on), Down and Left less, Page Up and Page
+Down in bigger steps, and Home and End go to the top and the bottom.
+<strong>Slider Keys…</strong> in Preferences turns Up, Down, Page Up,
+Page Down, Home and End round to match a standard Windows slider
+instead, in every Quill app at once. Lists read a full sentence per row
+and support first-letter search; reordering never needs a drag.</li>
+<li>The player honors your system High Contrast, dark mode,
+reduced-motion, and text scaling.</li>
+<li>Nothing important is conveyed by color alone.</li>
+</ul>
+<hr />
+<h2 id="17-troubleshooting">17. Troubleshooting</h2>
+<ul>
+<li><strong>“Could not open …”</strong> — the file may be a format the
+current engine can’t play; try another file, or ensure the bundled
+engines are present next to the app.</li>
+<li><strong>EQ / boost / skip-silence are greyed out</strong> — libmpv
+isn’t loaded on this system; core playback still works.</li>
+<li><strong>No tray icon</strong> — you’re on macOS (which has no
+notification-area tray), or Windows has hidden it in the overflow area
+(press Windows+B, then the arrow keys); otherwise use the window
+itself.</li>
+<li><strong>It didn’t resume where I expected</strong> — your place is
+tied to the audio itself, so a moved or renamed copy of the same
+recording resumes; a <em>different</em> recording of the same title
+(another narrator, another edition) is a separate book with its own
+place, and a position in the first few seconds is not kept (see “Picking
+up where you left off”).</li>
+</ul>
+<hr />
+<ul>
+<li><strong>Text looks blurry, or a window is the wrong size.</strong>
+QUILL Media Player scales itself for each monitor. Text stays sharp at
+125, 150 or 200 percent, and when you move a window to a monitor with
+different scaling; windows and list columns keep their proportions. If a
+window looks wrong at your scaling, you can turn this off to see whether
+it is the cause. Search Windows for “Edit environment variables for your
+account”, add a variable named <code>QUILL_DPI_UNAWARE</code> with the
+value <code>1</code>, and start QUILL Media Player again. Windows then
+stretches it the old way, so text is blurrier. Delete the variable to
+put scaling back, and tell support what you saw.</li>
+</ul>
+<h2 id="18-feature-availability-at-a-glance">18. Feature availability at
+a glance</h2>
+<table>
+<thead>
+<tr>
+<th>Available now</th>
+<th>Still to come</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Open file / folder / DAISY, resume</td>
+<td>Always-on hotword (say a wake word to start)</td>
+</tr>
+<tr>
+<td><strong>Hands-free voice (offline, QUILL’s speech
+engines)</strong></td>
+<td>Spoken chapter intros / soundscape</td>
+</tr>
+<tr>
+<td>Chapter <strong>tree</strong> (multi-level, DAISY)</td>
+<td>Spoken chapter intros / soundscape</td>
+</tr>
+<tr>
+<td><strong>Summarize Chapter + AI Recap (AI)</strong></td>
+<td>Automatic (server) cross-device sync</td>
+</tr>
+<tr>
+<td><strong>Copy/Export bookmarks + Sync bundle</strong></td>
+<td>Embedded in-QUILL window; zero-gap gapless</td>
+</tr>
+<tr>
+<td>Book Library (LibriVox) + multi-track</td>
+<td>BARD sources (NLS contract)</td>
+</tr>
+<tr>
+<td>10-band EQ, boost, normalize, skip-silence</td>
+<td>Embedded in-QUILL player window</td>
+</tr>
+<tr>
+<td>Go to Position (H:M:S), bookmarks</td>
+<td>Full DAISY 3 read-along</td>
+</tr>
+<tr>
+<td>Sleep timer, mini-player, status bar (F6)</td>
+<td></td>
+</tr>
+<tr>
+<td>Magical welcome-back, compact / on-top</td>
+<td></td>
+</tr>
+<tr>
+<td>System tray, in-QUILL launch, updates</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p>For the complete design and the phased build plan, see the PRD next
+to this guide (<code>prd.md</code>).</p>
+<h2 id="finding-a-setting-or-a-command">Finding a setting or a
+command</h2>
+<p>Quill Media Player keeps most of its options in its menus, and
+<strong>Help &gt; Find a Setting or Command</strong>
+(<strong>Ctrl+Alt+Shift+S</strong>) searches every menu at once.
+(Preferences has its own <strong>Find a setting</strong> box for what is
+in that window; see Settings.)</p>
+<ol type="1">
+<li>Press <strong>Ctrl+Alt+Shift+S</strong>.</li>
+<li>Type part of what you are looking for, such as “bookmarks”. The list
+below narrows as you type, and each row says which menu the command is
+in. An option also says whether it is on or off.</li>
+<li>Press <strong>Down</strong> to move into the list, and
+<strong>Enter</strong> on the one you want.</li>
+</ol>
+<p>Enter does exactly what choosing that row from its menu would do. For
+an option, it switches it and tells you whether it is now on or off.
+Escape closes the window without doing anything.</p>
+<h2 id="whats-new">What’s New</h2>
+<p><strong>Help &gt; What’s New</strong>
+(<strong>Ctrl+Shift+F1</strong>) opens the player’s changelog in your
+browser: what changed in the version you have, grouped by subject. Every
+Quill app has the same door on the same key.</p>
+<h2 id="licences-and-notices">Licences and notices</h2>
+<p>Quill Media Player is free and released under the MIT License. It
+also includes software, data and sounds from other projects, each under
+its own licence.</p>
+<p>To read them, open the Help menu, choose About Quill Media Player,
+and then choose the Licences and Notices button. The list opens as a
+plain text file, with one heading for each component: what it is, its
+licence, who holds the copyright and what the licence asks of us. The
+full licence texts are at the end.</p>
+<p>The same file, THIRD-PARTY-NOTICES.txt, and Quill Media Player’s own
+licence, LICENSE.txt, are also in the folder where Quill Media Player is
+installed or unpacked, so you can open them without starting the
+app.</p>
+<h2 id="getting-help">Getting help</h2>
+<p>Support is run by <strong>Community Access</strong>, and the address
+is <strong><a
+href="mailto:support@community-access.org">support@community-access.org</a></strong>.
+A person reads it, and replies come back by email.</p>
+<p>The quickest way there is <strong>Help &gt; Get Help from
+Support…</strong> (Ctrl+Alt+F2), which every app in the family answers
+with the same form: what kind of message this is, a subject, what
+happened, and – if you want an answer – an email address to reply to.
+What you expected and how to reproduce it are optional, and worth more
+than anything else when you can give them.</p>
+<p>Press Send and your <strong>own mail program opens with the whole
+message already written</strong>, addressed to support, with Quill Media
+Player’s name and version and your Windows version filled in at the
+bottom. Nothing is sent until you send it there, so you can read it
+over, add anything, or change your mind.</p>
+<p>If this machine has no mail program set up – webmail only, say – the
+app puts the whole message on your clipboard and tells you the address,
+so nothing you typed is lost. And writing to <strong><a
+href="mailto:support@community-access.org">support@community-access.org</a></strong>
+yourself always works just as well: there is no form you have to use.
+Say which app you were using and what happened.</p>
+</main>
+</body>
+</html>

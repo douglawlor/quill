@@ -9,6 +9,13 @@ from dataclasses import dataclass, replace
 from importlib import import_module
 from typing import Any
 
+from quill.core.speakable import speakable_controls
+from quill.platform.windows.braille_output import (
+    braille_via_accessible_output2,
+    braille_via_prism,
+    prism_supports_braille,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +53,30 @@ def _screen_reader_active() -> bool:
             _sr_active_cache = False
         _sr_cache_timestamp = now
     return _sr_active_cache
+
+
+_macos_sr_active_cache: bool | None = None
+_macos_sr_cache_timestamp: float = 0.0
+
+
+def _macos_screen_reader_active() -> bool:
+    """Cached check for VoiceOver on macOS (mirrors :func:`_screen_reader_active`).
+
+    Used by the darwin announce path to decide between posting to VoiceOver (when
+    it is running) and self-voicing via ``NSSpeechSynthesizer`` (when it is not),
+    so the two paths never double-talk.
+    """
+    global _macos_sr_active_cache, _macos_sr_cache_timestamp
+    now = _time.monotonic()
+    if _macos_sr_active_cache is None or (now - _macos_sr_cache_timestamp) > _SR_CACHE_TTL:
+        try:
+            from quill.platform.macos.sr_detect import detect_screen_reader as _macos_detect
+
+            _macos_sr_active_cache = bool(_macos_detect().detected)
+        except Exception:  # noqa: BLE001
+            _macos_sr_active_cache = False
+        _macos_sr_cache_timestamp = now
+    return _macos_sr_active_cache
 
 
 def normalize_backend_name(value: str | None) -> str:
@@ -127,17 +158,51 @@ def reset_tts_engine_for_tests() -> None:
 
 
 def flush_tts_for_tests(timeout: float = 2.0) -> None:
-    """Block until the TTS worker has processed all queued messages. Test-only."""
-    _tts_queue.join()
+    """Block until the TTS worker has processed all queued messages. Test-only.
+
+    Honors *timeout*: :meth:`queue.Queue.join` has no timeout of its own, so if
+    the worker never drains the queue this returns after *timeout* seconds
+    instead of hanging the test run.
+    """
+    deadline = _time.monotonic() + timeout
+    with _tts_queue.all_tasks_done:
+        while _tts_queue.unfinished_tasks:
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
+                return
+            _tts_queue.all_tasks_done.wait(remaining)
 
 
 # ------------------------------------------------------------------
 # Non-blocking TTS worker (fix #52: speech must not block the UI thread)
 # ------------------------------------------------------------------
 
-_tts_queue: _queue.Queue[str | None] = _queue.Queue()
+# SAPI SpVoice.Speak flag: treat the text as plain, not XML markup (#doc-content).
+_SVSF_IS_NOT_XML = 16
+
+# Bound the queue so a wedged/slow SAPI worker cannot let announcements pile up
+# without limit (each is a live document-derived string). When full we drop the
+# oldest queued announcement rather than block the UI thread — the newest status
+# is the one worth speaking.
+_TTS_QUEUE_MAXSIZE = 128
+_tts_queue: _queue.Queue[str | None] = _queue.Queue(maxsize=_TTS_QUEUE_MAXSIZE)
 _tts_worker_started = False
 _tts_worker_lock = threading.Lock()
+
+
+def _enqueue_tts(message: str) -> None:
+    """Queue *message* for the worker, dropping the oldest item when full."""
+    while True:
+        try:
+            _tts_queue.put_nowait(message)
+            return
+        except _queue.Full:
+            try:
+                _tts_queue.get_nowait()
+                _tts_queue.task_done()
+            except _queue.Empty:
+                # Drained concurrently between the Full and here; retry the put.
+                continue
 
 
 def _ensure_tts_worker() -> None:
@@ -179,7 +244,11 @@ def _tts_worker_loop() -> None:
             try:
                 # Synchronous Speak on this dedicated worker thread; the queue
                 # already keeps announcements off the UI thread.
-                voice.Speak(msg, 0)
+                # SVSFIsNotXML (16): announcements are derived from document
+                # content and may begin with '<'. The default (0) makes SAPI
+                # parse them as XML markup, so a line like "<tag>" would be
+                # swallowed or mis-spoken; this flag forces plain-text speaking.
+                voice.Speak(msg, _SVSF_IS_NOT_XML)
             except Exception:  # noqa: BLE001
                 pass
         _tts_queue.task_done()
@@ -205,6 +274,14 @@ class AnnouncementEngine:
         # acquire a live screen-reader backend (more reliable per-reader detection)
         # before we resort to the SAPI self-voice (#700).
         self._ao2_speaker: Any | None = None
+        #: The concrete accessible_output2 output for the live reader (#1283).
+        #: Braille goes here, never through the Auto wrapper -- Auto.output()
+        #: speaks twice and never brailles in the shipped version.
+        self._ao2_output: Any | None = None
+        #: Mirror announcements to a braille display as well as speech.
+        #: Set from Settings.announcement_braille; on by default, because a
+        #: braille user was simply not receiving these messages at all (#1283).
+        self._braille_enabled = True
         self._state = AnnouncementBackendState(
             requested_backend="auto",
             active_backend="status_only",
@@ -224,6 +301,7 @@ class AnnouncementEngine:
         backend_name = "Status Bar"
         last_error = ""
         ao2_speaker: Any | None = None
+        ao2_output: Any | None = None
 
         if requested in {"prism", "auto"}:
             if backend is not None:
@@ -233,7 +311,7 @@ class AnnouncementEngine:
                 # Prism could not acquire a live screen-reader backend. Try the
                 # accessible_output2 bridge (per-reader is_active() detection is
                 # more reliable) before giving up to the SAPI self-voice (#700).
-                ao2_speaker, ao2_name = _ao2_live_screen_reader()
+                ao2_speaker, ao2_name, ao2_output = _ao2_live_screen_reader()
                 if ao2_speaker is not None:
                     active_backend = "accessible_output2"
                     backend_name = ao2_name or "Screen reader"
@@ -247,6 +325,7 @@ class AnnouncementEngine:
         # a discarded Prism runtime can be collected.
         self._prism_context = context if active_backend == "prism" else None
         self._ao2_speaker = ao2_speaker if active_backend == "accessible_output2" else None
+        self._ao2_output = ao2_output if active_backend == "accessible_output2" else None
         self._state = AnnouncementBackendState(
             requested_backend=requested,
             active_backend=active_backend,
@@ -261,6 +340,7 @@ class AnnouncementEngine:
         return self._state
 
     def announce(self, message: str, *, force_speech: bool = False) -> str | None:
+        message = speakable_controls(message)  # never "form feed" mid-sentence (2026-10-17)
         if self._runtime_backend is None and self._ao2_speaker is not None:
             # accessible_output2 fallback: route to the live screen reader. Like
             # the Prism path, force_speech interrupts so internal-state narration
@@ -268,35 +348,78 @@ class AnnouncementEngine:
             # does not interrupt the reader's current utterance.
             try:
                 self._ao2_speaker.speak(message, interrupt=force_speech)
-                return None
             except Exception as exc:  # noqa: BLE001
                 error = f"accessible_output2 announcement failed: {exc}"
                 self._state = replace(self._state, last_error=error)
                 return error
+            # #1283: the same message to the braille display. After speech,
+            # and never in a way that can prevent it.
+            self._braille(message, self._ao2_output, kind="ao2")
+            return None
         if self._runtime_backend is None:
-            # macOS: hand the announcement to VoiceOver via the accessibility
-            # API. Never self-voice with SAPI — that talks over VoiceOver
-            # (the system voice the user already hears). If VoiceOver is off the
-            # post is a harmless no-op.
+            # macOS: when VoiceOver is running, hand the announcement to it via
+            # the accessibility API (the system voice the user already hears) and
+            # never self-voice over it. When VoiceOver is OFF, self-voice via the
+            # native macOS TTS backend (NSSpeechSynthesizer) so a low-vision Mac
+            # user without VoiceOver still hears announcements instead of every
+            # self._announce(...) being silently swallowed (#2). Mirrors the
+            # Windows SAPI self-voice fallback below.
             if sys.platform == "darwin":
-                try:
-                    from quill.platform.macos.announce import announce as voiceover_announce
+                if _macos_screen_reader_active():
+                    try:
+                        from quill.platform.macos.announce import announce as voiceover_announce
 
-                    voiceover_announce(message)
+                        voiceover_announce(message)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("macOS VoiceOver announce failed: %s", exc)
+                    return None
+                try:
+                    from quill.platform.macos import tts as macos_tts
+
+                    if macos_tts.available():
+                        macos_tts.speak_announcement(message)
+                        self._state = replace(
+                            self._state,
+                            active_backend="speech",
+                            backend_name="System Speech",
+                            last_error="",
+                        )
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("macOS VoiceOver announce failed: %s", exc)
+                    logger.warning("macOS self-voice announce failed: %s", exc)
                 return None
             # Windows/Linux: only speak via system TTS when NO screen reader is
             # running — otherwise it talks over Narrator/NVDA/JAWS (the screen
             # reader already reads the UI through the accessibility API).
-            # force_speech bypasses that suppression for callers narrating
-            # internal-only state (e.g. the QUILL key chord prefix) that has
-            # no focus or control change for the screen reader to pick up on
-            # its own, so without this the message is silently dropped.
+            # This branch is only reachable when no speech bridge could be
+            # acquired: with NVDA/JAWS live, Prism/accessible_output2 handle
+            # announcements above (including force_speech interrupts), so a
+            # detected-but-unbridged reader here is Narrator (#966) — and the
+            # earlier force_speech bypass made the SAPI self-voice talk right
+            # over it (One Core reading the control while QUILL's SAPI voice
+            # repeated the announcement). A live reader now always wins:
+            # first QUILL asks the reader itself to speak the message (a UIA
+            # notification event — Narrator's own announcement channel, in the
+            # user's own One Core voice), and failing that the message lands
+            # in the status bar. Never the SAPI self-voice over a live reader.
+            if sys.platform == "win32" and _screen_reader_active():
+                try:
+                    from quill.platform.windows import narrator_announce
+
+                    if narrator_announce.announce(message, important=force_speech):
+                        self._state = replace(
+                            self._state,
+                            active_backend="uia_notification",
+                            backend_name="Screen reader (UIA notification)",
+                            last_error="",
+                        )
+                        return None
+                except Exception as exc:  # noqa: BLE001 - fall through to status bar
+                    logger.debug("UIA notification announce failed: %s", exc)
+                return None  # status bar only; no double talk (#966)
             if (
                 self._state.requested_backend in {"auto", "prism"}
                 and not _tts_engine_failed
-                and (force_speech or not _screen_reader_active())
+                and not _screen_reader_active()
             ):
                 # Queue speech to the worker thread without resolving the voice
                 # here: building the SAPI SpVoice costs hundreds of ms the first
@@ -304,7 +427,7 @@ class AnnouncementEngine:
                 # it on the caller (the UI thread) would block for that long on
                 # the first announcement of the session.
                 _ensure_tts_worker()
-                _tts_queue.put_nowait(message)
+                _enqueue_tts(message)
                 self._state = replace(
                     self._state,
                     active_backend="speech",
@@ -317,22 +440,62 @@ class AnnouncementEngine:
             error = "Active Prism backend does not expose speak()."
             self._state = replace(self._state, last_error=error)
             return error
-        # force_speech callers (Tab-indent, QUILL-key chord prefix, ...) narrate
-        # internal state the screen reader has no focus/control change to read on
-        # its own. Queued behind the reader's current utterance (interrupt=False)
-        # they are routinely dropped, which reads to the user as "the indentation
-        # announcement is gone". Interrupt so a forced announcement is actually
-        # voiced; routine status keeps the polite non-interrupting behaviour.
+        # force_speech callers (Tab-indent, QUILL-key chord prefix, ...) narrate internal
+        # state the screen reader has no focus/control change to read on its own. Queued
+        # behind the reader's utterance (interrupt=False) they are routinely dropped ("the
+        # indentation announcement is gone"), so they interrupt; routine status does not.
         try:
             speak(message, interrupt=force_speech)
-            return None
         except TypeError:
             speak(message)
-            return None
         except Exception as exc:  # noqa: BLE001
             error = f"Prism announcement failed: {exc}"
             self._state = replace(self._state, last_error=error)
             return error
+        # #1283: mirror to the braille display when the backend supports it.
+        self._braille(message, self._runtime_backend, kind="prism")
+        return None
+
+    def braille(self, message: str) -> str:
+        """Write *message* to the braille display only; "" or an error string.
+
+        The public entry point the announcement service's BrailleSink uses
+        (#1293). The engine still owns the bridge and its capability checks; the
+        decision about *whether* to write is the policy's now -- which buys dedupe,
+        sticky errors and the compact style. ``announce()`` keeps its own inline
+        braille for hosts that have not adopted the service yet.
+        """
+        message = speakable_controls(message)
+        if self._runtime_backend is not None:
+            return braille_via_prism(self._runtime_backend, message)
+        if self._ao2_output is not None:
+            return braille_via_accessible_output2(self._ao2_output, message)
+        return ""
+
+    def set_braille_enabled(self, enabled: bool) -> None:
+        """Turn braille mirroring on or off (Settings.announcement_braille)."""
+        self._braille_enabled = bool(enabled)
+
+    def braille_supported(self) -> bool:
+        """True when the active backend can write to a braille display."""
+        if self._runtime_backend is not None:
+            return prism_supports_braille(self._runtime_backend)
+        return self._ao2_output is not None and callable(getattr(self._ao2_output, "braille", None))
+
+    def _braille(self, message: str, target: Any | None, *, kind: str) -> None:
+        """Mirror *message* to the braille display; never raises (#1283).
+
+        A braille failure is recorded, not propagated: the user has already
+        heard the announcement, and losing speech because a display was
+        unplugged would be a far worse bug than a blank display."""
+        if not self._braille_enabled or target is None:
+            return
+        if kind == "prism":
+            error = braille_via_prism(target, message)
+        else:
+            error = braille_via_accessible_output2(target, message)
+        if error:
+            self._state = replace(self._state, last_error=error)
 
     def diagnostics_environment(self) -> dict[str, object]:
         return {
@@ -342,6 +505,9 @@ class AnnouncementEngine:
             "announcement_prism_available": self._state.prism_available,
             "announcement_prism_runtime_ready": self._state.prism_runtime_ready,
             "announcement_backend_error": self._state.last_error,
+            "announcement_braille_enabled": self._braille_enabled,
+            "announcement_braille_supported": self.braille_supported(),
+            "announcement_braille_active": self._braille_enabled and self.braille_supported(),
         }
 
 
@@ -468,8 +634,12 @@ def _ao2_speaker_singleton() -> Any | None:
     return _ao2_auto
 
 
-def _ao2_live_screen_reader() -> tuple[Any | None, str | None]:
-    """Return ``(speaker, reader_name)`` when a screen reader is live, else (None, None).
+def _ao2_live_screen_reader() -> tuple[Any | None, str | None, Any | None]:
+    """Return ``(speaker, reader_name, output)`` for a live screen reader.
+
+    ``(None, None, None)`` when no reader is live. The third value is the
+    *concrete* output (JAWS, NVDA, ...) rather than the ``Auto`` wrapper,
+    because braille must be sent to the concrete one (#1283).
 
     SAPI5 is skipped: accessible_output2 always reports it active and it is our
     own self-voice fallback, not a screen reader — using it here would talk over
@@ -477,21 +647,21 @@ def _ao2_live_screen_reader() -> tuple[Any | None, str | None]:
     """
     speaker = _ao2_speaker_singleton()
     if speaker is None:
-        return None, None
+        return None, None, None
     try:
         outputs = list(getattr(speaker, "outputs", []))
     except Exception:  # noqa: BLE001
-        return None, None
+        return None, None, None
     for output in outputs:
         if type(output).__name__.lower() == "sapi5":
             continue
         try:
             if output.is_active():
                 name = getattr(output, "name", "") or type(output).__name__
-                return speaker, str(name)
+                return speaker, str(name), output
         except Exception:  # noqa: BLE001 - probe the next output
             continue
-    return None, None
+    return None, None, None
 
 
 def _reset_ao2_for_tests() -> None:

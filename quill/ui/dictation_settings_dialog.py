@@ -2,9 +2,10 @@
 
 An accessible, keyboard-operable panel over the dictation knobs already stored in
 ``settings`` (the ``DictationConfig`` the controller reads): the Locked-Dictation
-time cap, the minimum hold to ignore accidental F9 taps, stop-on-focus-loss,
-intelligent insertion spacing, and a reset for the one-time first-use hint. The
-caller owns the ``wx.Dialog`` so the hardened modal path and ``apply_modal_ids``
+time cap, stop-on-focus-loss, intelligent insertion spacing, and a reset for the
+one-time first-use hint. (The "minimum hold" knob was removed along with
+Hold-to-Dictate; the core config field remains at its 0.0 default.) The caller
+owns the ``wx.Dialog`` so the hardened modal path and ``apply_modal_ids``
 live in one place; on OK the chosen values are exposed as ``result``.
 """
 
@@ -19,10 +20,13 @@ class DictationSettingsResult:
     """The values chosen in the dialog (applied to ``settings`` by the caller)."""
 
     max_locked_seconds: float
-    min_hold_seconds: float
     stop_on_focus_loss: bool
     intelligent_spacing: bool
     reset_onboarding: bool
+    remove_fillers: bool = False
+    #: The user pressed "Edit My Dictation Words...": save, then open the
+    #: dictation.md profile in the editor (the caller owns both actions).
+    open_vocabulary: bool = False
 
 
 class DictationSettingsDialog:
@@ -55,18 +59,30 @@ class DictationSettingsDialog:
             "&Locked Dictation time limit (seconds):",
             lambda: wx.SpinCtrl(dlg, min=30, max=3600),
         )
-        self._min_hold = _add(
-            "&Minimum hold to start (seconds; ignores accidental taps):",
-            lambda: wx.SpinCtrlDouble(dlg, min=0.0, max=5.0, inc=0.1),
-        )
         outer.Add(grid, 0, wx.EXPAND | wx.ALL, 12)
 
         self._focus_loss = wx.CheckBox(dlg, label="Stop and &keep speech when QUILL loses focus")
         outer.Add(self._focus_loss, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
         self._spacing = wx.CheckBox(dlg, label="&Intelligent insertion spacing")
         outer.Add(self._spacing, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
+        # The filler pass is language-honest by design and the label says so in
+        # one breath: with no language evidence only universal hesitations go
+        # ("uh", "hmm"); "um" is removed only when the dictation language makes
+        # it safe, because it is a real word in Portuguese and German.
+        self._remove_fillers = wx.CheckBox(
+            dlg, label='Remove &filler words ("uh", "hmm"; language-aware, never guesses)'
+        )
+        outer.Add(self._remove_fillers, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
         self._reset_hint = wx.CheckBox(dlg, label="Show the first-use &hint again next time")
         outer.Add(self._reset_hint, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
+
+        # One route to the vocabulary that already powers Whisper's prompt bias
+        # AND the fuzzy corrector: the dictation.md profile, opened in QUILL
+        # itself. Saves (OK semantics) and closes, then the caller opens the
+        # file — editing your words should not cost your other changes.
+        self._edit_words = wx.Button(dlg, label="Edit My Dictation &Words...")
+        self._edit_words.Bind(wx.EVT_BUTTON, self._on_edit_words)
+        outer.Add(self._edit_words, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
 
         dlg.Bind(wx.EVT_BUTTON, self._on_ok, id=wx.ID_OK)
         self._outer_sizer = outer
@@ -77,17 +93,26 @@ class DictationSettingsDialog:
         self.dialog.SetSizerAndFit(self._outer_sizer)
         max_locked = float(getattr(s, "dictation_max_locked_seconds", 300.0))
         self._max_locked.SetValue(int(round(max_locked)))
-        self._min_hold.SetValue(float(getattr(s, "dictation_min_hold_seconds", 0.0)))
         self._focus_loss.SetValue(bool(getattr(s, "dictation_stop_on_focus_loss", True)))
         self._spacing.SetValue(bool(getattr(s, "dictation_intelligent_spacing", True)))
+        self._remove_fillers.SetValue(bool(getattr(s, "dictation_remove_fillers", False)))
         self._reset_hint.SetValue(False)
 
-    def _on_ok(self, event: Any) -> None:
+    def _capture(self, *, open_vocabulary: bool = False) -> None:
         self.result = DictationSettingsResult(
             max_locked_seconds=float(self._max_locked.GetValue()),
-            min_hold_seconds=float(self._min_hold.GetValue()),
             stop_on_focus_loss=self._focus_loss.GetValue(),
             intelligent_spacing=self._spacing.GetValue(),
             reset_onboarding=self._reset_hint.GetValue(),
+            remove_fillers=self._remove_fillers.GetValue(),
+            open_vocabulary=open_vocabulary,
         )
+
+    def _on_ok(self, event: Any) -> None:
+        self._capture()
         event.Skip()  # let the dialog close with ID_OK
+
+    def _on_edit_words(self, _event: Any) -> None:
+        wx = self._wx
+        self._capture(open_vocabulary=True)
+        self.dialog.EndModal(wx.ID_OK)

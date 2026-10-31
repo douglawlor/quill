@@ -9,7 +9,10 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
+from quill.core.inline_notes_file import NOTE_LINE_MARK, mark_notes_for_render
+from quill.core.markdown_breaks import line_ends_with_hard_break, strip_hard_break
 from quill.core.navigation import previous_heading_start
+from quill.core.task_lists import task_item_html
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,20 +142,67 @@ def _maybe_dark(body: str, dark: bool) -> str:
     return f"{_PREVIEW_DARK_STYLE}{body}" if dark else body
 
 
-def render_preview_body(text: str, kind: str, dark: bool = False) -> str:
-    """Render just the body fragment (no <html> wrapper) for a preview surface."""
+def render_preview_body(
+    text: str, kind: str, dark: bool = False, *, source_map: bool = False, notes: bool = False
+) -> str:
+    """Render just the body fragment (no <html> wrapper) for a preview surface.
+
+    When ``source_map`` is True, block-level Markdown elements are stamped with a
+    ``data-src="<line>"`` attribute giving the 0-based source line the block
+    starts on. This lets the live side preview map a right-clicked (or Entered)
+    block back to a caret offset in the editor (#1257). It is off by default so
+    every other consumer — HTML export, clipboard, publish, vault — keeps
+    emitting clean markup with no editor-only attributes.
+
+    ``notes`` shows ``quill-note`` comments as marked asides (the preview);
+    off, they are left out, so no page that leaves QUILL carries one.
+    """
     text = _sanitize_preview_text(text)
+    if kind in {"markdown", "html"} and "quill-note:" in text:
+        text = mark_notes_for_render(text, kind, notes)
     if kind == "markdown":
-        return _maybe_dark(_render_markdown(text), dark)
+        return _maybe_dark(_render_markdown(text, source_map=source_map), dark)
     if kind == "html":
         return _maybe_dark(_render_html(text), dark)
     return _maybe_dark(f"<pre>{html.escape(text)}</pre>", dark)
 
 
-def render_preview_html(
-    title: str, text: str, kind: str, start_anchor: str | None = None, *, live: bool = False
-) -> str:
-    body = render_preview_body(text, kind)
+def markup_offset_for_line(text: str, line_index: int) -> int:
+    """Return the character offset where 0-based *line_index* starts in *text*.
+
+    Uses ``str.splitlines(keepends=True)`` so the indexing matches the
+    ``splitlines()`` the Markdown renderer walks — the two stay in lock-step
+    across ``\\n``, ``\\r\\n``, and bare ``\\r`` terminators. An out-of-range
+    index clamps to the start (negative) or end (past the last line) of *text*.
+    """
+    if line_index <= 0:
+        return 0
+    offset = 0
+    line = 0
+    for segment in text.splitlines(keepends=True):
+        if line == line_index:
+            return offset
+        offset += len(segment)
+        line += 1
+    return len(text)
+
+
+def _src_attr(source_map: bool, line_index: int) -> str:
+    """The ``data-src`` attribute for a block, or empty when mapping is off."""
+    return f' data-src="{line_index}"' if source_map else ""
+
+
+def render_preview_html(title: str, text: str, kind: str, start_anchor: str | None = None) -> str:
+    # Deliberately no ``<meta http-equiv="refresh">``: a preview page never
+    # force-reloads itself on a timer. Such a poll re-rendered the whole page
+    # once a second, which made the open tab flicker and, for a screen-reader
+    # or braille user reading the preview, re-announced from the top constantly.
+    # The in-app side preview updates by pushing fresh HTML to the WebView (no
+    # navigation at all -- the fully silent live option). The external browser
+    # preview is re-opened by QUILL after edits (debounced, not per keystroke),
+    # and this page restores scroll position on reload so the reader is not
+    # thrown back to the top each time.
+    body = render_preview_body(text, kind, notes=True)
     anchor_script = ""
     if start_anchor:
         anchor_script = (
@@ -163,11 +213,28 @@ def render_preview_html(
             "});"
             "</script>"
         )
-    refresh_tag = '<meta http-equiv="refresh" content="1">' if live else ""
+    else:
+        # Silent scroll preservation across the live-edit reloads (SEC-safe,
+        # same-origin sessionStorage). When QUILL re-writes and re-opens this
+        # page after an edit, the browser reloads it; without this the pane
+        # jumps to the top, adding to the flicker a braille/screen-reader user
+        # feels. We stash scrollY continuously and restore it on load, keyed by
+        # the file path, so a live refresh lands the reader back where they were.
+        # No timer, no meta-refresh, no announcement -- purely visual continuity.
+        anchor_script = (
+            "<script>(function(){"
+            "var k='quillPreviewScroll:'+location.pathname;"
+            "try{var y=sessionStorage.getItem(k);"
+            "window.addEventListener('load',function(){"
+            "if(y!==null)window.scrollTo(0,parseFloat(y)||0);});"
+            "window.addEventListener('scroll',function(){"
+            "try{sessionStorage.setItem(k,String(window.scrollY));}catch(e){}}"
+            ",{passive:true});}catch(e){}"
+            "})();</script>"
+        )
     return (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"{refresh_tag}"
         f"<title>{html.escape(title)}</title>"
         "<style>"
         ":root{color-scheme:light dark;}"
@@ -178,6 +245,7 @@ def render_preview_html(
         "table{border-collapse:collapse;}"
         "th,td{border:1px solid #ccc;padding:0.4rem 0.6rem;}"
         "h1,h2,h3,h4,h5,h6{scroll-margin-top:1.5rem;}"
+        ".quill-note{border-left:4px solid #b8860b;padding-left:1rem;}"
         # Dark mode (#126): the default browser link blue (#0000ee) fails contrast
         # on a dark background, so pair light text with a light-blue link colour
         # and darken the code/quote/table chrome to keep everything readable.
@@ -190,7 +258,9 @@ def render_preview_html(
         "th,td{border-color:#555;}"
         "}"
         "</style>"
-        '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>'
+        # Only pull the remote MathJax CDN when the document actually has math,
+        # so a plain document makes no third-party network request on preview.
+        f"{_MATHJAX_SCRIPT if contains_math(text) else ''}"
         f"{anchor_script}</head><body>{body}</body></html>"
     )
 
@@ -272,10 +342,49 @@ def _slugify(value: str) -> str:
     return normalized or "preview"
 
 
+# MathJax's default delimiters: ``\( \)`` inline, ``$$`` and ``\[ \]`` display,
+# plus a fenced ```` ```math ```` block. Detecting these lets the preview and HTML
+# export gate the remote MathJax CDN include on a document actually containing
+# math, so a doc with none never triggers the network fetch (privacy/egress).
+_MATH_DELIMITERS_RE = re.compile(r"\\\(|\\\[|\$\$|`{3,}\s*math|~{3,}\s*math", re.IGNORECASE)
+
+_MATHJAX_SCRIPT = (
+    '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>'
+)
+
+
+def contains_math(text: str) -> bool:
+    """Return ``True`` when *text* contains TeX math MathJax would render."""
+    return bool(_MATH_DELIMITERS_RE.search(text))
+
+
+# In-app HTML preview renders in a WebView that executes page script, so an
+# opened .html document is scrubbed before it reaches the pane: <script> blocks,
+# inline event handlers (``on*=...``), and ``javascript:`` URLs are stripped.
+# This is a defensive scrub, not a full HTML parser -- the preview surface never
+# needs to run document script, and there is no CSP on the WebView to fall back
+# on.
+_SCRIPT_BLOCK_RE = re.compile(r"<script\b[^>]*>.*?</script\b[^>]*>", re.IGNORECASE | re.DOTALL)
+_SCRIPT_TAG_RE = re.compile(r"</?script\b[^>]*>", re.IGNORECASE)
+_ON_ATTR_RE = re.compile(r"""\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)""", re.IGNORECASE)
+_JS_URL_RE = re.compile(
+    r"""((?:href|src)\s*=\s*)(["']?)\s*javascript:[^"'>\s]*(["']?)""", re.IGNORECASE
+)
+
+
+def _sanitize_html(text: str) -> str:
+    """Strip active content (<script>, on* handlers, javascript: URLs) from HTML."""
+    text = _SCRIPT_BLOCK_RE.sub("", text)
+    text = _SCRIPT_TAG_RE.sub("", text)
+    text = _ON_ATTR_RE.sub("", text)
+    text = _JS_URL_RE.sub(r"\1\2#\3", text)
+    return text
+
+
 def _render_html(text: str) -> str:
     stripped = text.lstrip()
     if stripped.startswith("<"):
-        return text
+        return _sanitize_html(text)
     return f"<pre>{html.escape(text)}</pre>"
 
 
@@ -300,9 +409,9 @@ def _is_table_separator(line: str) -> bool:
     return all(re.fullmatch(r":?-+:?", cell) is not None for cell in cells if cell != "")
 
 
-def _render_table(header: str, rows: list[str]) -> str:
+def _render_table(header: str, rows: list[str], src_attr: str = "") -> str:
     headers = _split_table_row(header)
-    parts = ["<table>", "<thead>", "<tr>"]
+    parts = [f"<table{src_attr}>", "<thead>", "<tr>"]
     parts += [f"<th>{_render_inline(cell)}</th>" for cell in headers]
     parts += ["</tr>", "</thead>", "<tbody>"]
     for row in rows:
@@ -312,36 +421,203 @@ def _render_table(header: str, rows: list[str]) -> str:
     return "".join(parts)
 
 
-def _render_markdown(text: str) -> str:
+# Hidden-codes vocabulary (the QUILL PRD hidden-codes appendix):
+# inline run spans ``[text]{font-family="Arial" ...}`` and paragraph alignment
+# fenced divs ``::: {align="center"}`` ... ``:::``. These render to styled HTML in
+# both the live preview and HTML export (which both flow through this renderer).
+_SPAN_CODE_RE = re.compile(r"\[([^\]]+)\]\{([^}]*)\}")
+_FENCE_OPEN_CODE_RE = re.compile(r"^:::+\s*\{([^}]*)\}\s*$")
+_FENCE_CLOSE_CODE_RE = re.compile(r"^:::+\s*$")
+_PAGEBREAK_CODE_RE = re.compile(r"^:::+\s*pagebreak\s*$", re.IGNORECASE)
+
+# Vault-resolved markup (quill.core.vault.render) is injected BEFORE this
+# renderer runs -- resolve_for_preview, the site export, and publish all emit
+# exactly these shapes, with attribute values and display text already
+# HTML-escaped by the vault layer. They must pass through the escaping below
+# verbatim; anything looser (a generic raw-HTML passthrough) would defeat the
+# escape-everything safety of this renderer.
+_VAULT_LINK_RE = re.compile(
+    r'<a class="vault-link" href="[^"]*">[^<]*</a>'
+    r'|<span class="vault-link-broken" title="[^"]*">[^<]*</span>'
+)
+# Embed boundaries arrive as HTML comments, which a browser would silently
+# swallow; the vault contract promises an *announced* boundary, so they render
+# as visible emphasized text a screen reader actually reads.
+_VAULT_EMBED_BOUNDARY_RE = re.compile(r"<!-- embedded from (.*?) -->|<!-- end embed -->")
+# Markdown thematic break: a line of 3+ of the same -, *, or _ (spaces allowed,
+# up to 3 leading spaces, CommonMark style). Renders to <hr>. A separator row
+# inside a GFM table contains "|" and is handled by the table path instead.
+_THEMATIC_BREAK_RE = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$")
+_ATTR_PAIR_CODE_RE = re.compile(r'([A-Za-z][\w-]*)\s*=\s*"([^"]*)"|([A-Za-z][\w-]*)')
+_ALIGN_VALUES = {"left", "right", "center", "justify"}
+_LINE_HEIGHTS = {"1": "1", "1.5": "1.5", "2": "2"}
+# Named Word paragraph styles -> a few CSS declarations apiece, so the preview and
+# HTML export approximate Word's built-in styles.
+_NAMED_STYLE_CSS = {
+    "quote": ("font-style: italic", "border-left: 4px solid #ccc", "padding-left: 1rem"),
+    "title": ("font-size: 2em", "font-weight: bold"),
+    "subtitle": ("font-size: 1.3em", "color: #555"),
+    "caption": ("font-size: 0.85em", "font-style: italic", "color: #666"),
+}
+
+
+def _parse_code_attrs(raw: str) -> dict[str, str]:
+    attrs: dict[str, str] = {}
+    for match in _ATTR_PAIR_CODE_RE.finditer(raw):
+        if match.group(1) is not None:
+            attrs[match.group(1).lower()] = match.group(2)
+        elif match.group(3) is not None:
+            attrs.setdefault(match.group(3).lower(), "")
+    return attrs
+
+
+def _span_style_from_attrs(raw: str) -> str:
+    attrs = _parse_code_attrs(raw)
+    decl: list[str] = []
+    if attrs.get("font-family"):
+        decl.append(f"font-family: {html.escape(attrs['font-family'], quote=True)}")
+    size = attrs.get("font-size", "")
+    if size.isdigit():
+        decl.append(f"font-size: {size}pt")
+    if attrs.get("color"):
+        decl.append(f"color: {html.escape(attrs['color'], quote=True)}")
+    if attrs.get("highlight"):
+        decl.append(f"background-color: {html.escape(attrs['highlight'], quote=True)}")
+    decorations = []
+    if "underline" in attrs:
+        decorations.append("underline")
+    if "strike" in attrs:
+        decorations.append("line-through")
+    if decorations:
+        decl.append(f"text-decoration: {' '.join(decorations)}")
+    if "superscript" in attrs:
+        decl.append("vertical-align: super")
+        decl.append("font-size: smaller")
+    elif "subscript" in attrs:
+        decl.append("vertical-align: sub")
+        decl.append("font-size: smaller")
+    return "; ".join(decl)
+
+
+def _div_style_from_attrs(raw: str) -> str:
+    attrs = _parse_code_attrs(raw)
+    decl: list[str] = []
+    align = attrs.get("align", "").lower()
+    if align in _ALIGN_VALUES:
+        decl.append(f"text-align: {align}")
+    spacing = attrs.get("line-spacing", "")
+    if spacing in _LINE_HEIGHTS:
+        decl.append(f"line-height: {_LINE_HEIGHTS[spacing]}")
+    if attrs.get("space-before", "").isdigit():
+        decl.append(f"margin-top: {attrs['space-before']}pt")
+    if attrs.get("space-after", "").isdigit():
+        decl.append(f"margin-bottom: {attrs['space-after']}pt")
+    if attrs.get("indent", "").isdigit():
+        decl.append(f"margin-left: {attrs['indent']}pt")
+    if attrs.get("first-line-indent", "").isdigit():
+        decl.append(f"text-indent: {attrs['first-line-indent']}pt")
+    decl.extend(_NAMED_STYLE_CSS.get(attrs.get("pstyle", "").lower(), ()))
+    return "; ".join(decl)
+
+
+#: Stands in for a hard line break while a paragraph is rendered as one string.
+#: ``chr(1)`` rather than a visible marker because ``html.escape`` leaves it alone
+#: and no document contains one -- the same trick ``_render_inline`` uses to
+#: stash styled spans behind ``chr(0)``.
+_BREAK_SENTINEL = chr(1)
+
+
+def _render_markdown(text: str, *, source_map: bool = False) -> str:
     lines = text.splitlines()
     blocks: list[str] = []
     paragraph: list[str] = []
+    paragraph_start = 0
     list_items: list[str] = []
     list_tag = ""
+    list_start = 1
     code_lines: list[str] = []
+    code_start = 0
     in_code = False
 
     def flush_paragraph() -> None:
+        """One paragraph, with its hard line breaks kept (#1488).
+
+        The lines are joined and rendered as one string, exactly as before, so
+        emphasis that opens on one line and closes on the next still works. The
+        only change is what they are joined *with*: a space where the author
+        soft-wrapped, and a sentinel where they asked for a break. The sentinel
+        survives ``html.escape`` untouched -- it is the same private marker
+        ``_render_inline`` already uses to stash styled spans -- and becomes a
+        ``<br>`` at the end.
+
+        Before this, every line of a paragraph was joined with a space and there
+        was no way to write a line break in QUILL Markdown at all: not two
+        trailing spaces, not a backslash, not a literal ``<br>`` (which was
+        escaped and shown). A novelist lost two days to that.
+        """
         nonlocal paragraph
         if paragraph:
-            blocks.append(f"<p>{_render_inline(' '.join(paragraph))}</p>")
+            joined: list[str] = []
+            for index, line in enumerate(paragraph):
+                last = index == len(paragraph) - 1
+                if not last and line_ends_with_hard_break(line):
+                    joined.append(strip_hard_break(line))
+                    joined.append(_BREAK_SENTINEL)
+                else:
+                    joined.append(strip_hard_break(line) if last else line)
+                    if not last:
+                        joined.append(" ")
+            rendered = _render_inline("".join(joined)).replace(_BREAK_SENTINEL, "<br>")
+            blocks.append(f"<p{_src_attr(source_map, paragraph_start)}>{rendered}</p>")
             paragraph = []
 
     def flush_list() -> None:
-        nonlocal list_items, list_tag
+        nonlocal list_items, list_tag, list_start
         if list_items:
-            blocks.append(f"<{list_tag}>" + "".join(list_items) + f"</{list_tag}>")
+            # Honor the author's starting number for ordered lists (#1200): a
+            # list written 3. 4. 5. must not silently renumber to 1. 2. 3. in
+            # the preview.
+            if list_tag == "ol" and list_start != 1:
+                open_tag = f'<ol start="{list_start}">'
+            else:
+                open_tag = f"<{list_tag}>"
+            blocks.append(open_tag + "".join(list_items) + f"</{list_tag}>")
             list_items = []
             list_tag = ""
+            list_start = 1
+
+    def _continues_list(from_index: int, tag: str) -> bool:
+        # A blank line inside a loose list must not split it into separate lists
+        # (each restarting at 1). Look past blank lines: if the next real line is
+        # another item of the same kind, the list continues (#1200).
+        probe = from_index
+        while probe < total and not lines[probe].strip():
+            probe += 1
+        if probe >= total:
+            return False
+        nxt = lines[probe]
+        if tag == "ul":
+            return re.match(r"^(\s*)([-*+])\s+(.*)$", nxt) is not None
+        return re.match(r"^(\s*)(\d+)\.\s+(.*)$", nxt) is not None
 
     index = 0
     total = len(lines)
     while index < total:
         line = lines[index]
         stripped = line.rstrip()
+        if not in_code and line.startswith(NOTE_LINE_MARK):  # a note's aside
+            flush_paragraph()
+            flush_list()
+            blocks.append(line[1:])
+            index += 1
+            continue
         if in_code:
             if stripped.startswith("```"):
-                blocks.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
+                blocks.append(
+                    f"<pre{_src_attr(source_map, code_start)}><code>"
+                    + html.escape("\n".join(code_lines))
+                    + "</code></pre>"
+                )
                 in_code = False
                 code_lines = []
             else:
@@ -352,6 +628,7 @@ def _render_markdown(text: str) -> str:
             flush_paragraph()
             flush_list()
             in_code = True
+            code_start = index
             index += 1
             continue
         # GFM pipe table: a row containing "|" immediately followed by a
@@ -360,13 +637,67 @@ def _render_markdown(text: str) -> str:
         if "|" in stripped and index + 1 < total and _is_table_separator(lines[index + 1]):
             flush_paragraph()
             flush_list()
+            table_start = index
             header = stripped
             index += 2
             rows: list[str] = []
             while index < total and lines[index].strip() and "|" in lines[index]:
                 rows.append(lines[index])
                 index += 1
-            blocks.append(_render_table(header, rows))
+            blocks.append(_render_table(header, rows, _src_attr(source_map, table_start)))
+            continue
+        if _PAGEBREAK_CODE_RE.match(stripped):
+            flush_paragraph()
+            flush_list()
+            blocks.append(
+                f'<div{_src_attr(source_map, index)} style="page-break-after: always"></div>'
+            )
+            index += 1
+            continue
+        fence_open = _FENCE_OPEN_CODE_RE.match(stripped)
+        if fence_open:
+            flush_paragraph()
+            flush_list()
+            style = _div_style_from_attrs(fence_open.group(1))
+            src = _src_attr(source_map, index)
+            # The named style travels as a data attribute as well as CSS,
+            # because CSS is a one-way trip: "quote" renders as italics and a
+            # left border, and no reader can tell that apart from somebody who
+            # asked for italics and a left border. Browsers ignore it; the
+            # Markdown reader uses it to put the name back.
+            pstyle = _parse_code_attrs(fence_open.group(1)).get("pstyle", "").lower()
+            named = f' data-quill-pstyle="{pstyle}"' if pstyle in _NAMED_STYLE_CSS else ""
+            blocks.append(f'<div{src}{named} style="{style}">' if style else f"<div{src}{named}>")
+            index += 1
+            continue
+        if _FENCE_CLOSE_CODE_RE.match(stripped):
+            flush_paragraph()
+            flush_list()
+            blocks.append("</div>")
+            index += 1
+            continue
+        if _THEMATIC_BREAK_RE.match(stripped):
+            flush_paragraph()
+            flush_list()
+            blocks.append(f"<hr{_src_attr(source_map, index)}>")
+            index += 1
+            continue
+        if re.match(r"^\s*>\s?", stripped):
+            flush_paragraph()
+            flush_list()
+            quote_start = index
+            quote_lines: list[str] = []
+            while index < total:
+                match = re.match(r"^\s*>\s?(.*)$", lines[index].rstrip())
+                if not match:
+                    break
+                quote_lines.append(_render_inline(match.group(1)))
+                index += 1
+            blocks.append(
+                f"<blockquote{_src_attr(source_map, quote_start)}>"
+                + "<br>".join(quote_lines)
+                + "</blockquote>"
+            )
             continue
         heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
         if heading:
@@ -375,7 +706,10 @@ def _render_markdown(text: str) -> str:
             level = len(heading.group(1))
             title = heading.group(2).strip()
             slug = _slugify(title)
-            blocks.append(f'<h{level} id="{slug}">{_render_inline(title)}</h{level}>')
+            blocks.append(
+                f'<h{level} id="{slug}"{_src_attr(source_map, index)}>'
+                f"{_render_inline(title)}</h{level}>"
+            )
             index += 1
             continue
         bullet = re.match(r"^(\s*)([-*+])\s+(.*)$", line)
@@ -384,39 +718,110 @@ def _render_markdown(text: str) -> str:
             flush_paragraph()
             if not list_tag:
                 list_tag = "ul" if bullet else "ol"
+                if numbered:
+                    list_start = int(numbered.group(2))
             item_match = bullet or numbered
             assert item_match is not None  # one of the two matched
-            list_items.append(f"<li>{_render_inline(item_match.group(3))}</li>")
+            content = _render_inline(item_match.group(3))
+            content = task_item_html(content) or content  # - [ ] as a check box
+            list_items.append(f"<li{_src_attr(source_map, index)}>{content}</li>")
             index += 1
             continue
         if not stripped:
             flush_paragraph()
-            flush_list()
+            # Keep a loose list open across a blank line when the next real line
+            # continues it, instead of splitting into lists that each restart.
+            if not (list_tag and _continues_list(index + 1, list_tag)):
+                flush_list()
             index += 1
             continue
         if list_tag:
             flush_list()
-        paragraph.append(stripped)
+        if not paragraph:
+            paragraph_start = index
+        # The raw line, not the rstripped one, decides whether this is a hard
+        # break: every line is rstripped at the top of the loop, which silently
+        # destroyed the two-space spelling before anything could act on it
+        # (#1488 -- the reporter tried exactly that, and nothing happened,
+        # because there was nothing left to find). The marker is re-attached so
+        # flush_paragraph sees it; the backslash spelling survives rstrip on its
+        # own, since a backslash is not whitespace.
+        if line_ends_with_hard_break(line):
+            # Normalised to one spelling here so flush_paragraph has a single
+            # shape to read: a backslash survives rstrip and two spaces do not,
+            # and leaving both in would print the backslash in the output.
+            paragraph.append(strip_hard_break(stripped) + "  ")
+        else:
+            paragraph.append(stripped)
         index += 1
 
     if in_code:
-        blocks.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
+        blocks.append(
+            f"<pre{_src_attr(source_map, code_start)}><code>"
+            + html.escape("\n".join(code_lines))
+            + "</code></pre>"
+        )
     flush_paragraph()
     flush_list()
     return "\n".join(blocks) if blocks else f"<p>{html.escape(text) or '&nbsp;'}</p>"
 
 
 def _render_inline(text: str) -> str:
+    # Hidden-codes run spans are resolved first, on the raw text, so their
+    # attribute values are read before html.escape mangles the quotes. The styled
+    # HTML is stashed behind a NUL sentinel (which escaping leaves untouched) and
+    # restored verbatim at the end, exactly as the export plain-text path stashes
+    # links.
+    placeholders: list[str] = []
+
+    def _stash_span(match: re.Match[str]) -> str:
+        style = _span_style_from_attrs(match.group(2))
+        inner = _render_inline(match.group(1))
+        if not style:
+            placeholders.append(inner)
+        else:
+            placeholders.append(f'<span style="{style}">{inner}</span>')
+        return f"\x00{len(placeholders) - 1}\x00"
+
+    text = _SPAN_CODE_RE.sub(_stash_span, text)
+
+    def _stash_vault_link(match: re.Match[str]) -> str:
+        placeholders.append(match.group(0))
+        return f"\x00{len(placeholders) - 1}\x00"
+
+    def _stash_embed_boundary(match: re.Match[str]) -> str:
+        title = match.group(1)
+        if title is None:
+            placeholders.append('<em class="vault-embed-boundary">End of embed.</em>')
+        else:
+            placeholders.append(
+                f'<em class="vault-embed-boundary">Embedded from {html.escape(title)}:</em>'
+            )
+        return f"\x00{len(placeholders) - 1}\x00"
+
+    text = _VAULT_LINK_RE.sub(_stash_vault_link, text)
+    text = _VAULT_EMBED_BOUNDARY_RE.sub(_stash_embed_boundary, text)
     escaped = html.escape(text)
     escaped = re.sub(r"`([^`]+)`", lambda m: f"<code>{m.group(1)}</code>", escaped)
+    # Images before links, so ![alt](src) becomes an <img> instead of the link
+    # regex splitting it into a literal "!" plus a hyperlink.
+    escaped = re.sub(
+        r"!\[([^\]]*)\]\(([^)]+)\)",
+        lambda m: (
+            f'<img src="{html.escape(m.group(2), quote=True)}" '
+            f'alt="{html.escape(m.group(1), quote=True)}">'
+        ),
+        escaped,
+    )
     escaped = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
         lambda m: f'<a href="{html.escape(m.group(2), quote=True)}">{m.group(1)}</a>',
         escaped,
     )
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"~~([^~]+)~~", r"<del>\1</del>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", escaped)
-    return escaped
+    return re.sub(r"\x00(\d+)\x00", lambda m: placeholders[int(m.group(1))], escaped)
 
 
 def file_url(path: Path) -> str:

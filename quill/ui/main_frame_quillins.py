@@ -32,6 +32,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from quill.core.abbreviations import AbbreviationLibrary, build_contributed_library
+from quill.core.error_codes import user_facing_message
 from quill.core.quillins import (
     ExtensionManifest,
     SnippetContext,
@@ -52,12 +54,19 @@ from quill.core.quillins.loader import (
     set_event_enabled,
 )
 from quill.core.quillins.registry import ContributionRegistry
-from quill.core.speech.quillin_providers import register_quillin_transcription_providers
+from quill.core.quillins.smart_triggers import (
+    SmartTriggerDef,
+    build_smart_trigger_index,
+    parse_smart_trigger_line,
+    resolve_smart_trigger,
+)
 from quill.plugins import THIRD_PARTY_PLUGINS_FEATURE
+from quill.ui.dpi import dip_size
 from quill.ui.main_frame_quillins_host import _EditorHostServices
 
 _QUILLINS_MANAGER_COMMAND = "tools.quillins_manager"
 _QUILLINS_WIZARD_COMMAND = "tools.quillin_wizard"
+_QUILLIN_HUB_SUBMIT_COMMAND = "tools.quillin_hub_submit"
 
 
 class QuillinsMenuMixin:
@@ -89,6 +98,13 @@ class QuillinsMenuMixin:
             self._menu_label("&Manage Quillins...", _QUILLINS_MANAGER_COMMAND),
         )
         self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_quillins_manager(), id=manager_id)
+
+        hub_id = wx.NewIdRef()
+        menu.Append(
+            hub_id,
+            self._menu_label("Submit to Quillin &Hub...", _QUILLIN_HUB_SUBMIT_COMMAND),
+        )
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_hub_submission(), id=hub_id)
 
         registry = self._quillin_registry
         if registry is not None and registry.commands:
@@ -163,6 +179,12 @@ class QuillinsMenuMixin:
             self.open_quillins_manager,
             self._binding_for(_QUILLINS_MANAGER_COMMAND),
         )
+        self.commands.register(
+            _QUILLIN_HUB_SUBMIT_COMMAND,
+            "Submit to Quillin Hub",
+            self.open_hub_submission,
+            self._binding_for(_QUILLIN_HUB_SUBMIT_COMMAND),
+        )
         self._quillin_index: dict[str, tuple[ExtensionManifest, Path]] = {}
         self._bundled_command_ids: set[str] = set()
         self._quillin_registry: ContributionRegistry | None = None
@@ -175,9 +197,11 @@ class QuillinsMenuMixin:
         # H-SAFE-1: Safe Mode keeps the manager/wizard commands but skips
         # contribution registration entirely -- the load-bearing gate that makes
         # ``--safe-mode`` safe (no live commands, no contributed providers).
-        if self._safe_mode:
-            return
-        self._register_quillin_contributions()
+        # Actual contribution loading (disk scan + manifest parse + registry
+        # build) is deferred to _run_deferred_startup_tasks -- it runs via
+        # wx.CallAfter right after the window is shown, before the user can
+        # physically reach the Quillins menu, so this is not visible as a
+        # startup gap (see #startup-perf-optimization plan, Task 2).
 
     def _quillins_enabled(self) -> bool:
         is_enabled = getattr(self.features, "is_enabled", None)
@@ -204,6 +228,16 @@ class QuillinsMenuMixin:
         the SEC-8 ``core.third_party_plugins`` flag is enabled. Both feed the one
         shared registry so their ids collide-detect uniformly.
         """
+        from quill.core.speech.quillin_providers import register_quillin_transcription_providers
+
+        # Safe Mode disables all Quillin contributions (invariant). The startup
+        # path gates this before calling, but the Quillins Manager's
+        # Enable/Disable/Reload/Remove/Install handlers and the wizard's reload
+        # callback all funnel through here too -- guard the single choke point so
+        # none of them can re-register contributions while Safe Mode is active.
+        if self._safe_mode:
+            self._announce("Quillins are disabled in Safe Mode.")
+            return
 
         # Stop any timers from a previous load before rebuilding the indices, so
         # a reload/disable never leaves an orphaned wx.Timer firing.
@@ -216,6 +250,8 @@ class QuillinsMenuMixin:
         self._quillin_event_index = {}
         self._quillin_file_type_index = {}
         self._quillin_timers = {}
+        self._quillin_smart_trigger_index: dict[str, SmartTriggerDef] = {}
+        self._quillin_abbreviation_library: AbbreviationLibrary | None = None
 
         installed = {item.id: item for item in self._installed_quillins()}
         bundled_manifests = load_enabled_bundled_manifests(self.features)
@@ -260,6 +296,21 @@ class QuillinsMenuMixin:
                 if manifest.contributes.schedule and not self._safe_mode:
                     self._start_quillin_timers(manifest, entry.directory)
 
+        # Index =name() smart triggers across loaded manifests for on-Enter
+        # dispatch. Only manifests with an install entry are included (their
+        # commands are registered above); first definition wins on collision.
+        installed_manifests = [m for m in manifests if installed.get(m.id) is not None]
+        self._quillin_smart_trigger_index = build_smart_trigger_index(
+            (manifest.id, manifest.contributes.smart_triggers) for manifest in installed_manifests
+        )
+        # Merge contributed (static) abbreviations into a separate in-memory
+        # library, honouring each Quillin's enable_abbrev_<trigger> setting. Kept
+        # apart from the user's saved library so it is never persisted.
+        self._quillin_abbreviation_library = build_contributed_library(
+            ((manifest.id, manifest.contributes.abbreviations) for manifest in installed_manifests),
+            is_enabled=self._contributed_abbreviation_enabled,
+        )
+
         # Fire quillin.enabled for any Quillin that subscribes to it, so live
         # lifecycle events match the contract (Journal Stamp / Status Scribe).
         for quillin_id, (manifest, directory) in self._quillin_event_index.items():
@@ -288,11 +339,13 @@ class QuillinsMenuMixin:
                 continue
 
     # -- execution -----------------------------------------------------------
-    def run_quillin_command(self, command_id: str) -> None:
+    def run_quillin_command(self, command_id: str, context: dict[str, Any] | None = None) -> None:
         """Run a contributed command: snippet inline, handler out-of-process.
 
         Bundled (Tier C) commands run whenever they are registered; third-party
-        commands additionally require the SEC-8 flag to still be on.
+        commands additionally require the SEC-8 flag to still be on. ``context``
+        is passed to handler commands (e.g. smart-trigger ``args``); snippet
+        commands ignore it.
         """
 
         entry = self._quillin_index.get(command_id)
@@ -309,7 +362,70 @@ class QuillinsMenuMixin:
         if command.is_snippet and command.snippet is not None:
             self._run_quillin_snippet(command.snippet)
             return
-        self._run_quillin_handler(manifest, directory, command_id)
+        self._run_quillin_handler(manifest, directory, command_id, context)
+
+    # -- smart triggers (=name(args)) ---------------------------------------
+    def dispatch_smart_trigger_line(self, line: str, line_start: int, line_end: int) -> bool:
+        """Dispatch a ``=name(args)`` line if it resolves to an enabled trigger.
+
+        On a match, the trigger text spanning ``[line_start, line_end)`` is
+        removed and the resolved command runs at that position (inserting its
+        generated text where the trigger was). Returns True when a trigger fired,
+        so the editor can consume the Enter keystroke instead of adding a
+        newline. Pure parsing/resolution lives in
+        ``core.quillins.smart_triggers``; this only wires the feature gate,
+        per-Quillin enable settings, the editor edit, and dispatch.
+        """
+        index = getattr(self, "_quillin_smart_trigger_index", {})
+        if not index:
+            return False
+        match = parse_smart_trigger_line(line)
+        if match is None:
+            return False
+        resolution = resolve_smart_trigger(match, index, is_enabled=self._smart_trigger_enabled)
+        if resolution is None:
+            return False
+        definition = resolution.definition
+        editor = self._frame_editor()
+        editor.Replace(int(line_start), int(line_end), "")
+        editor.SetInsertionPoint(int(line_start))
+        self.run_quillin_command(
+            definition.command_id, {"trigger": definition.name, "args": resolution.args}
+        )
+        self.fire_quillin_event(
+            "smart_trigger.entered",
+            {"trigger": definition.name, "args": list(resolution.args)},
+        )
+        return True
+
+    def _smart_trigger_enabled(self, definition: SmartTriggerDef) -> bool:
+        """Return True when *definition* may fire: gated on the command being
+        loaded, the third-party flag (for non-bundled commands), and the
+        Quillin's own ``enable_<name>`` setting (default: the manifest default).
+        """
+        if definition.command_id not in self._quillin_index:
+            return False
+        if definition.command_id not in self._bundled_command_ids and not self._quillins_enabled():
+            return False
+        from quill.core import quillin_settings
+
+        enabled = quillin_settings.get_setting(
+            definition.quillin_id,
+            f"enable_{definition.name}",
+            definition.enabled_by_default,
+        )
+        return bool(enabled)
+
+    def _contributed_abbreviation_enabled(
+        self, quillin_id: str, trigger: str, default: bool
+    ) -> bool:
+        """Return True when a contributed abbreviation may expand, honouring the
+        Quillin's own ``enable_abbrev_<trigger>`` setting (default: the manifest
+        default). Third-party gating is already applied upstream: disabled
+        third-party manifests are never in the loaded set."""
+        from quill.core import quillin_settings
+
+        return bool(quillin_settings.get_setting(quillin_id, f"enable_abbrev_{trigger}", default))
 
     def _run_quillin_snippet(self, body: str) -> None:
         editor = self._frame_editor()
@@ -332,7 +448,11 @@ class QuillinsMenuMixin:
         self._announce("Quillin snippet inserted.")
 
     def _run_quillin_handler(
-        self, manifest: ExtensionManifest, directory: Path, command_id: str
+        self,
+        manifest: ExtensionManifest,
+        directory: Path,
+        command_id: str,
+        context: dict[str, Any] | None = None,
     ) -> None:
         if not hasattr(self, "_quillin_storage_data"):
             self._quillin_storage_data: dict[str, dict[str, str]] = {}
@@ -344,9 +464,9 @@ class QuillinsMenuMixin:
         try:
             host.start()
             host.load()
-            host.invoke(command_id, {})
+            host.invoke(command_id, context or {})
         except Exception as error:  # surface, never crash the editor
-            self._announce(f"Quillin error: {error}")
+            self._announce(f"Quillin error: {user_facing_message(error)}")
         finally:
             host.close()
 
@@ -427,7 +547,10 @@ class QuillinsMenuMixin:
             except Exception as error:  # never crash; report on the UI thread
                 call_after = getattr(wx, "CallAfter", None)
                 if callable(call_after):
-                    call_after(self._set_status, f"Quillin event error: {error}")
+                    call_after(
+                        self._set_status,
+                        f"Quillin event error: {user_facing_message(error)}",
+                    )
             finally:
                 host.close()
 
@@ -576,9 +699,14 @@ class QuillinsMenuMixin:
             except Exception:
                 pass
 
-        # Reload contributions so menus and commands reflect new state
+        # Reload contributions so menus and commands reflect new state (#974:
+        # _register_quillin_contributions only rebuilds the internal registry --
+        # the already-built menu bar needs an explicit rebuild too, or
+        # contributed items like the Insert > Date and Time submenu's entries
+        # stay silently absent for the rest of the session).
         try:
             self._register_quillin_contributions()
+            self._build_menu()
         except Exception:
             pass
 
@@ -607,6 +735,18 @@ class QuillinsMenuMixin:
             show_modal=self._show_modal_dialog,
             reload_callback=self._register_quillin_contributions,
             third_party_locked=not self._quillins_enabled(),
+        )
+
+    # -- Quillin Hub submission check -----------------------------------------
+    def open_hub_submission(self) -> None:
+        """Validate any shareable QUILL artifact and guide the user to the Hub."""
+        from quill.ui.quillin_hub_submit import open_hub_submission
+
+        open_hub_submission(
+            self.frame,
+            self._wx,
+            announce=self._announce,
+            show_modal_dialog=self._show_modal_dialog,
         )
 
     # -- Quillins Manager dialog (hardened custom) ---------------------------
@@ -644,14 +784,14 @@ class QuillinsMenuMixin:
             chooser.SetSelection(0)
         body.Add(chooser, 1, wx.ALL | wx.EXPAND, 8)
 
-        body.Add(wx.StaticText(dialog, label="&Details"), 0, wx.LEFT | wx.RIGHT, 8)
+        body.Add(wx.StaticText(dialog, label="De&tails"), 0, wx.LEFT | wx.RIGHT, 8)
         details = wx.TextCtrl(dialog, style=wx.TE_MULTILINE | wx.TE_READONLY)
         details.SetName("Quillin details")
         body.Add(details, 1, wx.ALL | wx.EXPAND, 8)
 
         enable_button = wx.Button(dialog, label="&Enable")
         disable_button = wx.Button(dialog, label="&Disable")
-        events_button = wx.Button(dialog, label="Configure &Events...")
+        events_button = wx.Button(dialog, label="C&onfigure Events...")
         reload_button = wx.Button(dialog, label="&Reload")
         remove_button = wx.Button(dialog, label="Re&move...")
         install_button = wx.Button(dialog, label="&Install from Folder...")
@@ -675,7 +815,7 @@ class QuillinsMenuMixin:
         body.Add(button_sizer, 0, wx.EXPAND | wx.ALL, 8)
 
         dialog.SetSizerAndFit(body)
-        dialog.SetSize((640, 560))
+        dialog.SetSize(dip_size(dialog, 640, 560))
         if hasattr(dialog, "CentreOnParent"):
             dialog.CentreOnParent()
 
@@ -710,6 +850,7 @@ class QuillinsMenuMixin:
                 return
             set_enabled(item.id, True)
             self._register_quillin_contributions()
+            self._build_menu()
             self._announce(f"Enabled {item.id}.")
             refresh_details()
 
@@ -719,11 +860,13 @@ class QuillinsMenuMixin:
                 return
             set_enabled(item.id, False)
             self._register_quillin_contributions()
+            self._build_menu()
             self._announce(f"Disabled {item.id}.")
             refresh_details()
 
         def on_reload(_event: object) -> None:
             self._register_quillin_contributions()
+            self._build_menu()
             self._announce("Reloaded Quillins from disk.")
 
         def on_remove(_event: object) -> None:
@@ -757,6 +900,7 @@ class QuillinsMenuMixin:
             if approved:
                 remove_extension(item.id)
                 self._register_quillin_contributions()
+                self._build_menu()
                 self._announce(f"Removed {item.id}.")
 
         def on_install(_event: object) -> None:
@@ -775,6 +919,7 @@ class QuillinsMenuMixin:
             try:
                 ext_id = install_extension(Path(src_path))
                 self._register_quillin_contributions()
+                self._build_menu()
                 installed[:] = list(self._installed_quillins())
                 labels = [self._quillin_list_label(item) for item in installed] or [
                     "(no Quillins installed)"
@@ -786,7 +931,7 @@ class QuillinsMenuMixin:
                 self._announce(f"Installed {ext_id}.")
             except Exception as exc:
                 show_message_box(
-                    f"Install failed: {exc}",
+                    f"Install failed: {user_facing_message(exc)}",
                     "Install Quillin",
                     wx.OK | wx.ICON_ERROR,
                     dialog,
@@ -968,6 +1113,24 @@ class QuillinsMenuMixin:
                     active = is_event_enabled(item.id, event_name)
                     lines.append(f"  {title} ({event_name}): {'on' if active else 'off'}")
         lines.append(f"Enabled: {'yes' if item.enabled else 'no'}")
+
+        # Signature: a Quillin shipped with the repo (or installed from a
+        # signed zip) carries a .minisig sidecar; unsigned Quillins are
+        # visible in the manager but flagged so the user knows the source
+        # is not publisher-attested.
+        try:
+            from quill.tools.signing import signature_status
+
+            sig = signature_status(Path(item.directory) / "manifest.json")
+            if sig.verified:
+                lines.append(f"Signature: verified, signed by {sig.signer_key_id}.")
+            elif sig.signed:
+                lines.append(f"Signature: invalid ({sig.error or 'does not match publisher key'}).")
+            else:
+                lines.append("Signature: unsigned. This Quillin is not publisher-attested.")
+        except (OSError, ValueError, ImportError) as exc:
+            lines.append(f"Signature: check failed ({exc}).")
+
         if item.errors:
             lines.append("")
             lines.append("Problems:")
@@ -976,17 +1139,11 @@ class QuillinsMenuMixin:
 
     def _read_clipboard_text(self) -> str:
         wx = self._wx
-        text = ""
-        clipboard = getattr(wx, "TheClipboard", None)
-        if clipboard is None or not clipboard.Open():
-            return text
-        try:
-            data = wx.TextDataObject()
-            if clipboard.GetData(data):
-                text = str(data.GetText())
-        finally:
-            clipboard.Close()
-        return text
+        if getattr(wx, "TheClipboard", None) is None:
+            return ""
+        from quill.ui.clipboard_retry import read_clipboard_text
+
+        return read_clipboard_text(wx)
 
     def _write_clipboard_text(self, text: str) -> None:
         wx = self._wx

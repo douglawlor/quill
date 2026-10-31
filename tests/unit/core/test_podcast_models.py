@@ -1,0 +1,233 @@
+"""Tests for the Podcasts data model (pure; no network, no filesystem)."""
+
+from __future__ import annotations
+
+from quill.core.podcasts.models import PodcastEpisode, PodcastSettings, PodcastShow
+
+
+def test_settings_to_dict_from_dict_round_trip() -> None:
+    original = PodcastSettings(
+        playback_mode="stream",
+        retention="keep_last_n",
+        retention_count=10,
+        speed=1.5,
+        download_root="D:/podcasts",
+    )
+    restored = PodcastSettings.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_settings_from_dict_defaults_on_missing_fields() -> None:
+    settings = PodcastSettings.from_dict({})
+    assert settings.playback_mode == "download"
+    assert settings.retention == "keep_all"
+    assert settings.retention_count == 5
+    assert settings.speed == 1.0
+    assert settings.download_root == ""
+    assert settings.delete_files_on_remove == "ask"
+
+
+def test_settings_from_dict_rejects_unknown_delete_policy() -> None:
+    settings = PodcastSettings.from_dict({"delete_files_on_remove": "sometimes"})
+    assert settings.delete_files_on_remove == "ask"
+
+
+def test_settings_from_dict_accepts_known_delete_policies() -> None:
+    for policy in ("ask", "always", "never"):
+        settings = PodcastSettings.from_dict({"delete_files_on_remove": policy})
+        assert settings.delete_files_on_remove == policy
+
+
+def test_settings_from_dict_coerces_junk_numeric_fields() -> None:
+    settings = PodcastSettings.from_dict({"retention_count": "not a number", "speed": None})
+    assert settings.retention_count == 5
+    assert settings.speed == 1.0
+
+
+def test_settings_episode_list_view_mode_and_sort_mode_defaults() -> None:
+    settings = PodcastSettings.from_dict({})
+    assert settings.episode_list_view_mode == "grouped"
+    assert settings.episode_sort_mode == "date_newest"
+
+
+def test_settings_episode_list_view_mode_round_trips() -> None:
+    for mode in ("flat", "grouped", "folders"):
+        settings = PodcastSettings(episode_list_view_mode=mode)
+        assert PodcastSettings.from_dict(settings.to_dict()).episode_list_view_mode == mode
+
+
+def test_settings_episode_list_view_mode_rejects_unknown_value() -> None:
+    settings = PodcastSettings.from_dict({"episode_list_view_mode": "bogus"})
+    assert settings.episode_list_view_mode == "grouped"
+
+
+def test_settings_episode_sort_mode_round_trips() -> None:
+    settings = PodcastSettings(episode_sort_mode="date_oldest")
+    assert PodcastSettings.from_dict(settings.to_dict()).episode_sort_mode == "date_oldest"
+
+
+def test_settings_sound_enhancements_default_off() -> None:
+    settings = PodcastSettings.from_dict({})
+    assert (settings.eq_bass_db, settings.eq_mid_db, settings.eq_treble_db) == (0.0, 0.0, 0.0)
+    assert settings.compressor_enabled is False
+    assert settings.smart_speed_enabled is False
+
+
+def test_settings_sound_enhancements_round_trip() -> None:
+    original = PodcastSettings(
+        eq_bass_db=-4.0,
+        eq_mid_db=3.0,
+        eq_treble_db=0.0,
+        compressor_enabled=True,
+        smart_speed_enabled=True,
+    )
+    restored = PodcastSettings.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_settings_sound_enhancements_clamped_on_load() -> None:
+    settings = PodcastSettings.from_dict({"eq_bass_db": 50.0, "eq_treble_db": -50.0})
+    assert settings.eq_bass_db == 12.0
+    assert settings.eq_treble_db == -12.0
+
+
+def test_settings_skip_seconds_defaults() -> None:
+    settings = PodcastSettings.from_dict({})
+    assert settings.skip_forward_seconds == 30
+    assert settings.skip_back_seconds == 15
+    assert settings.auto_skip_intro_seconds == 0
+    assert settings.auto_skip_outro_seconds == 0
+
+
+def test_settings_skip_seconds_round_trip() -> None:
+    original = PodcastSettings(
+        skip_forward_seconds=45,
+        skip_back_seconds=10,
+        auto_skip_intro_seconds=20,
+        auto_skip_outro_seconds=5,
+    )
+    restored = PodcastSettings.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_settings_skip_seconds_floor_on_load() -> None:
+    settings = PodcastSettings.from_dict({
+        "skip_forward_seconds": 0,
+        "skip_back_seconds": -5,
+        "auto_skip_intro_seconds": -3,
+    })
+    assert settings.skip_forward_seconds == 1
+    assert settings.skip_back_seconds == 1
+    assert settings.auto_skip_intro_seconds == 0
+
+
+def test_episode_from_dict_requires_guid_title_and_audio_url() -> None:
+    assert PodcastEpisode.from_dict({"title": "X", "audio_url": "https://x"}) is None
+    assert PodcastEpisode.from_dict({"guid": "g", "audio_url": "https://x"}) is None
+    assert PodcastEpisode.from_dict({"guid": "g", "title": "X"}) is None
+    assert PodcastEpisode.from_dict({}) is None
+
+
+def test_episode_to_dict_from_dict_round_trip() -> None:
+    original = PodcastEpisode(
+        guid="g1",
+        title="Episode One",
+        audio_url="https://example.com/ep1.mp3",
+        published="2026-07-01",
+        duration_seconds=1830,
+        description="Description text",
+        chapters_url="https://example.com/ep1-chapters.json",
+        transcript_url="https://example.com/ep1.srt",
+        transcript_type="application/srt",
+        downloaded_path="/data/ep1.mp3",
+        mode_override="download",
+        played=True,
+        position_ms=45000,
+    )
+    restored = PodcastEpisode.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_show_find_episode() -> None:
+    episode = PodcastEpisode(guid="g1", title="Ep", audio_url="https://x/e.mp3")
+    show = PodcastShow(id="s1", title="Show", episodes=[episode])
+    assert show.find_episode("g1") is episode
+    assert show.find_episode("missing") is None
+
+
+def test_show_to_dict_from_dict_round_trip_with_settings_and_episodes() -> None:
+    episode = PodcastEpisode(guid="g1", title="Ep", audio_url="https://x/e.mp3")
+    original = PodcastShow(
+        id="s1",
+        title="Show",
+        feed_url="https://x/feed.xml",
+        homepage="https://x",
+        artwork_url="https://x/art.png",
+        is_local=False,
+        folder_id="f1",
+        paused=True,
+        is_favorite=True,
+        route_to_inbox=True,
+        inbox_default_folder_id="f2",
+        settings=PodcastSettings(playback_mode="stream"),
+        episodes=[episode],
+    )
+    restored = PodcastShow.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_show_from_dict_requires_id_and_title() -> None:
+    assert PodcastShow.from_dict({"title": "X"}) is None
+    assert PodcastShow.from_dict({"id": "s1"}) is None
+    assert PodcastShow.from_dict({}) is None
+
+
+def test_show_from_dict_tolerates_missing_settings_and_bad_episodes() -> None:
+    show = PodcastShow.from_dict({
+        "id": "s1",
+        "title": "Show",
+        "episodes": [
+            {"guid": "bad"},
+            "junk",
+            {"guid": "g1", "title": "Ep", "audio_url": "https://x/e.mp3"},
+        ],
+    })
+    assert show is not None
+    assert show.settings is None
+    assert len(show.episodes) == 1
+    assert show.episodes[0].guid == "g1"
+
+
+def test_show_feed_username_round_trips() -> None:
+    show = PodcastShow(id="s1", title="T", feed_url="https://h/f.rss", feed_username="member")
+    data = show.to_dict()
+    assert data["feed_username"] == "member"
+    loaded = PodcastShow.from_dict(data)
+    assert loaded is not None and loaded.feed_username == "member"
+
+
+def test_show_feed_username_defaults_empty_for_old_data() -> None:
+    loaded = PodcastShow.from_dict({"id": "s1", "title": "T"})
+    assert loaded is not None and loaded.feed_username == ""
+
+
+def test_settings_view_names_and_sort_mode_round_trip() -> None:
+    settings = PodcastSettings(
+        view_names={"inbox": "Triage"},
+        show_sort_mode="custom",
+    )
+    reloaded = PodcastSettings.from_dict(settings.to_dict())
+    assert reloaded.view_names == {"inbox": "Triage"}
+    assert reloaded.show_sort_mode == "custom"
+
+
+def test_settings_view_names_and_sort_mode_tolerate_junk() -> None:
+    # A settings file is somebody else's input: blanks drop out, an unknown
+    # sort mode reads as the default rather than reaching the tree.
+    reloaded = PodcastSettings.from_dict({
+        "view_names": {"inbox": "   ", "": "x", "favorites": " Best "},
+        "show_sort_mode": "by_vibes",
+    })
+    assert reloaded.view_names == {"favorites": "Best"}
+    assert reloaded.show_sort_mode == "title_az"
+    assert PodcastSettings.from_dict({"view_names": "nonsense"}).view_names == {}

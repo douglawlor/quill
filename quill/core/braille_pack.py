@@ -20,6 +20,19 @@ from pathlib import Path
 _PACK_EXECUTABLES = ("lou_translate", "louis")
 _PACK_MODULES = ("louis", "lou_translate")
 
+# Footprint unbundle: the pack (~68 MB of translation tables) is no longer
+# shipped in the installer. It is fetched on demand from QUILL's pinned,
+# SHA-256-verified assets-v1 release into this app-data directory. The resolvers
+# below prefer a bundled copy (upgraders keep theirs) but also find the download.
+_RELEASE_COMPONENT = "braille"
+
+
+def managed_braille_dir() -> Path:
+    """The app-data directory the downloaded braille pack is extracted into."""
+    from quill.core.paths import app_data_dir
+
+    return app_data_dir() / "vendor" / "braille-pack"
+
 
 def _find_install_root() -> Path | None:
     """Return the Quill install root when running from a bundled install.
@@ -34,6 +47,17 @@ def _find_install_root() -> Path | None:
         if (candidate / "run-quill.cmd").exists():
             return candidate
     return None
+
+
+def braille_install_supported() -> bool:
+    """Whether QUILL's pinned, managed braille-pack download can run here.
+
+    The pinned asset ships the Windows ``lou_translate.exe`` binary, so the
+    managed download is Windows-only. On macOS liblouis is best installed via
+    Homebrew (``brew install liblouis``); :func:`is_braille_pack_installed`
+    detects a Homebrew install via PATH/module lookup without the download.
+    """
+    return sys.platform == "win32"
 
 
 def is_braille_pack_installed() -> bool:
@@ -55,6 +79,10 @@ def is_braille_pack_installed() -> bool:
         if (install_root / pack_rel).exists():
             return True
 
+    # On-demand download location (footprint unbundle).
+    if (managed_braille_dir() / "lou_translate.exe").exists():
+        return True
+
     if any(shutil.which(name) for name in _PACK_EXECUTABLES):
         return True
     if any(name in sys.modules for name in _PACK_MODULES):
@@ -69,33 +97,35 @@ def is_braille_pack_installed() -> bool:
 
 
 def braille_pack_version() -> str | None:
-    """Return the installed pack version string, or None when not installed."""
+    """Return the installed liblouis version string, or None when not installed.
+
+    liblouis is never imported in-process (BR-020) -- there is no Python
+    ``louis`` module to ask. The version is read from the pack's own
+    manifest.json, written by build_braille_pack.py at build time (the same
+    file get_brf_profiles() reads brf_profiles.json alongside).
+    """
     if not is_braille_pack_installed():
         return None
-    try:
-        import louis  # type: ignore[import-not-found]
-    except Exception:  # noqa: BLE001 - any import failure means "version unknown"
-        return "unknown"
-    version = getattr(louis, "version", None)
-    if callable(version):
-        try:
-            return str(version())
-        except Exception:  # noqa: BLE001
-            return "unknown"
-    return str(getattr(louis, "__version__", "") or "unknown")
+    for path in _pack_file_candidates("manifest.json"):
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                continue
+            version = data.get("liblouis_version")
+            return str(version) if version else "unknown"
+    return "unknown"
 
 
-def get_brf_profiles() -> list[dict]:
-    """Return the list of BRF profiles from the installed pack's brf_profiles.json.
+def _pack_file_candidates(filename: str) -> list[Path]:
+    """Search-ordered candidate paths for *filename* alongside the pack.
 
-    Searches the vendor braille pack directory for brf_profiles.json. Returns
-    an empty list when the pack is not installed or the file cannot be read.
-
-    Search order:
     1. ``{QUILL_APP_ROOT}/vendor/braille-pack/`` — set by run-quill.cmd in the
        installer build; covers both portable and installed modes.
-    2. ``<repo-root>/liblouis/vendor/braille/pack/`` — dev source tree.
-    3. ``<repo-root>/vendor/braille-pack/`` — portable staging path.
+    2. the managed app-data pack dir (``managed_braille_dir()``) — where the
+       on-demand download extracts to (footprint unbundle).
+    3. ``<repo-root>/liblouis/vendor/braille/pack/`` — dev source tree.
+    4. ``<repo-root>/vendor/braille-pack/`` — portable staging path.
     """
     import os
 
@@ -103,15 +133,72 @@ def get_brf_profiles() -> list[dict]:
 
     app_root_env = os.environ.get("QUILL_APP_ROOT")
     if app_root_env:
-        candidates.append(Path(app_root_env) / "vendor" / "braille-pack" / "brf_profiles.json")
+        candidates.append(Path(app_root_env) / "vendor" / "braille-pack" / filename)
+
+    # On-demand download location (footprint unbundle).
+    candidates.append(managed_braille_dir() / filename)
 
     repo_root = Path(__file__).resolve().parents[2]
     candidates += [
-        repo_root / "liblouis" / "vendor" / "braille" / "pack" / "brf_profiles.json",
-        repo_root / "vendor" / "braille-pack" / "brf_profiles.json",
+        repo_root / "liblouis" / "vendor" / "braille" / "pack" / filename,
+        repo_root / "vendor" / "braille-pack" / filename,
     ]
+    return candidates
 
-    for path in candidates:
+
+def find_lou_translate() -> Path | None:
+    """Return the pack's ``lou_translate`` binary, or one on PATH, or None.
+
+    This is the no-Python-binding translation path: the pack has always
+    shipped ``lou_translate.exe`` + tables, but the worker only ever tried
+    ``import louis`` -- so translation silently required a separately
+    pip-installed binding that nothing installs. Resolving the bundled CLI
+    makes translation work out of the box from source, portable, and
+    installed builds alike.
+    """
+    exe_name = "lou_translate.exe" if sys.platform == "win32" else "lou_translate"
+    for path in _pack_file_candidates(exe_name):
+        if path.exists():
+            return path
+    which = shutil.which("lou_translate")
+    return Path(which) if which else None
+
+
+def tables_dir() -> Path | None:
+    """Return the pack's liblouis tables directory, or None when absent."""
+    for path in _pack_file_candidates("tables"):
+        if path.is_dir():
+            return path
+    return None
+
+
+def find_table_file(table: str) -> Path | None:
+    """Resolve a bare table name (e.g. ``en-ueb-g2``) to its file in the pack.
+
+    Accepts names with or without an extension. Returns None when the pack
+    (or the named table) is not available -- callers fall back to passing the
+    bare name through and letting liblouis resolve it via its own search path.
+    """
+    directory = tables_dir()
+    if directory is None:
+        return None
+    candidate = directory / table
+    if candidate.exists():
+        return candidate
+    for suffix in (".ctb", ".utb", ".uti", ".tbl"):
+        candidate = directory / f"{table}{suffix}"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def get_brf_profiles() -> list[dict]:
+    """Return the list of BRF profiles from the installed pack's brf_profiles.json.
+
+    Searches the vendor braille pack directory for brf_profiles.json. Returns
+    an empty list when the pack is not installed or the file cannot be read.
+    """
+    for path in _pack_file_candidates("brf_profiles.json"):
         if path.exists():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
@@ -121,17 +208,26 @@ def get_brf_profiles() -> list[dict]:
     return []
 
 
-def install_braille_pack(progress_cb: Callable[[str], None] | None = None) -> bool:
-    """Phase 5 stub: no auto-download, no silent network calls.
+def install_braille_pack(
+    progress: Callable[[float, str], None] | None = None,
+    *,
+    should_cancel: Callable[[], bool] | None = None,
+) -> Path:
+    """Download and verify the braille pack on demand (footprint unbundle).
 
-    Points the user at the docs and returns False (nothing installed). A real
-    installer in a later PR MUST register its download site in the network-egress
-    audit (``_REVIEWED_EGRESS``) before adding any network call.
+    Fetches QUILL's pinned, SHA-256-verified pack from the assets-v1 release
+    (via :func:`quill.core.release_assets.fetch_component`) and extracts it into
+    :func:`managed_braille_dir`. Returns the install directory. Raises
+    ``ReleaseAssetError`` (Safe Mode, network, checksum) or ``DownloadCancelled``
+    -- the same contract as the other on-demand components -- so the UI can
+    degrade cleanly. GATE-9: the network egress lives in ``release_assets``.
     """
-    message = (
-        "Download the QUILL Braille Pack — see docs/planning/planning.md, "
-        "Feature: Braille Mode (Phase 5, optional)."
+    from quill.core.release_assets import fetch_component
+
+    return fetch_component(
+        _RELEASE_COMPONENT,
+        managed_braille_dir(),
+        progress=progress,
+        should_cancel=should_cancel,
+        label="Downloading the braille pack...",
     )
-    if progress_cb is not None:
-        progress_cb(message)
-    return False

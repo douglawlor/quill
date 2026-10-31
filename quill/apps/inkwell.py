@@ -1,0 +1,629 @@
+"""Quill Inkwell -- abbreviation expansion everywhere, not just in QUILL.
+
+QUILL has always expanded abbreviations inside its own editor. Inkwell is the
+same feature, in every other application: type "addr" and a space in a browser,
+a mail client, or a form, and the address you saved appears.
+
+The point of it being part of the family rather than a separate product is that
+there is exactly **one** library. Inkwell and QUILL read and write the same
+``abbreviations.json`` in the same data directory -- add an abbreviation in
+either and it works in both immediately, with no import, export, or sync.
+
+The window is small on purpose: expansion is a background service, so Inkwell
+lives in the system tray and its window is only where you manage the list.
+Clipboard handling stays deliberately minimal -- a snapshot for ``${clipboard}``
+and nothing more.
+
+Bootstrap mirrors the other family apps: single-instance via ``core.ipc``, an
+:class:`~quill.ui.app_shell.AppShellFrame` host for announcements, tray, and
+the shared dialog contract.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+import wx
+
+from quill.apps.inkwell_dictation import InkwellDictationMixin
+from quill.apps.inkwell_keys import InkwellKeysMixin
+from quill.apps.inkwell_preference_save import InkwellPreferenceSaver
+from quill.apps.inkwell_preferences import open_preferences
+from quill.core.abbreviations import (
+    AbbreviationLibrary,
+    load_abbreviation_library,
+    record_use,
+    resolve_expansion,
+    save_abbreviation_library,
+)
+from quill.core.app_version import describe_version, installed_version
+from quill.core.expansion.settings import (
+    InkwellSettings,
+    load_settings,
+    save_settings,
+)
+from quill.core.net import configure_ssl_trust
+from quill.ui import app_sounds
+from quill.ui.app_shell import AppShellFrame
+from quill.ui.dpi import dip, dip_size
+from quill.ui.inkwell_expansion import InkwellExpansionMixin
+
+_TITLE = "Quill Inkwell"
+_VERSION = "1.0.0"
+_BUILD = 2  # this version's build (docs/release/RELEASE.md, "Build numbers")
+_REPO = "Community-Access/quill"
+_IPC_SLOT = "inkwell"
+
+
+class QuillInkwellFrame(
+    AppShellFrame, InkwellExpansionMixin, InkwellKeysMixin, InkwellDictationMixin
+):
+    """The manager window for a system-wide expander that runs in the tray."""
+
+    def __init__(self, *, safe_mode: bool = False) -> None:
+        self._init_app_shell(
+            _TITLE, safe_mode=safe_mode, size=dip_size(None, 560, 420), app_id="inkwell"
+        )
+        from quill.core.paths import app_data_dir
+        from quill.ui.window_menu import WindowManager
+
+        self._data_dir: Path = app_data_dir()
+        self._settings: InkwellSettings = load_settings(self._data_dir)
+        self._preference_saver = InkwellPreferenceSaver(
+            self._data_dir,
+            self._task_manager,
+            # Late-bound, so the announce in force when a save ends is the one used.
+            lambda message: self._announce(message),
+        )
+        self._library: AbbreviationLibrary = load_abbreviation_library(self._data_dir)
+        self._hook: Any = None
+        self._windows = WindowManager(wx)
+        # F1 context help with Inkwell's authored purpose catalogue. The app
+        # shell just activated the shared engine with the generic resolver
+        # (provider + dialog-contract hook + frame F1); re-activating swaps in
+        # Inkwell's window-purpose resolver so the authored paragraphs lead
+        # every answer instead of the generic sentence (GATE-INKWELL-HELP).
+        from quill.core import inkwell_surface_help
+        from quill.ui import app_context_help
+
+        app_context_help.activate(inkwell_surface_help.purpose_for_title)
+        self._build_menu_bar()
+        self._build_main_panel()
+        self._ensure_tray_icon(self._build_tray_menu, tooltip=_TITLE)
+        # Show/hide, Quick Insert and Expand Word: none until chosen.
+        self._start_inkwell_keys()
+        self.frame.Bind(wx.EVT_CLOSE, self._on_close)
+        # Safe Mode means "do the minimum and touch nothing": a global keyboard
+        # hook is exactly the kind of thing it exists to keep switched off.
+        if safe_mode:
+            self._announce("Safe Mode: system-wide expansion is off.")
+        elif self._settings.expansion_enabled:
+            wx.CallAfter(self._start_expansion)
+        self._start_ipc_poll()
+        self._refresh_status()
+        # Repair "start with Windows" written as the bare runtime exe (launch_heal).
+        if not safe_mode:
+            from quill.platform.windows import inkwell_startup, launch_heal
+
+            heal = inkwell_startup.heal_launch_at_startup
+            launch_heal.heal_in_background(self._task_manager, heal)
+
+    # -- menus -------------------------------------------------------------------
+
+    def _build_menu_bar(self) -> None:
+        menu_bar = wx.MenuBar()
+
+        file_menu = wx.Menu()
+        tray_id, exit_id = wx.NewIdRef(), wx.NewIdRef()
+        file_menu.Append(tray_id, "Minimize to &Tray\tCtrl+W")
+        self._append_inkwell_key_items(file_menu)
+        file_menu.Append(exit_id, "E&xit\tCtrl+Q")
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.toggle_window_to_tray(), id=tray_id)
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self._exit_application(), id=exit_id)
+        menu_bar.Append(file_menu, "&File")
+
+        abbr_menu = wx.Menu()
+        manage_id, quick_id, clip_id = wx.NewIdRef(), wx.NewIdRef(), wx.NewIdRef()
+        abbr_menu.Append(manage_id, "&Manage Abbreviations...\tCtrl+M")
+        abbr_menu.Append(quick_id, "&Quick Insert...\tCtrl+K")
+        abbr_menu.Append(clip_id, "New from &Clipboard...\tCtrl+Shift+N")
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_manager(), id=manage_id)
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_quick_insert(), id=quick_id)
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.new_from_clipboard(), id=clip_id)
+        expand_now_id = wx.NewIdRef()
+        abbr_menu.Append(expand_now_id, "&Expand the Word I Just Typed\tCtrl+Alt+E")
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.expand_now(), id=expand_now_id)
+        abbr_menu.AppendSeparator()
+        self._pause_item_id = wx.NewIdRef()
+        abbr_menu.AppendCheckItem(
+            self._pause_item_id, "E&xpand in other applications\tCtrl+Shift+E"
+        )
+        abbr_menu.Check(self._pause_item_id, self._settings.expansion_enabled)
+        self.frame.Bind(
+            wx.EVT_MENU, lambda e: self.set_expansion_enabled(e.IsChecked()), id=self._pause_item_id
+        )
+        menu_bar.Append(abbr_menu, "&Abbreviations")
+
+        options_menu = wx.Menu()
+        prefs_id = wx.NewIdRef()  # Ctrl+, in every app (qc.md X-01); P is pasting
+        options_menu.Append(prefs_id, "Pr&eferences...\tCtrl+,")
+        self.frame.Bind(wx.EVT_MENU, lambda _e: open_preferences(self), id=prefs_id)
+        self._startup_item_id = wx.NewIdRef()
+        options_menu.AppendCheckItem(
+            self._startup_item_id, "Start Quill Inkwell with &Windows\tCtrl+Alt+W"
+        )
+        options_menu.Check(self._startup_item_id, self._launch_at_startup_enabled())
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda e: self._set_launch_at_startup(e.IsChecked()),
+            id=self._startup_item_id,
+        )
+        self._start_tray_item_id = wx.NewIdRef()
+        options_menu.AppendCheckItem(
+            self._start_tray_item_id, "Start &minimized to the tray\tCtrl+Alt+M"
+        )
+        options_menu.Check(self._start_tray_item_id, self._settings.start_in_tray)
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda e: self._set_pref("start_in_tray", e.IsChecked()),
+            id=self._start_tray_item_id,
+        )
+        self._close_tray_item_id = wx.NewIdRef()
+        options_menu.AppendCheckItem(
+            self._close_tray_item_id, "&Close button keeps expanding\tCtrl+Alt+C"
+        )
+        options_menu.Check(self._close_tray_item_id, self._settings.close_to_tray)
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda e: self._set_pref("close_to_tray", e.IsChecked()),
+            id=self._close_tray_item_id,
+        )
+        options_menu.AppendSeparator()
+        self._paste_item_id = wx.NewIdRef()
+        options_menu.AppendCheckItem(
+            self._paste_item_id, "Insert by &pasting (for apps that drop typed text)\tCtrl+Alt+P"
+        )
+        options_menu.Check(self._paste_item_id, self._settings.injection_mode == "paste")
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda e: self._set_injection_mode(e.IsChecked()),
+            id=self._paste_item_id,
+        )
+        self._announce_item_id = wx.NewIdRef()
+        options_menu.AppendCheckItem(
+            self._announce_item_id, "&Announce every expansion\tCtrl+Alt+A"
+        )
+        options_menu.Check(self._announce_item_id, self._settings.announce_expansions)
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda e: self._set_pref("announce_expansions", e.IsChecked()),
+            id=self._announce_item_id,
+        )
+        excluded_id = wx.NewIdRef()
+        options_menu.Append(excluded_id, "E&xcluded Applications...\tCtrl+Alt+X")
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self.edit_exclusions(), id=excluded_id)
+        app_sounds.append_menu_item(self, options_menu)  # Alt+Shift+M, family-wide
+        menu_bar.Append(options_menu, "&Options")
+        self._append_dictation_menu(menu_bar)  # Dictate Anywhere (inkwell_dictation.py)
+
+        from quill.ui.quillville_menu import build_quillville_menu
+
+        menu_bar.Append(
+            build_quillville_menu(
+                wx,
+                self.frame,
+                self._launch_sibling,
+                exclude="inkwell",
+                retain=self._keep_menu_ids,
+            ),
+            "&QuillVille",
+        )
+
+        help_menu = wx.Menu()
+        updates_id, about_id = wx.NewIdRef(), wx.NewIdRef()
+        help_menu.Append(updates_id, "Check for &Updates...\tCtrl+Alt+U")
+        from quill.ui.menu_palette import append_palette_row
+
+        append_palette_row(self, help_menu)  # qc.md X-01
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.check_for_app_updates(
+                repo_slug=_REPO,
+                current_version=installed_version(_VERSION, build=_BUILD),
+                app_key="inkwell",
+            ),
+            id=updates_id,
+        )
+        # Every app in the family answers the same question the same way:
+        # one item, one key, one form that reaches a person who can reply.
+        from quill.ui.support_menu import append_get_help_item
+
+        append_get_help_item(self, help_menu, wx, source_app=_TITLE, app_version=_VERSION)
+        from quill.ui.whats_new import append_whats_new_item
+
+        append_whats_new_item(self, help_menu, "inkwell", _TITLE)  # the changelog
+        help_menu.Append(about_id, "&About Quill Inkwell\tCtrl+Alt+I")
+        self.frame.Bind(wx.EVT_MENU, lambda _e: self._show_about(), id=about_id)
+        menu_bar.Append(help_menu, "&Help")
+
+        self._windows.install(self.frame, menu_bar)
+        self.frame.SetMenuBar(menu_bar)
+        self._windows.register(self.frame, _TITLE)
+        self._keep_menu_ids(
+            tray_id,
+            exit_id,
+            manage_id,
+            quick_id,
+            clip_id,
+            expand_now_id,
+            self._pause_item_id,
+            self._startup_item_id,
+            self._start_tray_item_id,
+            self._close_tray_item_id,
+            self._paste_item_id,
+            self._announce_item_id,
+            excluded_id,
+            prefs_id,
+            updates_id,
+            about_id,
+        )
+
+    def _build_tray_menu(self, menu: wx.Menu) -> None:
+        # Bound on the menu, not on the frame (#1465). A tray menu's commands
+        # are routed through the menu that TaskBarIcon.PopupMenu was handed --
+        # never through the app's frame -- so a handler bound on self.frame is a
+        # row that silently does nothing when it is pressed.
+        # Only what is Inkwell's own. The shared tray menu already opens with
+        # "Show Quill Inkwell" and closes with "Exit Quill Inkwell", and this
+        # method carried a second Show and a second Exit of its own -- four rows
+        # for two actions, in a menu that is read out one row at a time.
+        quick_id, toggle_id = wx.NewIdRef(), wx.NewIdRef()
+        menu.Append(quick_id, "&Quick Insert...")
+        menu.AppendCheckItem(toggle_id, "Expand in other &applications")
+        menu.Check(toggle_id, self._settings.expansion_enabled)
+        menu.Bind(wx.EVT_MENU, lambda _e: self.open_quick_insert(), id=quick_id)
+        menu.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.set_expansion_enabled(not self._settings.expansion_enabled),
+            id=toggle_id,
+        )
+        self._append_held_tray_rows(menu)  # only while dictation is paused (D-15)
+        self._append_sibling_app_tray_items(menu, exclude="inkwell")
+        self._keep_menu_ids(quick_id, toggle_id)
+
+    # -- main panel --------------------------------------------------------------
+
+    def _build_main_panel(self) -> None:
+        panel = wx.Panel(self.frame)
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        self._status_text = wx.StaticText(panel, label="")
+        root.Add(self._status_text, 0, wx.ALL, 10)
+
+        self._list = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SUNKEN)
+        self._list.SetName("Abbreviations")
+        self._list.SetHelpText(
+            "Your abbreviation library, read-only here: each row is a trigger "
+            "word, the start of what it expands to, and its category, with "
+            "disabled entries marked. To add, change, or remove entries press "
+            "the Manage Abbreviations button (Ctrl+M); this list follows the "
+            "same library QUILL's editor expands from."
+        )
+        self._list.InsertColumn(0, "Abbreviation", width=dip(self._list, 120))
+        self._list.InsertColumn(1, "Expands to", width=dip(self._list, 290))
+        self._list.InsertColumn(2, "Category", width=dip(self._list, 100))
+        root.Add(self._list, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
+        buttons = wx.BoxSizer(wx.HORIZONTAL)
+        manage_btn = wx.Button(panel, label="&Manage Abbreviations...")
+        manage_btn.SetHelpText(
+            "Open the Manage Abbreviations dialog: create, edit, delete, "
+            "enable or disable entries, and import or export the whole "
+            "library. Changes save immediately and work in QUILL too."
+        )
+        quick_btn = wx.Button(panel, label="Quick &Insert...")
+        quick_btn.SetHelpText(
+            "Pick an abbreviation and have its expansion typed into the "
+            "window you were just working in -- the way to use entries set "
+            "to expand only manually. Also on Ctrl+K here, and from any "
+            "program on the key you choose with File, Quick Insert Key."
+        )
+        manage_btn.Bind(wx.EVT_BUTTON, lambda _e: self.open_manager())
+        quick_btn.Bind(wx.EVT_BUTTON, lambda _e: self.open_quick_insert())
+        buttons.Add(manage_btn, 0, wx.RIGHT, 6)
+        buttons.Add(quick_btn, 0)
+        root.Add(buttons, 0, wx.ALL, 10)
+
+        panel.SetSizer(root)
+        self._panel = panel
+        self._reload_list()
+
+    def _focus_initial_control(self) -> None:
+        self._list.SetFocus()
+
+    def _reload_list(self) -> None:
+        self._list.DeleteAllItems()
+        for i, entry in enumerate(self._library.abbreviations):
+            label = entry.abbreviation if entry.enabled else f"{entry.abbreviation} (disabled)"
+            self._list.InsertItem(i, label)
+            self._list.SetItem(i, 1, entry.expansion.replace("\n", " ")[:60])
+            self._list.SetItem(i, 2, entry.category)
+
+    def _refresh_status(self) -> None:
+        count = len(self._library.abbreviations)
+        if self._safe_mode:
+            state = "off (Safe Mode)"
+        elif not self._settings.expansion_enabled:
+            state = "paused"
+        elif self._hook is not None and getattr(self._hook, "installed", False):
+            state = "on"
+        else:
+            state = "starting"
+        text = f"{count} abbreviations. Expansion in other applications: {state}."
+        self._status_text.SetLabel(text)
+        self._set_status(text)
+
+    # -- commands ----------------------------------------------------------------
+
+    def set_expansion_enabled(self, enabled: bool) -> None:
+        self._settings.expansion_enabled = enabled
+        save_settings(self._data_dir, self._settings)
+        if enabled:
+            self._start_expansion()
+            if self._hook is not None:
+                self._hook.resume()
+        elif self._hook is not None:
+            self._hook.pause()
+        self._announce("Expanding in other applications." if enabled else "Expansion paused.")
+        self._refresh_status()
+
+    def open_manager(self) -> None:
+        from quill.ui.abbreviation_manager_dialog import AbbreviationManagerDialog
+
+        dlg = AbbreviationManagerDialog(self.frame, self._library)
+        self._show_modal_dialog(dlg.dialog, "Manage Abbreviations")
+        dlg.close()
+        self._library = load_abbreviation_library(self._data_dir)
+        self._library_stamp = None
+        self._reload_list()
+        self._refresh_status()
+
+    def open_quick_insert(self) -> None:
+        """Pick an abbreviation and type its expansion into the previous window.
+
+        Inkwell's window is in front while the picker is open, so the expansion
+        is typed after focus returns to wherever the user was working.
+        """
+        from quill.ui.quick_insert_dialog import QuickInsertDialog
+
+        previous_hwnd = self._foreground_before_dialog()
+        dlg = QuickInsertDialog(self.frame, self._library)
+        result = self._show_modal_dialog(dlg.dialog, "Quick Insert")
+        chosen = dlg.chosen
+        dlg.close()
+        if result != wx.ID_OK or chosen is None:
+            return
+        from quill.ui.fill_in_dialog import prompt_for_fields
+
+        filled = prompt_for_fields(
+            self.frame, chosen.expansion, self._show_modal_dialog, title=chosen.abbreviation
+        )
+        if filled is None:
+            return
+        text, cursor_offset, has_cursor = resolve_expansion(filled, self._clipboard_text())
+        record_use(self._library, chosen.id)
+        save_abbreviation_library(self._library, self._data_dir)
+        self._library_stamp = None
+        self._insert_into_previous_window(
+            text, len(text) - cursor_offset if has_cursor else 0, previous_hwnd
+        )
+
+    def _foreground_before_dialog(self) -> int:
+        try:
+            from quill.platform.windows.foreground import foreground_window_info
+
+            window = foreground_window_info()
+            return 0 if window.hwnd == self.frame.GetHandle() else window.hwnd
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _insert_into_previous_window(self, text: str, caret_from_end: int, hwnd: int) -> None:
+        if not hwnd:
+            self._announce("Nothing to insert into; copied to the clipboard instead.")
+            self._copy_to_clipboard(text)
+            return
+        try:
+            from quill.platform.windows import text_injector
+            from quill.platform.windows.foreground import force_foreground_window
+
+            force_foreground_window(hwnd)
+            wx.CallLater(
+                150,
+                lambda: text_injector.inject_expansion(
+                    text, backspace_count=0, caret_from_end=caret_from_end
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            self._copy_to_clipboard(text)
+            self._announce("Could not type there; copied to the clipboard instead.")
+
+    def new_from_clipboard(self) -> None:
+        """Turn whatever is on the clipboard into a new abbreviation."""
+        import uuid
+
+        from quill.core.abbreviations import Abbreviation
+        from quill.ui.abbreviation_manager_dialog import _AbbreviationEditDialog
+
+        text = self._clipboard_text()
+        if not text.strip():
+            self._announce("The clipboard has no text to save.")
+            return
+        entry = Abbreviation(id=str(uuid.uuid4()), abbreviation="", expansion=text)
+        dlg = _AbbreviationEditDialog(
+            self.frame,
+            entry,
+            categories=sorted({a.category for a in self._library.abbreviations if a.category}),
+        )
+        result = self._show_modal_dialog(dlg.dialog, "New Abbreviation")
+        if result == wx.ID_OK and dlg.trigger_text:
+            dlg.apply_to(entry)
+            self._library.abbreviations.append(entry)
+            self._library.abbreviations.sort(key=lambda a: a.abbreviation.lower())
+            save_abbreviation_library(self._library, self._data_dir)
+            self._library_stamp = None
+            self._reload_list()
+            self._announce(f"Saved {entry.abbreviation}.")
+        dlg.close()
+
+    def edit_exclusions(self) -> None:
+        """Applications where expansion must never run, on top of the built-in list."""
+        current = "\n".join(self._settings.excluded_processes)
+        dialog = wx.TextEntryDialog(
+            self.frame,
+            "One program file name per line, for example notepad.exe.\n"
+            "Password managers and Windows sign-in prompts are always excluded.",
+            "Excluded Applications",
+            current,
+            style=wx.TE_MULTILINE | wx.OK | wx.CANCEL,
+        )
+        if self._show_modal_dialog(dialog, "Excluded Applications") == wx.ID_OK:
+            names = [line.strip().lower() for line in dialog.GetValue().splitlines()]
+            self._settings.excluded_processes = [n for n in names if n]
+            save_settings(self._data_dir, self._settings)
+            self._announce(f"{len(self._settings.excluded_processes)} applications excluded.")
+        dialog.Destroy()
+
+    # -- preferences -------------------------------------------------------------
+
+    def _set_pref(self, name: str, value: bool) -> None:
+        setattr(self._settings, name, value)
+        self._preference_saver.queue(self._settings)
+
+    def _set_injection_mode(self, paste: bool) -> None:
+        self._settings.injection_mode = "paste" if paste else "type"
+        self._preference_saver.queue(self._settings)
+        self._announce(
+            "Expansions are pasted; the clipboard is restored afterwards."
+            if paste
+            else "Expansions are typed; the clipboard is never touched."
+        )
+
+    def _launch_at_startup_enabled(self) -> bool:
+        try:
+            from quill.platform.windows import inkwell_startup
+
+            return bool(inkwell_startup.is_launch_at_startup_enabled())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _set_launch_at_startup(self, enabled: bool) -> None:
+        try:
+            from quill.platform.windows import inkwell_startup
+
+            inkwell_startup.set_launch_at_startup(enabled)
+        except Exception:  # noqa: BLE001
+            self._announce("Could not change the Windows startup setting.")
+            return
+        self._announce(
+            "Quill Inkwell will start with Windows."
+            if enabled
+            else "Quill Inkwell will not start with Windows."
+        )
+
+    # -- lifecycle ---------------------------------------------------------------
+
+    def _show_about(self) -> None:
+        from quill.ui.about_notices import show_app_about
+
+        show_app_about(
+            self,
+            f"{_TITLE} {describe_version(_VERSION, build=_BUILD)}\n\n"
+            "Abbreviation expansion in every application, sharing one library "
+            "with QUILL.\n\nFree, and part of the QuillVille family."
+            "\n\nSupport: support@community-access.org",
+            app="inkwell",
+            app_name=_TITLE,
+        )
+
+    def _start_ipc_poll(self) -> None:
+        """Poll the IPC queue: a second launch asks this one to come forward."""
+        timer = wx.Timer(self.frame)
+        self.frame.Bind(wx.EVT_TIMER, self._on_ipc_timer, timer)
+        timer.Start(800)
+        self._ipc_timer = timer
+
+    def _on_ipc_timer(self, _event: object) -> None:
+        from quill.core.ipc import drain_open_requests
+
+        if drain_open_requests(slot=_IPC_SLOT):
+            self._restore_from_tray()
+            self.take_dictation_handoff()  # an editor's Dictate in Other Programs
+
+    def _on_close(self, event: wx.CloseEvent) -> None:
+        # Closing the window must not stop expansion: the service is the point,
+        # the window is only its manager.
+        if self._settings.close_to_tray and event.CanVeto():
+            event.Veto()
+            self.toggle_window_to_tray()
+            self._announce("Quill Inkwell is still expanding, in the tray.")
+            return
+        self._stop_expansion()
+        event.Skip()
+
+    def _exit_application(self) -> None:
+        self._stop_dictate_anywhere()
+        self._stop_expansion()
+        super()._exit_application()
+
+
+def main() -> int:
+    configure_ssl_trust()  # one certificate check, before any network use
+    from quill.core.data_location import apply_pending_at_launch
+
+    apply_pending_at_launch()  # queued Data Folder move, before any data read
+    safe_mode = bool(os.environ.get("QUILL_SAFE_MODE"))
+    start_in_tray = "--tray" in sys.argv
+    from quill.core.ipc import (
+        enqueue_open_request,
+        release_primary_instance,
+        try_claim_primary_instance,
+    )
+
+    if not try_claim_primary_instance(slot=_IPC_SLOT):
+        enqueue_open_request(None, slot=_IPC_SLOT)
+        return 0
+
+    from quill.core.paths import app_data_dir
+    from quill.stability.logging_config import configure_logging
+
+    log_listener = configure_logging(app_data_dir() / "logs")
+    from quill.platform.windows.dpi_awareness import enable_dpi_awareness
+
+    enable_dpi_awareness()  # before the first window, or Windows stretches it (#1702)
+    app = wx.App()
+    frame = QuillInkwellFrame(safe_mode=safe_mode)
+    frame._log_listener = log_listener
+    if start_in_tray or frame._settings.start_in_tray:
+        frame.toggle_window_to_tray()
+    else:
+        frame.frame.Show()
+        frame.frame.Raise()
+        wx.CallAfter(frame._focus_initial_control)
+    if "--dictate-anywhere" in sys.argv:
+        wx.CallAfter(frame.take_dictation_handoff)
+    try:
+        app.MainLoop()
+    finally:
+        try:
+            frame._preference_saver.flush()
+        finally:
+            release_primary_instance(slot=_IPC_SLOT)
+            log_listener.stop()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,600 @@
+"""One document, one window.
+
+Every :class:`DocumentFrame` owns exactly one file and exactly one editor. There
+are no tabs, and that is the product rather than a shortcut: a listener's list of
+open documents is Alt+Tab, which they already know, instead of a tab strip they
+have to learn to navigate. The Window menu mirrors the same list with Alt+1 to
+Alt+9 for the impatient.
+
+The menu bar is generated from :data:`quill.core.lite.commands.COMMANDS`, so the
+keys the menus advertise, the keys that are bound, and the keys the Keyboard
+Shortcuts window lists are one list with one source. The uniqueness rules
+(every item has a key; no key or ``&`` mnemonic claimed twice) are asserted
+against that table rather than against a screenshot.
+
+The editor surface is QUILL's own -- :class:`~quill.ui.richedit_editing.
+RichEditDocument`, the native ``RICHEDIT50W`` whose ``IAccessible`` value NVDA
+and JAWS read correctly where a classic EDIT control's is not, with RTF going
+through the Text Object Model because ``EM_STREAMIN`` with a Python callback
+hard-crashes msftedit. Neither of those was discovered here; both are QUILL's
+findings, and QUILL Lite gets them by using QUILL's surface rather than by
+copying it.
+
+The window is assembled from four neighbours, each answering one question:
+:mod:`quill.apps.lite_window_menus` builds the bar,
+:mod:`quill.apps.lite_window_commands` answers its File and Edit items,
+:mod:`quill.apps.lite_window_format` its Format items,
+:mod:`quill.apps.lite_window_markup` its Insert items and the document's
+markup language,
+:mod:`quill.apps.lite_window_view` answers its View items, and
+:mod:`quill.apps.lite_window_theme` owns mode, theme and font, and
+:mod:`quill.apps.lite_window_status` is the status bar. What is left here is
+the window itself: its document state, and its file I/O.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import wx
+
+from quill.apps.lite_keymap_editor import DocumentKeymapMixin
+from quill.apps.lite_printing import DocumentPrintMixin
+from quill.apps.lite_updates import DocumentUpdatesMixin
+from quill.apps.lite_window_activity import DocumentActivityMixin
+from quill.apps.lite_window_clipboard import DocumentClipboardMixin
+from quill.apps.lite_window_commands import DocumentCommandsMixin
+from quill.apps.lite_window_context_menu import DocumentContextMenuMixin
+from quill.apps.lite_window_dictation import DocumentDictationMixin
+from quill.apps.lite_window_file import DocumentFileMixin
+from quill.apps.lite_window_folding import DocumentFoldingMixin
+from quill.apps.lite_window_format import DocumentFormatCommandsMixin
+from quill.apps.lite_window_headings import DocumentHeadingsMixin
+from quill.apps.lite_window_history import DocumentHistoryMixin
+from quill.apps.lite_window_import import DocumentImportMixin
+from quill.apps.lite_window_lines import DocumentLineMixin
+from quill.apps.lite_window_marks import DocumentMarksMixin
+from quill.apps.lite_window_markup import DocumentMarkupMixin
+from quill.apps.lite_window_menus import DocumentMenuMixin
+from quill.apps.lite_window_mode import DocumentModeMixin
+from quill.apps.lite_window_open import DocumentBackgroundOpenMixin
+from quill.apps.lite_window_pdf import DocumentPdfMixin
+from quill.apps.lite_window_read_only import DocumentReadOnlyMixin
+from quill.apps.lite_window_recent import DocumentRecentMixin
+from quill.apps.lite_window_sections import DocumentSectionCommandsMixin
+from quill.apps.lite_window_selection import DocumentSelectionMixin
+from quill.apps.lite_window_sources import DocumentSourcesMixin
+from quill.apps.lite_window_spelling import DocumentSpellingMixin
+from quill.apps.lite_window_status import DocumentStatusMixin
+from quill.apps.lite_window_tables import DocumentTableNavMixin
+from quill.apps.lite_window_text_editor import DocumentTextEditorMixin
+from quill.apps.lite_window_theme import DocumentAppearanceMixin
+from quill.apps.lite_window_tools import DocumentToolsMixin
+from quill.apps.lite_window_typing import DocumentTypingMixin
+from quill.apps.lite_window_view import DocumentViewCommandsMixin
+from quill.apps.lite_window_watch import DocumentDiskWatchMixin
+from quill.apps.lite_window_words import DocumentWordsMixin
+from quill.core.document_text import DocumentText
+from quill.core.lite import APP_NAME
+from quill.core.lite import recovery as recovery_mod
+from quill.core.locations import LocationRing
+from quill.core.numbered_bookmarks import BookmarkSet
+from quill.core.sound_events import SoundEvent
+from quill.core.speakable import speakable_controls
+from quill.ui.dialog_contract import show_message_box
+from quill.ui.extend_selection_mode import ExtendSelectionMixin
+from quill.ui.highlight_commands import HighlightCommandsMixin
+from quill.ui.hosted_ai_commands import HostedAiMixin
+from quill.ui.html_export_commands import HtmlExportCommandsMixin
+from quill.ui.inline_notes_commands import InlineNotesCommandsMixin
+from quill.ui.richedit_editing import RICH, create_richedit_document
+from quill.ui.task_list_commands import TaskListCommandsMixin
+
+__all__ = ["DocumentFrame"]
+
+#: The construction title. The window is retitled after the document as soon as
+#: there is one; the catalogue in :mod:`quill.core.lite_surface_help` matches
+#: both this and the "<file> - QUILL Lite (<mode>)" form F1 sees at runtime.
+_TITLE = APP_NAME
+
+
+class DocumentFrame(
+    # First: its _host_read_only answers the shared notes and word tools.
+    DocumentReadOnlyMixin,
+    # Before HostedAiMixin: it answers _thesaurus_enabled with the feature area.
+    DocumentWordsMixin,
+    HostedAiMixin,
+    # Inline notes, Toggle Task Done and Export as HTML: QUILL's code, shared
+    # (2026-10-04). Their hooks' defaults are this window's own attributes.
+    InlineNotesCommandsMixin,
+    # Highlighted passages in a Word or RTF document: QUILL's code (2026-10-16).
+    HighlightCommandsMixin,
+    TaskListCommandsMixin,
+    HtmlExportCommandsMixin,
+    DocumentActivityMixin,
+    # Tools > Dictation, from the module QUILL shares (2026-09-25).
+    DocumentDictationMixin,
+    DocumentCommandsMixin,
+    DocumentFormatCommandsMixin,
+    # The outline commands: Select Section, Move Section Up/Down, Move
+    # Section To. Split from the Format mixin (GATE-11) because a section is
+    # a different idea from a run of bold text.
+    DocumentSectionCommandsMixin,
+    DocumentViewCommandsMixin,
+    DocumentPrintMixin,
+    DocumentUpdatesMixin,
+    DocumentToolsMixin,
+    # Make QUILL Lite My Text Editor and the Notepad switch, 2026-10-03.
+    DocumentTextEditorMixin,
+    DocumentKeymapMixin,
+    DocumentLineMixin,
+    DocumentHistoryMixin,
+    DocumentTableNavMixin,
+    DocumentMarksMixin,
+    DocumentSelectionMixin,
+    DocumentClipboardMixin,
+    DocumentTypingMixin,
+    DocumentSpellingMixin,
+    DocumentFileMixin,
+    # Open from URL and the clipboard, drops, Reopen with Encoding and the
+    # save-time disk check, shared with QUILL (2026-10-04).
+    DocumentSourcesMixin,
+    # Watching the file for other programs' changes, QUILL's code (2026-10-04).
+    DocumentDiskWatchMixin,
+    DocumentRecentMixin,
+    # Large and networked files open off the UI thread (F-05).
+    DocumentBackgroundOpenMixin,
+    # PDFs open as text through QUILL's reader, never written back (2026-10-15).
+    DocumentPdfMixin,
+    DocumentImportMixin,  # File > Import / Convert Document, QUILL's (2026-10-17)
+    DocumentContextMenuMixin,
+    DocumentMenuMixin,
+    DocumentAppearanceMixin,
+    DocumentModeMixin,
+    # Folding over Markdown sections, 2026-09-17 (bad.md P3.6, Tier 3).
+    # QUILL Lite already parsed heading blocks for its outline; collapsing
+    # to headings is how a listener skims a long document without the
+    # scroll-and-glance a sighted reader gets for free.
+    DocumentFoldingMixin,
+    # Extend Selection Mode, 2026-09-17 (bad.md P2.13, Tier 2).
+    # QUILL Lite deleted its own attempt at this in d20fabe and has had
+    # nothing since; QUILL's is the mechanism that works on wxMSW, so it
+    # was extracted rather than written a third time.
+    ExtendSelectionMixin,
+    DocumentStatusMixin,
+    DocumentHeadingsMixin,
+    DocumentMarkupMixin,
+    wx.MDIChildFrame,
+):
+    """One window, one document, one editor."""
+
+    def __init__(
+        self,
+        app: Any,
+        path: Path | None = None,
+        mode: str | None = None,
+        recovery_slot: recovery_mod.RecoverySlot | None = None,
+    ) -> None:
+        settings = app.settings
+        # No system menu, and that single missing style is what keeps the menu
+        # bar readable. A *maximised* MDI child -- which is how every document
+        # here opens -- has Windows insert the child's system menu into the
+        # parent's menu bar as a bitmap at the far left, plus minimise, restore
+        # and close bitmaps at the far right. None of the four carries text, and
+        # a screen reader announces that leading one as **"Document"** -- so
+        # pressing Alt landed on "Document" instead of File, and Alt+F opened
+        # the File menu while the bar said something else entirely. Dropping
+        # WS_SYSMENU removes all four; the child still maximises (which
+        # dropping the maximise box would prevent), still has its caption, and
+        # is still closed with Ctrl+W, Ctrl+F4 or File > Close Window.
+        #
+        # **Not Alt+F4**, which this comment claimed for a year and the shell's
+        # own comment contradicted (bad.md H7). Alt+F4 belongs to the window
+        # manager and reaches the top-level frame, which is the shell: it exits
+        # QUILL Lite, asking about each unsaved document on the way out. That is
+        # the MDI convention and the right behaviour; only the comment was wrong.
+        super().__init__(
+            app.shell,
+            wx.ID_ANY,
+            title=_TITLE,
+            style=wx.DEFAULT_FRAME_STYLE & ~wx.SYSTEM_MENU,
+        )
+        self.app = app
+        #: This document's number inside the shell. Stable for the life of the
+        #: window, because a number that changes when a sibling closes is a
+        #: number nobody can rely on -- and it is in the title, which is the one
+        #: string the screen reader reads on arrival. Closing *this* window puts
+        #: the number back in the pool for the next new one
+        #: (:meth:`~quill.apps.lite.QuillLiteApp.next_document_number`); nothing
+        #: open is ever renumbered.
+        self.number = app.next_document_number()
+        self.path: Path | None = None
+        self.modified = False
+        #: The line ending and codec the open file used, re-applied on save.
+        self.newline = "\r\n"
+        self.encoding = "utf-8"
+        #: True while the window is filling the control itself, so the resulting
+        #: EVT_TEXT is not mistaken for the user typing.
+        self._loading = False
+        self._find_options: dict[str, Any] = {}
+        self._find_dialog: wx.Dialog | None = None
+        self._slot: recovery_mod.RecoverySlot | None = None
+        self._window_menu_items: list[int] = []
+        self._check_items: dict[str, wx.MenuItem] = {}
+        #: This document's nine numbered places. Per window, in memory: a
+        #: bookmark is about where you are in *this* document right now.
+        self.bookmarks = BookmarkSet()
+        #: Set by the text hook, cleared when a bookmark is next read. A
+        #: bookmark is re-found from the text around it rather than shifted by
+        #: a length guess (bad.md L9), and this flag is what keeps that search
+        #: off the typing path.
+        self._bookmarks_need_reanchor = False
+        #: Where the caret has been, so a jump can be taken back. QUILL's own
+        #: ring (quill/core/locations.py), fed from the one seam every jump
+        #: goes through -- see DocumentCommandsMixin._go_to. Per window and in
+        #: memory: "where I was a moment ago" is a fact about this session,
+        #: unlike the bookmarks above, which are about the document.
+        self.locations = LocationRing()
+        #: The length the bookmarks were last reconciled against, so an edit's
+        #: size can be inferred without the control telling us where it changed.
+        self._tracked_length = 0
+        # Before _init_spelling, which is the first thing that asks whether a
+        # word is being ignored: the list has to exist before anything reads it.
+        self._init_context_menu()
+        # Before the menu bar: _sync_check_items reads _live_spelling to set the
+        # Check While Typing mark, and a menu built ahead of the state it
+        # mirrors would advertise the wrong answer on the very first open.
+        self._init_spelling()
+        # Before the menu bar too: _sync_check_items reads the extend-mode flag.
+        self._init_selection()
+        self._init_folding()
+        # And the overtype mirror, for the same reason: the Overwrite Mode mark
+        # is read while the bar is built.
+        self._init_overwrite()
+
+        surface = create_richedit_document(
+            wx, self, wx.TE_MULTILINE | wx.TE_PROCESS_TAB, mode or settings.default_mode
+        )
+        self.control: wx.TextCtrl = surface
+        self.editor = surface.quill_richedit
+        self.control.SetName("Document")
+        #: The document's text, on the Python side, for everything that only
+        #: *reads* it -- the status bar's counts, the heading and list cues, the
+        #: live spell check. ``GetValue()`` on a multiline control copies the
+        #: whole buffer across the wx boundary, and QUILL Lite had five separate
+        #: readers doing it: one coalesced status refresh cost three full scans
+        #: and two marshals, and one arrow key in a large file cost another
+        #: (bad.md V2, V3, S8). It reads at most once per edit and answers
+        #: everything after that for free.
+        #:
+        #: **Display only.** Anything that edits or saves reads the control. And
+        #: anything that replaces the text with ``ChangeValue`` -- which raises
+        #: no text event -- must call ``invalidate()`` itself; the five places
+        #: that do are marked.
+        #:
+        #: Read through the attribute rather than bound to today's control:
+        #: switching between plain and rich destroys the wx control and
+        #: builds another, and a mirror holding the old one's method would
+        #: be reading a window that no longer exists.
+        self.doc_text = DocumentText(lambda: self.control.GetValue())
+        self._apply_editor_help()
+        self._init_status_bar()
+        # The editor takes every pixel the status bar does not. A sizer rather
+        # than wx.Frame's single-child auto-fit, because there are two children.
+        layout = wx.BoxSizer(wx.VERTICAL)
+        layout.Add(self.control, 1, wx.EXPAND)
+        layout.Add(self.status_panel, 0, wx.EXPAND)
+        self.SetSizer(layout)
+        self._build_menus()
+        self._apply_editor_font()
+        self.apply_theme()
+        self.editor.set_word_wrap(settings.word_wrap)
+
+        self.control.Bind(wx.EVT_TEXT, self._on_text)
+        self.control.Bind(wx.EVT_TEXT, self._track_bookmarks)
+        # Files dropped on the window or the editor open; dropped text inserts.
+        self._install_file_drop()
+        self.control.Bind(wx.EVT_CHAR, self._on_char)
+        # Watching the Insert key go past to the control, which does the
+        # overtype itself. Never a binding: Insert is the screen reader's
+        # modifier. See DocumentTypingMixin._on_key_down.
+        self.control.Bind(wx.EVT_KEY_DOWN, self._on_key_down)
+        # One handler for both, deliberately: it is caret *activity*, not focus,
+        # so it is not the focus handler GATE-13 forbids announcing from -- and
+        # it announces nothing, it only marks the status bar stale.
+        self.control.Bind(wx.EVT_KEY_UP, self._on_caret_moved)
+        self.control.Bind(wx.EVT_LEFT_UP, self._on_caret_moved)
+        # The Applications key and the right mouse button, one handler. Replaces
+        # the native TextCtrl menu, which cannot know anything about the word
+        # under the caret -- see DocumentContextMenuMixin.
+        self.control.Bind(wx.EVT_CONTEXT_MENU, self._on_editor_context_menu)
+        # Cut, copy and paste, from wx's own events rather than from the three
+        # commands -- so the control's own Ctrl+C is reported too, which a cue
+        # inside cmd_copy could never see. See bind_clipboard_cues.
+        self.bind_clipboard_cues()
+        # A document arriving and a document going are two of the four moments
+        # a desktop has always had a sound for, and a screen reader says
+        # nothing about either: the window title changes, which it reads on
+        # focus, long after the fact.
+        # Except during startup, where the launch cue has already announced this
+        # same moment. Two sounds arriving together read as one muddled noise --
+        # reported exactly that way -- and the fix is not a pause between them:
+        # they are one event announced twice. Starting up *is* getting a
+        # document. Nobody opened it.
+        if not getattr(app, "starting_up", False):
+            self._cue(
+                SoundEvent.DOCUMENT_OPENED if path is not None else SoundEvent.DOCUMENT_CREATED
+            )
+        self.Bind(wx.EVT_CLOSE, self._on_close)
+        self.Bind(wx.EVT_ACTIVATE, self._on_activate)
+        self.Bind(wx.EVT_MENU_OPEN, self._on_menu_open)
+        # F1 on the frame itself: no show path wraps a main window, so the
+        # context-help engine has to be bound here directly.
+        from quill.ui import app_context_help
+
+        app_context_help.install(self, wx=wx)
+        # Dictation follows the shell's activation, for the wake phrase.
+        self._dictation_install()
+
+        self._autosave = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self._on_autosave_tick, self._autosave)
+        self._autosave.Start(settings.autosave_seconds * 1000)
+
+        # MDI children open maximised, which is what a one-document-at-a-time
+        # editor wants: the child fills the shell, so there is no inner window
+        # frame to get lost in and nothing to arrange.
+        self.Maximize(True)
+        if recovery_slot is not None:
+            self._load_recovery(recovery_slot)
+        elif path is not None:
+            self.load(path)
+        if not self.modified:
+            self._remember_clean_text()
+        self._update_title()
+        self._touch_status()
+        self._start_disk_watch()
+        self.control.SetFocus()
+
+    # ------------------------------------------------------------------ #
+    # Document state
+    # ------------------------------------------------------------------ #
+
+    def document_name(self) -> str:
+        if self.path:
+            return self.path.name
+        # A document opened from a link is named after the file (2026-10-04).
+        return getattr(self, "download_name", "") or "Untitled"
+
+    def _update_title(self) -> None:
+        """Retitle after the document. The reader announces this; nothing else does.
+
+        **Skipped when the string has not changed**, which QUILL has done since
+        it learned the same thing (``_refresh_title_bar``) and QUILL Lite did
+        not. Retitling fires ``EVT_OBJECT_NAMECHANGE`` through MSAA and UIA, and
+        a screen reader has no use for being told a window was renamed to the
+        name it already had -- and on an MDI child the call reaches all the way
+        up to the parent's caption, so it is not free even when nothing is
+        listening. ``_set_modified`` and the mode switch both land here, and
+        most of what they pass is what is already there.
+        """
+        mode = "rich text" if self.editor.mode == RICH else "plain text"
+        star = "*" if self.modified else ""
+        # The number leads, because it is the handle a person uses to come back
+        # here ("document 3"), and because an MDI child is not in Alt+Tab -- so
+        # the title is the only place the number can be announced from.
+        title = f"{self.number}: {star}{self.document_name()} - {APP_NAME} ({mode})"
+        if title == getattr(self, "_last_title", None):
+            return
+        self._last_title = title
+        self.SetTitle(title)
+
+    def _set_modified(self, modified: bool) -> None:
+        if not modified:
+            self._remember_clean_text()
+        if modified == self.modified:
+            return
+        self.modified = modified
+        self._update_title()
+        self._touch_status()
+        if modified and self._slot is None:
+            self._slot = recovery_mod.new_slot(
+                self.editor.mode, str(self.path) if self.path else ""
+            )
+
+    def _on_text(self, event: wx.CommandEvent) -> None:
+        # First, and outside the loading guard: a document being loaded changes
+        # the text as surely as one being typed into, and a mirror that missed
+        # the load would answer every question about the new file with the old
+        # one's text. O(1) -- it only forgets, it does not read.
+        self.doc_text.invalidate()
+        if not self._loading and (self.modified or not self._text_event_changed_nothing()):
+            self._set_modified(True)
+            # Every edit invalidates the counts, so every edit marks the bar
+            # stale -- and _set_modified cannot do it, because it returns early
+            # once the document is already dirty. That left the second edit
+            # onwards refreshing the bar only if a key-up happened to follow,
+            # which a menu command or a context-menu paste never provides: the
+            # word count and the Selection cell simply stopped moving. The touch
+            # is coalesced on a timer, so this costs nothing per keystroke.
+            self._touch_status()
+            # Typing into a selection you are still extending replaces it, so
+            # there is nothing left to extend and the anchor points into text
+            # that has shifted. Ended here rather than from a key code because
+            # a paste and a menu command change the text too, and only one of
+            # the three is a keystroke.
+            self.text_changed_while_extending()
+        event.Skip()
+
+    def _on_caret_moved(self, event: wx.Event) -> None:
+        # The bar refreshes on its own coalescing timer, so a held arrow key
+        # costs one recount after the caret stops rather than one per repeat.
+        self._touch_status()
+        key_code = event.GetKeyCode() if hasattr(event, "GetKeyCode") else 0
+        # No F8 hook here any more. The marker is read at Shift+F8 and not
+        # before, so moving the caret is nobody's business but the control's --
+        # see lite_window_selection.py for what stretching a live selection on
+        # every key-up cost.
+        # And the word the caret has just landed on, if it is misspelled. Rides
+        # the same hook for the same reason: by EVT_KEY_UP the caret is where
+        # the user asked for it to be. The check ignores anything that is not a
+        # navigation key, so typing still goes through the as-you-type path.
+        self.check_spelling_at_caret(key_code)
+        # And the heading the caret has just entered, which nothing else in the
+        # stack can say: no Windows edit control exposes a paragraph style to a
+        # screen reader, so if QUILL Lite does not say "Heading 2" nobody does.
+        self.announce_structure_at_caret()
+        # And a note on the line it has just entered (quill/core/inline_note_cue.py).
+        self.cue_inline_note_line(SoundEvent.INLINE_NOTE_LINE)
+        event.Skip()
+
+    def _on_activate(self, event: wx.ActivateEvent) -> None:
+        if event.GetActive():
+            self.app.active_frame = self
+        event.Skip()
+
+    def _report_failure(self, caption: str, message: str) -> None:
+        """Report a failure that cost the user something, in a box they must dismiss.
+
+        Not an announcement: a save that did not happen is not a status message,
+        and a listener who was looking away would never know. The wrapper adds the
+        screen-reader entry and exit cues a raw ``wx.MessageBox`` has none of.
+        """
+        # The error tone, not merely the box. A modal is announced by the
+        # reader when it takes focus, but the *kind* of thing that has happened
+        # is exactly what a tone says faster than a title can.
+        self._cue(SoundEvent.ERROR)
+        show_message_box(message, caption, wx.OK | wx.ICON_ERROR, self)
+
+    def _apply_editor_help(self) -> None:
+        """What F1 says while the cursor is in the document itself.
+
+        The control a listener is in for all but a few seconds of a session, and
+        the one the shared audit cannot see: it is built by
+        :func:`~quill.ui.richedit_editing.create_richedit_document`, not
+        constructed here, so without this call F1 in the document would answer
+        with the generic "a QUILL Lite window" sentence and nothing else. The
+        answer differs by mode, because what you can do here differs by mode --
+        so it is re-applied whenever the mode changes.
+        """
+        shared = (
+            " F6 moves to the status bar, which carries the position, the word "
+            "count, the encoding and the line endings. Control S saves."
+        )
+        if self.editor.mode == RICH:
+            self.control.SetHelpText(
+                "Your document, in rich text. Control B, I and U set bold, italic "
+                "and underline; Control Alt 1 to 4 make the paragraph a heading and "
+                "Control Alt 0 makes it body text again; Control Alt H and Control "
+                "Alt Shift H move between headings, and Control Shift D describes "
+                "the formatting where the cursor is." + shared
+            )
+            return
+        self.control.SetHelpText(
+            "Your document, in plain text: one font, no formatting, and a paste "
+            "arrives as text. This is the mode for notes, code and configuration "
+            "files, and it writes back the encoding and the line endings the file "
+            "arrived with. Alt Shift F switches to rich text." + shared
+        )
+
+    def _announce(self, message: str, *, interrupt: bool = True) -> None:
+        """Say *message*, and leave it in the status bar to be re-read.
+
+        Only ever the outcome of something the user did -- a save, a formatting
+        change, a search that wrapped. Titles, focus moves, control names and
+        selection changes are the screen reader's to announce, and saying them
+        again is the over-announcing GATE-13 exists to catch.
+
+        ``interrupt=False`` is for a cue that *accompanies* the reader
+        rather than replacing it: the heading announcement fires as the
+        reader is reading the line the caret landed on, and cutting across
+        that would cost the listener the text they moved to hear.
+        """
+        # No control character reaches the status cell either: a PDF's page break
+        # read there by Insert+Page Down would be "form feed" (2026-10-17).
+        message = speakable_controls(message)
+        self.app.voice.speak(message, interrupt=interrupt)
+        self._set_status_message(message)
+
+    def _action(self, event: str, message: str) -> None:
+        """Report an action that landed, however the user asked to be told.
+
+        The pair of an earcon and a phrase for the *same* moment -- a copy, a
+        paste, a started selection. Which of them actually happens is
+        ``settings.action_feedback``, resolved in
+        :func:`quill.core.action_feedback.resolve` against whether this event has
+        a sound in the loaded pack at all: a mode that asked for a tone and found
+        none falls through to the words rather than to silence.
+
+        The status bar is written in every mode, silent included. It is not
+        feedback, it is the record -- the place somebody reads back with their
+        reader to find out what just happened, and a mode about *audio* has no
+        business emptying it.
+        """
+        from quill.core.action_feedback import resolve
+
+        play, speak = resolve(
+            getattr(self.app.settings, "action_feedback", "sound"),
+            has_sound=self._has_sound_for(event),
+        )
+        if play:
+            self._cue(event)
+        if speak:
+            self.app.voice.speak(message)
+        self._set_status_message(message)
+
+    def _has_sound_for(self, event: str) -> bool:
+        """Whether the loaded pack could actually play *event*.
+
+        One method rather than an import at each site, because every feedback mode
+        has to ask the same question and answer it the same way: a mode that chose
+        a tone for a moment with no clip must fall through to words, never to
+        silence. Never raises -- a missing sound stack answers "no".
+        """
+        try:
+            from quill.ui.sound_manager import has_sound_for
+
+            return has_sound_for(event)
+        except Exception:  # noqa: BLE001 - no sound stack is an answer, not an error
+            return False
+
+    # ------------------------------------------------------------------ #
+    # Closing
+    # ------------------------------------------------------------------ #
+
+    def confirm_discard(self) -> bool:
+        """``True`` when it is safe to lose this window's content."""
+        if not self.modified:
+            return True
+        self.Raise()  # ask about the window the question is about
+        # One sentence, written down once, so the two editors cannot drift apart
+        # on the question that decides whether work is lost (bad.md F12).
+        from quill.core.close_prompt import unsaved_changes_question
+
+        answer = show_message_box(
+            unsaved_changes_question(self.document_name()),
+            APP_NAME,
+            wx.YES_NO | wx.CANCEL | wx.ICON_QUESTION,
+            self,
+        )
+        if answer == wx.YES:
+            return self.save()
+        return answer == wx.NO
+
+    def _on_close(self, event: wx.CloseEvent) -> None:
+        if event.CanVeto() and not self.confirm_discard():
+            event.Veto()
+            return
+        # After the veto check and before anything is torn down: a window the
+        # user backed out of closing must not have written its state away, and
+        # a destroyed control has no cursor position left to read.
+        self.remember_document_memory()
+        self.stop_timers()
+        self._discard_slot()
+        # Before Destroy, which takes the window and everything on it: a cue
+        # posted after that has no frame left to have come from.
+        self._cue(SoundEvent.DOCUMENT_CLOSED)
+        self.app.forget_frame(self)
+        self.Destroy()
+
+    # ------------------------------------------------------------------ #

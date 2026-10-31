@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.30.1"]
+requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,61 +7,129 @@ name = "quill"
 dynamic = ["version"]
 description = "Screen-reader-first writing and document environment for Windows and macOS"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [
-  { name = "Blind Information Technology Solutions (BITS)" },
   { name = "Community Access" },
+  { name = "Jeff Bishop" },
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: MacOS",
 ]
 dependencies = [
-    "regex>=2026.5.9",
+    "regex>=2026.9.10",
     "defusedxml>=0.7.1",
+    # RadioDNS (Quill Radio 3.0, core/radio/radiodns.py). The standard library
+    # resolves A records and nothing else; RadioDNS needs CNAME chasing and an
+    # SRV lookup (_radioepg._tcp) to find a broadcaster's service document, so
+    # a real resolver is required rather than convenient. Approved 2026-08-13.
+    # Podcast RSS/Atom feed parsing (Tools > Media > Podcasts). Real-world feeds
+    # are too messy (malformed XML, mixed RSS/Atom/iTunes/Podcasting-2.0
+    # namespaces) for a hand-rolled ElementTree walk to handle reliably; this is
+    # the standard Python choice. Pure Python, no C extension, tiny -- a normal
+    # dependency, not an on-demand optional component like Pandoc/speech engines.
+    "feedparser>=6.0.14",
+    # Spell check reads only the strings and comments of a code file and only
+    # the text of a web page (core/spellcheck_spans.py). Pygments has lexers for
+    # over 500 languages, so template strings, heredocs and scripts inside HTML
+    # are found correctly; a small regex lexer is the fallback when a lexer is
+    # missing. Pure Python, BSD-2-Clause, imported only on the first code file.
+    # Approved 2026-10-29.
+    "pygments>=2.21.0",
     # Runtime deps of the vendored autoupdate library (quill/_vendor/autoupdate).
     "requests>=2.34.2",
-    "platform_utils>=1.6.2",
+    "platform_utils>=1.6.3",
+    # Native system certificate stores for verified HTTPS in shared core
+    # networking, including podcast feeds and AI provider calls.
+    "truststore>=0.10.4",
     # Windows has no system IANA timezone database, so stdlib zoneinfo needs
     # this package to resolve real zone names (publishing schedule dialog).
-    "tzdata>=2025.1",
+    "tzdata>=2026.4",
     # Native .docx reading/writing without requiring Pandoc.
-    "python-docx>=1.1.2",
+    "python-docx>=1.2.0",
+    # AES-GCM for Quill Beacon's encrypted sync (apps/beacon/quillsync/crypto.py)
+    # and PuTTY private-key parsing (core/ssh/putty_key.py). Hard-imported by the
+    # beacon sync module, so it is a base dependency, not an optional extra.
+    "cryptography>=50.0.1",
+    # Windows COM. Not a UI concern despite living in the [ui] extra until now:
+    # quill/core/persona_launcher.py builds persona .lnk shortcuts through
+    # WScript.Shell, and quill/platform/windows (sapi5, narrator_announce,
+    # comtypes_setup) is imported from quill/core/read_aloud.py. Core-layer use
+    # means this belongs in the base dependency set, Windows-gated.
+    "comtypes>=1.4.17; sys_platform == 'win32'",
+    # NOTE: huggingface_hub is deliberately NOT a base dependency. QUILL's default
+    # speech models (whisper.cpp, Faster Whisper) and Piper voices download from
+    # QUILL's own SHA-verified assets-v1 release, not Hugging Face, so a clean
+    # install is Hugging-Face-free. huggingface_hub is only pulled in by the
+    # optional [fasterwhisper] extra (a transitive dep of faster-whisper) and by a
+    # user-installed pyannote for the opt-in diarization upgrade.
 ]
 
 [project.optional-dependencies]
 ui = [
-    "wxPython>=4.2.5",
+    # Pinned exactly for 1.0.0, not floored. wxPython 4.3.x tracks the
+    # wxWidgets master branch, which upstream documents as API/ABI UNSTABLE
+    # between 4.3.x releases -- so a bare floor means a release build can
+    # silently ship a wx the acceptance run never tested, and QUILL's whole
+    # product is screen-reader behavior on those widgets. 4.3.1 (wxWidgets
+    # 3.3.3) is the version the 1.0.0 suite and JAWS/NVDA pass ran against.
+    # Same rationale as the llama-cpp-python exact pin below. Re-test the
+    # editor, dialogs, and braille surfaces before bumping.
+    "wxPython==4.3.1",
     # Accessible wx.html2.WebView surfaces (chat, preview, dialogs) — extracted
     # from Quill and published so any wxPython app can reuse it.
     "wx-accessible-webview>=0.2.0",
-    # Windows SAPI 5 text-to-speech (Read Aloud system voice + self-voicing
-    # announcement fallback). Windows-only at runtime; harmless elsewhere.
-    "comtypes>=1.4; sys_platform == 'win32'",
-    # CA bundle for verified HTTPS update checks (macOS Python lacks trusted roots).
-    "certifi>=2026.6.17",
+    # pywin32: previously undeclared -- it reached shipping builds only as a
+    # transitive dependency, while build_windows_distribution.py prunes its
+    # unused extras (~21 MB) as though it were intentional. Two live call
+    # sites: quill/platform/windows/screen_capture.py (win32gui, for the
+    # active-window capture behind AI image description) and
+    # quill/_vendor/autoupdate/autoupdate.py (win32api.ShellExecute, to hand
+    # off to the update bootstrapper). Both are UI-reachable only, so it sits
+    # in this extra rather than in the base set.
+    "pywin32>=312; sys_platform == 'win32'",
+    # Shared support form reads the running JAWS/NVDA process and executable
+    # version without spawning a console process or requesting elevation.
+    "psutil>=5.9,<9; sys_platform == 'win32'",
+    # CA bundle remains available to tools that need a portable root bundle.
+    "certifi>=2026.10.19",
     # Prism screen-reader speech bridge (Windows) — routes announcements to
     # NVDA/JAWS/Narrator instead of speaking over them.
-    "prismatoid>=0.16.6; sys_platform == 'win32'",
+    "prismatoid>=0.18.2; sys_platform == 'win32'",
     # accessible_output2: fallback screen-reader speech bridge (Windows). Its
     # per-reader is_active() detection is used when Prism cannot acquire a live
     # backend, before resorting to the SAPI self-voice. Pulls in libloader.
     "accessible_output2>=0.17; sys_platform == 'win32'",
     # Pillow: screen capture (PIL.ImageGrab) and clipboard image support.
     # Also a transitive dependency of pillow-heif on platforms where that installs.
-    "Pillow>=12.2.0",
+    "Pillow>=13.0.0",
     # HEIC/HEIF image support for AI image description (iPhone default format).
     # Registers a PIL opener so HEIC files can be read and converted to JPEG
     # in memory before being sent to the vision API.
-    "pillow-heif>=1.4.0",
+    "pillow-heif>=1.8.0",
     # HTML-to-text converter for intelligent paste cleaning (AccessibleApps, MIT).
     "html_to_text>=1.0.0",
+    # Ed25519 / minisign-shaped Quillin signature verification (PyNaCl). Bundled
+    # at runtime so every shipping build can verify publisher-signed Quillins
+    # in the Quillins Manager -- the signature check was previously dev/CI-only
+    # (the [signing]/[dev] extras), which meant real users always saw "PyNaCl is
+    # not installed" and could never verify a Quillin (#919 follow-up). The
+    # graceful missing-nacl path in quill.tools.signing stays as defense in
+    # depth; it just almost never triggers now.
+    "PyNaCl>=1.6.2",
 ]
 spellcheck = ["pyenchant>=3.3.0"]
+# macOS native rich text (One Editor, Every Format, Phase 6): PyObjC lets
+# QuillMacRichText drive the editor's NSTextView (RTF via NSAttributedString).
+# The shipped Mac .app BUNDLES this (the [macos] build extra installs the full
+# pyobjc and scripts/setup_macos.py lists objc/AppKit/Foundation in the py2app
+# includes, since the imports are lazy and the tracer misses them) — nothing
+# for end users to install. This extra covers source/pip installs on a Mac.
+# The code path still degrades to converted rich if the bridge is ever absent.
+mac = ["pyobjc-framework-Cocoa>=12.2.2; sys_platform == 'darwin'"]
 # Cross-platform earcon audio via BASS (Un4seen). Enables true mixing so multiple
 # sounds can play simultaneously. Falls back to winsound (Windows) or silence without
 # this extra. Confirm Un4seen commercial license terms before paid distribution.
@@ -76,30 +144,77 @@ ssh = ["paramiko>=5.0.0"]
 # (see requirements.txt). A higher floor has no wheel and makes pip compile
 # llama.cpp from source. Install via requirements.txt (which carries the
 # --extra-index-url) or pass that index so the wheel resolves.
-ai = ["llama-cpp-python==0.3.19"]
+ai = ["llama-cpp-python==0.3.36"]
 dictation = ["SpeechRecognition>=3.17.0"]
 # Offline speech-to-text (#617). The whisper.cpp executable + GGML models are
 # managed out-of-band (AI > Speech > Manage Speech Models); this optional extra
 # adds microphone capture for offline dictate-at-cursor via PortAudio.
-speech = ["sounddevice>=0.4"]
+speech = ["sounddevice>=0.5.6"]
 # Optional higher-throughput offline speech engine (#617 S4). Faster Whisper is
 # a CTranslate2-based library that uses the GPU when available; huggingface_hub
 # fetches its CTranslate2 model repositories. Users opt in via AI > Speech >
 # Manage Speech Models > Speech Engine; the bundled whisper.cpp engine remains
 # the default and needs none of this.
-fasterwhisper = ["faster-whisper>=1.0", "huggingface_hub>=0.20"]
+fasterwhisper = ["faster-whisper>=1.2.1", "huggingface_hub>=2.0.0"]
 # Optional very-low-resource offline English engine: Vosk (Kaldi) (#669). Tiny
 # CPU-only models (~40 MB) for old/constrained machines. Models download from
 # alphacephei.com via Manage Speech Models; no GPU needed.
 vosk = ["vosk>=0.3.45"]
+# Optional offline English engine: NVIDIA Nemotron Speech Streaming via
+# sherpa-onnx (#669 follow-up). 600M Cache-Aware FastConformer-RNNT run int8 on
+# the CPU — no torch/CUDA (sherpa-onnx bundles its own native onnxruntime). The
+# model downloads from QUILL's assets-v1 release via Manage Speech Models.
+# Floor raised 1.10 -> 1.13 (2026-08-17): the Parakeet 3 provider's
+# OfflineRecognizer(model_type="nemo_transducer") and the Silero
+# VoiceActivityDetector tier (speech_vad.py) rely on API fixes newer than 1.10.
+# Pinned EXACTLY since 2026-10-16 (dict.md D-26): every local speech model runs
+# on this one runtime, and a hotword or decoder change breaks behaviour, not just
+# the API -- an upgrade is a decision, re-measured, never a lock refresh.
+nemotron = ["sherpa-onnx==1.13.8", "numpy>=2.5.3"]
+# Dictation's built-in engines (quill/core/windows_dictation/local_recognizer.py):
+# Moonshine and Whisper through sherpa-onnx, which bundles its own ONNX runtime
+# (no torch), with the microphone read through sounddevice. Shipped, never
+# downloaded -- QUILL Lite's installer and portable zip carry the runtime and,
+# beside the launcher, the models (scripts/fetch_dictation_models.py).
+# websockets: OpenAI dictation's live (Realtime) transcription, own key only. It
+# was already in the shared runtime; declared so it cannot quietly leave it.
+live-dictation = [
+  "sherpa-onnx==1.13.8",  # pinned exactly: see the nemotron extra
+  "numpy>=2.5.1",
+  "sounddevice>=0.5.6",
+  "websockets>=15.0.1",
+]
+# Optional C++ accelerator for the dictation vocabulary corrector
+# (speech/vocabulary.py). NEVER required: the stdlib implementation is the
+# behavioural contract and always present; this extra only makes the same
+# answers faster, which matters when batch transcription runs the corrector
+# over hour-long files. Small MIT wheel, no transitive deps, no torch.
+rapidfuzz = ["rapidfuzz>=3.14.6"]
 # MP3 chapter markers for batch document-to-speech (§4.8): mutagen writes the
 # ID3v2.3 CHAP/CTOC frames. Imported lazily in quill/core/speech/chapters.py.
-mp3 = ["mutagen>=1.47"]
+mp3 = ["mutagen>=1.48.1"]
+# Ed25519 / minisign-shaped signing for QUILL artifacts (Hub Submission Forge,
+# in-app submit dialog, in-app install path). Transitive on systems that
+# already have flask-migrate; promoted to a direct extra so the Hub's deploy
+# install is explicit.
+signing = ["PyNaCl>=1.6.2"]
+# Native Word (.docx) export with full formatting fidelity (font family, point
+# size, color, highlight, paragraph alignment) for the hidden-codes feature
+# (QUILL PRD hidden-codes appendix), and — since One Editor, Every Format —
+# the docx rich reader (quill/io/docx_reader.py). Optional: when absent,
+# write_docx_document falls back to the Pandoc path (which drops those run/
+# paragraph attributes) and .docx opens read-extract instead of rich.
+docx = ["python-docx>=1.1.0"]
 # Premium cloud TTS via the official ElevenLabs SDK (roadmap §4.1, audio export).
 # Optional: the ElevenLabs AI Voice provider is inert unless this is installed and
 # an "ElevenLabs API key" credential is configured. All calls go through the
 # host-owned gateway quill/core/ai/elevenlabs_tts.py (the only importer of the SDK).
-elevenlabs = ["elevenlabs>=1.0.0"]
+# Upper-bounded on purpose. [tool.uv] sets prerelease = "allow" globally (for
+# azure-ai-contentunderstanding's sake), so an unbounded floor let `uv lock`
+# quietly resolve elevenlabs 3.0.0a1 -- an alpha of a major version, chosen by
+# a lock refresh rather than by anybody. A major bump of a provider SDK is a
+# decision; raise the ceiling when it is made.
+elevenlabs = ["elevenlabs>=2.69.0,<3"]
 # Native Windows OCR (OCR-1): thin pip wheels projecting the Windows.Media.Ocr
 # WinRT APIs that ship inside Windows 10/11. The OCR engine itself is a built-in
 # OS component, so end users install nothing extra — bundling these wheels makes
@@ -108,28 +223,92 @@ elevenlabs = ["elevenlabs>=1.0.0"]
 #
 # These are the Microsoft pywinrt ``winrt-*`` namespace packages. They replace
 # the legacy ``winsdk`` monolith, whose wheels stopped at cp312 and so blocked
-# the embedded-runtime move to Python 3.13; the projected API is identical (see
-# quill/platform/windows/windows_ocr.py). Only the directly-imported namespaces
-# plus winrt-runtime are listed; pywinrt pulls the rest (Foundation,
-# Storage.Streams, ...) transitively.
+# the embedded-runtime move to Python 3.13; see quill/platform/windows/windows_ocr.py.
+# Only directly-imported namespaces plus winrt-runtime are listed. Foundation,
+# Foundation.Collections and Storage.Streams are explicit because WinRT resolves
+# these return types lazily and every namespace must be available in the runtime.
+# Pinned to PyWinRT 4.0: the runtime stays on its 4.0 release line and projections
+# stay on the Windows SDK 10.0.28000.2705 line. PyWinRT 4 unifies overload names;
+# its runtime's PyInstaller hook collects each projection's `_table.pywinrt` data.
 ocr = [
-    "winrt-runtime>=3.2.1; sys_platform == 'win32'",
-    "winrt-Windows.Media.Ocr>=3.2.1; sys_platform == 'win32'",
-    "winrt-Windows.Graphics.Imaging>=3.2.1; sys_platform == 'win32'",
-    "winrt-Windows.Globalization>=3.2.1; sys_platform == 'win32'",
-    "winrt-Windows.Storage>=3.2.1; sys_platform == 'win32'",
+    "winrt-runtime~=4.0.3; sys_platform == 'win32'",
+    "winrt-Windows.Media.Ocr~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Graphics.Imaging~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Globalization~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Storage~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Storage.Streams~=4!10.0.28000.2705; sys_platform == 'win32'",
+    # Listed, not left to chance: OcrEngine.recognize_async returns a
+    # Windows.Foundation async operation, projected lazily. Named directly so
+    # packaging does not depend on another projection's closure.
+    "winrt-Windows.Foundation~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Foundation.Collections~=4!10.0.28000.2705; sys_platform == 'win32'",
+]
+# The modern Windows Media engine (quill/ui/audio/winrt_engine.py, 2026-09-29):
+# Windows.Media.Playback.MediaPlayer, which can be pointed at an output device,
+# plus the device enumeration it needs. Same pywinrt family as [ocr]; every
+# namespace the engine imports is listed, because pywinrt resolves them lazily
+# and PyInstaller only freezes what an import statement names.
+windows-media = [
+    "winrt-runtime~=4.0.3; sys_platform == 'win32'",
+    "winrt-Windows.Media.Playback~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Media.Core~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Media.Devices~=4!10.0.28000.2705; sys_platform == 'win32'",
+    # Windows.Media itself, for SystemMediaTransportControls: the "now
+    # playing" card on the volume flyout and the lock screen, and the
+    # hardware media keys (and a Bluetooth headset's button) that come with
+    # it. quill/ui/audio/now_playing.py.
+    "winrt-Windows.Media~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Devices.Enumeration~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Foundation~=4!10.0.28000.2705; sys_platform == 'win32'",
+    "winrt-Windows.Foundation.Collections~=4!10.0.28000.2705; sys_platform == 'win32'",
 ]
 # Kokoro neural TTS (offline, no GPU/torch required). kokoro-onnx runs the Kokoro
 # voice model through onnxruntime (CPU). Voice model files (~114 MB) are downloaded
 # on first use via Voice Picker > Download Kokoro and stored in the app data dir.
-# phonemizer-fork and espeakng-loader (transitive deps of kokoro-onnx) are
+# phonemizer and espeakng-loader (transitive deps of kokoro-onnx) are
 # self-contained — they bundle eSpeak-NG phoneme data and do not require a system install.
 # soundfile writes the synthesized PCM to WAV; it bundles libsndfile on Windows.
 kokoro = [
-    "kokoro-onnx>=0.5.0",
+    "kokoro-onnx>=0.6.1",
     "soundfile>=0.14.0",
+    # Declared so the Kokoro runtime chain is self-contained: a pruned or
+    # partial install must not leave the ONNX voice path importing a missing
+    # 'babel'. It used to arrive transitively as
+    # kokoro-onnx -> phonemizer-fork -> segments -> csvw -> babel.numbers;
+    # kokoro-onnx 0.6.1 swapped phonemizer-fork for upstream phonemizer and
+    # that whole chain (segments, csvw, rdflib) left the lockfile, so this
+    # line is now the only thing putting Babel on the Kokoro path rather
+    # than a belt beside a brace. Keep in sync with [dev].
+    "Babel>=2.18.0",
 ]
-pages = ["keynote-parser>=1.14.4.0", "markitdown[docx,pptx,xlsx,xls,pdf]>=0.1.6"]
+pages = ["keynote-parser>=1.14.5.0"]
+# Free-first PDF/Office text extraction (quill/io/docconvert.py Tier 1 +
+# quill/io/pdf.py): MarkItDown for Office + PDF, pdfplumber/pypdf as the PDF
+# text floor. Was briefly a base dependency (#909 fixed a build that shipped
+# with neither this extra nor a base dependency, so a clean install had no
+# PDF/Office text extractor at all). Downloadable on demand via Help > Download
+# Optional Components (quill/core/pdf_ocr_install.py). Shipped builds bundle the
+# lean `office-text` extra below instead of this one -- see the note there.
+pdf-ocr = [
+    "markitdown[docx,pptx,xlsx,xls,pdf]>=0.1.8",
+    "pdfplumber>=0.11.10",
+    "pypdf>=6.21.2",
+]
+# The lean half of pdf-ocr, and the half that actually ships (#1279). MarkItDown
+# is the better reader, but its dependency chain is not lean: magika (its stream
+# sniffer) hard-requires onnxruntime + numpy, and its xlsx/xls converters require
+# pandas -- roughly 150 MB installed, which is not a reasonable tax on an
+# accessibility app's download when the formats can be read without it. These
+# three are ~16 MB installed and cover the real gaps in a packaged build: PDF text
+# (quill/io/pdf.py has no reader at all without pdfplumber/pypdf) and .xlsx/.xls
+# sheets (quill/io/structured.py::_format_spreadsheet needs openpyxl). Word reads
+# through python-docx, which is already a base dependency. MarkItDown stays a
+# one-click download for anyone who wants it (Help > Download Optional Components).
+office-text = [
+    "pdfplumber>=0.11.10",
+    "pypdf>=6.21.2",
+    "openpyxl>=3.1.5",
+]
 # GLOW document accessibility engine (audit / fix / convert for docx, pptx,
 # xlsx, pdf, epub, md). quill-glow-core is the thin, stable service contract
 # Quill imports; its [glow] extra pulls in the acb-large-print backend. The
@@ -137,34 +316,217 @@ pages = ["keynote-parser>=1.14.4.0", "markitdown[docx,pptx,xlsx,xls,pdf]>=0.1.6"
 # checkout root on any machine. Until these are published to an index, install
 # the vendored, drive-independent pure-Python wheels with a repo-relative path:
 #   pip install --find-links vendor/wheels "quill-glow-core[glow]"
-glow = ["quill-glow-core[glow]>=0.1.1"]
+# acb-large-print is pinned >=8.0.0 explicitly: the MCP-server-era split moved
+# the dispatch backend into acb_large_print_core (new in 8.0.0), and the
+# contract wheel's own extra only demands >=3.0.0 — loose enough for a stale
+# pre-split install to satisfy the resolver and leave the engine silently
+# unavailable inside QUILL.
+glow = ["quill-glow-core[glow]>=0.1.1", "acb-large-print>=8.0.0"]
+# QUILL Social's application package (standalone/social/quill_social),
+# vendored as a wheel beside the glow wheels until published. Ships inside
+# the shared QuillVille Runtime so `-m quill_social` launches from it.
+# Mastodon.py and python-dateutil are named, not left transitive: QUILL Social's
+# Mastodon adapter imports them, and as transitive packages the runtime inventory
+# gate kept treating dateutil as "swept from this machine" (the baseline flipped
+# five times between 2026-09-09 and 2026-09-30). The runtime takes this extra.
+social-app = ["quill-social>=0.3.0", "Mastodon.py>=2.2.2", "python-dateutil>=2.9.0"]
+# LaTeX -> MathML conversion for quill/core/math/ (docs/planning/math.md, Tier 1-B).
+# Pure Python, no native build. Optional: the math bridge degrades to accepting
+# MathML input only (no LaTeX typing) when this is absent.
+math = ["latex2mathml>=3.81.1"]
 # macOS build + runtime. py2app 0.28.x is incompatible with setuptools >= 83
 # (the build aborts with "install_requires is no longer supported"), so pin it.
+# Security note (Dependabot alert 14, GHSA setuptools < 85 MANIFEST.in exclusion
+# bypass on APFS/HFS+): accepted. The vulnerable path is building sdists on
+# macOS with security-relevant MANIFEST.in exclusions; QUILL builds .app
+# bundles via py2app, never sdists, and no newer py2app supports setuptools 83
+# (0.28.10, 2026-02, is current). Re-check when py2app moves.
 # pyobjc powers the macOS platform layer; apple-fm-sdk is the Foundation Models
 # backend used by Ask Quill on macOS.
 macos = [
-    "py2app>=0.28.10",
-    "setuptools<83",
-    "pyobjc>=12.2.1; sys_platform == 'darwin'",
-    "apple-fm-sdk>=0.2.0; sys_platform == 'darwin'",
+    "py2app>=0.28.10; sys_platform == 'darwin'",
+    "setuptools<85; sys_platform == 'darwin'",
+    "pyobjc>=12.2.2; sys_platform == 'darwin'",
+    "apple-fm-sdk>=0.2.1; sys_platform == 'darwin'",
 ]
 github = [
     # GitHub repository browser and remote file open/save (File > Open Remote > GitHub).
-    "PyGithub>=2.9.1",
+    "PyGithub>=2.10.0",
 ]
+# Optional agentic-AI harness packs (QUILL 2.0): OpenAI Agents, Claude Agent, and
+# GitHub Copilot. Each pulls one third-party agent SDK; the matching
+# quill/ai_packs/ module imports it LAZILY only when a session runs, and an
+# uninstalled pack reports "Install the X pack" without crashing. Every pack
+# bridges to the same Safe Editor Tool Gateway + Permission Broker and emits the
+# same normalized events; none edits the buffer directly. The Native harness
+# always works without any of these.
+ai-copilot = ["github-copilot-sdk>=1.0.15rc3"]  # PyPI package; imports as `copilot`
+ai-claude = ["claude-agent-sdk>=0.2.160"]
+ai-openai = ["openai-agents>=0.22.3"]
+# Build-time only: compile the optional Table Studio native UIA provider
+# (quill/native/table_uia -> _quill_table_uia.pyd). Also needs MSVC + the
+# Windows 10 SDK + CMake. Not required at runtime (MSAA fallback ships).
+native-build = ["pybind11>=3.1.0"]
+# The dependency set the shared QuillVille Runtime ships
+# (standalone/runtime/build_runtime.ps1 -> quillville-runtime.spec), which every
+# companion app installs once and launches through.
+#
+# Why this exists: the spec builds with collect_all("quill"), so PyInstaller
+# bundles whatever happens to be importable in the builder's virtualenv. With no
+# declared set, the runtime's contents were a photograph of one machine at one
+# moment -- a drifted venv silently shipped a runtime with no offline dictation
+# and wxPython below its own pin, and the build reported success either way.
+# scripts/check_build_env.py verifies the venv against this list before a build,
+# so a drift fails loudly instead of shipping.
+#
+# This mirrors what build_portable.py already does for the portable bundles (it
+# resolves groups straight from this file), which is exactly why those artifacts
+# were unaffected by the same drift.
+#
+# Trimming this list is the supported way to shrink every app installer at once:
+# the speech engines below (fasterwhisper, vosk, kokoro) all have on-demand
+# install paths in quill/core/speech/engine_install.py and are bundled here only
+# so a fresh install works without a download.
+youtube = [
+  # yt-dlp resolves a YouTube page link to a playable audio stream: Radio's
+  # YouTube stations and playlists, and the audio converter's URL import.
+  #
+  # Bundled rather than installed on demand. The wheel is ~3 MB (10 MB
+  # unpacked, but 8 MB of that is 941 site-specific extractor modules that
+  # compress hard in the PYZ), which is small enough that making every new
+  # user consent to a download before their first YouTube link is a worse
+  # trade than the disk. The on-demand installer in
+  # quill/core/speech/engine_install.py stays: it is now the *upgrade* path,
+  # because yt-dlp goes stale whenever YouTube changes its player and ships
+  # fixes far more often than QUILL ships releases. An engine-pack copy wins
+  # over this bundled one -- see engine_install.prefer_engine_pack_yt_dlp.
+  #
+  # The floor moves when a release of yt-dlp is the difference between YouTube
+  # playing and not, which is the only reason to move it. 2026.8.19 is one of
+  # those: with 2026.7.4 every watch page still resolved perfectly -- title,
+  # length, chapters -- and the googlevideo address it returned answered 403
+  # Forbidden to every client including yt-dlp's own downloader (measured
+  # 2026-08-23 against youtube.com/watch?v=iG9CE55wbtY). A resolve that
+  # succeeds and hands back a dead address is the worst shape this failure
+  # takes: nothing upstream of it can tell that anything went wrong.
+  "yt-dlp>=2026.8.19",
+  # The scripts yt-dlp runs (in the bundled deno, tools/deno) to solve YouTube's
+  # signature and "n" challenges. yt-dlp checks the solver's major.minor against
+  # its own, so this moves with the yt-dlp floor: 2026.8.19 (and the locked
+  # nightly) pin exactly 0.8.0 in their "pin" extra. Bundled so no challenge
+  # script is ever fetched from npm or GitHub at run time (remote_components
+  # stays off); Repair YouTube Support fetches a matching one if a newer yt-dlp
+  # pins a different solver.
+  "yt-dlp-ejs==0.8.0",
+  # yt-dlp's optional TLS-impersonation backend, imported lazily when a site
+  # blocks the default client. It ships in the current runtime and imports
+  # cleanly there (probed 2026-08-18); undeclared, it only shipped because the
+  # build machine happened to have it.
+  "curl-cffi>=0.16.3",
+  # Quill Radio's Live Chat window reads a live (or replayed) YouTube chat
+  # through chat-downloader, the one maintained reader of YouTube's live-chat
+  # continuation feed; yt-dlp only saves a finished replay to a file, which is
+  # no help to somebody following a stream as it happens. Pinned exactly:
+  # it scrapes the same page yt-dlp does, so a new release is a behaviour
+  # change to review rather than a routine bump. Pure Python (~150 KB) plus
+  # colorlog, docstring-parser, isodate and websocket-client, all pure too.
+  "chat-downloader==0.2.8",
+]
+runtime = [
+  "quill[ui]",
+  "quill[spellcheck]",
+  "quill[audio]",
+  "quill[speech]",
+  "quill[dictation]",
+  "quill[live-dictation]",
+  "quill[mp3]",
+  "quill[docx]",
+  "quill[math]",
+  # Windows OCR ships in the current runtime and imports cleanly inside the
+  # frozen bundle (probed 2026-08-18). It was only ever absent when the build
+  # machine happened not to have it -- the drift class the fingerprint tool
+  # exists for -- so it is declared rather than left to chance.
+  "quill[ocr]",
+  # The Windows Media engine every family app plays through when libmpv is
+  # absent, and the one that routes Windows Media to a chosen sound card.
+  "quill[windows-media]",
+  # GLOW (large-print document accessibility) likewise ships working today:
+  # quill.core.glow, quill_glow_core and acb_large_print all import inside the
+  # frozen runtime. This pulls the documents stack (pymupdf, markitdown[all])
+  # that the runtime-inventory baseline already expects. Install with
+  # --find-links vendor/wheels until the glow wheels are published.
+  "quill[glow]",
+  # File > Open Remote > GitHub (quill.core.github.github_provider imports
+  # PyGithub). In the shipped runtime and working; declared so it stays that
+  # way on every build machine.
+  "quill[github]",
+  # QUILL Social's application package. The runtime spec has collected
+  # quill_social since the shared-runtime design landed -- silently
+  # collecting nothing, because the package was never installed on any build
+  # machine. Declared (wheel vendored beside the glow wheels), the
+  # collection is finally real and the runtime can launch `-m quill_social`.
+  "quill[social-app]",
+  "quill[office-text]",
+  "quill[pdf-ocr]",
+  "quill[youtube]",
+  "quill[fasterwhisper]",
+  "quill[vosk]",
+  "quill[kokoro]",
+]
+# Build tools the release scripts invoke, NOT dependencies of the shipped app.
+#
+# Why this is separate from [runtime]: that group is the set the shared
+# QuillVille Runtime *ships*, so putting PyInstaller there would bundle the
+# packaging tool into every installer. This group is only ever checked, never
+# collected into an artifact.
+#
+# Why it exists at all: PyInstaller used to be declared nowhere. It was present
+# on the one machine that cut releases purely because that checkout's virtualenv
+# happened to have it, so check_build_env.py reported "Build environment
+# satisfies pyproject [runtime]" and the build then died seven seconds later on
+# "No module named PyInstaller". A gate that cannot see the single most
+# important build tool is not a gate; build_runtime.ps1 now checks
+# `--groups runtime,packaging`.
+packaging = [
+  "pyinstaller>=6.22.3",
+  # Ships the upstream hooks for third-party packages (wx, babel, huggingface);
+  # a stale copy silently drops data files from the frozen tree.
+  "pyinstaller-hooks-contrib>=2026.7",
+]
+# NOTE on PEP 735 [dependency-groups] (evaluated 2026-08-17, deliberately not
+# adopted yet): dev tooling would naturally live there, but duplicating this
+# list into a group means two sources of truth until groups can *include* an
+# extra, and pip's `--group` flow is still younger than every script and doc
+# that says `pip install -e ".[ui,dev]"`. uv already resolves the extras form
+# in seconds (see CLAUDE.md), which was the actual pain. Revisit when the
+# packaging ecosystem lets one list serve both spellings.
 dev = [
   "pytest>=9.1.1",
   "pytest-xdist>=3.8.0",
   "pytest-timeout>=2.4.0",
   "pytest-cov>=7.1.0",
-  "ruff>=0.15.18",
-  "mypy>=2.1.0",
+  # Property-based testing for the pure parsers (find_model, regex_helper,
+  # quill/io readers): generates edge cases a hand-written example never
+  # thinks of. See tests/unit/core/test_find_model_properties.py.
+  "hypothesis>=6.168.1",
+  # Randomized test ordering, DISABLED by default via addopts (-p no:randomly).
+  # Opt in with `pytest -p randomly ...` to hunt order-dependent coupling.
+  "pytest-randomly>=5.0.0",
+  "ruff>=0.16.8",
+  "mypy>=2.3.0",
   # I18N: string extraction, .po update, .mo compile
   "Babel>=2.18.0",
+  # Quillin Hub artifact signing (quill.tools.signing); CI runs its tests.
+  "PyNaCl>=1.6.2",
+  # Windows UI-automation regression tests (tests/uia, marker "uia"): drives
+  # the real app through UIA and asserts accessible names, keyboard reach, and
+  # spoken output. Windows-only by nature; harmless to install elsewhere.
+  "pywinauto>=0.6.9; sys_platform == 'win32'",
 ]
 
 [project.scripts]
 quill = "quill.__main__:main"
+quill-weather = "quill.apps.weather:main"
 
 [tool.hatch.version]
 # quill/__init__.py is the authoritative version source.
@@ -186,14 +548,33 @@ packages = ["quill"]
 "quill/data/th_en_US_v2.dat" = "quill/data/th_en_US_v2.dat"
 "quill/data/th_en_US_LICENSE.txt" = "quill/data/th_en_US_LICENSE.txt"
 "quill/data/th_en_US_WordNet_LICENSE.txt" = "quill/data/th_en_US_WordNet_LICENSE.txt"
+"quill/data/notices" = "quill/data/notices"
+"quill/data/emoji_catalog.json" = "quill/data/emoji_catalog.json"
 "quill/core/schemas/extension.json" = "quill/core/schemas/extension.json"
 "quill/core/schemas/sound_pack.json" = "quill/core/schemas/sound_pack.json"
+"quill/core/schemas/agent.json" = "quill/core/schemas/agent.json"
+"quill/core/ai/agents" = "quill/core/ai/agents"
 "quill/assets/sound_packs" = "quill/assets/sound_packs"
 "quill/assets/audio" = "quill/assets/audio"
 "quill/quillins_bundled" = "quill/quillins_bundled"
 # I18N: ship the gettext template and any compiled translation catalogs so the
 # display-language switcher can find them in installed builds.
 "quill/locale" = "quill/locale"
+
+[tool.uv]
+# The GLOW backend wheels (quill-glow-core, acb-large-print) are vendored, not
+# on PyPI yet; without this, `uv lock` / `uv sync --all-extras` cannot resolve
+# the [glow] extra at all (pip users pass --find-links vendor/wheels manually).
+find-links = ["vendor/wheels"]
+# azure-ai-contentunderstanding is pinned to a pre-release (>=1.2.0b1); uv
+# refuses pre-releases across resolver splits unless told otherwise, which
+# made every `uv lock` fail outright.
+prerelease = "allow"
+# With pre-releases allowed everywhere, a plain `uv lock --upgrade` reaches for
+# development builds nobody chose: httpx 1.0.dev (which drops httpcore) and
+# pandas 3.1 release candidates (2026-10-11). Fence them until a final release
+# is a deliberate decision; raise each ceiling when it is made.
+constraint-dependencies = ["httpx<1.0.dev0", "pandas<3.1.0a0"]
 
 [tool.pytest.ini_options]
 # Pin pythonpath so the worktree's `quill` package wins over the parent
@@ -202,20 +583,55 @@ packages = ["quill"]
 pythonpath = ["."]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+# A per-test wall-clock ceiling, because **a hang is not a failure** (list.md
+# 12.2). `test_button_mnemonics` once stalled entire runs through a deferred
+# modal and reported as "still going" rather than red -- a red test gets fixed,
+# and a run that never ends gets abandoned. Thirty seconds is far above any
+# honest test here (the slowest legitimate one is a few seconds) and far below
+# anybody's patience. pytest-timeout's thread method catches a wx modal loop
+# as readily as a sleep, which matters because the modal is the case that
+# actually happened. Pinned by tests/unit/tools/test_suite_guardrails.py so it
+# cannot be quietly removed or raised.
 timeout = 30
 log_cli = true
 log_level = "INFO"
+# pytest-randomly is installed but OFF by default. It shuffles test order on
+# every run, which is exactly how you find order-dependent coupling (the wx
+# 4.3 MediaCtrl/COM crash on 2026-08-07 was one) -- but an unpredictable
+# ordering in the required CI gates would turn a real failure into a
+# can't-reproduce. Opt in deliberately when hunting that class of bug:
+#     pytest -p randomly tests/unit/core
+#     pytest -p randomly -p no:cacheprovider tests/unit/ui   # a suspect area
+# Reproduce a specific shuffle with the seed it prints: -p randomly -p randomly.seed=12345
+# --durations reports the ten slowest tests over five seconds, so a test
+# creeping from two seconds toward the thirty-second ceiling is visible
+# *before* it reaches it. Without a floor the only signal is the ceiling
+# itself, which arrives as a failure rather than as a warning (list.md 12.2).
+addopts = "-p no:randomly --durations=10 --durations-min=5.0"
 markers = [
     "perf: wall-clock performance budgets; run with RUN_PERF=1 or exclude with -m 'not perf'",
+    "smoke: fast, high-signal core checks; run the quick subset with -m smoke",
+    "uia: Windows UI-automation regression tests (launch the real app via UIA); opt-in with QUILL_UIA_TESTS=1 and -m uia on a Windows desktop session",
+    "machine_global: touches a resource the machine owns rather than the process (the Windows clipboard, the system-wide RegisterHotKey table, the screen-reader COM bridges). Serialized onto one worker under -n --dist loadgroup; see tests/conftest.py.",
+    "slow: runs for many minutes and only when asked by its own environment variable (the dictation soak, tests/stability/test_dictation_soak.py); never in CI",
 ]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+# Held at py313 while CI keeps its Python 3.13 compatibility leg (pr-ci.yml,
+# lint-py313). At py314 ruff format rewrites every `except (A, B):` into the
+# PEP 758 `except A, B:` form, which 3.13 cannot parse, so the leg would fail
+# on import. Raise this to py314 and run `ruff format .` when the leg goes.
+target-version = "py313"
 # Vendored, generated, and distribution trees are not first-party source and
 # must not be linted or format-checked.
 extend-exclude = [
     "build",
+    # Standalone-product build tooling (Radio/Cast/Audio Studio wrappers:
+    # launcher, PyInstaller spec, installer, docs). Packaging shells that
+    # bundle the quill package into per-product exes -- not first-party source.
+    "standalone",
+    "dist",
     "windows-distribution",
     "installer-smoke",
     "installer-smoke-2",
@@ -230,10 +646,27 @@ extend-exclude = [
     # lived here was retired once its learnings shipped (roadmap §5, §7). Not
     # first-party; excluded from lint/format.
     "docs/planning/source",
+    # One-off dispatch helper that drove the podcast episode reorg. Not
+    # first-party app code; long literal brief strings are intentional.
+    "docs/podcast/dispatch_main.py",
+    # Research harnesses. labs/ holds throwaway measurement code -- the
+    # chapter-inference evaluation that decided the speech engine, the window
+    # size and the retirement of the pause scan lives here, with its corpus and
+    # its results. It is kept because the numbers in the PRD have to be
+    # reproducible, and it is not shipped, imported by, or a dependency of any
+    # first-party module. Holding scratch measurement code to the app's lint
+    # rules would mean rewriting an experiment to keep a gate quiet.
+    "labs",
 ]
 
 [tool.ruff.format]
 preview = true
+# Markdown under docs/ is pandoc-owned source (rendered to .html/.epub by
+# scripts/gen.ps1), not executed code. Ruff's preview mode reformats Python
+# code-fences inside Markdown, which only churns historical planning docs and
+# forces artifact regeneration on every ruff bump. Keep .md out of the
+# formatter; the docs-artifacts gate is the sole authority on doc rendering.
+exclude = ["**/*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -251,12 +684,16 @@ select = ["E", "F", "I", "UP", "B"]
 "scripts/setup_macos.py" = ["E402"]
 # macOS-only platform tests import the module under test after a
 # sys.platform skip guard, so the import is deliberately not at the top.
+# Vendored Beacon dialog/UI tests gate wx behind `wx = pytest.importorskip("wx")`
+# and import the modules under test after it, so those imports are deliberately
+# not at the top of the file (same headless-skip pattern as the macOS tests).
+"tests/unit/apps/beacon/*.py" = ["E402"]
 "tests/unit/platform/macos/test_high_contrast.py" = ["E402"]
 "tests/unit/platform/macos/test_keychain.py" = ["E402"]
 "tests/unit/platform/macos/test_sr_detect.py" = ["E402"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
 strict_optional = true
@@ -271,6 +708,13 @@ exclude = ["quill/ui/"]
 [[tool.mypy.overrides]]
 module = [
     "defusedxml.*",
+    "dns",
+    "dns.*",
+    "feedparser",
+    # Pygments (spell check lexes code, core/spellcheck_lexers.py); imported
+    # lazily and ships no type stubs.
+    "pygments",
+    "pygments.*",
     "regex",
     "enchant",
     "keynote_parser.*",
@@ -282,6 +726,16 @@ module = [
     "torch",
     # Optional Vosk engine (quill[vosk]); imported lazily in providers/vosk.py.
     "vosk",
+    # sherpa-onnx (quill[nemotron], quill[live-dictation]); imported lazily in
+    # windows_dictation/local_recognizer.py. Ships no type stubs.
+    "sherpa_onnx",
+    # numpy arrives with the live-dictation extra (windows_dictation/
+    # local_recognizer.py imports it lazily); the typing job installs only [dev].
+    "numpy",
+    "numpy.*",
+    # PyNaCl (Ed25519 unlock-code verification, quill/core/unlock_codes.py); no stubs.
+    "nacl",
+    "nacl.*",
     # Optional ElevenLabs SDK (quill[elevenlabs]); imported lazily only in the
     # host-owned gateway quill/core/ai/elevenlabs_tts.py (roadmap §4.1).
     "elevenlabs",
@@ -290,6 +744,7 @@ module = [
     "mutagen",
     "mutagen.*",
     "huggingface_hub",
+    "huggingface_hub.*",
     "sounddevice",
     "kokoro",
     "openpyxl",
@@ -317,8 +772,25 @@ module = [
     # it untyped here to keep the scoped gate clean.
     "PIL",
     "PIL.*",
-    # Optional crash-reporting integration; imported lazily in
-    # core/issue_submit.py behind a try/except. Not in the dev extra.
-    "feedback_hub",
+    # Optional native Word writer (quill[docx]); python-docx is imported lazily in
+    # io/docx_writer.py with a Pandoc fallback, so the scoped gate must not depend
+    # on it being installed.
+    "docx",
+    "docx.*",
+    # Optional LaTeX->MathML bridge (quill[math]); imported lazily in
+    # core/math/latex_bridge.py behind a try/except, so the scoped gate must not
+    # depend on the extra being installed.
+    "latex2mathml",
+    "latex2mathml.*",
+    # Optional yt-dlp (audio-converter URL import, #1255 §4.6); installed on
+    # demand and imported lazily in core/audio/url_import.py. Ships no stubs.
+    "yt_dlp",
+    "yt_dlp.*",
+    # Optional WinRT connectivity namespace (core/net_metered.py, the metered
+    # -connection guard). pywinrt ships the namespace packages QUILL actually
+    # uses -- OCR and Imaging -- and not this one, and the module is imported
+    # behind a try/except that treats its absence as "cost unknown". The scoped
+    # gate must not depend on a package the app deliberately does not require.
+    "winrt.windows.networking.connectivity",
 ]
 ignore_missing_imports = true

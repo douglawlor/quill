@@ -1,0 +1,630 @@
+"""Spell check and thesaurus commands for MainFrame (CQ-1 decomposition).
+
+``SpellcheckCommandsMixin`` owns the interactive spelling surface: dictionary
+status, spell-language choice, the spelling review dialogs (plain and ranked),
+the misspelling list and next/previous navigation, spell-check-word-at-cursor,
+the thesaurus dialog, spoken spelling helpers, the cached document dictionary,
+and add-word-to-scope. Extracted verbatim from ``main_frame.py``; runs on
+``MainFrame`` (``self``). Spell state (``_spell_dictionary_cache`` and
+friends) stays initialized in ``MainFrame.__init__``.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from quill.core import thesaurus as thesaurus_engine
+from quill.core.paths import app_data_dir
+from quill.core.selection import word_span
+from quill.core.spellcheck import (
+    Misspelling,
+    add_word_to_scope,
+    is_known_word,
+    list_misspellings,
+    load_combined_dictionary,
+    load_scope_dictionary,
+    misspelling_at_position,
+    personal_dictionary_revision,
+    rank_misspellings_by_frequency,
+    suggest_words,
+)
+from quill.core.spellcheck import (
+    backend_info as spellcheck_backend_info,
+)
+from quill.platform.sr_announce import (
+    announce,
+)
+from quill.ui.dialog_contract import (
+    apply_modal_ids,
+)
+
+
+class SpellcheckCommandsMixin:
+    def announce_spelling_state_if_skipped(self) -> bool:
+        """Say once, at open, that this file type is not checked as you type.
+
+        The one announcement this feature makes on its own, and QUILL Lite has
+        made it since it shipped (bad.md P1.14). Without it the difference
+        between "off for this file type" and "broken" is invisible, and nobody
+        can act on a silence they cannot explain -- which is the shape of every
+        bug report that says the spell checker stopped working.
+
+        The sentence names both ways out, because the person hearing it has
+        just been told a feature is off and will want one of the two.
+        """
+        from quill.core.spellcheck_filetypes import is_code_filename
+
+        if not getattr(self.settings, "spellcheck_as_you_type", False):
+            return False
+        if not getattr(self.settings, "spellcheck_skip_code_files", True):
+            return False
+        if not is_code_filename(getattr(self.document, "path", None)):
+            return False
+        self._set_status(
+            "Spell check while typing is off for this file type. "
+            "Control Alt F7 turns it on, F7 reviews the document."
+        )
+        return True
+
+    def open_spelling_announcements(self) -> None:
+        """How a misspelling is said, in one window (bad.md P1.14, 3.6).
+
+        The same window QUILL Lite opens, on the same chord, over the same
+        setting names -- so somebody who tunes this in one editor finds the
+        other already tuned. Not gated on spelling being enabled: the settings
+        survive the feature being switched off, and somebody who has just
+        turned it back on should be able to reach the window that decides how
+        loud it is going to be.
+        """
+        from quill.core.settings import save_settings
+        from quill.ui.spelling_voice_dialog import edit_spelling_voice
+
+        if edit_spelling_voice(self.frame, self.settings, announce=self._announce):
+            save_settings(self.settings)
+
+    def show_dictionary_status(self) -> None:
+        wx = self._wx
+        project_root = Path.cwd()
+        personal_count = len(load_scope_dictionary("personal", self.document.path, project_root))
+        document_count = len(load_scope_dictionary("document", self.document.path, project_root))
+        project_count = len(load_scope_dictionary("project", self.document.path, project_root))
+        personal_path = app_data_dir() / "dictionaries" / "personal.json"
+        document_path = (
+            self.document.path.with_suffix(self.document.path.suffix + ".quill-dict.json")
+            if self.document.path is not None
+            else None
+        )
+        project_path = project_root / ".quill-dictionary.json"
+        backend = spellcheck_backend_info()
+        thesaurus_status = "installed" if thesaurus_engine.is_available() else "not installed"
+        if personal_path.exists():
+            personal_line = f"- Personal: {personal_count} (stored at {personal_path})"
+        else:
+            personal_line = (
+                f"- Personal: {personal_count} "
+                f"(not created yet; add a word to create {personal_path})"
+            )
+        if document_path is None:
+            document_line = (
+                f"- Document: {document_count} (not available until the current document is saved)"
+            )
+        elif document_path.exists():
+            document_line = f"- Document: {document_count} (stored at {document_path})"
+        else:
+            document_line = (
+                f"- Document: {document_count} (not created yet for this document: {document_path})"
+            )
+        if project_path.exists():
+            project_line = f"- Project: {project_count} (stored at {project_path})"
+        else:
+            project_line = (
+                f"- Project: {project_count} (not created yet in this folder: {project_path})"
+            )
+        lines = [
+            f"Spell-check backend: {backend.name} — {backend.detail}",
+            f"Thesaurus data: {thesaurus_status} ({thesaurus_engine.data_path()})",
+            "",
+            "User dictionary entries:",
+            personal_line,
+            document_line,
+            project_line,
+        ]
+        self._show_message_box("\n".join(lines), "Dictionary Status", wx.ICON_INFORMATION | wx.OK)
+        self._set_status(
+            f"Spell check: {backend.name}; user dictionaries: personal={personal_count}, "
+            f"document={document_count}, project={project_count}"
+        )
+
+    def choose_spell_language(self) -> None:
+        """Pick the spell-check language, downloading the dictionary on demand.
+
+        Thin delegate to :mod:`quill.ui.spell_language`; English ships bundled and
+        other languages fetch from QUILL's verified release asset (PRD 10.2.4).
+        """
+        from quill.ui.spell_language import open_spell_language_chooser
+
+        open_spell_language_chooser(self._wx, self)
+
+    def _spell_review_textctrl(self, text_ctrl: object) -> None:
+        """Run the F7 spelling review over a wx text control (e.g. a Mastodon post).
+
+        Mirrors open_spell_check_dialog but targets the given control instead of
+        the editor, so corrections apply to the post text before it is sent (#549
+        Mastodon proofread-before-send).
+        """
+        from quill.ui.spell_review import review_textctrl
+
+        review_textctrl(
+            self._wx,
+            self.frame,
+            text_ctrl,
+            dictionary=self._spell_dictionary(),
+            announce_fn=self._announce,
+            settings=self.settings,
+            show_modal=self._show_modal_dialog,
+        )
+        self._invalidate_spell_dictionary_cache()
+
+    def open_spell_check_dialog(self) -> None:
+        """Open the guided F7 Spelling Review dialog, in document order."""
+        self._open_spelling_review()
+
+    def _open_spelling_review(self) -> None:
+        from quill.core.spelling.session import ReviewSession
+        from quill.ui.spelling_review_dialog import SpellingReviewDialog
+
+        text = self.editor.GetValue()
+        if not text.strip():
+            self._set_status("Document is empty — nothing to spell check.")
+            return
+
+        dictionary = self._spell_dictionary()
+
+        # Determine scope: selection if non-empty, else full document from caret.
+        sel_start, sel_end = self.editor.GetSelection()
+        if sel_start != sel_end:
+            scope_start, scope_end = sel_start, sel_end
+            scope_label = "selected text"
+        else:
+            scope_start = 0
+            scope_end = len(text)
+            scope_label = "document"
+
+        # Ranked or document order is the dialog's own checkbox now, opened at
+        # whatever it was left on. It was a second command on a second chord
+        # until 2026-09-16 -- the same dialog twice, which is how a pair drifts
+        # (bad.md 7.1) -- and the F7 chord family had no room for it anyway.
+        session = ReviewSession(
+            text=text,
+            dictionary=set(dictionary),
+            filename=getattr(self.document, "path", None),
+            scope_start=scope_start,
+            scope_end=scope_end,
+            ranked=bool(getattr(self.settings, "spell_review_ranked", False)),
+            # Word starts F7 at the insertion point, and has since it had an
+            # F7. Starting at the top instead walks somebody working in the
+            # middle of a long document back through everything they already
+            # checked -- and it is what left spell_review_wrap_to_beginning
+            # with no "end" to happen at (bad.md S7). Only for a whole-document
+            # pass: a review scoped to a selection has a start the person chose.
+            start_at=(self.editor.GetInsertionPoint() if scope_start == 0 else None),
+            wrap=bool(getattr(self.settings, "spell_review_wrap_to_beginning", True)),
+            context_mode=str(getattr(self.settings, "spell_review_context_mode", "sentence")),
+        )
+
+        if session.is_complete():
+            # _set_status already speaks the message (statusbar.announce); a
+            # second explicit _announce spoke it twice (#728). Match the sibling
+            # "No misspellings found" path and announce once via _set_status.
+            self._set_status("No misspellings found.")
+            return
+
+        def _apply(start: int, old_end: int, replacement: str) -> None:
+            self.editor.Replace(start, old_end, replacement)
+            self.document.set_text(self.editor.GetValue())
+
+        doc_path = getattr(self.document, "path", None)
+        from pathlib import Path as _Path
+
+        project_root = _Path.cwd()
+
+        dlg = SpellingReviewDialog(
+            parent=self.frame,
+            session=session,
+            apply_fn=_apply,
+            announce_fn=self._announce,
+            document_path=doc_path,
+            project_root=project_root,
+            settings=self.settings,
+            # The order is the dialog's own checkbox and announces itself when
+            # toggled, so the scope label stays about scope.
+            scope_label=scope_label,
+        )
+
+        self.editor.SetFocus()  # store focus for return
+        dlg.show(self._show_modal_dialog)
+
+        # Invalidate the spell dictionary cache so subsequent inline checks
+        # reflect any words the user added to the dictionary.
+        self._invalidate_spell_dictionary_cache()
+        counters = session.get_counters()
+        if counters.reviewed:
+            self._set_status(
+                f"Spelling review complete: {counters.changed} changed, "
+                f"{counters.ignored_once} ignored."
+            )
+        else:
+            self._set_status("Spelling review closed.")
+
+    def _misspelling_context_text(self, text: str, item: Misspelling) -> str:
+        if not text:
+            return item.word
+        boundaries = ".!?\n"
+        start = item.start
+        end = item.end
+        sentence_start = 0
+        for marker in boundaries:
+            position = text.rfind(marker, 0, start)
+            if position > sentence_start:
+                sentence_start = position
+        if sentence_start > 0:
+            sentence_start += 1
+        sentence_end = len(text)
+        for marker in boundaries:
+            position = text.find(marker, end)
+            if position != -1:
+                sentence_end = min(sentence_end, position + 1)
+        sentence = text[sentence_start:sentence_end].strip()
+        if not sentence:
+            window = 80
+            excerpt_start = max(0, start - window)
+            excerpt_end = min(len(text), end + window)
+            sentence = text[excerpt_start:excerpt_end].strip()
+            if excerpt_start > 0:
+                sentence = f"...{sentence}"
+            if excerpt_end < len(text):
+                sentence = f"{sentence}..."
+        return sentence or item.word
+
+    def _speak_spellcheck_word(self, word: str, suggestions: list[str]) -> None:
+        single_suggestion = suggestions[0] if len(suggestions) == 1 else None
+        message = self._spellcheck_speech_message(word, single_suggestion)
+        self._speak_with_announcement_backend(message)
+        if single_suggestion is None:
+            self._set_status(f'Spoke misspelling "{word}" and spelling')
+        else:
+            self._set_status(
+                f'Spoke misspelling "{word}" and single suggestion "{single_suggestion}"'
+            )
+
+    def _spellcheck_speech_message(self, word: str, single_suggestion: str | None = None) -> str:
+        parts = [
+            f'Misspelled word: "{word}".',
+            f"Spelling: {self._spell_word_for_speech(word)}.",
+        ]
+        if single_suggestion is not None:
+            parts.append(f'Only suggestion: "{single_suggestion}".')
+            parts.append(f"Suggestion spelling: {self._spell_word_for_speech(single_suggestion)}.")
+        return " ".join(parts)
+
+    def _spell_word_for_speech(self, word: str) -> str:
+        if not word:
+            return "empty"
+        spoken_letters: list[str] = []
+        for character in word:
+            if character == "-":
+                spoken_letters.append("dash")
+            elif character == "_":
+                spoken_letters.append("underscore")
+            elif character == "'":
+                spoken_letters.append("apostrophe")
+            elif character.isspace():
+                spoken_letters.append("space")
+            else:
+                spoken_letters.append(character.upper())
+        return ", ".join(spoken_letters)
+
+    def _speak_with_announcement_backend(self, message: str) -> None:
+        backend = getattr(self, "_announcement_engine", None)
+        if backend is not None:
+            backend_error = backend.announce(message)
+            if backend_error and backend_error != self._announcement_error_reported:
+                self._announcement_error_reported = backend_error
+                self._record_notification(backend_error, "accessibility")
+            if backend_error is None and backend.state().active_backend != "status_only":
+                return  # a real backend (prism / accessible_output2 / speech) already spoke
+        announce(message)
+
+    def open_misspelling_list(self) -> None:
+        dictionary = self._spell_dictionary()
+        misspellings = list_misspellings(
+            self.editor.GetValue(), dictionary, filename=getattr(self.document, "path", None)
+        )
+        if not misspellings:
+            self._set_status("No misspellings found")
+            return
+        nodes = self._build_misspelling_navigator_nodes(misspellings)
+        selected = self._show_tree_navigator(
+            title="Misspelling List",
+            root_label="Misspellings",
+            nodes=nodes,
+        )
+        if not isinstance(selected, Misspelling):
+            self._set_status("Misspelling list cancelled")
+            return
+        self._record_location_before_jump()
+        if self._extend_selection_mode and self._extend_selection_anchor is not None:
+            self._move_point(selected.start)
+        else:
+            self.editor.SetInsertionPoint(selected.start)
+            self.editor.SetSelection(selected.start, selected.end)
+        self.editor.SetFocus()
+        self._location_ring.record(selected.start)
+        self._set_status(f'Jumped to misspelling "{selected.word}"')
+
+    def open_misspelling_list_ranked(self) -> None:
+        """Kurzweil-1000-style "ranked spelling": most-frequent misspelling first.
+
+        Community feature request. Same dialog as List Misspellings, but
+        ordered by how often each word recurs rather than document position --
+        fixing a single OCR misread or repeated typo (e.g. "teh" for "the")
+        this way clears the bulk of a long list in a handful of steps.
+        """
+        dictionary = self._spell_dictionary()
+        misspellings = rank_misspellings_by_frequency(
+            list_misspellings(
+                self.editor.GetValue(), dictionary, filename=getattr(self.document, "path", None)
+            )
+        )
+        if not misspellings:
+            self._set_status("No misspellings found")
+            return
+        nodes = self._build_misspelling_navigator_nodes(misspellings, show_counts=True)
+        selected = self._show_tree_navigator(
+            title="Misspelling List (Ranked by Frequency)",
+            root_label="Misspellings, most frequent first",
+            nodes=nodes,
+        )
+        if not isinstance(selected, Misspelling):
+            self._set_status("Ranked misspelling list cancelled")
+            return
+        self._record_location_before_jump()
+        if self._extend_selection_mode and self._extend_selection_anchor is not None:
+            self._move_point(selected.start)
+        else:
+            self.editor.SetInsertionPoint(selected.start)
+            self.editor.SetSelection(selected.start, selected.end)
+        self.editor.SetFocus()
+        self._location_ring.record(selected.start)
+        self._set_status(f'Jumped to misspelling "{selected.word}"')
+
+    def _misspellings_behind_message(
+        self, text: str, cursor: int, dictionary: set[str], *, ahead: bool
+    ) -> str:
+        """The spoken "none in this direction" result for Ctrl+F7 / Ctrl+Shift+F7.
+
+        The sentence itself moved to :func:`quill.core.spellcheck.no_misspelling_message`
+        on 2026-09-16, so QUILL Lite could say it too: it had the bare "No further
+        misspellings" with no count, which reads as "your document is clean" when
+        seven are sitting behind the caret (bad.md S9).
+        """
+        from quill.core.spellcheck import no_misspelling_message
+
+        return no_misspelling_message(
+            text, cursor, dictionary, ahead=ahead, filename=getattr(self.document, "path", None)
+        )
+
+    def next_misspelling(self) -> None:
+        dictionary = self._spell_dictionary()
+        text = self.editor.GetValue()
+        cursor = self.editor.GetInsertionPoint()
+        item = self._first_unignored(text, cursor, dictionary, forward=True)
+        if item is None:
+            message = self._misspellings_behind_message(text, cursor, dictionary, ahead=True)
+            self._announce_result(message)
+            return
+        self._record_location_before_jump()
+        if self._extend_selection_mode and self._extend_selection_anchor is not None:
+            self._move_point(item.start)
+        else:
+            self.editor.SetInsertionPoint(item.start)
+            self.editor.SetSelection(item.start, item.end)
+        self.editor.SetFocus()
+        self._set_status(f'Next misspelling: "{item.word}"')
+        self._spell_after_landing(item.word)
+
+    def previous_misspelling(self) -> None:
+        dictionary = self._spell_dictionary()
+        text = self.editor.GetValue()
+        cursor = self.editor.GetInsertionPoint()
+        item = self._first_unignored(text, cursor, dictionary, forward=False)
+        if item is None:
+            message = self._misspellings_behind_message(text, cursor, dictionary, ahead=False)
+            self._announce_result(message)
+            return
+        self._record_location_before_jump()
+        if self._extend_selection_mode and self._extend_selection_anchor is not None:
+            self._move_point(item.start)
+        else:
+            self.editor.SetInsertionPoint(item.start)
+            self.editor.SetSelection(item.start, item.end)
+        self.editor.SetFocus()
+        self._set_status(f'Previous misspelling: "{item.word}"')
+        self._spell_after_landing(item.word)
+
+    def spell_check_word_at_cursor(self) -> None:
+        """Instantly check the word at (or nearest) the caret -- no full-document
+        review, no context menu. Mirrors the MS-Office-style "F7 on a focused
+        word" workflow: one keystroke, one word, a suggestion list, done.
+
+        If the word is spelled correctly, announces that and returns immediately
+        -- no dialog for the common case. If it's misspelled, offers the same
+        suggestions/Add/Ignore choices as the right-click context menu, just
+        reachable without a mouse or the Menu/Application key.
+        """
+        wx = self._wx
+        text = self.editor.GetValue()
+        caret = self.editor.GetInsertionPoint()
+        dictionary = self._spell_dictionary()
+        misspelling = misspelling_at_position(
+            text, caret, dictionary, filename=getattr(self.document, "path", None)
+        )
+        if misspelling is None:
+            sel_start, sel_end = self.editor.GetSelection()
+            if sel_end > sel_start:
+                word = text[sel_start:sel_end]
+                if not is_known_word(word, dictionary):
+                    misspelling = Misspelling(word=word, start=sel_start, end=sel_end)
+        if misspelling is None:
+            self._set_status("No misspelling at the cursor")
+            return
+
+        suggestions = suggest_words(misspelling.word, dictionary)
+        choices = list(suggestions) + ["Add to Dictionary", "Ignore"]
+        with wx.SingleChoiceDialog(
+            self.frame,
+            f'"{misspelling.word}" is not in the dictionary. Choose a correction:',
+            "Spell Check Word",
+            choices=choices,
+        ) as dialog:
+            if hasattr(dialog, "SetSelection"):
+                dialog.SetSelection(0)
+            apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+            if self._show_modal_dialog(dialog, "Spell Check Word") != wx.ID_OK:
+                self._set_status("Spell check word cancelled")
+                return
+            choice = dialog.GetStringSelection()
+
+        if choice == "Add to Dictionary":
+            self._add_word_to_dictionary_scope(misspelling.word, 0)
+            return
+        if choice == "Ignore":
+            self._add_word_to_dictionary_scope(misspelling.word, 1)
+            return
+        self.editor.Replace(misspelling.start, misspelling.end, choice)
+        self.document.set_text(self.editor.GetValue())
+        self._set_status(f'Replaced "{misspelling.word}" with "{choice}"')
+
+    def show_thesaurus(self) -> None:
+        """Open the thesaurus for the selected word or the word under the caret.
+
+        The shared command since 2026-10-02
+        (:meth:`quill.ui.word_tools_commands.WordToolsMixin.cmd_thesaurus`): it
+        finds the word you are *on* ("running" reaches "run"), offers every
+        sense with the replacements already inflected, and is the same picker
+        QUILL Lite opens. Kept under this name because the command registry,
+        the menu and the tutorials bind it.
+        """
+        self.cmd_thesaurus()
+
+    def _copy_text_to_clipboard(self, text: str) -> bool:
+        wx = self._wx
+        clipboard = wx.TheClipboard
+        if not clipboard.Open():
+            self._set_status("Clipboard is unavailable")
+            return False
+        try:
+            clipboard.SetData(wx.TextDataObject(text))
+            # Flush so the data survives if the app exits soon after.
+            try:
+                clipboard.Flush()
+            except Exception:
+                pass
+            return True
+        finally:
+            clipboard.Close()
+
+    def _spell_dictionary(self) -> set[str]:
+        """The words this document treats as correct, cached but not stale.
+
+        Reading and parsing the three JSON scope files on every keystroke --
+        which "spell check as you type" would do -- is wasteful, so the result
+        is cached. The key includes the personal dictionary's **revision**
+        (mtime and size), which is what makes a *shared* dictionary actually
+        shared: QUILL Lite writes into this same ``personal.json`` when the
+        listener has asked it to, and until 2026-09-17 a word taught there
+        stayed underlined here until QUILL was restarted (bad.md S10). The
+        check is one ``stat``; the re-read only happens when the file moved.
+        """
+        project_root = Path.cwd()
+        cache_key = (self.document.path, project_root, personal_dictionary_revision())
+        cached = getattr(self, "_spell_dictionary_cache", None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+        dictionary = load_combined_dictionary(self.document.path, project_root)
+        self._spell_dictionary_cache = (cache_key, dictionary)
+        return dictionary
+
+    def _invalidate_spell_dictionary_cache(self) -> None:
+        self._spell_dictionary_cache = None
+
+    #: Scope index -> (store name, what a listener is told it means). The
+    #: wording matters: "added to dictionary" does not say WHICH dictionary,
+    #: and three of them exist -- so the same sentence described a word taught
+    #: for one document and a word taught forever (bad.md S1, S10).
+    _DICTIONARY_SCOPES: tuple[tuple[str, str], ...] = (
+        ("personal", "your personal dictionary"),
+        ("document", "this document only"),
+        ("project", "this project"),
+    )
+
+    def _add_word_to_dictionary_scope(self, word: str, scope_index: int) -> None:
+        if not 0 <= scope_index < len(self._DICTIONARY_SCOPES):
+            return
+        store, where = self._DICTIONARY_SCOPES[scope_index]
+        if not add_word_to_scope(word, store, self.document.path, Path.cwd()):
+            # Nowhere to write it. The document and project dictionaries are
+            # files beside the document, so an unsaved buffer has neither --
+            # and this used to announce success anyway, leaving the word still
+            # underlined and the reason invisible (bad.md S3). The sentence
+            # names the way out, because there is one.
+            self._announce_result(
+                f'Cannot add "{word}" to {where} until the document is saved. '
+                "Save it, or add the word to your personal dictionary instead."
+            )
+            return
+        self._invalidate_spell_dictionary_cache()
+        self._announce_result(f'Added "{word}" to {where}')
+
+    def _word_at_caret_for_spelling(self) -> str:
+        """The word the caret is in or has just finished typing.
+
+        The retry one character back is the fix for a real defect: the caret
+        sits at the END of a word the instant you finish typing it, and a span
+        lookup that wants ``start <= pos < end`` answers "no word" there. The
+        context menus already retried; the keyboard commands did not, so the
+        same word was addressable with the mouse and not with the keyboard
+        (bad.md S5). A selection wins outright when there is one.
+        """
+        text = self.editor.GetValue()
+        if not text:
+            return ""
+        start, end = self.editor.GetSelection()
+        if end > start:
+            return text[start:end].strip()
+        caret = self.editor.GetInsertionPoint()
+        span_start, span_end = word_span(text, caret)
+        word = text[span_start:span_end].strip()
+        if not word and caret > 0:
+            span_start, span_end = word_span(text, caret - 1)
+            word = text[span_start:span_end].strip()
+        return word
+
+    def add_word_to_dictionary(self) -> None:
+        """Teach the dictionary the word at the caret. Ctrl+Alt+F9 in both editors.
+
+        QUILL could do this only from the context menu: no command, no key, no
+        palette entry, so a keyboard-only user had to open a menu to reach it
+        while QUILL Lite had it on Alt+F7 (bad.md 4.1, P0.3). It is deliberately
+        NOT on the F7 row -- that row is navigation, and the one command here
+        that writes to a stored dictionary should not sit where a spelling
+        habit can land on it by accident.
+        """
+        word = self._word_at_caret_for_spelling()
+        if not word:
+            self._announce_result("No word at the cursor")
+            return
+        if word.lower() in {entry.lower() for entry in self._spell_dictionary()}:
+            self._announce_result(f'"{word}" is already in the dictionary')
+            return
+        self._add_word_to_dictionary_scope(word, 0)

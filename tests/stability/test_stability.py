@@ -5,6 +5,7 @@ import logging
 import subprocess
 import threading
 import time
+import tracemalloc
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,7 +26,7 @@ from quill.stability.redaction import (
 from quill.stability.safe_mode import build_safe_mode_config, should_enable_safe_mode
 from quill.stability.safe_regex import RegexTimeoutError, safe_finditer
 from quill.stability.safe_subprocess import run_subprocess_safely
-from quill.stability.task_manager import CancelledError, TaskManager
+from quill.stability.task_manager import CancelledError, TaskManager, UiLifetimeToken
 from quill.stability.ui_responsiveness import wx_event_handler
 from quill.stability.wx_dispatch import CoalescedUiReporter, call_ui_safely
 
@@ -45,6 +46,47 @@ def test_call_ui_safely_schedules_through_callafter(monkeypatch) -> None:
     assert len(scheduled) == 1
     scheduled[0]()
     assert called == ["done"]
+
+
+def test_call_ui_safely_never_calls_wx_after_the_app_closed(monkeypatch, caplog) -> None:
+    def call_after(_callback):
+        raise AssertionError("wx.CallAfter must not be called without an app")
+
+    monkeypatch.setattr(
+        wx_dispatch_module, "wx", SimpleNamespace(CallAfter=call_after, GetApp=lambda: None)
+    )
+    called = []
+    with caplog.at_level(logging.INFO):
+        call_ui_safely(lambda: called.append(True))
+
+    assert not called
+    assert "wx.App has already closed" in caplog.text
+
+
+def test_task_result_survives_shutdown_without_scheduling_a_ui_callback(monkeypatch) -> None:
+    from quill.stability import task_manager as task_module
+
+    entered = threading.Event()
+    release = threading.Event()
+    scheduled = []
+    monkeypatch.setattr(task_module, "call_ui_safely", lambda callback: scheduled.append(callback))
+    manager = TaskManager(max_workers=1)
+
+    def worker(**_kwargs):
+        entered.set()
+        assert release.wait(2)
+        return 42
+
+    task = manager.submit("closing", worker, on_success=lambda *_args: None)
+    try:
+        assert entered.wait(2)
+        manager.shutdown(wait=False)
+        release.set()
+        assert task.future.result(2) == 42
+        assert scheduled == []
+    finally:
+        release.set()
+        manager.shutdown()
 
 
 def test_coalesced_ui_reporter_uses_latest_value(monkeypatch) -> None:
@@ -251,6 +293,97 @@ def test_task_manager_result_summary_cancelled() -> None:
         manager.shutdown()
 
 
+@pytest.mark.parametrize("fails", [False, True])
+@pytest.mark.parametrize("shutdown", [False, True])
+def test_task_callbacks_respect_lifetime_at_delivery(monkeypatch, fails, shutdown) -> None:
+    scheduled = []
+    delivered = []
+    monkeypatch.setattr(
+        wx_dispatch_module,
+        "wx",
+        SimpleNamespace(CallAfter=scheduled.append),
+    )
+    manager = TaskManager(max_workers=1)
+    lifetime = UiLifetimeToken()
+
+    def worker(*, progress_callback, **_kwargs):
+        progress_callback("reading")
+        if fails:
+            raise ValueError("failed")
+        return "ready"
+
+    try:
+        task = manager.submit(
+            "read",
+            worker,
+            ui_lifetime=lifetime,
+            on_progress=lambda *args: delivered.append(args),
+            on_success=lambda *args: delivered.append(args),
+            on_failure=lambda *args: delivered.append(args),
+        )
+        if fails:
+            with pytest.raises(ValueError, match="failed"):
+                task.future.result(timeout=2)
+        else:
+            assert task.future.result(timeout=2) == "ready"
+        assert len(scheduled) == 2
+        if shutdown:
+            manager.shutdown(wait=False)
+        else:
+            lifetime.invalidate()
+            lifetime.invalidate()
+        for callback in scheduled:
+            callback()
+        assert delivered == []
+        if not shutdown:
+            scheduled.clear()
+            replacement = manager.submit(
+                "replacement",
+                lambda **_kwargs: "new",
+                ui_lifetime=UiLifetimeToken(),
+                on_success=lambda *args: delivered.append(args),
+            )
+            assert replacement.future.result(timeout=2) == "new"
+            for callback in scheduled:
+                callback()
+            assert delivered == [(replacement.operation_id, "new")]
+    finally:
+        manager.shutdown()
+
+
+def test_task_running_at_shutdown_retains_result_without_ui_delivery(monkeypatch) -> None:
+    scheduled = []
+    delivered = []
+    started = threading.Event()
+    finish = threading.Event()
+    monkeypatch.setattr(wx_dispatch_module, "wx", SimpleNamespace(CallAfter=scheduled.append))
+    manager = TaskManager(max_workers=1)
+
+    def worker(*, progress_callback, **_kwargs):
+        started.set()
+        assert finish.wait(timeout=2)
+        progress_callback("finished")
+        return 42
+
+    try:
+        task = manager.submit(
+            "running",
+            worker,
+            on_progress=lambda *args: delivered.append(args),
+            on_success=lambda *args: delivered.append(args),
+        )
+        assert started.wait(timeout=2)
+        manager.shutdown(wait=False)
+        finish.set()
+        assert task.future.result(timeout=2) == 42
+        for callback in scheduled:
+            callback()
+        assert delivered == []
+    finally:
+        finish.set()
+        manager.shutdown()
+
+
 def test_run_subprocess_safely_times_out(monkeypatch) -> None:
     def fake_run(*_args, **_kwargs):
         raise subprocess.TimeoutExpired(cmd=["echo"], timeout=0.1)
@@ -301,16 +434,30 @@ def test_safe_regex_times_out(monkeypatch) -> None:
     )
 
     with pytest.raises(RegexTimeoutError):
-        safe_finditer("(a+)+$", "a" * 100)
+        safe_finditer("a+$", "a" * 100)  # the fake compile times out regardless
 
 
 def test_memory_snapshot_writes_file(tmp_path: Path) -> None:
+    # tracemalloc must be stopped again, or it stays on for the rest of the
+    # session: `start_memory_tracing` records a 25-frame traceback for *every
+    # allocation in the process*, which is ~50x on allocation-heavy code and
+    # grows the heap without bound. Left running, it does not fail this test --
+    # it fails whichever allocation-heavy test happens to run later, by pushing
+    # it past the 30s ceiling, and on Windows pytest-timeout's thread method
+    # then kills the whole session. That is a different victim every run
+    # (test_resume, test_family_keymap, GATE-PERF's 50 MB buffer), which is
+    # exactly why it read as flakiness rather than as one bug.
+    was_tracing = tracemalloc.is_tracing()
     start_memory_tracing()
-    path = tmp_path / "memory.txt"
-    write_memory_snapshot(path)
+    try:
+        path = tmp_path / "memory.txt"
+        write_memory_snapshot(path)
 
-    assert path.exists()
-    assert "QUILL memory snapshot" in path.read_text(encoding="utf-8")
+        assert path.exists()
+        assert "QUILL memory snapshot" in path.read_text(encoding="utf-8")
+    finally:
+        if not was_tracing:
+            tracemalloc.stop()
 
 
 def test_slow_wx_event_handler_logs_warning(caplog) -> None:
@@ -500,6 +647,38 @@ def test_format_args_for_log_empty_returns_no_args() -> None:
     assert format_args_for_log([]) == "(no args)"
 
 
+def test_format_args_for_log_redacts_security_cli_w_secret() -> None:
+    """#60/#73: the macOS ``security`` CLI passes the secret as ``-w <secret>``
+    in separate argv. ``-w`` has no secret-shaped keyword, and a short
+    non-hex secret slips past redact_command_arg's token regexes, so the
+    value following ``-w`` must be redacted explicitly before the generic
+    per-arg pass."""
+    secret = "sh0rt"  # short, non-hex -> would leak past the token regexes
+    args = [
+        "/usr/bin/security",
+        "add-generic-password",
+        "-a",
+        "quill",
+        "-s",
+        "api_key",
+        "-w",
+        secret,
+    ]
+    result = format_args_for_log(args)
+    assert "sh0rt" not in result
+    assert "[REDACTED]" in result
+    # basename + arg count preserved
+    assert result.startswith("security ")
+    assert "7 args" in result
+
+
+def test_format_args_for_log_leaves_trailing_w_alone() -> None:
+    """A ``-w`` with no value following it must not crash or mis-redact."""
+    assert format_args_for_log(["security", "add-generic-password", "-w"]) == (
+        "security add-generic-password -w — 2 args"
+    )
+
+
 def test_redact_text_for_bundle_drops_bearer_line_and_reports_stats() -> None:
     text = "normal log line\nBearer sk-LIVE-abcdef1234567890\nanother normal line\n"
     redacted, stats = redact_text_for_bundle_with_stats(text)
@@ -657,3 +836,36 @@ def test_watchdog_re_dumps_after_recovery_window() -> None:
     # Use a clear margin past the 0.05s window (not the exact boundary) so the
     # assertion does not depend on floating-point representability.
     assert watchdog._should_dump(age=0.12, now=base + 0.06, last_dump_time=base) is True
+
+
+def test_watchdog_warn_level_dump_is_one_shot_per_episode() -> None:
+    # A short-but-real stall (e.g. the ~7 s startup block in review.md) never
+    # reaches dump_after_seconds (15 s), so without a warn-level dump no thread
+    # stacks are captured. The warn dump must fire once when the stall crosses
+    # warn_dump_after_seconds and not again until the UI recovers.
+    from quill.stability.wx_heartbeat import HeartbeatState, WxHeartbeatWatchdog
+
+    watchdog = WxHeartbeatWatchdog(
+        HeartbeatState(),
+        dump_callback=lambda _m: None,
+        warn_after_seconds=5.0,
+        warn_dump_after_seconds=5.0,
+    )
+    # Below the threshold: no warn dump.
+    assert watchdog._should_warn_dump(age=3.0) is False
+    # Crosses the threshold, not yet dumped this episode: fire.
+    assert watchdog._should_warn_dump(age=6.9) is True
+    watchdog._warn_dumped_this_episode = True
+    # Already dumped this episode: suppressed even while still stalled.
+    assert watchdog._should_warn_dump(age=9.0) is False
+
+
+def test_watchdog_warn_level_dump_can_be_disabled() -> None:
+    from quill.stability.wx_heartbeat import HeartbeatState, WxHeartbeatWatchdog
+
+    watchdog = WxHeartbeatWatchdog(
+        HeartbeatState(),
+        dump_callback=lambda _m: None,
+        warn_dump_after_seconds=None,
+    )
+    assert watchdog._should_warn_dump(age=100.0) is False

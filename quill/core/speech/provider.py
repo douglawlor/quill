@@ -13,9 +13,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from quill.core.error_codes import CodedError
+
 # A progress callback receives a fraction in [0.0, 1.0] and a short, speakable
 # status message. Providers should call it sparingly (no per-token chatter).
 ProgressCallback = Callable[[float, str], None]
+
+
+def download_progress_percent(fraction: float) -> int:
+    """Clamp a 0.0-1.0 download fraction to a whole-number percent (0-100).
+
+    Download UIs use this to throttle progress updates to one per percent. A
+    chunk-frequent engine (Faster Whisper via huggingface_hub's snapshot_download
+    fires its progress callback per chunk -- thousands of times) would otherwise
+    flood the UI thread's marshalled updates and freeze, then crash, the app
+    (#748). Pure and unit-tested.
+    """
+    return int(max(0.0, min(1.0, fraction)) * 100)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,9 +49,21 @@ class SpeechModelInfo:
     # publish MD5 rather than SHA-256; providers verify whichever they pin.
     md5: str | None = None
     license_name: str | None = None
-    # Pinned Hugging Face commit SHA (Faster Whisper repos). whisper.cpp pins the
-    # revision in download_url instead. Empty = follow the default branch.
+    # Pinned Hugging Face commit SHA. Empty = follow the default branch.
     revision: str = ""
+    # Filename within the Hub repo (``download_url``) for single-file models
+    # fetched via ``huggingface_hub.hf_hub_download`` (whisper.cpp GGML models).
+    # Repo-snapshot models (Faster Whisper) leave this empty.
+    hf_filename: str = ""
+    # What this model can actually do, stated *before* download so the picker
+    # promises honestly (the same principle as Handy's GGUF-header capability
+    # probe, adapted: QUILL's catalog is its manifest of truth, so capabilities
+    # are declared here and rendered as plain text in Manage Speech Models).
+    # Known values: "language-detect", "streaming", "translate",
+    # "speaker-turns", "word-timestamps", "silence-safe" (a transducer that
+    # emits nothing for silent audio, where Whisper-family decoders can
+    # hallucinate text). An empty tuple simply renders no capability line.
+    capabilities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,8 +145,10 @@ class TranscriptionResult:
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
 
-class SpeechError(Exception):
+class SpeechError(CodedError):
     """Base class for speech-provider failures (clear, user-facing messages)."""
+
+    code = "QUILL-SPEECH-PROVIDER-FAILED"
 
 
 class SpeechCancelledError(SpeechError):

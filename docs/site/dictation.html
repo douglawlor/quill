@@ -1,0 +1,2388 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dictation in QUILL, QUILL Lite and QUILL Transcribe - the complete guide</title>
+  <meta name="description" content="Everything about dictating into QUILL, QUILL Lite and QUILL Transcribe: press Ctrl+F11, talk, pause. The speech recognition ships inside the programs, and unless you choose a cloud service with your own account, nothing you say leaves your computer and no recording is kept. Every key, every spoken command, every setting, every speech engine and model, which one to choose, and what to do when it mishears you.">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <span class="quill">QUILL</span>
+        <span class="tag">accessible software, built with you</span>
+      </a>
+      <nav class="site" aria-label="Primary">
+        <ul>
+          <li><a href="/dictation.html" aria-current="page">Dictation</a></li>
+          <li><a href="/dictation-evidence.html">Dictation: the evidence</a></li>
+          <li><a href="/index.html">QUILL home</a></li>
+          <li><a href="/quilllite.html">QUILL Lite</a></li>
+          <li><a href="/compare.html">Compare the two editors</a></li>
+          <li><a href="/docs/userguide.html">QUILL user guide</a></li>
+          <li><a href="/docs/quilllite-userguide.html">QUILL Lite user guide</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1" class="prose">
+    <div class="wrap">
+      <h1>Dictation in QUILL, QUILL Lite and QUILL Transcribe</h1>
+      <p class="lede">
+        Press <kbd>Ctrl+F11</kbd>, talk, and pause. Each time you pause, what you said is
+        written into the document at the cursor, a soft tone tells you it arrived, and the
+        words are read back so you know they are right. Then it keeps listening. The speech
+        recognition ships inside the programs: there is nothing to download, no account to
+        make, nothing you say leaves your computer, and no recording is kept anywhere.
+        Bigger models and cloud services are there if you want them, and only if you
+        choose them.
+      </p>
+      <p>
+        This page covers all of it: every key, every phrase dictation understands, every
+        setting, every speech engine and model and how to choose between them, and what
+        to do when it mishears you. It covers QUILL and QUILL Lite, and tells you wherever
+        they are different. QUILL Transcribe, which dictates into other programs, uses the
+        same engines, models, words and commands; its own guide covers its keys.
+      </p>
+
+      <nav class="cmp-jump" aria-labelledby="onpage-h">
+        <h2 id="onpage-h">On this page</h2>
+        <ul>
+          <li><a href="#start">Your first dictated sentence</a></li>
+          <li><a href="#hold">Holding Ctrl+F11 to talk</a></li>
+          <li><a href="#hear">What you hear</a></li>
+          <li><a href="#readback-marks">Hearing the punctuation in the read-back</a></li>
+          <li><a href="#two-kinds">The two kinds of dictation</a></li>
+          <li><a href="#keys">Every dictation key</a></li>
+          <li><a href="#engines">The speech engines</a></li>
+          <li><a href="#choose-engine">Choosing an engine</a></li>
+          <li><a href="#optional-models">Better accuracy: optional speech models</a></li>
+          <li><a href="#say">Everything you can say</a></li>
+          <li><a href="#correct">Correct that: choosing another guess</a></li>
+          <li><a href="#select-by-voice">Moving and selecting by voice</a></li>
+          <li><a href="#letters-symbols">Letters, numbers, symbols and Markdown</a></li>
+          <li><a href="#snippets-clips">Snippets and clips by voice</a></li>
+          <li><a href="#spanish">Dictating in Spanish</a></li>
+          <li><a href="#switch-language">Switching between English and Spanish</a></li>
+          <li><a href="#words">Teaching dictation your words</a></li>
+          <li><a href="#voice">Starting and stopping by voice</a></li>
+          <li><a href="#pauses">Longer pauses, and sentences that carry on</a></li>
+          <li><a href="#settings">Dictation Settings, every option</a></li>
+          <li><a href="#more-settings">More Dictation Settings, every option</a></li>
+          <li><a href="#status">Knowing what dictation is doing</a></li>
+          <li><a href="#dictation-status">Dictation Status: asking what it is doing</a></li>
+          <li><a href="#preview">Seeing the words while you speak</a></li>
+          <li><a href="#where">Words go where you started</a></li>
+          <li><a href="#boxes">Dictating into Find, Replace and the AI box</a></li>
+          <li><a href="#anywhere">Dictating into other programs with Quill Inkwell</a></li>
+          <li><a href="#transcribe-app">QUILL Transcribe, releasing 1 November 2026</a></li>
+          <li><a href="#talk-ai">Talking to the AI</a></li>
+          <li><a href="#openai">OpenAI dictation, with your own key</a></li>
+          <li><a href="#providers">Speech providers, with your own account</a></li>
+          <li><a href="#live-transcript">Live transcripts</a></li>
+          <li><a href="#transcribe">Transcribing an audio file</a></li>
+          <li><a href="#tidy">Tidy Dictated Text</a></li>
+          <li><a href="#instructions">My Dictation Instructions</a></li>
+          <li><a href="#context">Dictation context for each document</a></li>
+          <li><a href="#privacy">What leaves your computer</a></li>
+          <li><a href="#modest">On a modest computer</a></li>
+          <li><a href="#tips">Dictating well</a></li>
+          <li><a href="#trouble">If something goes wrong</a></li>
+          <li><a href="#which">Which product has which dictation</a></li>
+          <li><a href="#more">Downloads and further reading</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="start" tabindex="-1" class="focus-target">Your first dictated sentence</h2>
+      <p>
+        This works the same in QUILL and in QUILL Lite. Nothing needs setting up first, and
+        you do not need to say any punctuation. <strong>Before you start, the way to stop
+        is <kbd>Ctrl+F11</kbd> again, or saying "stop dictation", or
+        <kbd>Escape</kbd> to throw away the phrase being heard</strong>. It helps to know
+        that first if you cannot see whether the microphone is on.
+      </p>
+      <ol>
+        <li>Put the cursor where you want the words. If you select some text first, the
+          first phrase you say replaces it.</li>
+        <li>Press <kbd>Ctrl+F11</kbd>. The first time after opening the program it takes a
+          second or two while the speech engine loads. Then you hear two rising tones and
+          "Dictation on".</li>
+        <li>Say a sentence the way you would say it to a person, and pause.</li>
+        <li>A moment later the sentence is in the document, you hear one short soft tone,
+          and the words are read back to you.</li>
+        <li>Keep going. There is nothing to press between sentences.</li>
+        <li>When you are done, press <kbd>Ctrl+F11</kbd> again, or say "stop
+          dictation". You hear two falling tones and "Dictation off".</li>
+      </ol>
+      <p>
+        A phrase is written once you have been quiet for a little under a second, so a
+        breath in the middle of a sentence does not cut it in two. If a pause does split a
+        sentence and the next part starts with a word like <em>and</em>, <em>but</em>,
+        <em>which</em> or <em>to</em>, the full stop the pause put in is taken back out and
+        the sentence carries on.
+      </p>
+      <p>
+        Every phrase is one step for <kbd>Ctrl+Z</kbd>, punctuation and capitals included,
+        even a phrase that replaced a selection.
+      </p>
+
+      <h2 id="hold" tabindex="-1" class="focus-target">Holding Ctrl+F11 to talk</h2>
+      <p>
+        Press <kbd>Ctrl+F11</kbd> to start dictating and press it again to stop. That is all
+        most people ever need, and it is how dictation starts out.
+      </p>
+      <p>
+        If you prefer to hold the key while you talk, like the button on a walkie-talkie,
+        turn on <strong>Hold the dictation key to talk; a quick press still turns it on
+        and off</strong> in More Dictation Settings. Then:
+      </p>
+      <ol>
+        <li>Put the cursor where you want the words.</li>
+        <li>Press and hold <kbd>Ctrl+F11</kbd>. You hear the two rising tones and
+          "Dictation on" straight away.</li>
+        <li>Keep holding the keys, and say what you want to say.</li>
+        <li>Let go. Dictation writes your last phrase, then you hear the two falling tones
+          and "Dictation off".</li>
+      </ol>
+      <p>
+        With that turned on, a quick press still works just the same: dictation turns on
+        and stays on until you press <kbd>Ctrl+F11</kbd> again. Half a second or more is a
+        hold. Stopping never cuts you off: if you press or let go while you are still
+        finishing a sentence, dictation writes that phrase first.
+      </p>
+
+      <h2 id="hear" tabindex="-1" class="focus-target">What you hear</h2>
+      <p class="group-verdict">
+        Four moments, each with its own tone and its own words. Both halves can be changed,
+        and two of them can never be silenced.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>What you hear: the tone and the words for each moment.</caption>
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">Tones</th>
+              <th scope="col">Words</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Dictation starts</th><td>two rising tones</td><td>"Dictation on"</td></tr>
+            <tr><th scope="row">A phrase is written</th><td>one short, soft tone</td><td>the words that were written</td></tr>
+            <tr><th scope="row">Dictation stops</th><td>two falling tones</td><td>"Dictation off"</td></tr>
+            <tr><th scope="row">Something goes wrong</th><td>a low double tone</td><td>what happened, and what to do about it</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Every row can be changed in Dictation Settings, and every tone can be changed or
+        silenced in <strong>Tools, Sound Scheme</strong>. Two things are never silenced: a
+        failure is always spoken, and so is the answer to a spoken command, because both
+        answer a question.
+      </p>
+      <p>
+        The soft tone plays only once the words are really in the document, so hearing it
+        means they arrived. If you have the words read back, they follow a quarter of a
+        second after they are written, so your screen reader's own reaction to the new text
+        does not cut them off.
+      </p>
+      <p>
+        <strong>Use headphones if the read-back is on.</strong> Through speakers, the
+        microphone can hear the read-back and write it down a second time. With speakers,
+        set "After each phrase is written, give me" to a sound only.
+      </p>
+
+      <h3 id="is-it-listening" tabindex="-1" class="focus-target">How to tell it is listening, without sound and without sight</h3>
+      <p>
+        Every outcome above is also written down, so none of this depends on hearing a
+        tone. Two ways, and both reach a braille display. The <strong>status bar</strong>
+        has a Dictation part that says Off, Listening, Hearing you, Writing, Spelling or
+        Waiting for wake phrase, and <kbd>F6</kbd> moves focus there so you can read it
+        cell by cell. And <strong>Tools, Dictation, Dictation On</strong> is a check box in
+        the menu, so opening that menu announces it as checked or unchecked.
+      </p>
+      <p>
+        The same holds for failures: a failure is always spoken <em>and</em> written to the
+        status bar, whatever the sound settings say, and it is never reduced to a tone.
+        If you would rather have no tones at all, silence them in
+        <strong>Tools, Sound Scheme</strong> and nothing is lost.
+      </p>
+
+      <h2 id="readback-marks" tabindex="-1" class="focus-target">Hearing the punctuation in the read-back</h2>
+      <p>
+        When a phrase is read back to you, its punctuation is read too, using the same
+        names you would say to dictate it: "Hello comma world period". Quotes, question
+        marks and new paragraphs are said the same way: "open quote", "question mark",
+        "new paragraph". You hear them whatever your screen reader's punctuation level
+        is, so you know exactly what was written without stopping to check.
+      </p>
+      <p>
+        A few things stay quiet, because saying them would only get in the way: an
+        apostrophe or a hyphen inside a word, and the full stop or comma inside a number
+        such as 3.5 or 1,000. A web address is said the way you would dictate it, so
+        example.com is read as "example dot com". In Spanish you hear the Spanish names,
+        such as "coma" and "punto".
+      </p>
+      <p>
+        The status bar and a braille display show the real characters, as in "Dictated:
+        Hello, world." If you would rather hear just the words, uncheck <strong>Say
+        punctuation marks in the read-back</strong> in More Dictation Settings. It is
+        checked to begin with.
+      </p>
+
+      <h2 id="two-kinds" tabindex="-1" class="focus-target">The two kinds of dictation</h2>
+      <p>
+        QUILL has two, and they work quite differently. QUILL Lite has the first one.
+      </p>
+      <h3>Live Dictation: writes as you go</h3>
+      <p>
+        <kbd>Ctrl+F11</kbd>, in both products. Each phrase is written the moment you pause,
+        so you hear it land and can correct it by voice straight away. This is the one
+        described above and for the rest of this page unless it says otherwise. In QUILL it
+        is under <strong>Tools, Speech, Live Dictation</strong>; in QUILL Lite it is
+        <strong>Tools, Dictation</strong>.
+      </p>
+      <h3>Locked Dictation: records a passage, then writes it out</h3>
+      <p>
+        <kbd>Ctrl+F9</kbd>, <strong>QUILL only</strong>. Press it once and speak as long as
+        you like, across sentences and paragraphs; press it again and QUILL transcribes the
+        whole passage and inserts it as one undoable edit. It uses QUILL's offline speech
+        engines on this computer, so nothing is uploaded here either, and it needs no
+        speech model to start (<a href="#locked-engines">which engine Locked Dictation
+        uses</a>). Use it when you would rather talk without interruption
+        and read the result afterwards.
+      </p>
+      <ul>
+        <li>While recording, <kbd>Escape</kbd> stops and <em>keeps</em> what you said for
+          transcription; <kbd>Shift+Escape</kbd> cancels and discards it.</li>
+        <li>A session stops by itself after five minutes, and stops and preserves your audio
+          if QUILL loses focus.</li>
+        <li>Audio is saved to a recovery folder before transcription starts, so a crash
+          cannot lose a passage. <strong>Tools, Speech, Locked Dictation, Dictation History
+          and Review</strong> lists every recording whose transcript was never inserted, so
+          you can insert, copy or discard it. If anything is waiting at startup, QUILL says
+          so.</li>
+      </ul>
+      <h3>Dictate (Offline): a simple on and off switch</h3>
+      <p>
+        <strong>QUILL only</strong>, in <strong>Tools, Speech</strong>, on
+        <kbd>Ctrl+Shift+Grave, Shift+D</kbd>. Start
+        it, talk, stop it: QUILL transcribes in the background and inserts the text at the
+        cursor as one edit, with the word count in the status bar. It shares its engine and
+        microphone with Locked Dictation.
+      </p>
+      <p>
+        Live Dictation and Locked Dictation each remember their own microphone choice.
+      </p>
+
+      <h2 id="keys" tabindex="-1" class="focus-target">Every dictation key</h2>
+      <p>
+        These are the keys it starts with, and you can change any of them in QUILL Lite's
+        <strong>Keyboard Manager</strong> (<kbd>Ctrl+Alt+Shift+R</kbd>) or QUILL's
+        <strong>Settings, Keyboard</strong>. Each row starts with what you want to do,
+        then the key to press.
+      </p>
+
+      <h3 id="keys-shared" tabindex="-1" class="focus-target">Keys both products share</h3>
+      <p class="group-verdict">
+        These keys are the same in QUILL and QUILL Lite, so a key you learn in one works
+        in the other.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-keys">
+          <caption>Keys both products share: identical chords in QUILL and QUILL Lite.</caption>
+          <thead>
+            <tr>
+              <th scope="col">To do this</th>
+              <th scope="col">Press</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Start or stop dictation</th><td class="key"><kbd>Ctrl+F11</kbd></td><td>Press once to start and again to stop, or hold it to talk if you turn that on. Also works in the Find box, either Replace box, the AI pad's question box and the AI Conversation window's message box</td></tr>
+            <tr><th scope="row">Throw away the phrase being heard</th><td class="key"><kbd>Escape</kbd></td><td>Only while the status says "hearing you"; otherwise Escape does whatever it always did. While the AI's reply is being read, Escape listens at once</td></tr>
+            <tr><th scope="row">Open Dictation Settings</th><td class="key"><kbd>Alt+Shift+F6</kbd></td><td>Every option on this page lives there</td></tr>
+            <tr><th scope="row">See the last twenty phrases</th><td class="key"><kbd>Shift+F11</kbd></td><td>Insert Again writes one back as a single undo step; Copy puts it on the clipboard</td></tr>
+            <tr><th scope="row">Teach dictation your words</th><td class="key"><kbd>Alt+Shift+F10</kbd></td><td>Words, phrases and corrections, in a window</td></tr>
+            <tr><th scope="row">Turn a recording into text</th><td class="key"><kbd>Shift+F5</kbd></td><td>Transcribe a Recording, in the background with any speech model you have. Press it again to see how far it has got, or to stop it</td></tr>
+            <tr><th scope="row">Tidy dictated text with AI</th><td class="key"><kbd>Ctrl+F3</kbd></td><td>Needs a ChatGPT subscription or your own AI key (OpenAI or Google Gemini)</td></tr>
+            <tr><th scope="row">Take back the last phrase</th><td class="key"><kbd>Ctrl+Z</kbd></td><td>One phrase per press, whatever it replaced</td></tr>
+            <tr><th scope="row">Switch between English and Spanish</th><td class="key"><kbd>Ctrl+Shift+F11</kbd></td><td>Switch Dictation Language. Works while you are dictating, and the choice is kept for next time</td></tr>
+            <tr><th scope="row">Start or stop a live transcript</th><td class="key"><kbd>Ctrl+Alt+Shift+PageDown</kbd></td><td>Writes everything you say into a new document of its own</td></tr>
+            <tr><th scope="row">Describe this document for dictation</th><td class="key"><kbd>Ctrl+Alt+Shift+PageUp</kbd></td><td>Dictation Context for This Document, used by OpenAI dictation and Tidy Dictated Text</td></tr>
+            <tr><th scope="row">Hear what dictation is doing</th><td class="key"><kbd>Alt+F9</kbd></td><td>Dictation Status. Says it once and changes nothing</td></tr>
+            <tr><th scope="row">Give dictation a command</th><td class="key"><kbd>F11</kbd></td><td>Speak a Command. The next thing you say is a command, as if you had said the command word first. Press it twice for command mode</td></tr>
+            <tr><th scope="row">Review words before they go in</th><td class="key"><kbd>Shift+F4</kbd></td><td>Review Dictation. Takes the last phrase back out into a window where you can read it, change it and insert it once</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="keys-quill" tabindex="-1" class="focus-target">Keys only QUILL has</h3>
+      <p class="group-verdict">
+        Locked Dictation and the offline switch. QUILL Lite keeps things simple and has
+        Live Dictation only.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-keys">
+          <caption>Keys only QUILL has: its record-then-transcribe dictation.</caption>
+          <thead>
+            <tr>
+              <th scope="col">To do this</th>
+              <th scope="col">Press</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Start or finish Locked Dictation</th><td class="key"><kbd>Ctrl+F9</kbd></td><td>Records a whole passage, then transcribes and inserts it as one edit</td></tr>
+            <tr><th scope="row">Pause or resume the recording</th><td class="key"><kbd>Ctrl+Shift+F9</kbd></td><td>Nothing is lost while paused</td></tr>
+            <tr><th scope="row">Hear the current state</th><td class="key"><kbd>Alt+F9</kbd></td><td>While Locked Dictation is recording, speaks what it is doing. The rest of the time the same key is Dictation Status, as in QUILL Lite</td></tr>
+            <tr><th scope="row">Stop and keep what you said</th><td class="key"><kbd>Escape</kbd></td><td>While recording. The passage is still transcribed</td></tr>
+            <tr><th scope="row">Cancel and discard what you said</th><td class="key"><kbd>Shift+Escape</kbd></td><td>While recording. Nothing is transcribed and nothing is inserted</td></tr>
+            <tr><th scope="row">Dictate with the simple toggle</th><td><kbd>Ctrl+Shift+Grave, Shift+D</kbd></td><td>Dictate (Offline): start, talk, stop, and the text arrives at the cursor</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Ctrl+Shift+Grave, Shift+D</strong> is two presses, not five keys at once: press
+        the QUILL Key (Ctrl+Shift+Grave), let it go, then press Shift+D. QUILL Lite does not use
+        two-step keys like this. To see what else is different, read
+        <a href="/compare.html">how QUILL and QUILL Lite compare</a>.
+      </p>
+
+      <h2 id="engines" tabindex="-1" class="focus-target">The speech engines</h2>
+      <p class="group-verdict">
+        Choose the engine in Dictation Settings (<kbd>Alt+Shift+F6</kbd>), in the
+        <strong>Speech engine</strong> list. The same list is in QUILL, QUILL Lite and
+        QUILL Transcribe. Moonshine and Whisper ship inside all three, so they work with no
+        download and no connection. Models you download, and cloud services you set up
+        with your own account, join the list. Help with picking one is in
+        <a href="#choose-engine">Choosing an engine</a>.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>The speech engines: what each one is like, and when to choose it.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Engine</th>
+              <th scope="col">What it is like</th>
+              <th scope="col">Punctuates by itself</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Moonshine</th><td>The one it starts with, listed as "Moonshine (fast, punctuates for you)". By far the fastest: your text arrives about a fifth of a second after you pause, and in our tests with real recordings it used at most 584 MB of memory, so it suits a modest computer. English only; with the dictation language set to Spanish, the built-in Whisper is used instead<span class="qual">built in, Lightweight</span></td><td>Yes</td></tr>
+            <tr><th scope="row">Whisper</th><td>Listed as "Whisper (accurate, punctuates for you)". A little slower and a little bigger. Worth trying if Moonshine often mishears your voice or your microphone. English and Spanish<span class="qual">built in, Lightweight</span></td><td>Yes</td></tr>
+            <tr><th scope="row">Windows speech recognition</th><td>Windows' own recogniser. Needs nothing extra and can use any speech language installed in Windows, but mishears an untrained voice often. It keeps its own other guesses for "correct that"<span class="qual">say every mark yourself</span></td><td class="no">No</td></tr>
+            <tr><th scope="row">Windows voice typing</th><td>Hands over to the panel <kbd>Windows+H</kbd> opens. Windows does the recognising and the typing, so none of dictation's commands, tones, read-back or wake phrase apply<span class="qual">for people who already prefer it</span></td><td>Windows decides</td></tr>
+            <tr><th scope="row">A model you downloaded</th><td>Each one you download from Speech Models is listed with "(downloaded)" and its tier, such as Balanced or High accuracy. More accurate than the built-in two, for more work from the computer. It runs on this computer, and your speech stays on it<span class="qual"><a href="#optional-models">Better accuracy: optional speech models</a></span></td><td>Yes</td></tr>
+            <tr><th scope="row">OpenAI</th><td>Listed only once an OpenAI key is saved, and used only if you choose it and agree: your speech is sent to OpenAI. Very accurate, and can show your words as you speak<span class="qual"><a href="#openai">OpenAI dictation, with your own key</a></span></td><td>Yes</td></tr>
+            <tr><th scope="row">A speech provider</th><td>Twelve cloud services, such as Microsoft Azure AI Speech, Google Cloud Speech-to-Text, Amazon Transcribe and Deepgram, listed once you set one up with your own account. Your speech is sent to that company, and only after you agree<span class="qual"><a href="#providers">Speech providers, with your own account</a></span></td><td>Yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Every engine except Windows speech recognition puts in its own punctuation and
+        capitals, so with them you just talk.
+      </p>
+
+      <h3 id="locked-engines" tabindex="-1" class="focus-target">Which engine Locked Dictation uses, in QUILL</h3>
+      <p>
+        QUILL's Locked Dictation (<kbd>Ctrl+F9</kbd>), Dictate (Offline), Transcribe Audio
+        or Video (Offline), Generate Captions (Offline) and watch folders share a second set
+        of engines, also on this computer. You manage them in <strong>Tools, Speech, Speech
+        and Dictation...</strong> (<kbd>Alt+T</kbd>, <kbd>H</kbd>, <kbd>S</kbd>), which
+        opens Manage Speech Models on its "Dictation (Offline)" tab. To be walked through
+        it instead, choose <strong>Help, Download Optional Components...</strong>
+        (<kbd>Alt+H</kbd>, <kbd>D</kbd>) and the row <strong>Dictation (offline
+        speech)</strong>. There are three engines, in this order:
+      </p>
+      <ol>
+        <li><strong>Whisper.cpp</strong>, the recommended default: light and fast, and works
+          on any computer. The engine itself is small, about 8 MB, and downloads from
+          QUILL's own checked release the first time it is needed. Its models then download
+          in Manage Speech Models, from Tiny (75 MB) and Base (145 MB) to Small (465 MB),
+          the suggested starting point, and larger.</li>
+        <li><strong>QUILL speech models (Parakeet, Nemotron and more)</strong>: the very same
+          models as Live Dictation, QUILL Lite and QUILL Transcribe, in the same folder, so
+          a model you already downloaded is never downloaded twice. This one choice
+          replaced the separate Parakeet and Nemotron engines QUILL used to list.</li>
+        <li><strong>Faster Whisper</strong>: the most accurate, larger, and the only one that
+          can use a graphics card. It installs when you ask for it, where this copy of
+          QUILL can install it.</li>
+      </ol>
+      <p>
+        Which one QUILL uses: an engine you chose yourself always wins. Otherwise an
+        installed Parakeet is used, because when you are silent Whisper sometimes makes up
+        words, like a stray "thank you", and Parakeet only writes what it really hears.
+        Otherwise whisper.cpp, once it has a model. And until there is any model, the
+        built-in Moonshine is used, so <strong>Locked Dictation needs no model</strong>:
+        with whisper.cpp as the engine, the first press of <kbd>Ctrl+F9</kbd> only offers
+        the small whisper.cpp engine itself. Choose QUILL speech models as the engine and
+        nothing is downloaded at all; Dictate (Offline), transcription and captions then
+        work with nothing downloaded too, because the built-in Moonshine and Whisper count
+        as that engine's models. For the same recording and the same model,
+        Locked Dictation and Transcribe a Recording write the same text. If a recording has
+        no speech in it at all, QUILL tells you so instead of guessing.
+      </p>
+      <p>
+        Voice Command, Voice Conversation Mode and Listen for Hey QUILL have their own
+        <strong>Voice recognition engine</strong> setting: follow the main engine,
+        whisper.cpp (accurate), or Moonshine tiny (fast, light). Vosk is no longer a
+        dictation or voice engine; QUILL keeps it only for finding chapters in podcasts.
+      </p>
+
+      <h3 id="evidence" tabindex="-1" class="focus-target">How the default was chosen</h3>
+      <p>
+        <strong>The full, current evidence is on its own page:</strong>
+        <a href="/dictation-evidence.html">why dictation recommends what it does</a>, with
+        every model measured on real people's speech in October 2026, how we tested, how we
+        reasoned, and why your own results will differ. The table below is the first,
+        earlier comparison that chose the built-in default, kept for the record; its
+        figures came from a synthetic voice, which flatters every engine.
+      </p>
+      <p class="group-verdict">
+        We tried eight engines on ten everyday sentences each, on 25 September 2026. We
+        wanted one that keeps up with you on an older Windows 10 computer, puts in its own
+        punctuation, and is small enough to come inside the program.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>How the default was chosen: the measured comparison of eight engines.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Engine</th>
+              <th scope="col">Word errors</th>
+              <th scope="col">Punctuation, found and right</th>
+              <th scope="col">Seconds of computing per second of speech</th>
+              <th scope="col">Size shipped</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Windows speech, SAPI</th><td>9 per cent</td><td>none, and none</td><td>0.09</td><td>nothing to ship</td></tr>
+            <tr><th scope="row">Vosk small</th><td>4 per cent</td><td>none, and none</td><td>0.32</td><td>about 45 MB</td></tr>
+            <tr><th scope="row">Vosk small, plus a punctuation model</th><td>4 per cent</td><td>7 per cent, and 10 per cent</td><td>0.33</td><td>about 52 MB</td></tr>
+            <tr><th scope="row">Moonshine tiny, the default</th><td>2 per cent</td><td>93 per cent, and 87 per cent</td><td>0.04</td><td>about 124 MB</td></tr>
+            <tr><th scope="row">Moonshine base</th><td>2 per cent</td><td>50 per cent, and 88 per cent</td><td>0.06</td><td>about 287 MB</td></tr>
+            <tr><th scope="row">Whisper tiny English, the alternative</th><td>3 per cent</td><td>86 per cent, and 86 per cent</td><td>0.15</td><td>about 104 MB</td></tr>
+            <tr><th scope="row">Whisper base English</th><td>2 per cent</td><td>93 per cent, and 87 per cent</td><td>0.28</td><td>about 161 MB</td></tr>
+            <tr><th scope="row">Parakeet 3</th><td>2 per cent</td><td>93 per cent, and 87 per cent</td><td>0.21</td><td>about 670 MB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Anything under 1.0 in the speed column keeps up with you as you talk. Moonshine tiny
+        was the most accurate and by far the fastest, so it works well even on an older
+        computer. Whisper tiny is there for a voice or microphone that Moonshine struggles
+        with. Parakeet 3 is very good but five times the size, so it is an optional
+        download in Speech Models rather than something packed into every installer.
+        Vosk was dropped from dictation on 13 October 2026: it does not punctuate, knows
+        only English, and has had no new release since 2022.
+      </p>
+      <p>
+        <strong>One thing to keep in mind.</strong> For this test, Windows' own computer
+        voice read the sentences. That is easier to understand than a real person, so every
+        engine will make more mistakes with your voice than the table shows. Windows speech
+        recognition in particular does much worse with a real voice. Moonshine tiny is still
+        the default; the advice about which model to download now comes from tests with
+        real people's recordings, in <a href="#real-speech">Tested on real speech</a>.
+      </p>
+
+      <h2 id="choose-engine" tabindex="-1" class="focus-target">Choosing an engine</h2>
+      <p class="group-verdict">
+        The short answer: start with Moonshine, the one dictation starts with. Change only
+        if it often mishears you, and then try the engine that matches what matters most to
+        you.
+      </p>
+      <p>
+        Every choice is a trade. A bigger model makes fewer mistakes with accents, names,
+        fast speech and noisy rooms, but it needs more memory, takes longer to load, and
+        keeps your text waiting a little longer after you pause. A cloud service can be very
+        accurate on any computer, but your speech leaves it. This table puts each concern
+        next to the engines that answer it.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>Choosing an engine: what matters to you, and which engines suit it.</caption>
+          <thead>
+            <tr>
+              <th scope="col">What matters most</th>
+              <th scope="col">Choose</th>
+              <th scope="col">Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Keeping everything private</th><td>Moonshine, Whisper, Windows speech recognition, or any downloaded model</td><td>They run on this computer, and your speech never leaves it. OpenAI and the speech providers send it to a company</td></tr>
+            <tr><th scope="row">No internet</th><td>Moonshine, Whisper, Windows speech recognition, or a model you downloaded earlier</td><td>Once a model is downloaded it needs no connection again</td></tr>
+            <tr><th scope="row">The quickest response</th><td>Moonshine</td><td>Your text arrives about a fifth of a second after you pause, and it leaves your screen reader plenty of room</td></tr>
+            <tr><th scope="row">The fewest mistakes</th><td>NVIDIA Parakeet Unified 0.6B for English, on a computer with 8 GB of memory</td><td>In our tests with real recordings it got 3.2% of words wrong on audiobooks no model was trained on, the fewest of every model that keeps up on one processor thread</td></tr>
+            <tr><th scope="row">A modest computer, or a laptop on battery</th><td>Moonshine, or the built-in Whisper for Spanish</td><td>Both are built in and Lightweight, and on 4 GB of memory they are the models that fit beside a screen reader</td></tr>
+            <tr><th scope="row">Seeing words while you still speak</th><td>Nemotron, OpenAI, or a provider that works live</td><td>The words heard so far show in the status bar and on braille before you pause</td></tr>
+            <tr><th scope="row">Dictating in Spanish</th><td>NVIDIA Parakeet TDT 0.6B v3 on a computer with 8 GB of memory; the built-in Whisper on 4 GB</td><td>Moonshine knows only English. On real Spanish recordings Parakeet TDT v3 got 4.4% of words wrong on FLEURS Spanish and 7.3% on Spanish audiobooks, where the built-in Whisper tiny got 30.5% and 27.0%</td></tr>
+            <tr><th scope="row">Saying punctuation yourself, in any Windows language</th><td>Windows speech recognition</td><td>It does not punctuate by itself, and it uses any speech language installed in Windows</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="tiers" tabindex="-1" class="focus-target">What the tier labels mean</h3>
+      <p>
+        Every model in the Speech engine list and in Speech Models carries one of three
+        tiers, for example "Moonshine (fast, punctuates for you), Lightweight". The tier
+        says how hard the model works your computer, not how good it is.
+      </p>
+      <ul>
+        <li><strong>Lightweight</strong>: keeps up comfortably even on a modest computer.
+          The built-in Moonshine and Whisper, Moonshine base, the two Parakeet models
+          (NVIDIA Parakeet TDT 0.6B v3 and NVIDIA Parakeet Unified 0.6B) and Whisper
+          base.en.</li>
+        <li><strong>Balanced</strong>: more work than the built-in engines; keeps up on a
+          computer with four or more cores. Nemotron and Whisper base.</li>
+        <li><strong>High accuracy</strong>: the most work; needs a capable computer, or
+          patience. Whisper small and larger.</li>
+      </ul>
+      <p>
+        The tiers follow each model's real speed on real recordings, measured on
+        22 October 2026, so a tier can be Lightweight and still among the most
+        accurate: the two Parakeet models are both.
+      </p>
+
+      <h3 id="recommended" tabindex="-1" class="focus-target">A recommendation for this computer</h3>
+      <p>
+        You do not have to work this out alone. Dictation Settings shows a read-only line,
+        <strong>Recommended for this computer</strong>, with the model that suits your
+        memory and processor and the reason. In Speech Models you can say what matters most
+        and get a recommendation for that:
+      </p>
+      <ol>
+        <li>Open Dictation Settings (<kbd>Alt+Shift+F6</kbd>) and press <strong>Better
+          Accuracy: Speech Models...</strong> (<kbd>Alt+B</kbd>).</li>
+        <li>Move to <strong>What matters most</strong> (<kbd>Alt+W</kbd>) and choose a
+          balance, the quickest response, or the fewest mistakes.</li>
+        <li>Read the <strong>Recommendation</strong> box (<kbd>Alt+C</kbd>). It names a
+          model and says why.</li>
+        <li>Press <strong>Show Recommended Model</strong> (<kbd>Alt+S</kbd>) to move to that
+          model in the list, where Download and Use for Dictation are.</li>
+        <li>Once it is downloaded, <strong>Switch to Recommended Model</strong>
+          (<kbd>Alt+H</kbd>) chooses it and changes nothing else. Press OK in Dictation
+          Settings to keep it. If it is not on this computer yet, nothing is downloaded:
+          you are told, and taken to its row.</li>
+      </ol>
+      <p>
+        In QUILL Transcribe the same advice is in <strong>Model, Choose Model...</strong>
+        (<kbd>Ctrl+M</kbd>), as <strong>Recommended for this computer</strong>
+        (<kbd>Alt+C</kbd>), and in its Set Up window. A recommendation is only advice: it
+        never changes your engine. Its figures come from our tests with real people's
+        recordings (<a href="#real-speech">Tested on real speech</a>), on one computer, so
+        your own voice and computer may still differ. OpenAI and the speech providers are
+        never recommended, because they send your speech away.
+      </p>
+      <p>
+        It also counts memory. On a computer with 8 GB, dictation may use up to 1.6 GB
+        beside your screen reader, and never more than is free when you ask, less half a
+        gigabyte. So on a busy 8 GB computer the advice can name a lighter model than the
+        table below.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>What the recommendation says on some typical computers, for each choice of what matters most.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Computer</th>
+              <th scope="col">A balance</th>
+              <th scope="col">The quickest response</th>
+              <th scope="col">The fewest mistakes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">4 GB of memory, 2 cores</th><td>Moonshine</td><td>Moonshine</td><td>Moonshine base</td></tr>
+            <tr><th scope="row">8 GB of memory, 2 cores</th><td>Parakeet TDT 0.6B v3</td><td>Moonshine</td><td>Parakeet Unified 0.6B</td></tr>
+            <tr><th scope="row">8 GB of memory, 4 cores</th><td>Parakeet Unified 0.6B</td><td>Moonshine</td><td>Parakeet Unified 0.6B</td></tr>
+            <tr><th scope="row">16 GB of memory, 8 cores</th><td>Parakeet Unified 0.6B</td><td>Moonshine</td><td>Parakeet Unified 0.6B</td></tr>
+            <tr><th scope="row">4 GB of memory, 2 cores, dictating in Spanish</th><td>Whisper</td><td>Whisper</td><td>Whisper</td></tr>
+            <tr><th scope="row">8 GB of memory, 2 or 4 cores, dictating in Spanish</th><td>Parakeet TDT 0.6B v3</td><td>Whisper</td><td>Parakeet TDT 0.6B v3</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="switch-engine" tabindex="-1" class="focus-target">Switching engine, and a worked example</h3>
+      <p>
+        To switch, open Dictation Settings (<kbd>Alt+Shift+F6</kbd>), move to
+        <strong>Speech engine</strong>, arrow to the one you want, and press Enter for OK.
+        The next time you press <kbd>Ctrl+F11</kbd> it uses the new engine, and
+        <kbd>Alt+F9</kbd> tells you which one is in use. Choosing OpenAI or a speech
+        provider first asks whether your speech may be sent; No is the answer if you just
+        press Enter, and your engine stays as it was.
+      </p>
+      <p>
+        <strong>For example</strong>, Sam writes reports on an 8 GB laptop with four cores,
+        and Moonshine keeps getting the names of Sam's colleagues wrong.
+      </p>
+      <ol>
+        <li>Sam first adds the names to My Words and Phrases (<kbd>Alt+Shift+F10</kbd>).
+          That fixes most of them on any engine.</li>
+        <li>For the rest, Sam opens Speech Models (<kbd>Alt+Shift+F6</kbd>, then
+          <kbd>Alt+B</kbd>), sets What matters most to the fewest mistakes, and reads the
+          recommendation: NVIDIA Parakeet Unified 0.6B.</li>
+        <li><strong>Show Recommended Model</strong> moves to Parakeet Unified. Sam presses
+          <strong>Download...</strong>, reads the question naming its 663 MB size and
+          licence, and answers Yes.</li>
+        <li>When it is done, Sam presses <strong>Use for Dictation</strong>, then OK in
+          Dictation Settings, and dictates as before. Each phrase is written when Sam
+          pauses, as with Moonshine.</li>
+        <li>On battery, when the laptop is too busy to keep up, dictation switches to the
+          built-in engine for a while and says so; Sam's choice stays Parakeet Unified.</li>
+      </ol>
+
+      <h2 id="optional-models" tabindex="-1" class="focus-target">Better accuracy: optional speech models</h2>
+      <p class="group-verdict">
+        Dictation works the moment you install. If you want more accuracy, you can download a
+        larger model: the same local models VS Code offers, plus the rest of the Whisper
+        family. Free, optional, and run on your computer's processor; no graphics card needed.
+      </p>
+      <p>
+        Your voice never leaves the computer. The only thing that comes over the internet is
+        the model itself, once, when you ask for it. Nothing downloads on its own, and the
+        built-in Moonshine stays your engine until you choose another. QUILL, QUILL Lite,
+        QUILL Transcribe and Quill Inkwell all have this window, in the same place in
+        Dictation Settings, and share the models on one computer, so a model is downloaded
+        once. QUILL Transcribe also opens it from <strong>Model, Model Library...</strong>
+        (<kbd>Ctrl+L</kbd>). Every model runs on the processor; a graphics card is not needed
+        and changes nothing.
+      </p>
+      <h3>Downloading one</h3>
+      <ol>
+        <li>Open Dictation Settings (<kbd>Alt+Shift+F6</kbd>) and press <strong>Better
+          Accuracy: Speech Models...</strong> (<kbd>Alt+B</kbd>).</li>
+        <li>Arrow through the list. Each row says what the model is good for, its size, and
+          whether it is here. <strong>Details</strong> says what it is better at, its
+          languages, download and disk size, which computers suit it, whether this computer
+          should keep up, its published accuracy, its licence and where it will be
+          saved.</li>
+        <li>Press <strong>Download...</strong>. A question names where it comes from, its
+          size, its licence and the folder. Answer Yes. On a metered connection you are
+          asked about that first, and if the drive is too full you are told before
+          anything starts.</li>
+        <li>You hear "Downloading", then every quarter of the way. <strong>Cancel
+          Download</strong> stops it and keeps what arrived, so Download carries on later.
+          Every file is checked against a recorded checksum before it is used.</li>
+        <li>Press <strong>Use for Dictation</strong>, then OK in Dictation Settings. Or choose
+          it in the Speech engine list, where downloaded models show "(downloaded)".</li>
+      </ol>
+      <p>
+        <strong>Where they go:</strong> <code>%LOCALAPPDATA%\QuillVille\Dictation\models</code>,
+        one folder for every program. In a portable copy, models are saved inside the portable
+        folder, so everything travels together. <strong>Remove</strong> in the same window
+        frees the space and says how much. When you switch away from a downloaded model and
+        press OK, a question offers to delete the old one to free its space, and says that
+        QUILL, QUILL Lite and QUILL Transcribe share its files; No is the answer if you just
+        press Enter. It is not asked while dictation is running. If a downloaded model goes
+        missing, dictation says so in one sentence
+        and carries on with the built-in engine; it never switches silently.
+      </p>
+      <p>
+        <strong>Will my computer keep up?</strong> When the window opens it spends about two
+        seconds timing the built-in Moonshine, then tells you for each model whether this
+        computer should keep up comfortably, keep up but leave your screen reader less room,
+        or "may lag behind your speech on this computer". You can still choose any of them.
+      </p>
+      <p>
+        <strong>Words appear when you pause</strong> with every downloaded model except
+        Nemotron. Nemotron recognises while you speak, so the words heard so far show in the
+        status bar and on braille as you talk (<a href="#preview">Seeing the words while you
+        speak</a>), and each phrase is written when you pause.
+      </p>
+
+      <h3 id="model-list" tabindex="-1" class="focus-target">The models, in our suggested order</h3>
+      <p>The order is our suggestion: the models that did best on real speech first, then the rest of Whisper, smallest first.</p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>The optional speech models: what each is good for, its download size, languages and tier.</caption>
+          <thead>
+            <tr><th scope="col">Model</th><th scope="col">Good for</th><th scope="col">Download</th><th scope="col">Languages</th><th scope="col">Tier</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">NVIDIA Parakeet Unified 0.6B</th><td>The fewest mistakes in English on real speech: 3.2% of words wrong on audiobooks no model was trained on. Recommended for English on 8 GB with four cores</td><td>663 MB</td><td>English</td><td>Lightweight</td></tr>
+            <tr><th scope="row">NVIDIA Parakeet TDT 0.6B v3</th><td>The fewest mistakes in Spanish on real speech, and very good in English. Recommended for Spanish on 8 GB, and for English on 8 GB with two cores</td><td>670 MB</td><td>English, Spanish</td><td>Lightweight</td></tr>
+            <tr><th scope="row">NVIDIA Nemotron 3.5 ASR Streaming 0.6B</th><td>Shows your words while you speak; VS Code's default</td><td>682 MB</td><td>English, Spanish</td><td>Balanced</td></tr>
+            <tr><th scope="row">Moonshine base</th><td>A light step up from the built-in Moonshine, now fixed so it hears long phrases</td><td>141 MB</td><td>English</td><td>Lightweight</td></tr>
+            <tr><th scope="row">Whisper base.en</th><td>Light and quick, a little better in English than base, and good on varied voices</td><td>161 MB</td><td>English</td><td>Lightweight</td></tr>
+            <tr><th scope="row">Whisper tiny</th><td>Built in already. The lightest Whisper, with the weakest accuracy</td><td>built in</td><td>English, Spanish</td><td>Lightweight</td></tr>
+            <tr><th scope="row">Whisper base</th><td>A VS Code alternative: moderate</td><td>161 MB</td><td>English, Spanish</td><td>Balanced</td></tr>
+            <tr><th scope="row">Whisper small</th><td>A VS Code alternative: good, in many languages; needs two processor threads</td><td>375 MB</td><td>English, Spanish</td><td>High accuracy</td></tr>
+            <tr><th scope="row">Whisper medium</th><td>Best for accuracy when you can wait</td><td>946 MB</td><td>English, Spanish</td><td>High accuracy</td></tr>
+            <tr><th scope="row">Whisper large-v3-turbo</th><td>Large-v3 quality, much faster than large-v3</td><td>1.0 GB</td><td>English, Spanish</td><td>High accuracy</td></tr>
+            <tr><th scope="row">Whisper large-v3</th><td>The most accurate Whisper; very slow on most computers</td><td>1.8 GB</td><td>English, Spanish</td><td>High accuracy</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Five English-only models were removed in this release</strong>: Whisper
+        small.en, Distil-Whisper small.en, Distil-Whisper medium.en, Whisper medium.en and
+        Distil-Whisper large-v3. On real recordings, Parakeet Unified got 3.2% of words
+        wrong on the held-out audiobooks, against 3.6% to 6.3% for these five, and ran
+        faster on one thread, in the same or a smaller memory tier. Whisper base.en and every
+        many-language Whisper stay.
+      </p>
+      <p>
+        If you were using one, dictation moves when you update: to Parakeet Unified if it
+        is already downloaded, otherwise to the built-in model. Nothing is downloaded. The
+        next time dictation starts it says one sentence, once across every QuillVille
+        program, for example "Whisper small.en was removed in this release. Dictation now
+        uses Parakeet Unified, which you already have." or "Whisper small.en was removed
+        in this release, so dictation uses the built-in model. Parakeet Unified, in the
+        model list, is more accurate." To choose Parakeet Unified, find it in Speech
+        Models, then Download and Use for Dictation.
+      </p>
+      <p>
+        Your downloaded files are not deleted. They stay in
+        <code>%LOCALAPPDATA%\QuillVille\Dictation\models</code> (in a portable copy,
+        <code>data\dictation\models</code> inside the portable folder), in folders named
+        whisper-small.en-int8, whisper-distil-small.en-int8, whisper-medium.en-int8,
+        whisper-distil-medium.en-int8 and whisper-distil-large-v3-int8. Delete the folder
+        to free the space.
+      </p>
+      <p>
+        <strong>English only, or many languages?</strong> Whisper base.en knows only
+        English and is a little more accurate in English than Whisper base. The many-language ones also dictate Spanish.
+      </p>
+
+      <h3 id="real-speech" tabindex="-1" class="focus-target">Tested on real speech</h3>
+      <p class="group-verdict">
+        The advice in QUILL, QUILL Lite and QUILL Transcribe comes from tests with
+        recordings of real people, run on 22 October 2026. Before that it rested on ten
+        recordings of a computer voice, which flattered every engine.
+      </p>
+      <p>
+        Each model heard public-domain audiobooks catalogued after every model's training
+        cutoff, so no model can have learned them, plus Google's FLEURS read sentences and
+        the LibriSpeech audiobook test sets. It heard them one phrase at a time on one
+        processor thread, the way dictation does, leaving the rest of the computer for the
+        screen reader. Decisions lean on the held-out audiobooks, because some models may
+        have trained on the public sets.
+      </p>
+      <p>
+        In the tables, "words wrong" is the percentage of words a model got wrong; lower is
+        better. "Speed per thread" is seconds of computing per second of speech on one
+        thread, and dictation's budget is 0.25. "Peak memory" is the most memory the model
+        used on any set. "Not run" means the model was not tested on that set. It was one
+        computer on one day, and other work was running during some sets, so the speeds
+        vary a little.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>English on real speech: percent of words wrong (lower is better), speed per thread (0.25 is dictation's budget), the most memory used, and what was decided.</caption>
+          <thead>
+            <tr><th scope="col">Model</th><th scope="col">Held-out audiobooks</th><th scope="col">FLEURS</th><th scope="col">LibriSpeech clean</th><th scope="col">LibriSpeech other</th><th scope="col">Speed per thread</th><th scope="col">Peak memory</th><th scope="col">Decision</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">NVIDIA Parakeet Unified 0.6B</th><td>3.2%</td><td>6.3%</td><td>1.8%</td><td>3.2%</td><td>0.21</td><td>1.2 GB</td><td><strong>Recommended</strong> on 8 GB with four cores</td></tr>
+            <tr><th scope="row">Whisper medium.en</th><td>3.6%</td><td>not run</td><td>not run</td><td>not run</td><td>1.55</td><td>3.0 GB</td><td>Removed</td></tr>
+            <tr><th scope="row">NVIDIA Parakeet TDT 0.6B v3</th><td>3.8%</td><td>9.0%</td><td>2.5%</td><td>5.2%</td><td>0.11</td><td>1.1 GB</td><td>Kept; recommended on 8 GB with two cores</td></tr>
+            <tr><th scope="row">Whisper small.en</th><td>4.3%</td><td>6.3%</td><td>3.4%</td><td>7.8%</td><td>0.43</td><td>1.4 GB</td><td>Removed</td></tr>
+            <tr><th scope="row">Distil-Whisper large-v3</th><td>4.5%</td><td>not run</td><td>not run</td><td>not run</td><td>0.82</td><td>2.0 GB</td><td>Removed</td></tr>
+            <tr><th scope="row">Whisper small</th><td>4.7%</td><td>not run</td><td>4.2%</td><td>8.5%</td><td>0.55</td><td>1.4 GB</td><td>Kept; many languages, needs two threads</td></tr>
+            <tr><th scope="row">NVIDIA Nemotron 3.5 Streaming 0.6B</th><td>5.3%</td><td>13.7%</td><td>3.7%</td><td>7.3%</td><td>0.37</td><td>1.5 GB</td><td>Kept; streams words while you speak</td></tr>
+            <tr><th scope="row">Moonshine base</th><td>5.9%</td><td>15.1%</td><td>4.8%</td><td>10.7%</td><td>0.05</td><td>378 MB</td><td>Kept; fixed for long phrases</td></tr>
+            <tr><th scope="row">Whisper base.en</th><td>5.9%</td><td>7.4%</td><td>5.6%</td><td>11.6%</td><td>0.13</td><td>820 MB</td><td>Kept; light, good on varied voices</td></tr>
+            <tr><th scope="row">Distil-Whisper small.en</th><td>5.9%</td><td>7.6%</td><td>4.6%</td><td>9.2%</td><td>0.22</td><td>1.0 GB</td><td>Removed</td></tr>
+            <tr><th scope="row">Distil-Whisper medium.en</th><td>6.3%</td><td>not run</td><td>4.2%</td><td>not run</td><td>0.47</td><td>1.6 GB</td><td>Removed</td></tr>
+            <tr><th scope="row">Moonshine tiny (built in)</th><td>6.5%</td><td>13.2%</td><td>5.0%</td><td>13.3%</td><td>0.06</td><td>584 MB</td><td>Kept; the default, and the pick on 4 GB</td></tr>
+            <tr><th scope="row">Whisper base</th><td>7.4%</td><td>10.8%</td><td>not run</td><td>not run</td><td>0.22</td><td>821 MB</td><td>Kept; many languages</td></tr>
+            <tr><th scope="row">Whisper tiny (built in)</th><td>8.3%</td><td>11.7%</td><td>6.7%</td><td>13.9%</td><td>0.07</td><td>521 MB</td><td>Kept; built in</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>Spanish on real speech: percent of words wrong (lower is better), speed per thread, the most memory used, and what was decided.</caption>
+          <thead>
+            <tr><th scope="col">Model</th><th scope="col">FLEURS Spanish</th><th scope="col">Held-out Spanish audiobooks</th><th scope="col">Speed per thread</th><th scope="col">Peak memory</th><th scope="col">Decision</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">NVIDIA Parakeet TDT 0.6B v3</th><td>4.4%</td><td>7.3%</td><td>0.12</td><td>1.1 GB</td><td><strong>Recommended</strong> on 8 GB</td></tr>
+            <tr><th scope="row">Whisper small</th><td>6.0%</td><td>7.8%</td><td>0.57</td><td>1.4 GB</td><td>Kept; needs two threads</td></tr>
+            <tr><th scope="row">NVIDIA Nemotron 3.5 Streaming 0.6B</th><td>6.4%</td><td>8.0%</td><td>0.50</td><td>1.5 GB</td><td>Kept</td></tr>
+            <tr><th scope="row">Whisper base</th><td>12.6%</td><td>16.1%</td><td>0.18</td><td>821 MB</td><td>Kept; lighter</td></tr>
+            <tr><th scope="row">Whisper tiny (built in)</th><td>30.5%</td><td>27.0%</td><td>0.10</td><td>521 MB</td><td>Kept; built in, the pick on 4 GB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Moonshine base used to write nothing at all for a phrase longer than about eight and
+        a half seconds. It now hears long phrases in pieces, and scored 5.9% on the
+        held-out audiobooks. The pieces overlap by half a second, so a word that falls
+        where two pieces meet is not lost. Whisper medium and Whisper large-v3-turbo were too slow to test
+        again, and a real 4 GB computer with a screen reader running still needs testing by
+        a person.
+      </p>
+      <p>
+        <a href="/docs/dictation-real-speech-benchmark-2026-10-22.html">The full record of the real-speech tests, 22 October 2026</a>
+        lists every recording set and its licence, the computer, the limits, and the data
+        behind each row.
+      </p>
+
+      <h3 id="model-accuracy" tabindex="-1" class="focus-target">How accurate they are</h3>
+      <p>
+        These are the figures each model's makers publish. A word error rate is the share of
+        words a model gets wrong on a recorded test set; lower is better. Test sets differ, so
+        compare numbers only within one line.
+      </p>
+      <ul>
+        <li><strong>Nemotron 3.5 ASR Streaming:</strong> 7.91 per cent on FLEURS English and 4.11
+          per cent on FLEURS Spanish, at the chunk size this download uses (<a href="https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b">NVIDIA's model card</a>).</li>
+        <li><strong>Parakeet Unified:</strong> 1.63 per cent on LibriSpeech test-clean, 3.11 on test-other (<a href="https://huggingface.co/nvidia/parakeet-unified-en-0.6b">model card</a>).</li>
+        <li><strong>Parakeet TDT v3:</strong> 4.85 per cent on FLEURS English, 3.45 on FLEURS Spanish (<a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">model card</a>).</li>
+        <li><strong>Whisper</strong> on LibriSpeech test-clean: tiny 7.6, base 5.0, small 3.4, medium 2.9 per cent; tiny.en 5.6, base.en 4.2. On Spanish (Common Voice 9): tiny 30.3, base 19.6, small 10.3, medium 6.9 (<a href="https://arxiv.org/abs/2212.04356">OpenAI's Whisper paper, Appendix D</a>).</li>
+        <li><strong>Whisper large-v3</strong>, average over short recordings the model was not trained on: 8.4 per cent (<a href="https://huggingface.co/distil-whisper/distil-small.en">Distil-Whisper model card</a>). OpenAI publishes no figure for large-v3-turbo; it says turbo is much faster than large-v3 with a small drop in quality.</li>
+        <li><strong>Moonshine:</strong> base 10.07 per cent against tiny's 12.66, averaged over the Open ASR Leaderboard's English sets (<a href="https://github.com/moonshine-ai/moonshine">Moonshine AI</a>).</li>
+      </ul>
+      <p>
+        In plain words: the bigger models cope better with accents, fast speech, noisy rooms,
+        names and long sentences; every one puts in punctuation and capitals; and for Spanish
+        any many-language model beats the built-in tiny by a wide margin.
+      </p>
+      <p>
+        <strong>What we measured ourselves</strong> is in
+        <a href="#real-speech">Tested on real speech</a>: recordings of real people, one
+        processor thread, and the most memory each model used. Dictation's budget is 0.25
+        seconds of computing per second of speech on one thread, so your screen reader
+        always has room. <strong>The built-in model is still the better choice</strong> on
+        a 4 GB or older computer, on battery, or when your screen reader must never slow
+        down.
+      </p>
+
+      <h3 id="nemotron-or-parakeet" tabindex="-1" class="focus-target">Nemotron or Parakeet: which should I try?</h3>
+      <p>
+        Both are NVIDIA models of about 0.6 billion parameters, both are free, and both run
+        here on the processor alone. The difference is when they listen.
+      </p>
+      <ul>
+        <li><strong>Nemotron 3.5 ASR Streaming</strong> is built for live dictation: it
+          recognises while you speak, in short slices, for low delay, and writes punctuation
+          and capitals itself, in English, Spanish and many other languages. Its words appear
+          in the status bar and on braille while you talk (<a href="#preview">Seeing the
+          words while you speak</a>), and each phrase is written when you pause. It decides
+          whether a sentence was a question once it hears the next one, so a full stop it
+          wrote can become a question mark a moment later. About 682 MB.</li>
+        <li><strong>Parakeet</strong> recognises each finished phrase after you pause. Nothing
+          appears until you stop, but having the whole phrase can give slightly more accurate
+          final text in some conditions, question marks included.
+          <strong>Parakeet TDT 0.6B v3</strong> knows English, Spanish and 23 other European
+          languages (670 MB). <strong>Parakeet Unified 0.6B</strong> is newer and English
+          only; NVIDIA trained it to work both while you speak and on a finished phrase, and
+          QUILL uses it on the finished phrase (663 MB).</li>
+      </ul>
+      <p>On real recordings, on one thread, Parakeet Unified needed 0.21 seconds of computing per second of speech, Parakeet TDT 0.11 and Nemotron 0.37; at most they used 1.2 GB, 1.1 GB and 1.5 GB of memory. Parakeet Unified got 3.2% of words wrong on the held-out audiobooks, Parakeet TDT 3.8% and Nemotron 5.3%.</p>
+      <p><strong>Rule of thumb:</strong> for the fewest mistakes, try Parakeet: Parakeet Unified for English, Parakeet TDT 0.6B v3 for Spanish. If seeing your words while you still speak matters more, try Nemotron.</p>
+
+      <h3 id="which-is-better-for-you" tabindex="-1" class="focus-target">How to tell which is more accurate for you</h3>
+      <ol>
+        <li>Download one model, choose it, and dictate as you normally do for a day.</li>
+        <li>Note each phrase that comes out wrong. Recent Phrases (<kbd>Shift+F11</kbd>) shows what was written.</li>
+        <li>Switch to another model in the Speech engine list and do the same.</li>
+        <li>Keep the one that made fewer mistakes, and remove the other.</li>
+      </ol>
+      <p>
+        For an exact answer, QUILL's benchmark measures any model on your own recordings: ten
+        16 kHz mono WAV files and a <code>transcripts.txt</code> of what you said, then
+        <code>python scripts/dictbench.py folder --model nemotron</code> in a copy of QUILL's
+        source. It reports the share of words wrong, the marks written, the speed, the memory
+        and the load time.
+      </p>
+
+      <h2 id="say" tabindex="-1" class="focus-target">Everything you can say</h2>
+    <!-- dictation-vocabulary:start -->
+      <p>There are 78 punctuation marks and layout phrases, and 54 spoken commands. This list comes straight from dictation itself, so it is always complete. While you are dictating, say "what can I say" to hear the same list in a window.</p>
+      <h3 id="v-marks" tabindex="-1" class="focus-target">What you can say, and what it writes</h3>
+      <p>Punctuation, brackets, symbols and layout. Each table lists the words to say and what appears in your document.</p>
+      <h4 id="v-punctuation" tabindex="-1" class="focus-target">Punctuation</h4>
+      <p class="group-verdict">Say any of these anywhere in a phrase. Spaces go where they belong: none before a comma, one after a full stop.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Punctuation: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">period</th><td>a full stop <code class="glyph">.</code></td></tr>
+            <tr><th scope="row">full stop</th><td>a full stop <code class="glyph">.</code></td></tr>
+            <tr><th scope="row">comma</th><td>a comma <code class="glyph">,</code></td></tr>
+            <tr><th scope="row">question mark</th><td>a question mark <code class="glyph">?</code></td></tr>
+            <tr><th scope="row">exclamation point</th><td>an exclamation mark <code class="glyph">!</code></td></tr>
+            <tr><th scope="row">exclamation mark</th><td>an exclamation mark <code class="glyph">!</code></td></tr>
+            <tr><th scope="row">colon</th><td>a colon <code class="glyph">:</code></td></tr>
+            <tr><th scope="row">semicolon</th><td>a semicolon <code class="glyph">;</code></td></tr>
+            <tr><th scope="row">ellipsis</th><td>three dots, an ellipsis <code class="glyph">...</code></td></tr>
+            <tr><th scope="row">open quote</th><td>a double quotation mark <code class="glyph">&quot;</code></td></tr>
+            <tr><th scope="row">begin quote</th><td>a double quotation mark <code class="glyph">&quot;</code></td></tr>
+            <tr><th scope="row">close quote</th><td>a double quotation mark <code class="glyph">&quot;</code></td></tr>
+            <tr><th scope="row">end quote</th><td>a double quotation mark <code class="glyph">&quot;</code></td></tr>
+            <tr><th scope="row">open single quote</th><td>a single quotation mark, also the apostrophe <code class="glyph">&#x27;</code></td></tr>
+            <tr><th scope="row">close single quote</th><td>a single quotation mark, also the apostrophe <code class="glyph">&#x27;</code></td></tr>
+            <tr><th scope="row">apostrophe</th><td>a single quotation mark, also the apostrophe <code class="glyph">&#x27;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-brackets" tabindex="-1" class="focus-target">Brackets</h4>
+      <p class="group-verdict">Both halves are separate phrases, so you can say one without the other.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Brackets: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">open parenthesis</th><td>an opening round bracket <code class="glyph">(</code></td></tr>
+            <tr><th scope="row">open paren</th><td>an opening round bracket <code class="glyph">(</code></td></tr>
+            <tr><th scope="row">left parenthesis</th><td>an opening round bracket <code class="glyph">(</code></td></tr>
+            <tr><th scope="row">close parenthesis</th><td>a closing round bracket <code class="glyph">)</code></td></tr>
+            <tr><th scope="row">close paren</th><td>a closing round bracket <code class="glyph">)</code></td></tr>
+            <tr><th scope="row">right parenthesis</th><td>a closing round bracket <code class="glyph">)</code></td></tr>
+            <tr><th scope="row">open bracket</th><td>an opening square bracket <code class="glyph">[</code></td></tr>
+            <tr><th scope="row">left bracket</th><td>an opening square bracket <code class="glyph">[</code></td></tr>
+            <tr><th scope="row">close bracket</th><td>a closing square bracket <code class="glyph">]</code></td></tr>
+            <tr><th scope="row">right bracket</th><td>a closing square bracket <code class="glyph">]</code></td></tr>
+            <tr><th scope="row">open brace</th><td>an opening curly brace <code class="glyph">{</code></td></tr>
+            <tr><th scope="row">close brace</th><td>a closing curly brace <code class="glyph">}</code></td></tr>
+            <tr><th scope="row">open angle bracket</th><td>an opening angle bracket, the less-than sign <code class="glyph">&lt;</code></td></tr>
+            <tr><th scope="row">close angle bracket</th><td>a closing angle bracket, the greater-than sign <code class="glyph">&gt;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-dashes-and-joining" tabindex="-1" class="focus-target">Dashes and joining</h4>
+      <p class="group-verdict">What &quot;dash&quot; writes is up to you, in Dictation Settings. This row shows what it writes until you change it.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Dashes and joining: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">hyphen</th><td>a hyphen <code class="glyph">-</code></td></tr>
+            <tr><th scope="row">dash</th><td>a dash, as chosen in Dictation Settings <code class="glyph">&#8212;</code></td></tr>
+            <tr><th scope="row">slash</th><td>a forward slash <code class="glyph">/</code></td></tr>
+            <tr><th scope="row">forward slash</th><td>a forward slash <code class="glyph">/</code></td></tr>
+            <tr><th scope="row">backslash</th><td>a backslash <code class="glyph">\</code></td></tr>
+            <tr><th scope="row">underscore</th><td>an underscore <code class="glyph">_</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-symbols" tabindex="-1" class="focus-target">Symbols</h4>
+      <p class="group-verdict">The symbols people dictate most often in ordinary prose and in code.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Symbols: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">at sign</th><td>an at sign <code class="glyph">@</code></td></tr>
+            <tr><th scope="row">hash sign</th><td>a hash, the number sign <code class="glyph">#</code></td></tr>
+            <tr><th scope="row">number sign</th><td>a hash, the number sign <code class="glyph">#</code></td></tr>
+            <tr><th scope="row">dollar sign</th><td>a dollar sign <code class="glyph">$</code></td></tr>
+            <tr><th scope="row">percent sign</th><td>a percent sign <code class="glyph">%</code></td></tr>
+            <tr><th scope="row">ampersand</th><td>an ampersand <code class="glyph">&amp;</code></td></tr>
+            <tr><th scope="row">asterisk</th><td>an asterisk <code class="glyph">*</code></td></tr>
+            <tr><th scope="row">plus sign</th><td>a plus sign <code class="glyph">+</code></td></tr>
+            <tr><th scope="row">minus sign</th><td>a hyphen, the same character that "hyphen" writes <code class="glyph">-</code></td></tr>
+            <tr><th scope="row">equals sign</th><td>an equals sign <code class="glyph">=</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-lines-and-layout" tabindex="-1" class="focus-target">Lines and layout</h4>
+      <p class="group-verdict">These change where the next words go rather than adding a character.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Lines and layout: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">new line</th><td>a line break, ending the line</td></tr>
+            <tr><th scope="row">newline</th><td>a line break, ending the line</td></tr>
+            <tr><th scope="row">new paragraph</th><td>a blank line, starting a new paragraph</td></tr>
+            <tr><th scope="row">tab key</th><td>a tab</td></tr>
+            <tr><th scope="row">press tab</th><td>a tab</td></tr>
+            <tr><th scope="row">tab</th><td>a tab</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-markdown-and-code" tabindex="-1" class="focus-target">Markdown and code</h4>
+      <p class="group-verdict">For Markdown and code. A backtick opens or closes depending on how many are already on the line, and a code fence goes on a line of its own.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Markdown and code: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">backtick</th><td>a backtick <code class="glyph">`</code></td></tr>
+            <tr><th scope="row">back quote</th><td>a backtick <code class="glyph">`</code></td></tr>
+            <tr><th scope="row">triple backtick</th><td>a code fence, three backticks on a line of their own <code class="glyph">```</code></td></tr>
+            <tr><th scope="row">code fence</th><td>a code fence, three backticks on a line of their own <code class="glyph">```</code></td></tr>
+            <tr><th scope="row">tilde</th><td>a tilde <code class="glyph">~</code></td></tr>
+            <tr><th scope="row">vertical bar</th><td>a vertical bar <code class="glyph">|</code></td></tr>
+            <tr><th scope="row">pipe symbol</th><td>a vertical bar <code class="glyph">|</code></td></tr>
+            <tr><th scope="row">caret</th><td>a caret <code class="glyph">^</code></td></tr>
+            <tr><th scope="row">greater than sign</th><td>a closing angle bracket, the greater-than sign <code class="glyph">&gt;</code></td></tr>
+            <tr><th scope="row">less than sign</th><td>an opening angle bracket, the less-than sign <code class="glyph">&lt;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-starting-a-line--say-these-first" tabindex="-1" class="focus-target">Starting a line (say these first)</h4>
+      <p class="group-verdict">These work only at the start of a phrase, so a sentence that happens to contain the words stays words. If the cursor is not at the start of a line, a new line is started first.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Starting a line (say these first): what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say</th>
+              <th scope="col">What it writes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">bullet</th><td>a hyphen and a space, starting a bullet <code class="glyph">-</code></td></tr>
+            <tr><th scope="row">list item</th><td>a hyphen and a space, starting a bullet <code class="glyph">-</code></td></tr>
+            <tr><th scope="row">numbered item</th><td>a 1, a full stop and a space, starting a numbered item <code class="glyph">1.</code></td></tr>
+            <tr><th scope="row">block quote</th><td>a greater-than sign and a space, starting a block quote <code class="glyph">&gt;</code></td></tr>
+            <tr><th scope="row">heading one</th><td>one hash sign and a space, starting a level 1 heading <code class="glyph">#</code></td></tr>
+            <tr><th scope="row">heading 1</th><td>one hash sign and a space, starting a level 1 heading <code class="glyph">#</code></td></tr>
+            <tr><th scope="row">heading two</th><td>two hash signs and a space, starting a level 2 heading <code class="glyph">##</code></td></tr>
+            <tr><th scope="row">heading 2</th><td>two hash signs and a space, starting a level 2 heading <code class="glyph">##</code></td></tr>
+            <tr><th scope="row">heading three</th><td>three hash signs and a space, starting a level 3 heading <code class="glyph">###</code></td></tr>
+            <tr><th scope="row">heading 3</th><td>three hash signs and a space, starting a level 3 heading <code class="glyph">###</code></td></tr>
+            <tr><th scope="row">heading four</th><td>four hash signs and a space, starting a level 4 heading <code class="glyph">####</code></td></tr>
+            <tr><th scope="row">heading 4</th><td>four hash signs and a space, starting a level 4 heading <code class="glyph">####</code></td></tr>
+            <tr><th scope="row">heading five</th><td>five hash signs and a space, starting a level 5 heading <code class="glyph">#####</code></td></tr>
+            <tr><th scope="row">heading 5</th><td>five hash signs and a space, starting a level 5 heading <code class="glyph">#####</code></td></tr>
+            <tr><th scope="row">heading six</th><td>six hash signs and a space, starting a level 6 heading <code class="glyph">######</code></td></tr>
+            <tr><th scope="row">heading 6</th><td>six hash signs and a space, starting a level 6 heading <code class="glyph">######</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="v-commands" tabindex="-1" class="focus-target">Commands dictation obeys</h3>
+      <p>A command works only when it is the whole phrase, said on its own after a pause. "Delete that line of text" in the middle of a longer sentence is just words, and is written as words. Say "literal" before any phrase on this page to write it out instead of acting on it.</p>
+      <h4 id="v-command-correcting" tabindex="-1" class="focus-target">Correcting</h4>
+      <p class="group-verdict">Each of these works only as a whole phrase, said on its own after a pause, and only while the phrase it changes is still exactly as dictation wrote it.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Correcting: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">scratch that or delete that</th><td>Removes the phrase you dictated last. Say it again to remove the one before. A phrase you have typed into since is left alone.</td></tr>
+            <tr><th scope="row">undo that or undo or undo last</th><td>The same as pressing Ctrl+Z.</td></tr>
+            <tr><th scope="row">select that</th><td>Selects the phrase you dictated last, so you can change or format it with the keyboard. The next phrase you say replaces it.</td></tr>
+            <tr><th scope="row">capitalize that or cap that</th><td>Gives every word of the last phrase a capital: meeting notes becomes Meeting Notes.</td></tr>
+            <tr><th scope="row">all caps that or uppercase that</th><td>Puts the last phrase in capitals.</td></tr>
+            <tr><th scope="row">no caps that or lowercase that</th><td>Puts the last phrase in small letters.</td></tr>
+            <tr><th scope="row">delete word or delete last word</th><td>Deletes the word just before the cursor.</td></tr>
+            <tr><th scope="row">delete sentence or delete last sentence</th><td>Deletes from the start of the sentence the cursor is in up to the cursor.</td></tr>
+            <tr><th scope="row">delete previous paragraph or delete last paragraph</th><td>Deletes the paragraph just before the cursor, from its start up to the cursor. In another program, only words dictation typed there.</td></tr>
+            <tr><th scope="row">read that or repeat that</th><td>Reads aloud again everything the last phrase, snippet, clip or review put in. In another program, only what dictation itself typed can be read.</td></tr>
+            <tr><th scope="row">read last sentence or read the last sentence</th><td>Reads the sentence just before the cursor, with its punctuation said.</td></tr>
+            <tr><th scope="row">read last paragraph or read the last paragraph or read this paragraph</th><td>Reads the paragraph the cursor is in.</td></tr>
+            <tr><th scope="row">read selection or read the selection</th><td>Reads what is selected.</td></tr>
+            <tr><th scope="row">correct that</th><td>Reads the other things the speech engine thought you said, numbered. Windows speech recognition offers its own; with Moonshine, Whisper or a downloaded model, the other built-in engine listens to the last phrase again and its answer is choice 2. Then say choose and a number.</td></tr>
+            <tr><th scope="row">choose one or choose 1</th><td>After correct that, puts the first of the other guesses in place of the last phrase.</td></tr>
+            <tr><th scope="row">choose two or choose 2</th><td>The same, with the second guess.</td></tr>
+            <tr><th scope="row">choose three or choose 3</th><td>The same, with the third guess.</td></tr>
+            <tr><th scope="row">spell that</th><td>Selects the phrase you dictated last and listens for it spelled out. Say the letters and they replace it. The fix for a name the engine keeps getting wrong.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-command-moving-the-cursor" tabindex="-1" class="focus-target">Moving the cursor</h4>
+      <p class="group-verdict">Said on their own, after a pause.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Moving the cursor: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">go to beginning of line or go to start of line</th><td>Moves the cursor to the start of the line.</td></tr>
+            <tr><th scope="row">go to end of line</th><td>Moves the cursor to the end of the line.</td></tr>
+            <tr><th scope="row">go to top or go to start of document or go to beginning of document</th><td>Moves the cursor to the start of the document.</td></tr>
+            <tr><th scope="row">go to bottom or go to end of document</th><td>Moves the cursor to the end of the document.</td></tr>
+            <tr><th scope="row">go to start of paragraph or go to beginning of paragraph</th><td>Moves the cursor to the start of the paragraph.</td></tr>
+            <tr><th scope="row">go to end of paragraph</th><td>Moves the cursor to the end of the paragraph.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-command-dictation-itself" tabindex="-1" class="focus-target">Dictation itself</h4>
+      <p class="group-verdict">Said on their own, after a pause.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Dictation itself: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">start spelling or spell mode or spelling mode</th><td>Starts spelling mode: every phrase is read as letters until you say stop spelling. See Spelling below.</td></tr>
+            <tr><th scope="row">stop spelling or end spelling or spelling off</th><td>Leaves spelling mode.</td></tr>
+            <tr><th scope="row">what can i say or show commands or dictation commands</th><td>Opens this list.</td></tr>
+            <tr><th scope="row">stop dictation or stop dictating or stop listening</th><td>Stops dictation. With a wake phrase set, dictation goes back to waiting for it.</td></tr>
+            <tr><th scope="row">switch to spanish or spanish dictation</th><td>Dictate in Spanish from now on, the same as Switch Dictation Language. In Spanish, cambiar a ingl&#233;s or dictado en ingl&#233;s comes back.</td></tr>
+            <tr><th scope="row">switch to english or english dictation</th><td>Dictate in English from now on.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-command-selecting" tabindex="-1" class="focus-target">Selecting</h4>
+      <p class="group-verdict">Say the words you want, and dictation finds the nearest place they appear. If they are not there, your phrase is written as ordinary text and you are told.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Selecting: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">select sentence or select this sentence</th><td>Selects the sentence the cursor is in.</td></tr>
+            <tr><th scope="row">select line or select this line</th><td>Selects the line the cursor is on.</td></tr>
+            <tr><th scope="row">select paragraph or select this paragraph</th><td>Selects the paragraph the cursor is in.</td></tr>
+            <tr><th scope="row">select again or select next</th><td>After select, go to or correct with words, moves on to the next place those words appear.</td></tr>
+            <tr><th scope="row">select previous</th><td>The same, going back to the place before.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-command-capitals-and-spacing" tabindex="-1" class="focus-target">Capitals and spacing</h4>
+      <p class="group-verdict">Each one lasts until you turn it off or stop dictation, and the status bar shows it while it is on.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Capitals and spacing: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">caps on or capitals on</th><td>Every word you say starts with a capital until you say caps off. Handy for titles and names.</td></tr>
+            <tr><th scope="row">caps off or capitals off</th><td>Words go back to ordinary capitals.</td></tr>
+            <tr><th scope="row">all caps on</th><td>Everything you say is written in capitals until you say all caps off.</td></tr>
+            <tr><th scope="row">all caps off</th><td>Back to ordinary capitals.</td></tr>
+            <tr><th scope="row">no space on</th><td>Words are written joined together with no spaces until you say no space off. Handy for web addresses and file names.</td></tr>
+            <tr><th scope="row">no space off</th><td>Spaces between words come back.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-command-clips--snippets-and-copying" tabindex="-1" class="focus-target">Clips, snippets and copying</h4>
+      <p class="group-verdict">A snippet or a clip goes in as one phrase, so one Ctrl+Z or &quot;scratch that&quot; takes it back out.</p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Clips, snippets and copying: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">copy all or copy everything or copy document</th><td>Copies the whole document, the same as Copy All on the Edit menu. Nothing is selected.</td></tr>
+            <tr><th scope="row">copy that</th><td>Copies the phrase you dictated last.</td></tr>
+            <tr><th scope="row">show clips or open copy tray or show copy tray</th><td>Opens the Copy Tray, where you choose a slot to paste.</td></tr>
+            <tr><th scope="row">show snippets</th><td>Opens the list of snippets to choose from.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4 id="v-command-profiles-and-formatting" tabindex="-1" class="focus-target">Profiles and formatting</h4>
+      <p class="group-verdict"></p>
+      <div class="cmp-scroll">
+        <table class="cmp cmp-2">
+          <caption>Profiles and formatting: what to say, and what dictation writes.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Say, on its own</th>
+              <th scope="col">What happens</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">bold that</th><td>Makes the selection, or the phrase you dictated last, bold: QUILL&#x27;s own Bold in a document that holds formatting, two asterisks either side in the Markdown and Coding profiles.</td></tr>
+            <tr><th scope="row">italic that or italicize that</th><td>Makes the selection, or the phrase you dictated last, italic, the same way.</td></tr>
+            <tr><th scope="row">standard mode or standard profile</th><td>Switches to the Standard profile, unless Lock Profile is on.</td></tr>
+            <tr><th scope="row">email mode or email profile</th><td>Switches to the Email profile, unless Lock Profile is on.</td></tr>
+            <tr><th scope="row">document mode or document profile</th><td>Switches to the Document profile, unless Lock Profile is on.</td></tr>
+            <tr><th scope="row">markdown mode or markdown profile</th><td>Switches to the Markdown profile, unless Lock Profile is on.</td></tr>
+            <tr><th scope="row">chat mode or chat profile</th><td>Switches to the Chat profile, unless Lock Profile is on.</td></tr>
+            <tr><th scope="row">coding mode or coding profile</th><td>Switches to the Coding profile, unless Lock Profile is on.</td></tr>
+            <tr><th scope="row">verbatim mode or verbatim profile</th><td>Switches to the Verbatim profile, unless Lock Profile is on.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="v-spelling" tabindex="-1" class="focus-target">Spelling a word out</h3>
+      <ul>
+        <li>Say "start spelling", then letters. Everything you say is written as letters until you say "stop spelling".</li>
+        <li>Say "capital" before a letter for a capital, and "space" for a space.</li>
+        <li>Letter names work ("bee", "see"), but the phonetic alphabet works much better: alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel, india, juliet, kilo, lima, mike, november, oscar, papa, quebec, romeo, sierra, tango, uniform, victor, whiskey, x-ray, yankee, zulu.</li>
+        <li>Numbers are written as digits: zero, one, two, three, four, five, six, seven, eight, nine.</li>
+        <li>Punctuation goes in with no spaces while you spell, and each phrase joins the letters before it, so you can spell an email address a few characters at a time: "jay dot sierra mike india tango hotel", then "at sign echo x-ray dot charlie oscar" writes j.smith@ex.co. A whole word that is not a letter is left out. "Dot" and "point" are a full stop only while spelling.</li>
+        <li>Say "all caps" for capitals until you say "no caps" or the phrase ends.</li>
+        <li>To spell just one word, say "spell" and the letters: "spell bravo alpha delta" writes <em>bad</em>. A sentence that only starts with the word "spell" is still written as words.</li>
+        <li>Say "spell that" to select the phrase you just said. The next phrase is spelled and takes its place.</li>
+      </ul>
+      <h3 id="v-by-voice" tabindex="-1" class="focus-target">Starting and stopping without the keyboard</h3>
+      <ul>
+        <li>With the wake phrase switched on in Dictation Settings, say "Quill dictate" to start dictation without touching a key. Anything you say after it in the same breath is written.</li>
+        <li>Say "stop dictation" on its own, after a pause, to stop. With the wake phrase on, stopping goes back to waiting for the wake phrase, so you need never touch the keyboard at all.</li>
+        <li>You choose both phrases yourself, and each needs at least two words, so ordinary talk cannot start or stop dictation by accident.</li>
+      </ul>
+    <!-- dictation-vocabulary:end -->
+
+      <h2 id="correct" tabindex="-1" class="focus-target">Correct that: choosing another guess</h2>
+      <p>
+        Sometimes the engine had a second idea about what you said. Say "correct that"
+        straight after the phrase, and you hear up to three other guesses, numbered: "1:
+        right to Ann. 2: write two Ann. Say choose and the number." Say "choose one",
+        "choose two" or "choose three", and that guess takes the place of what was
+        written. Only <strong>Windows speech recognition</strong> keeps other guesses;
+        the other engines give one answer each, and "correct that" tells you so. Then say
+        "scratch that" and say it again, or add a correction in My Words and Phrases.
+      </p>
+
+      <h2 id="select-by-voice" tabindex="-1" class="focus-target">Moving and selecting by voice</h2>
+      <p>
+        You can move the cursor and select text just by saying the words you are after.
+        Say these at the start of a phrase, after a pause.
+      </p>
+      <ul>
+        <li><strong>"select" and the words.</strong> "Select the cat" selects the nearest
+          place those words appear, looking back from the cursor first and then forward.
+          Whatever you say next takes their place.</li>
+        <li><strong>"select" one set of words "through" another.</strong> "Select dear Sam
+          through thank you" selects everything from the first words to the end of the
+          second.</li>
+        <li><strong>"go to" or "go before" and the words</strong> puts the cursor just
+          before them. <strong>"go after"</strong> puts it just after.</li>
+        <li><strong>"correct" and the words</strong> selects them, and you hear
+          "Correcting the cat. Say the new words". Then say what should be there.</li>
+        <li><strong>"select again" or "select next"</strong> moves to the next place the
+          same words appear, and <strong>"select previous"</strong> to the one before.</li>
+        <li>Said on their own: "select sentence", "select line", "select paragraph", "go
+          to start of paragraph" and "go to end of paragraph".</li>
+      </ul>
+      <p>
+        Capitals, punctuation and accents do not matter when dictation looks for your
+        words, and numbers match either way, so "two" finds 2. Your corrections in My
+        Words and Phrases are applied first. You hear once where you landed: "Selected:
+        the cat", "Before the cat" or "After the cat". If that is three lines or more
+        from where you were, the line number is added: "Selected: the cat, line 40".
+      </p>
+      <p>
+        If the words are not in the document, nothing moves. Your phrase is written as
+        ordinary text, and you hear "Not found, written as text." Say "scratch that" to
+        take it back out. All of this works with every speech engine, and the exact
+        commands such as "select that" and "go to top" still do what they always did.
+      </p>
+
+      <h2 id="letters-symbols" tabindex="-1" class="focus-target">Letters, numbers, symbols and Markdown</h2>
+      <p>
+        Every mark you can say is in the tables above. A few ways of writing are worth a
+        word of their own.
+      </p>
+      <h3>Capitals and spacing</h3>
+      <ul>
+        <li><strong>"caps on"</strong> starts every word with a capital until you say
+          "caps off". You hear "Caps on." "Capitals on" and "capitals off" work too.</li>
+        <li><strong>"all caps on"</strong> writes every letter as a capital until "all
+          caps off".</li>
+        <li><strong>"no space on"</strong> joins your words with no spaces and no
+          automatic capitals, which is handy for web addresses and file names, until "no
+          space off".</li>
+        <li>Each lasts until you turn it off or stop dictation, and the status bar shows
+          which one is on.</li>
+      </ul>
+      <h3>Spelling</h3>
+      <p>
+        Spelling mode now writes punctuation with no spaces, so "jay dot smith at sign
+        example dot com" gives you an email address. To spell a single word without
+        switching spelling mode on, say "spell" and the letters: "spell bravo alpha
+        delta". If dictation got a word wrong, say "spell that": the phrase is selected,
+        and the next thing you say is spelled out in its place. There is more in
+        <a href="#v-spelling">Spelling a word out</a>.
+      </p>
+      <h3>Markdown and code</h3>
+      <ul>
+        <li>"backtick" (or "back quote") opens or closes inline code, depending on how
+          many are already on the line. "Code fence" (or "triple backtick") writes three
+          backticks on a line of their own.</li>
+        <li>"tilde", "vertical bar" (or "pipe symbol"), "caret", "greater than sign" and
+          "less than sign" write those characters.</li>
+        <li>At the start of a phrase, "bullet" or "list item" starts a bulleted line,
+          "numbered item" a numbered one, "block quote" a quotation, and "heading one" to
+          "heading six" a heading at that level. If the cursor is not at the start of a
+          line, a new line is started first. In the middle of a sentence these stay
+          words, so "the heading two lines down" is written just as you said it.</li>
+      </ul>
+
+      <h2 id="snippets-clips" tabindex="-1" class="focus-target">Snippets and clips by voice</h2>
+      <p>Say these on their own, after a pause:</p>
+      <ul>
+        <li><strong>"copy all"</strong> (or "copy everything" or "copy document") copies
+          the whole document, just like Copy All.</li>
+        <li><strong>"copy that"</strong> copies the last phrase you dictated.</li>
+        <li><strong>"show clips"</strong> (or "show copy tray" or "open copy tray") opens
+          the Copy Tray: the Paste from Tray list in QUILL Lite, and the Copy Tray window
+          in QUILL.</li>
+        <li><strong>"show snippets"</strong> opens your snippets: Snippets in QUILL Lite,
+          and Insert Snippet's list in QUILL.</li>
+      </ul>
+      <p>And start a phrase with these:</p>
+      <ul>
+        <li><strong>"paste clip" and a number from 1 to 12.</strong> "Paste clip three"
+          writes what is in slot 3 of the Copy Tray; "paste slot three" works too. If the
+          slot is empty you are told so, and nothing is written.</li>
+        <li><strong>"insert snippet" and its name.</strong> You do not need the exact
+          name: capitals, punctuation and spaces do not matter, and the start of the name
+          or one word in it is enough when only one snippet matches. If several match,
+          you hear how many and the list opens so you can choose. If none match, you hear
+          "No snippet called" and the name, and nothing is written.</li>
+        <li><strong>"insert abbreviation" or "expand abbreviation"</strong> and the
+          abbreviation writes what it stands for.</li>
+      </ul>
+      <p>
+        A snippet or a clip goes in as one phrase, so one <kbd>Ctrl+Z</kbd> or "scratch
+        that" takes it out again. The read-back just names it, "Snippet sign off" or
+        "Pasted slot 3", rather than reading the whole thing. In QUILL, a snippet with
+        blanks to fill writes each blank as its name in square brackets, like [name], so
+        you can say "select name" and then say what goes there. None of these work while
+        "Just write what I say" is on, because every command is written as words then.
+      </p>
+
+      <h2 id="spanish" tabindex="-1" class="focus-target">Dictating in Spanish</h2>
+      <p>New in QUILL Lite 2.0 and QUILL 1.0: you can dictate in Spanish. It is new, so think of it as something to try, and tell us how it goes.</p>
+      <p><strong>To switch it on</strong>, open Dictation Settings (<kbd>Alt+Shift+F6</kbd>), move to <strong>Dictation language</strong>, choose <strong>Spanish</strong>, and press Enter. Choose English the same way to go back. Quicker still, press <kbd>Ctrl+Shift+F11</kbd> or say "switch to Spanish", as described in <a href="#switch-language">Switching between English and Spanish</a>.</p>
+      <h3>What works now</h3>
+      <ul>
+        <li><strong>Your words come out in Spanish</strong>, accents and all, using Whisper's multilingual model. It comes with the app, so there is nothing to download. Moonshine only knows English, so in Spanish you get Whisper either way.</li>
+        <li><strong>A better Spanish model, said once.</strong> The built-in Whisper gets about one word in four wrong in Spanish. If your computer can run NVIDIA Parakeet TDT 0.6B v3 (in practice, 8 GB of memory and four cores), the first time you dictate in Spanish you hear one sentence saying so, for example: "For Spanish, NVIDIA Parakeet TDT 0.6B v3 gets about 6 percent of words wrong, against 29 for the built-in model. It is a 670 MB download in the model list." Nothing is downloaded or changed; the choice is yours. You hear it once, in whichever QuillVille program you dictate in first. A computer with 4 GB hears nothing, because the built-in model is the right one there.</li>
+        <li><strong>Windows speech recognition</strong> needs Spanish installed in Windows: add Spanish (Spain or Mexico) under Windows Settings, Time and language, Speech. If it is missing, dictation tells you when you start.</li>
+        <li><strong>The wake and stop phrases</strong> become "Quill dicta" and "deja de dictar". If you typed your own, yours stay.</li>
+        <li><strong>Commands stay in English for now.</strong> "Scratch that", "select that", "new paragraph" and the rest work as they do in English. Spanish commands come once a native speaker has checked them. The one exception is switching back: "cambiar a inglés" and "dictado en inglés" work already.</li>
+      </ul>
+      <h3>Punctuation in Spanish</h3>
+      <p>With automatic punctuation on (the usual setting), Whisper adds the commas, full stops and question marks for you, so just talk. The Spanish punctuation words only work when automatic punctuation is off, or with Windows speech recognition, because "coma" and "punto" are everyday words too. When they are on, you can say:</p>
+      <ul>
+        <li>"coma" for a comma, "punto" (or "punto y seguido") for a full stop, and "punto y aparte" for a full stop and a new paragraph</li>
+        <li>"punto y coma", "dos puntos" and "puntos suspensivos"</li>
+        <li>"abrir interrogación" and "cerrar interrogación", and "abrir exclamación" and "cerrar exclamación"</li>
+        <li>"abrir paréntesis", "cerrar paréntesis", "abrir comillas", "cerrar comillas"</li>
+        <li>"guion", "guion largo" and "arroba"</li>
+        <li>"nueva línea", "nuevo párrafo" and "tabulador"</li>
+      </ul>
+      <p>Say "literal" first to write the word itself: "literal coma" writes <em>coma</em>. Say "what can I say" while dictating to hear the full list. If a word keeps coming out wrong, use <strong>Help &gt; Get Help from Support</strong> and tell us what you said and what was written.</p>
+
+      <h2 id="switch-language" tabindex="-1" class="focus-target">Switching between English and Spanish</h2>
+      <p>
+        Press <kbd>Ctrl+Shift+F11</kbd> (Switch Dictation Language) to change between
+        English and Spanish, even in the middle of dictating. Or just say it: "switch to
+        Spanish" or "Spanish dictation" while you are dictating in English, and "cambiar a
+        inglés" or "dictado en inglés" while you are dictating in Spanish. The accents are
+        optional.
+      </p>
+      <p>
+        You hear "Español." or "English." and carry on talking. The language you switch
+        to is saved, so next time dictation starts in the one you used last. If you use
+        Moonshine, the first switch to Spanish takes a few seconds while Whisper gets
+        ready; after that, switching back and forth is quick until you close the
+        program.
+      </p>
+      <p>
+        Dictation never guesses the language for you. It writes in the one you chose
+        until you switch, so a French word in an English sentence does not send it off in
+        the wrong direction.
+      </p>
+
+      <h2 id="words" tabindex="-1" class="focus-target">Teaching dictation your words</h2>
+      <p>
+        Press <kbd>Alt+Shift+F10</kbd>, or the <strong>My Words and Phrases</strong> button
+        in Dictation Settings. A window lists everything dictation has been taught, one line
+        each, and the next phrase you say uses whatever you change. Each change is saved the
+        moment you make it and read back to you. There are three kinds.
+      </p>
+      <ul class="fact-list">
+        <li>
+          <strong>Words</strong>
+          Names, jargon and acronyms, spelled the way you want them. When the engine writes
+          something that sounds or looks close, it is corrected to your spelling: add
+          <em>Tucson</em> and "tuxon" becomes <em>Tucson</em>. The match is by spelling
+          <em>and</em> by sound, so split names, run-together words and "R and D" heard
+          for <em>R&amp;D</em> are all repaired, while ordinary words are left strictly
+          alone.
+        </li>
+        <li>
+          <strong>Phrases</strong>
+          Something short you say that writes something longer. <strong>Add Phrase</strong>
+          asks what you will say (<em>my email address</em>) and what it writes. Press Enter
+          in the second box for a new line, so a signature can be two lines.
+        </li>
+        <li>
+          <strong>Corrections</strong>
+          What the engine keeps hearing wrong, and what to write instead: <em>quill
+          light</em> becomes <em>QUILL Lite</em>. Applied to every phrase, whatever the
+          capitals, on every engine.
+        </li>
+      </ul>
+      <p>
+        <strong>Edit</strong> (or Enter on a line) changes the line you are on and
+        <strong>Remove</strong> takes it out. <strong>Open the File</strong> opens the same
+        list as a plain text file, <code>dictation.md</code>, if you would rather edit a
+        file. Your own phrases appear in the "what can I
+        say" list with everything else.
+      </p>
+      <p>
+        In QUILL, Locked Dictation and Dictate (Offline) use the same list, so your words
+        are spelled your way there too.
+      </p>
+
+      <h2 id="voice" tabindex="-1" class="focus-target">Starting and stopping by voice</h2>
+      <h3>The wake phrase</h3>
+      <p>
+        Switch on <strong>Listen for the wake phrase while dictation is off</strong> in
+        Dictation Settings and you can start dictation by saying it instead of pressing a
+        key. It is "Quill dictate" unless you choose another.
+      </p>
+      <ul>
+        <li>Say the wake phrase, pause, and start talking. Or say it and keep going:
+          "Quill dictate, dear Sam, thank you for your letter" wakes dictation and
+          writes <em>Dear Sam, thank you for your letter.</em></li>
+        <li>It only counts at the start of what you say, so "I told Quill to dictate
+          this" in conversation starts nothing.</li>
+        <li>A near miss still works: "Quil dictate" wakes it.</li>
+        <li>Your own phrase needs at least two words. A single word is refused, because it
+          would start dictation by accident.</li>
+      </ul>
+      <p>
+        <strong>What it means for the microphone, exactly.</strong> While the wake phrase is
+        on, the microphone is open whenever the program is the window in front. Nothing it
+        hears is written, kept or sent anywhere unless it begins with the wake phrase; what
+        does not is dropped the moment it has been checked. When another program comes to
+        the front the microphone closes, and dictation stops if it was running. It does
+        <em>not</em> listen while the program is in the background, so it will never pull
+        you away from what you are doing in another program. The wake phrase is off until
+        you turn it on.
+      </p>
+      <p>
+        It works with Moonshine, Whisper and Windows speech recognition, but not with
+        Windows voice typing, which Windows runs itself.
+      </p>
+      <h3>The stop phrase</h3>
+      <p>
+        Say "stop dictation" on its own, after a pause, and dictation stops. You can
+        choose your own words as well, in Dictation Settings; "stop dictation" keeps
+        working either way.
+      </p>
+      <ul>
+        <li>It counts only when it is <em>everything</em> you said in that breath. "I will
+          stop dictation for today" in the middle of a paragraph is written, not
+          obeyed.</li>
+        <li>Like the wake phrase it forgives a near miss and needs at least two words.</li>
+        <li>With the wake phrase on, stopping goes back to listening for the wake phrase, so
+          you can start and stop without touching the keyboard at all.</li>
+      </ul>
+
+      <h2 id="pauses" tabindex="-1" class="focus-target">Longer pauses, and sentences that carry on</h2>
+      <p>
+        If you like time to think between phrases, open Dictation Settings and set
+        <strong>Pause before a phrase is written</strong> to <strong>Longer</strong> (2
+        seconds) or <strong>Longest</strong> (3 seconds). Each phrase then waits that long
+        after you stop talking before it is written. Your words appear a little later,
+        but a thinking pause no longer cuts you off.
+      </p>
+      <p>
+        Dictation also notices when you have not finished a sentence. If a phrase ends on
+        a word a sentence hardly ever ends on, such as "a", "the", "of", "to", "and",
+        "my" or "very", the full stop the engine put there is taken back out and your
+        next phrase carries on the same sentence. Say "this is a very", pause, then say
+        "good test", and you get <em>This is a very good test.</em> A full stop you said
+        yourself is never taken back.
+      </p>
+
+      <h2 id="settings" tabindex="-1" class="focus-target">Dictation Settings, every option</h2>
+      <p class="group-verdict">
+        <kbd>Alt+Shift+F6</kbd>. The window has two columns: what is heard and written on
+        the left, starting and stopping on the right.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>Dictation Settings: every option, what it does, and what it starts as.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Option</th>
+              <th scope="col">What it does</th>
+              <th scope="col">Starts as</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Speech engine</th><td>Moonshine, Whisper, Windows speech recognition, Windows voice typing, any model you downloaded, OpenAI with your own key, or a speech provider you set up with your own account</td><td>Moonshine</td></tr>
+            <tr><th scope="row">Recommended for this computer</th><td>A read-only line naming the model that suits this computer, and why. Advice only; it never changes your engine</td><td>Not a setting</td></tr>
+            <tr><th scope="row">Better Accuracy: Speech Models...</th><td>A button (<kbd>Alt+B</kbd>). Opens Speech Models, to download a bigger model, get a recommendation, or remove a model</td><td>Not a setting</td></tr>
+            <tr><th scope="row">Speech Providers...</th><td>A button (<kbd>Alt+V</kbd>). Opens Speech Providers, to set up a cloud speech service with your own account</td><td>Not a setting</td></tr>
+            <tr><th scope="row">Automatic punctuation</th><td>The engine puts in the marks you do not say. Moonshine and Whisper only; off, you say every mark</td><td>On</td></tr>
+            <tr><th scope="row">Language</th><td>Which installed Windows speech language to use. The other engines understand English</td><td>The Windows default</td></tr>
+            <tr><th scope="row">Microphone</th><td>Which microphone to listen on, kept by name so it survives a change of default</td><td>The Windows default</td></tr>
+            <tr><th scope="row">Test Microphone</th><td>A button. Four seconds of listening, then how loud you were and, with Moonshine or Whisper, exactly what it heard. Nothing is kept</td><td>Not a setting</td></tr>
+            <tr><th scope="row">After each phrase is written, give me</th><td>A sound, speech (the words read back), both, or neither</td><td>Both</td></tr>
+            <tr><th scope="row">Saying "dash" writes</th><td>An em dash with no spaces, a spaced en dash, or two hyphens</td><td>Em dash</td></tr>
+            <tr><th scope="row">Pause before a phrase is written</th><td>Short (half a second), Normal (under a second), Long (about a second and a half), Longer (2 seconds) or Longest (3 seconds). Choose a longer one if it cuts you off while you are still thinking; the words appear a little later</td><td>Normal</td></tr>
+            <tr><th scope="row">Remove filler words like um and uh</th><td>Hesitations are left out instead of written. Real words are never removed</td><td>Off</td></tr>
+            <tr><th scope="row">Just write what I say</th><td>A pause does nothing at all: no full stop, no tone, no read-back, and voice commands are written as words. Spoken punctuation and the stop phrase still work</td><td>Off</td></tr>
+            <tr><th scope="row">Play sounds when dictation starts, stops or fails</th><td>The start, stop and error tones</td><td>On</td></tr>
+            <tr><th scope="row">Say "Dictation on" and "Dictation off"</th><td>The words that go with those tones</td><td>On</td></tr>
+            <tr><th scope="row">Listen for the wake phrase while dictation is off</th><td>Start dictation by voice</td><td>Off</td></tr>
+            <tr><th scope="row">Wake phrase</th><td>The words that start it. At least two words</td><td>Quill dictate</td></tr>
+            <tr><th scope="row">Stop phrase</th><td>The words that stop it, said on their own. At least two words</td><td>stop dictation</td></tr>
+            <tr><th scope="row">Stop dictation after silence</th><td>Never, or after 1, 5 or 10 minutes of hearing nothing, so dictation is not left writing in an empty room</td><td>Never</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Three buttons sit below them: <strong>Dictation Commands</strong> opens the full
+        spoken list, <strong>My Words and Phrases</strong> saves these settings and opens
+        the window described above, and <strong>More Dictation Settings</strong>
+        (<kbd>Alt+A</kbd>) opens the window below. The Speech Models and Speech Providers
+        buttons are described in the table above.
+      </p>
+
+      <h2 id="more-settings" tabindex="-1" class="focus-target">More Dictation Settings, every option</h2>
+      <p class="group-verdict">
+        The choices nobody needs on the first day. What you change here is saved when you
+        press OK in Dictation Settings.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>More Dictation Settings: every option, what it does, and what it starts as.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Option</th>
+              <th scope="col">What it does</th>
+              <th scope="col">Starts as</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Hold the dictation key to talk; a quick press still turns it on and off</th><td>Also lets you hold <kbd>Ctrl+F11</kbd> while you talk and let go to stop</td><td>Off</td></tr>
+            <tr><th scope="row">While you speak, the words heard so far</th><td>Show them in the status bar and on braille, also say new words quietly, or do not show them</td><td>Show them</td></tr>
+            <tr><th scope="row">Send a dictated message to the AI</th><td>When I pause, or When I press Enter</td><td>When I pause</td></tr>
+            <tr><th scope="row">Pause before the message is written</th><td>Short, Normal or Long, when talking to the AI</td><td>Long</td></tr>
+            <tr><th scope="row">Remove filler words when talking to the AI</th><td>Leave um and uh out of what you say to the AI</td><td>On</td></tr>
+            <tr><th scope="row">Automatic punctuation when talking to the AI</th><td>Let the engine punctuate what you say to the AI</td><td>On</td></tr>
+            <tr><th scope="row">Let OpenAI dictation send my speech to OpenAI</th><td>Your agreement, which you can take back here</td><td>Off</td></tr>
+            <tr><th scope="row">OpenAI speech model</th><td>The model OpenAI dictation uses, from OpenAI's own list for your key</td><td>The newest</td></tr>
+            <tr><th scope="row">My Dictation Instructions</th><td>A button. Opens the file Tidy Dictated Text follows</td><td>Not a setting</td></tr>
+            <tr><th scope="row">Say punctuation marks in the read-back</th><td>The read-back says each mark by name, "Hello comma world period", whatever your screen reader's punctuation level</td><td>Checked</td></tr>
+            <tr><th scope="row">Time stamps in live transcripts</th><td>Each paragraph of a live transcript starts with the time, like [10:42]</td><td>Unchecked</td></tr>
+            <tr><th scope="row">Dictate in Other Programs</th><td>A button. Saves these settings, hands them to Quill Inkwell and starts it, so you can dictate into any program</td><td>Not a setting</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 id="status" tabindex="-1" class="focus-target">Knowing what dictation is doing</h2>
+      <ul>
+        <li><strong>The status bar has a Dictation part:</strong> Off, Listening, Hearing
+          you, Writing, Spelling, or Waiting for wake phrase. Press <kbd>F6</kbd> to reach
+          the status bar and move to it; <kbd>Enter</kbd> there starts or stops
+          dictation.</li>
+        <li><strong>The menu row is checked</strong> while dictation is writing.</li>
+        <li><strong>The tones and the words</strong> say when it starts and stops.</li>
+      </ul>
+      <h3 id="dictation-status" tabindex="-1" class="focus-target">Dictation Status: asking what it is doing</h3>
+      <p>
+        Press <kbd>Alt+F9</kbd> at any time to hear what dictation is doing, without
+        changing a thing. With dictation off you hear something like "Dictation is off.
+        Moonshine, in English." With it on you hear the engine and the language, and
+        whether caps or no space is on: "Dictation on, Whisper, in Spanish. Caps on."
+        During a live transcript you hear how long it has been running and how many
+        words it has.
+      </p>
+      <p>
+        In QUILL Lite it is <strong>Dictation Status</strong> in <strong>Tools,
+        Dictation</strong>. In QUILL, <kbd>Alt+F9</kbd> answers for Locked Dictation while
+        that is recording, and for live dictation the rest of the time.
+      </p>
+      <h3 id="preview" tabindex="-1" class="focus-target">Seeing the words while you speak</h3>
+      <p>
+        With <strong>Nemotron</strong> (an optional download), <strong>OpenAI
+        dictation</strong>, or a <a href="#providers">speech provider</a> that works live
+        (all of them except Google, Groq and Mistral), the program knows your words while
+        you are still saying them.
+        The status bar shows them after the word "Hearing", and a braille display shows
+        them as they arrive. They are not in your document yet, because the engine may
+        still change its mind; when you pause, the final words go in and the preview goes
+        away. Nothing is spoken, so nothing talks over you. To hear new words quietly as
+        well, choose <strong>Show it, and say new words quietly</strong> under
+        <strong>While you speak, the words heard so far</strong> in More Dictation
+        Settings.
+      </p>
+      <h3 id="where" tabindex="-1" class="focus-target">Words go where you started</h3>
+      <p>
+        Into the document you started dictation in, at the cursor, replacing any selection.
+        Your words go where you were when you started speaking: if you move the cursor, or
+        switch to another window, while a phrase is still being recognised, it is still
+        written there, your cursor is put back where you moved it, and you hear "Written
+        where you started". If that spot changed meanwhile, the words go at the cursor and
+        you are told. After that, dictation stops by itself when that document closes,
+        when you switch it between plain and rich text, or when you speak while another
+        program or a dialog is in front, and the program tells you why it stopped.
+      </p>
+      <p>
+        There is one microphone, so pressing <kbd>Ctrl+F11</kbd> in a second document while
+        dictation runs in the first moves dictation there and says so: "Dictation moved to
+        Letter.txt". Dictation will not start in a read-only document, such as the
+        read-only copy Compare opens, and says so before the microphone is opened.
+      </p>
+      <h3>If the microphone drops</h3>
+      <p>
+        If the microphone is unplugged, a Bluetooth headset drops, or the input goes
+        completely silent for a few seconds, dictation says "The microphone stopped.
+        Dictation is paused and will resume when it comes back." It stays on, writes
+        nothing, and watches for the device; when it returns you hear "Microphone back.
+        Listening." and carry on. The status cell says "paused, microphone lost"
+        meanwhile.
+      </p>
+      <p>
+        If the speech engine itself stops answering it is restarted once, silently, and you
+        notice nothing. Only a second failure is reported, by name, with the engine to try
+        instead: "Moonshine stopped working. Try Whisper in Dictation Settings."
+      </p>
+
+      <h2 id="boxes" tabindex="-1" class="focus-target">Dictating into Find, Replace and the AI box</h2>
+      <p>
+        <kbd>Ctrl+F11</kbd> in the Find box, either Replace box, the question box of the
+        AI pad, or the message box of the AI Conversation window dictates into that box: the same engine, the same words you have taught it,
+        and <kbd>Escape</kbd> still cancels a phrase. "New line" and "new
+        paragraph" become a space in a one-line box, no closing full stop is added, and
+        the commands that move around a document do nothing there. Press
+        <kbd>Ctrl+F11</kbd> again to stop.
+      </p>
+
+      <h2 id="anywhere" tabindex="-1" class="focus-target">Dictating into other programs with Quill Inkwell</h2>
+      <p>
+        Dictate Anywhere lets you dictate into your email, a web page, a chat window or
+        any other program, with the same engines, the same words you have taught it and
+        the same voice commands. It lives in <strong>Quill Inkwell</strong>, the free
+        family app that already sits quietly in the background and types into other
+        programs for you.
+      </p>
+      <ol>
+        <li>Open Quill Inkwell and choose <strong>File, Dictate Anywhere Key</strong>.
+          Press the key you want to use anywhere in Windows. There is none until you
+          choose one, so it can never clash with a key you already use.</li>
+        <li>Go to the program you want to write in, and put the cursor where the words
+          should go.</li>
+        <li>Press your Dictate Anywhere key, speak, and pause. Each phrase is typed where
+          the cursor is.</li>
+        <li>Press the key again, or say "stop dictation", to stop.</li>
+      </ol>
+      <p>
+        <strong>The easy way to start:</strong> in QUILL or QUILL Lite, open More
+        Dictation Settings and press <strong>Dictate in Other Programs</strong>. Your
+        dictation settings are handed to Quill Inkwell and it starts; if you have not
+        chosen a key yet, the key chooser opens for you. After that, Inkwell keeps its
+        own copy of the settings, which you can change in its <strong>Dictation</strong>
+        menu under <strong>Dictation Settings</strong>. It uses the same My Words and
+        Phrases list as the editors.
+      </p>
+      <p>
+        Punctuation, spelling, caps and no space, switching language and "scratch that"
+        all work in other programs. "Scratch that" erases what was just typed, but only
+        while you are still in the same window, so it can never erase somebody else's
+        typing. Anything that needs to read the other program's text, such as selecting
+        by voice, "go to", "correct", clips and snippets, cannot work there, and you hear
+        "That works in QUILL's own documents. In another program, say the words again, or
+        scratch that."
+      </p>
+      <p>
+        To keep things safe, nothing is typed into a password field ("That is a password
+        field, so nothing is typed there."), into a program running as administrator
+        when Inkwell is not, or into Inkwell's own window. In QUILL's own windows you are
+        reminded to use <kbd>Ctrl+F11</kbd>, which already dictates there. The read-back
+        starts as a tone only, because your screen reader already echoes what is typed.
+        In Safe Mode, Dictate Anywhere is off.
+      </p>
+      <h3 id="transcribe-app" tabindex="-1" class="focus-target">QUILL Transcribe, releasing 1 November 2026</h3>
+      <p>
+        <strong>QUILL Transcribe</strong> is a free family app made only for dictating
+        into other programs, and it is released on 1 November 2026. It lives in the
+        system tray, uses the same speech models, words and commands as QUILL and QUILL
+        Lite, writes only into the field you started in, and pauses rather than typing
+        somewhere else if you move. Its start and stop key is
+        <kbd>Alt+Shift+Backslash</kbd> unless you change it. While it is running it does
+        the dictating for Dictate Anywhere too, so only one of the two listens at a time.
+      </p>
+      <p>
+        For example, to answer an email by voice: open QUILL Transcribe once and choose a
+        speech model, then go to the body of your reply in your email program, press
+        <kbd>Alt+Shift+Backslash</kbd>, say "thanks for the update period I will call you
+        tomorrow period", and press <kbd>Alt+Shift+Backslash</kbd> again.
+      </p>
+      <p>
+        Every other released family app opens it from its QuillVille menu, and Quill Cast
+        and Quill Radio use it for <strong>Edit, Dictate Here</strong>
+        (<kbd>Ctrl+F11</kbd>), which dictates into their search boxes. There is no
+        download yet; the <a href="/docs/transcribe-userguide.html">QUILL Transcribe user
+        guide</a> describes what it does.
+      </p>
+
+      <h2 id="talk-ai" tabindex="-1" class="focus-target">Talking to the AI</h2>
+      <p>
+        You can have a spoken conversation with AI help. Open the AI Conversation window;
+        the cursor is already in <strong>Your message</strong>.
+      </p>
+      <ol>
+        <li>Press <kbd>Ctrl+F11</kbd> and ask your question.</li>
+        <li>Pause. Your message is sent, and you hear "Working."</li>
+        <li>The reply is read aloud. While it is read, the microphone does not listen, so
+          the reply is never taken as your next message.</li>
+        <li>When it has been read, carry on talking. To speak sooner, press
+          <kbd>Escape</kbd>: you hear "Listening."</li>
+        <li>Press <kbd>Ctrl+F11</kbd> again when you are done.</li>
+      </ol>
+      <p>
+        In that box dictation uses its <strong>Talking to AI</strong> settings by itself: a
+        longer pause, so a breath does not send half a question, filler words removed, and
+        automatic punctuation on. They are in More Dictation Settings, with
+        <strong>Send a dictated message to the AI</strong>, which you can set to
+        <strong>When I press Enter</strong> to check each message first.
+      </p>
+
+      <h2 id="openai" tabindex="-1" class="focus-target">OpenAI dictation, with your own key</h2>
+      <p class="group-verdict">
+        Optional, and off until you choose it. Your computer's own engines stay the default.
+      </p>
+      <p>
+        With your own OpenAI key you can have OpenAI recognise your speech. It is very
+        accurate, punctuates well, gets names right that it has never met, and can show
+        your words as you speak. <strong>What you say is sent to OpenAI</strong>: each
+        phrase goes over an encrypted connection with your own key, OpenAI bills your
+        account, nothing goes through QUILL's servers, and QUILL keeps no copy of your
+        voice. Silence is never sent. QUILL's free AI is never used for dictation, and it
+        does not work in Safe Mode.
+      </p>
+      <ol>
+        <li>Save your OpenAI key in <strong>Use My Own AI Key</strong> (<kbd>Alt+F2</kbd>), or from Dictation Settings: <strong>More Dictation Settings...</strong>, then <strong>Add or Change OpenAI Key...</strong> (<kbd>Alt+K</kbd>).</li>
+        <li>Open Dictation Settings (<kbd>Alt+Shift+F6</kbd>) and choose <strong>OpenAI (your
+          own key; sends your speech to OpenAI)</strong> as the speech engine.</li>
+        <li>A question says exactly what is sent. Choose Yes to agree; No, the answer if you
+          just press Enter, keeps your engine and sends nothing.</li>
+        <li>More Dictation Settings opens on <strong>OpenAI speech model</strong>, listing the
+          models OpenAI offers your key, newest first, with the newest chosen. Models OpenAI
+          is retiring are left out. <strong>gpt-live-transcribe</strong> writes as you
+          speak; <strong>gpt-transcribe</strong> sends each phrase when you pause.</li>
+        <li>Press Enter twice to save, then dictate with <kbd>Ctrl+F11</kbd> as before.</li>
+      </ol>
+      <p>
+        If OpenAI stops offering your model, you are told once and asked to choose another;
+        dictation never changes it for you. The words in My Words and Phrases are sent as
+        words to expect, so names come out right. To stop sending your speech, choose
+        another engine, or turn off <strong>Let OpenAI dictation send my speech to
+        OpenAI</strong> in More Dictation Settings.
+      </p>
+
+      <h2 id="providers" tabindex="-1" class="focus-target">Speech providers, with your own account</h2>
+      <p class="group-verdict">
+        Optional, and off until you choose one. If you already pay for a cloud speech
+        service, dictation can use it. The engines on your computer stay the default and
+        the recommendation.
+      </p>
+      <p>
+        QUILL, QUILL Lite, QUILL Transcribe and Quill Inkwell can each send your speech to
+        one of twelve speech services, using an account you already have with that company.
+        You enter only what that service needs, such as a key and a region. The company
+        bills you, not QUILL, and QUILL shows no prices. Nothing goes through QUILL's
+        servers, and QUILL keeps no copy of your voice. Why choose one: a service you trust
+        and already pay for, very good accuracy on a computer too modest for the big local
+        models, or a service tuned for your language or field. Why not: your speech leaves
+        your computer, it needs the internet, and it costs money.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>The speech providers: who receives your speech, and whether words show while you speak.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Provider</th>
+              <th scope="col">Your speech goes to</th>
+              <th scope="col">Words while you speak</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Microsoft Azure AI Speech</th><td>Microsoft, in the region you choose</td><td>Yes, live</td></tr>
+            <tr><th scope="row">Google Cloud Speech-to-Text (Chirp 3)</th><td>Google</td><td>No, each phrase after you pause</td></tr>
+            <tr><th scope="row">Amazon Transcribe</th><td>Amazon Web Services</td><td>Yes, live</td></tr>
+            <tr><th scope="row">Deepgram</th><td>Deepgram</td><td>Yes, live</td></tr>
+            <tr><th scope="row">AssemblyAI</th><td>AssemblyAI</td><td>Yes, live</td></tr>
+            <tr><th scope="row">Speechmatics</th><td>Speechmatics</td><td>Yes, live</td></tr>
+            <tr><th scope="row">ElevenLabs Scribe</th><td>ElevenLabs</td><td>Yes, live</td></tr>
+            <tr><th scope="row">Gladia</th><td>Gladia</td><td>Yes, live</td></tr>
+            <tr><th scope="row">Rev.ai</th><td>Rev</td><td>Yes, live</td></tr>
+            <tr><th scope="row">Groq</th><td>Groq</td><td>No, each phrase after you pause</td></tr>
+            <tr><th scope="row">Mistral Voxtral</th><td>Mistral AI</td><td>No, each phrase after you pause</td></tr>
+            <tr><th scope="row">IBM Watson Speech to Text</th><td>IBM</td><td>Yes, live</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 id="providers-setup" tabindex="-1" class="focus-target">Setting one up</h3>
+      <ol>
+        <li>Open Dictation Settings (<kbd>Alt+Shift+F6</kbd>; in Quill Inkwell,
+          <kbd>Ctrl+Alt+D</kbd>) and press <strong>Speech Providers...</strong>
+          (<kbd>Alt+V</kbd>). Focus starts in the list of providers.</li>
+        <li>Arrow to your provider. <strong>About this provider</strong> says what it
+          offers and where your speech goes.</li>
+        <li>Tab to its fields and fill them in: a key, and for some a region, a project or
+          a file. Press <kbd>F1</kbd> on any field to hear where to find that value in your
+          account.</li>
+        <li>Press <strong>Save</strong> (<kbd>Alt+S</kbd>). A key goes straight into Windows
+          Credential Manager, never into QUILL's settings or logs, and a saved key is never
+          shown again. The other fields are saved when you press OK in Dictation
+          Settings.</li>
+        <li>Press <strong>Test Connection</strong> (<kbd>Alt+T</kbd>). It asks the provider
+          about your account and never sends speech. <strong>Last result</strong> says what
+          happened, such as a key that was refused.</li>
+        <li>Close Speech Providers. Your provider is now in the <strong>Speech
+          engine</strong> list, as for example "Azure AI Speech (your own account; sends
+          your speech to Microsoft)". Choose it.</li>
+        <li>A question says exactly what is sent, where, and that the company bills you.
+          Choose Yes to agree. No is the answer if you just press Enter: your engine stays
+          as it was and nothing is sent.</li>
+        <li>Press OK, then dictate with <kbd>Ctrl+F11</kbd> as usual.</li>
+      </ol>
+      <p>
+        <strong>For example</strong>, to use Microsoft's service: in the Azure portal, open
+        your Speech resource and its Keys and Endpoint page, and copy Key 1 and the
+        Location. In Speech Providers, choose Azure AI Speech, paste the key into
+        <strong>Key</strong>, choose the same region in <strong>Region</strong>, press
+        Save, then Test Connection. When Last result says it worked, close the window,
+        choose Azure AI Speech in the Speech engine list, read the question, and answer
+        Yes.
+      </p>
+      <h3 id="providers-sent" tabindex="-1" class="focus-target">What is sent, and what happens when it fails</h3>
+      <ul>
+        <li><strong>Sent:</strong> each phrase the voice detector hears, over an encrypted
+          connection, with the account details you saved. Nothing is sent while nobody is
+          speaking. The words in My Words and Phrases go too, as words to expect, where the
+          provider accepts them. The company's own policies apply to what it receives.</li>
+        <li><strong>The network drops:</strong> that phrase is lost, you hear one sentence
+          saying so, and dictation keeps listening.</li>
+        <li><strong>The key is refused or the account is empty:</strong> dictation stops and
+          says which field to check.</li>
+        <li><strong>Never a silent switch:</strong> dictation never changes to another
+          engine by itself. To stop sending your speech, choose another engine in Dictation
+          Settings.</li>
+        <li><strong>Remove</strong> (<kbd>Alt+M</kbd>) in Speech Providers forgets
+          everything saved for that provider, key included.</li>
+        <li><strong>Safe Mode</strong> refuses both Test Connection and dictating with a
+          provider.</li>
+      </ul>
+      <p>
+        <strong>Limits for now.</strong> The providers are for live dictation; Transcribe a
+        Recording offers only the models on your computer and OpenAI. QUILL Transcribe's
+        Choose Model window does not list providers yet, so choose them in its Dictation
+        Settings (<kbd>Alt+Shift+F6</kbd>). Google has no live words while you speak. And
+        the providers have been tested against recorded answers but not yet against real
+        accounts, so please tell us how yours goes.
+      </p>
+
+      <h2 id="live-transcript" tabindex="-1" class="focus-target">Live transcripts</h2>
+      <p>
+        A live transcript writes down everything you say, for as long as you like, in a
+        document of its own. It is made for a meeting, a lecture, or a long stretch of
+        thinking out loud. Press <kbd>Ctrl+Alt+Shift+PageDown</kbd> (Start or Stop Live
+        Transcript), or choose it from the dictation menu.
+      </p>
+      <ul>
+        <li>A new untitled document opens, and you hear "Live transcript on, in a new
+          document." It never writes into the document you were working on.</li>
+        <li>Everything is written down as it is: no voice commands except the stop
+          phrase, no tone or read-back after each phrase, filler words left out and
+          punctuation added for you. It never stops by itself after a silence.</li>
+        <li>A pause of four seconds or more starts a new paragraph. Check <strong>Time
+          stamps in live transcripts</strong> in More Dictation Settings and each
+          paragraph starts with the time, like [10:42].</li>
+        <li>New words always go at the end of the transcript, even while you work in
+          another document or another program, and your own place in the transcript is
+          kept, so you can read back over it while it carries on.</li>
+        <li>The status bar shows how it is going, as in "Live transcript: 12 minutes,
+          1,840 words", and <kbd>Alt+F9</kbd> says the same.</li>
+      </ul>
+      <p>
+        To stop, press <kbd>Ctrl+Alt+Shift+PageDown</kbd> again, or <kbd>Ctrl+F11</kbd>.
+        You hear "Live transcript stopped" and the number of words, such as "Live
+        transcript stopped, 1,840 words." The document stays open, unsaved, for you to
+        save where you like; until you do, it is protected like any other unsaved
+        document. In QUILL you can then run a Transcript Action on it.
+      </p>
+      <p>
+        The first time you start one, you hear "Please record other people only when they
+        have agreed." Live transcripts listen to your microphone only, not to sound
+        playing on the computer, and they need one of the program's own engines rather
+        than Windows voice typing.
+      </p>
+
+      <h2 id="transcribe" tabindex="-1" class="focus-target">Transcribing an audio file</h2>
+      <p class="group-verdict">
+        A recording into text, in the background, with the same speech engines you dictate
+        with. The same command, window and key in QUILL and QUILL Lite.
+      </p>
+      <p>
+        Sometimes the words you want are already in a recording: a voice note from your
+        phone, an interview, a lecture, a meeting somebody recorded for you. Press
+        <kbd>Shift+F5</kbd> (in QUILL Lite, Tools, Dictation, Transcribe a Recording; in
+        QUILL, Tools, Speech, Live Dictation, Transcribe a Recording), choose the file, and
+        keep working while it listens.
+      </p>
+      <ol>
+        <li>Type the path of the recording, or press <strong>Browse...</strong> and choose
+          it. You can drop a file on the window too, and choose several in Browse to have
+          them done one after another.</li>
+        <li>Check the language: English or Spanish.</li>
+        <li>Check the <strong>speech model</strong>. The most accurate one on your computer
+          is already chosen, and the box under it says how long the recording is and about
+          how long it should take.</li>
+        <li>Choose where the text goes: <strong>a new document</strong>, which is already
+          chosen, or <strong>this document, at the cursor</strong>, when it finishes.</li>
+        <li>Press Enter. You hear when it starts, the percentage quietly at each quarter,
+          and one sentence when it is done, such as "Transcribed meeting.mp3: 12 minutes,
+          1,804 words, in 6 minutes, in a new document."</li>
+      </ol>
+      <p>
+        Paragraphs start where the recording pauses for two seconds or more. Timestamps
+        are off unless you turn them on: check <strong>Add timestamps</strong> and each
+        paragraph begins with its time, like <code>[00:01:23]</code>. Spoken
+        "comma" or "new paragraph" are written as words, because in a recording people
+        usually mean the words; check <strong>Obey spoken punctuation and commands</strong>
+        for a recording you dictated on purpose. Your corrections from My Words and Phrases
+        are used, and filler words go if you remove them when you dictate.
+      </p>
+      <h3 id="transcribe-models" tabindex="-1" class="focus-target">Which model for which recording</h3>
+      <ul>
+        <li><strong>Voice notes and dictated letters</strong>, one clear voice: Moonshine
+          tiny, built in, is the fastest and does this well.</li>
+        <li><strong>Interviews and meetings</strong>, several voices: a downloaded model is
+          worth it. Parakeet TDT 0.6B v3 is our first choice; Whisper small, medium or
+          large-v3-turbo are good too, just slower.</li>
+        <li><strong>Lectures and talks</strong>: Parakeet or a Whisper model, with the
+          speaker's names added to My Words and Phrases first.</li>
+        <li><strong>Noisy rooms</strong>: the bigger the model, the better it copes. The two
+          tiny models struggle with noise.</li>
+        <li><strong>Spanish</strong>: the built-in Whisper tiny, Parakeet TDT 0.6B v3,
+          Nemotron and the multilingual Whisper models.</li>
+      </ul>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>About how long a one-hour recording takes, worked out from each model's speed measured on real recordings.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Model</th>
+              <th scope="col">Modest computer (2 cores, 4 GB)</th>
+              <th scope="col">Capable computer (4 cores, 8 GB)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Moonshine tiny (built in)</th><td>6 minutes</td><td>3 minutes</td></tr>
+            <tr><th scope="row">Whisper tiny (built in)</th><td>12 minutes</td><td>6 minutes</td></tr>
+            <tr><th scope="row">Parakeet TDT 0.6B v3</th><td>15 minutes</td><td>7 minutes</td></tr>
+            <tr><th scope="row">Parakeet Unified 0.6B</th><td>18 minutes</td><td>8 minutes</td></tr>
+            <tr><th scope="row">Nemotron</th><td>27 minutes</td><td>12 minutes</td></tr>
+            <tr><th scope="row">Whisper small</th><td>1 hour 49 minutes</td><td>46 minutes</td></tr>
+            <tr><th scope="row">Whisper large-v3-turbo</th><td>about 6 hours</td><td>about 2 and a half hours</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <strong>Files it reads</strong>: MP3, M4A, AAC, WAV, Ogg, Opus, FLAC and WMA, plus
+        the sound in an MP4 and AIFF, in both products, with parts of Windows that are
+        already on your computer. Nothing extra to download, and no ffmpeg needed.
+        <strong>Stopping</strong>: press <kbd>Shift+F5</kbd> again and choose Stop
+        Transcribing. Every result, finished or failed, stays in Activity
+        (<kbd>Shift+F9</kbd>).
+      </p>
+      <p>
+        <strong>Privacy.</strong> With the models on your computer, nothing leaves it. If
+        your own OpenAI key is saved, OpenAI's speech models join the list, but they are
+        never chosen for you, never offered in Safe Mode, and each recording is sent only
+        after you say Yes to a question that says exactly what is sent. It goes about a
+        minute at a time over an encrypted connection, OpenAI bills your account by the
+        minute, and QUILL keeps no copy. Please only send recordings you have the right to
+        share.
+      </p>
+
+      <h2 id="tidy" tabindex="-1" class="focus-target">Tidy Dictated Text: tidying with AI, when you ask</h2>
+      <p>
+        Speech recognition writes what it heard, and what it heard is not always the word
+        you meant: <em>their</em> for <em>there</em>, a name it has never met, two words run
+        together, a comma where a full stop belonged, and every "um" you did not know
+        you said. <kbd>Ctrl+F3</kbd> fixes exactly that and nothing else.
+      </p>
+      <ol>
+        <li>Dictate as usual. When the paragraph is done, leave the cursor in it, or select
+          exactly the stretch you want tidied.</li>
+        <li>Press <kbd>Ctrl+F3</kbd>. You hear "Working." The selection, or else the
+          paragraph the cursor is in, goes to the model with one instruction: correct
+          misheard words, punctuation and capitalisation, remove fillers and false starts,
+          and change nothing else.</li>
+        <li>The <strong>Tidied Dictation</strong> window opens with focus on the corrected
+          text, so you hear it first. <strong>Replace My Selection</strong> puts it where
+          the dictated text was, <strong>Copy</strong> puts it on the clipboard, and
+          <kbd>Escape</kbd> keeps what you had. If you typed in that paragraph while the
+          answer was on its way, Replace is not offered and the window says so.</li>
+        <li><kbd>Ctrl+Z</kbd> takes a replacement back, as one step.</li>
+      </ol>
+      <p>
+        Nothing changes until you press Replace, and the model is told to add nothing. It
+        needs a <strong>ChatGPT subscription or your own AI key</strong> (OpenAI or Google
+        Gemini). QUILL's free AI service does not offer it. If you have neither, it tells
+        you and opens the account window.
+      </p>
+      <h3 id="instructions" tabindex="-1" class="focus-target">My Dictation Instructions</h3>
+      <p>
+        Tell Tidy Dictated Text how you like your writing. In Dictation Settings press
+        <strong>More Dictation Settings</strong> (<kbd>Alt+A</kbd>), then <strong>My
+        Dictation Instructions</strong> (<kbd>Alt+I</kbd>). A short file opens; write one
+        instruction per line, such as "Write numbers as digits" or "Use British spelling",
+        and save it. They go with the passage you tidy, and only then. The AI is told your
+        dictated text is something to correct, never a request to answer.
+      </p>
+
+      <h2 id="context" tabindex="-1" class="focus-target">Dictation context for each document</h2>
+      <p>
+        Tell dictation what a document is about, and OpenAI dictation and Tidy Dictated
+        Text can use that to get your words right. Press
+        <kbd>Ctrl+Alt+Shift+PageUp</kbd> (Dictation Context for This Document). The
+        window has four parts:
+      </p>
+      <ul>
+        <li><strong>This document is:</strong> describe it in your own words, such as "a
+          letter to my landlord about the boiler" or "notes from the garden club".</li>
+        <li><strong>Start from a saved context:</strong> the contexts you have saved, then
+          a few to start from: Formal letter, Note to a friend, Technical writing, Meeting
+          notes and Story.</li>
+        <li><strong>Also save it as a context named:</strong> give it a name to use it
+          again in other documents.</li>
+        <li><strong>Who uses it:</strong> a read-only box that tells you which parts of
+          dictation will use it.</li>
+      </ul>
+      <p>
+        Each document remembers its own context. An untitled document keeps it until you
+        close the program. While dictating, say "dictation context" and the name of a
+        saved one, such as "dictation context meeting notes", to choose it by voice.
+      </p>
+      <p>
+        OpenAI dictation uses the context to understand you better, and Tidy Dictated
+        Text uses it alongside My Dictation Instructions. The other engines, downloaded
+        models and speech providers included, cannot use it, and the window tells you so. Your context only ever
+        goes where your speech or your text is already going.
+      </p>
+
+      <h2 id="privacy" tabindex="-1" class="focus-target">What leaves your computer</h2>
+      <p class="group-verdict">
+        Dictation sends nothing unless you choose OpenAI dictation with your own key, or a
+        speech provider with your own account, and agree to it. One optional command, Tidy
+        Dictated Text, sends a passage when you press it.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>What leaves your computer: every part of dictation, and where it runs.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Part of dictation</th>
+              <th scope="col">Where it happens</th>
+              <th scope="col">What is kept</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Recognising what you said</th><td>On this computer, by an engine inside the program or a model you downloaded, unless you chose OpenAI or a speech provider</td><td>Nothing. The words are recognised, written, and forgotten</td></tr>
+            <tr><th scope="row">Downloading a speech model</th><td>Only the model comes over the internet, from Hugging Face, when you ask for it. Nothing of yours is sent</td><td>The model, until you remove it</td></tr>
+            <tr><th scope="row">OpenAI dictation, if you choose it</th><td><strong>Sent</strong> to OpenAI, with your own key: only the speech dictation heard, never silence</td><td>QUILL keeps nothing. OpenAI's own policies apply to what it receives</td></tr>
+            <tr><th scope="row">A speech provider, if you choose it</th><td><strong>Sent</strong> to that company, with your own account: only the speech dictation heard, never silence, and the words in My Words and Phrases where the provider accepts them</td><td>QUILL keeps nothing. Your key stays in Windows Credential Manager. The company's own policies apply to what it receives</td></tr>
+            <tr><th scope="row">Test Connection, in Speech Providers</th><td>A question about your account, sent to the provider when you press it</td><td>Nothing. No speech is sent</td></tr>
+            <tr><th scope="row">The list of OpenAI models</th><td>Asked of OpenAI with your key when More Dictation Settings opens, on a computer with an OpenAI key saved</td><td>Nothing of your writing or speech is sent</td></tr>
+            <tr><th scope="row">The audio from your microphone</th><td>On this computer, in memory</td><td>No recording is kept<span class="qual">QUILL's Locked Dictation saves a take to a recovery folder until its transcript is safely inserted, then removes it</span></td></tr>
+            <tr><th scope="row">The words you teach it</th><td>A plain text file in your own data folder</td><td>Your <code>dictation.md</code>, until you change it</td></tr>
+            <tr><th scope="row">Recent phrases</th><td>In memory only</td><td>The last twenty of this session, gone when the program closes</td></tr>
+            <tr><th scope="row">Dictation context for a document</th><td>A small file beside your <code>dictation.md</code>. Sent only with OpenAI dictation or Tidy Dictated Text, along with what they already send</td><td>Your contexts, until you change them. An untitled document's context is forgotten when the program closes</td></tr>
+            <tr><th scope="row">Live transcripts</th><td>On this computer, written into a new document, unless you chose OpenAI dictation or a speech provider</td><td>The document, unsaved until you save it</td></tr>
+            <tr><th scope="row">Dictate Anywhere, in Quill Inkwell</th><td>On this computer, typed into the program in front, unless you chose OpenAI dictation or a speech provider</td><td>Nothing. Inkwell keeps only its copy of your dictation settings</td></tr>
+            <tr><th scope="row">Listening for the wake phrase</th><td>On this computer, and only while the program is in front</td><td>Nothing, unless what you said begins with the wake phrase</td></tr>
+            <tr><th scope="row">Test Microphone</th><td>On this computer</td><td>Nothing</td></tr>
+            <tr><th scope="row">Transcribing a recording</th><td>On this computer, unless you choose an OpenAI model and say Yes to the question for that recording</td><td>Only the text you get back. The recording is read, never copied</td></tr>
+            <tr><th scope="row">Tidy Dictated Text</th><td><strong>Sent</strong> to OpenAI or Google, through your own subscription or key, with My Dictation Instructions if you wrote any</td><td>Whatever your own agreement with them says. Nothing goes through QUILL's servers</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Nothing above happens in the background or as you type. Dictation opens the
+        microphone when you ask it to and closes it when you stop. The wake phrase is the
+        one setting that keeps the microphone open. It is off until you turn it on, it
+        closes the microphone whenever another program comes to the front, and it never
+        listens while the program is behind another window.
+      </p>
+
+      <h2 id="modest" tabindex="-1" class="focus-target">On a modest computer</h2>
+      <p>
+        Nothing runs while dictation is off: the speech model loads the first time you
+        start, stays ready while you use it, and is put away a few minutes after you stop,
+        giving its memory back. If an optional model you downloaded cannot keep up with
+        your voice, because the computer is busy or on battery saver, you hear "This
+        computer is busy, so dictation switched to the faster built-in engine for now.
+        Your choice in Dictation Settings is unchanged." Next time, it tries your model
+        again.
+      </p>
+
+      <h2 id="tips" tabindex="-1" class="focus-target">Dictating well</h2>
+      <p>
+        A few habits make a big difference, whichever engine you use.
+      </p>
+      <ul>
+        <li><strong>Speak in whole phrases.</strong> Say a sentence or a clause the way you
+          would to a person, then pause. Engines understand a whole phrase far better
+          than one word at a time.</li>
+        <li><strong>Pause before and after a command.</strong> "Scratch that", "select the
+          cat" and the rest only count as a phrase on their own, so a short pause either
+          side is what tells dictation you mean it.</li>
+        <li><strong>Need time to think? Choose a longer pause.</strong> Longer or Longest
+          in Dictation Settings, so a thinking pause does not end your sentence. If it
+          does, and the sentence ended on a word like "the" or "and", dictation joins it
+          back up for you.</li>
+        <li><strong>Fix words by saying them.</strong> "Correct" and the wrong words, then
+          the right ones, is often quicker than reaching for the keyboard. "Spell that"
+          is there for a name the engine has never heard.</li>
+        <li><strong>Teach it once.</strong> A name it keeps getting wrong belongs in My
+          Words and Phrases (<kbd>Alt+Shift+F10</kbd>), so you never correct it
+          again.</li>
+        <li><strong>Use a headset.</strong> A headset microphone beats a laptop's built-in
+          one, and keeps the read-back out of the microphone.</li>
+        <li><strong>Lost track?</strong> Press <kbd>Alt+F9</kbd> to hear what dictation is
+          doing, or <kbd>Shift+F11</kbd> for the last twenty phrases.</li>
+      </ul>
+
+      <h2 id="trouble" tabindex="-1" class="focus-target">If something goes wrong</h2>
+      <p>
+        Dictation always says what happened and what to do about it. These are the usual
+        reasons, and the fix for each.
+      </p>
+      <h3>It will not start</h3>
+      <ul>
+        <li><strong>No microphone was found.</strong> Connect one and press
+          <kbd>Ctrl+F11</kbd> again.</li>
+        <li><strong>The microphone you chose is not connected.</strong> Plug it in, or
+          choose another in Dictation Settings. It will not quietly listen on a different
+          one.</li>
+        <li><strong>The microphone could not be opened.</strong> In Windows Settings, go to
+          Privacy and security, then Microphone, and make sure desktop apps are allowed to
+          use it.</li>
+        <li><strong>A speech engine is not included in this copy.</strong> Choose another
+          engine in Dictation Settings; reinstalling puts the missing one back.</li>
+        <li><strong>No speech recogniser is installed</strong>, with Windows speech
+          recognition. Add a speech language in Windows Settings, Time and language,
+          Speech.</li>
+        <li><strong>"This document is read-only, so dictation cannot write here."</strong>
+          Dictate into a document you can type in.</li>
+      </ul>
+      <h3>It keeps mishearing me</h3>
+      <ul>
+        <li>Try <strong>Whisper</strong> instead of Moonshine, or the other way round. They
+          fail on different voices. Or try a downloaded model: <a href="#choose-engine">Choosing
+          an engine</a> says which.</li>
+        <li>Use a <strong>headset microphone</strong> rather than a laptop's built-in one.
+          This is the single biggest improvement available to most people.</li>
+        <li>If whole sentences go missing, your microphone may be <strong>too quiet</strong>.
+          With its level set very low, or speaking very softly or far away, dictation can
+          miss speech entirely, especially just after something louder; we saw it happen
+          in <a href="/dictation-evidence.html#quiet">our tests of very quiet speech</a>. Move closer, or raise
+          the level in Windows' sound settings.</li>
+        <li>If you are using speakers, set the read-back to <strong>a sound only</strong>.
+          Otherwise the microphone hears the read-back and writes it down again.</li>
+        <li>Add the names you use often to <strong>My Words and Phrases</strong>
+          (<kbd>Alt+Shift+F10</kbd>), and add a <strong>correction</strong> for anything it
+          gets wrong the same way every time.</li>
+        <li>Choose a <strong>Long</strong> pause if it cuts you off mid-thought.</li>
+        <li>Tidy the result afterwards with <kbd>Ctrl+F3</kbd>, if you have a ChatGPT
+          subscription or your own OpenAI or Google Gemini key.</li>
+      </ul>
+      <h3>It stopped on its own</h3>
+      <ul>
+        <li><strong>"Moonshine stopped working. Try Whisper in Dictation Settings."</strong>
+          The engine failed twice in one session; the first time it was restarted for you
+          without a word. Choose the other engine, and if it keeps happening, write to
+          support.</li>
+        <li><strong>After a few minutes of silence.</strong> That is "Stop dictation after
+          silence" doing its job; it says so, with the number of minutes. Set it to Never
+          in Dictation Settings if you would rather it waited.</li>
+        <li><strong>When you moved to another program.</strong> Dictation follows the
+          document, not the screen. It tells you why it stopped.</li>
+      </ul>
+      <h3>A command was written as words instead of obeyed</h3>
+      <p>
+        A command counts only as a <em>whole phrase, on its own, after a pause</em>. Said
+        inside a sentence it is just words. That way you can still dictate the sentence
+        "delete that line of text". Check also whether "Just write what I say" is
+        switched on, which writes every command as words by design.
+      </p>
+      <p>
+        If you hear "Not found, written as text." after "select" or "go to", the words you
+        asked for are not in the document, so your phrase was written instead. Say
+        "scratch that", then try again with words that are there.
+      </p>
+      <h3>I said "scratch that" one time too many</h3>
+      <p>
+        Press <kbd>Shift+F11</kbd> for the last twenty phrases and insert the one you lost.
+        That is what the list is for.
+      </p>
+
+      <h2 id="which" tabindex="-1" class="focus-target">Which product has which dictation</h2>
+      <p class="group-verdict">
+        Live Dictation is identical in both, down to the keys. Everything QUILL adds is a
+        second, different way to dictate.
+      </p>
+      <div class="cmp-scroll">
+        <table class="cmp">
+          <caption>Which product has which dictation: the differences, and nothing else.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">QUILL</th>
+              <th scope="col">QUILL Lite</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Live Dictation</th><td>Yes<span class="qual">Ctrl+F11, same code, same keys</span></td><td>Yes<span class="qual">Ctrl+F11, same code, same keys</span></td></tr>
+            <tr><th scope="row">The Live Dictation engines: Moonshine, Whisper and the two Windows ones</th><td>Yes<span class="qual">Moonshine and Whisper ship inside the installer</span></td><td>Yes<span class="qual">Moonshine and Whisper ship inside the installer</span></td></tr>
+            <tr><th scope="row">Spoken commands and spelling mode</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Wake phrase and stop phrase</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Words, phrases and corrections</th><td>Yes<span class="qual">the same file also feeds Locked Dictation</span></td><td>Yes</td></tr>
+            <tr><th scope="row">Recent phrases</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Tidy Dictated Text and My Dictation Instructions</th><td>Yes<span class="qual">Ctrl+F3</span></td><td>Yes<span class="qual">Ctrl+F3</span></td></tr>
+            <tr><th scope="row">Holding Ctrl+F11 to talk</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Seeing the words while you speak</th><td>Yes<span class="qual">with Nemotron, OpenAI or a live speech provider</span></td><td>Yes<span class="qual">with Nemotron, OpenAI or a live speech provider</span></td></tr>
+            <tr><th scope="row">Correct that</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Talking to the AI</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">OpenAI dictation, own key</th><td>Yes<span class="qual">off until you choose it</span></td><td>Yes<span class="qual">off until you choose it</span></td></tr>
+            <tr><th scope="row">Speech providers, own account</th><td>Yes<span class="qual">twelve services, off until you choose one</span></td><td>Yes<span class="qual">twelve services, off until you choose one</span></td></tr>
+            <tr><th scope="row">A recommended model for this computer</th><td>Yes<span class="qual">in Dictation Settings and Speech Models</span></td><td>Yes<span class="qual">in Dictation Settings and Speech Models</span></td></tr>
+            <tr><th scope="row">Selecting, moving and correcting by voice</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Snippets, clips and abbreviations by voice</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Switching between English and Spanish</th><td>Yes<span class="qual">Ctrl+Shift+F11</span></td><td>Yes<span class="qual">Ctrl+Shift+F11</span></td></tr>
+            <tr><th scope="row">Live transcripts</th><td>Yes<span class="qual">Ctrl+Alt+Shift+PageDown</span></td><td>Yes<span class="qual">Ctrl+Alt+Shift+PageDown</span></td></tr>
+            <tr><th scope="row">Dictation context for each document</th><td>Yes<span class="qual">Ctrl+Alt+Shift+PageUp</span></td><td>Yes<span class="qual">Ctrl+Alt+Shift+PageUp</span></td></tr>
+            <tr><th scope="row">Dictation Status</th><td>Yes<span class="qual">Alt+F9</span></td><td>Yes<span class="qual">Alt+F9</span></td></tr>
+            <tr><th scope="row">Dictate in Other Programs, through Quill Inkwell</th><td>Yes</td><td>Yes</td></tr>
+            <tr><th scope="row">Optional speech models (Speech Models)</th><td>Yes</td><td>Yes<span class="qual">nothing downloads unless you ask</span></td></tr>
+            <tr class="gap"><th scope="row">Locked Dictation</th><td>Yes<span class="qual">Ctrl+F9, records then transcribes, with a review list</span></td><td class="no">No</td></tr>
+            <tr class="gap"><th scope="row">Dictate (Offline) toggle</th><td>Yes</td><td class="no">No</td></tr>
+            <tr class="gap"><th scope="row">Offline engines for Locked Dictation: whisper.cpp, QUILL speech models and Faster Whisper</th><td>Yes<span class="qual">Tools, Speech, Speech and Dictation; with QUILL speech models chosen, the built-in Moonshine works with nothing downloaded</span></td><td class="no">No<span class="qual">Locked Dictation is QUILL's own</span></td></tr>
+            <tr class="gap"><th scope="row">Transcribing audio and video files</th><td>Yes<span class="qual">including captions, speaker labels, and a watch folder that transcribes what you drop in</span></td><td class="no">No</td></tr>
+            <tr class="gap"><th scope="row">Voice commands and conversation mode</th><td>Yes<span class="qual">a safe allowlist; dictation writes, voice commands act</span></td><td class="no">No</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        A dashed line down the left of a row means one of the two does not have it. For
+        everything else the two products differ on, see
+        <a href="/compare.html">how QUILL and QUILL Lite compare, capability by
+        capability</a>.
+      </p>
+
+      <h2 id="more" tabindex="-1" class="focus-target">Downloads and further reading</h2>
+      <p>
+        Dictation is in both programs at no cost and with nothing to add. In QUILL Lite it
+        is on in every feature profile except WordPad and Notepad, and can be switched off
+        in <strong>Customize Features</strong> like any other area. Switching it off also
+        removes its menu, its keys and its wake phrase.
+      </p>
+      <h3>Get either program</h3>
+      <p class="cta">
+        <a class="btn" href="https://github.com/Community-Access/quill/releases/download/quill-lite-v1.1.2/QuillLite-Setup-Shared-1.1.2.exe">QUILL Lite 1.1.2 installer for Windows</a>
+        <a class="btn secondary" href="https://github.com/Community-Access/quill/releases/tag/v0.9.0-beta.2">All QUILL 0.9.0 Beta 2 downloads, including macOS and portable</a>
+      </p>
+      <p class="req-note">
+        Windows 10 or later, 64-bit for dictation in either program. Dictation only works on Windows, so QUILL on a Mac has
+        everything else but not dictation. QUILL Lite's installer is about 230 MB, mostly
+        because the two speech engines are inside it.
+      </p>
+
+      <h3>Read more</h3>
+      <ul>
+        <li><a href="/docs/quilllite-userguide.html">The QUILL Lite user guide</a>: dictation alongside everything else the program does.</li>
+        <li><a href="/docs/userguide.html">The QUILL user guide</a>: Locked Dictation, transcription, captions and voice commands.</li>
+        <li><a href="/compare.html">How QUILL and QUILL Lite compare</a>: everything that is different between the two.</li>
+        <li><a href="/docs/transcribe-userguide.html">The QUILL Transcribe user guide</a>: dictating into any program, from 1 November 2026.</li>
+        <li><a href="/docs/quilllite-ai-guide.html">The QUILL Lite AI guide</a>: what Tidy Dictated Text sends, and what the free service does.</li>
+        <li><a href="/faq.html">QUILL frequently asked questions</a>: installing, updating and privacy.</li>
+      </ul>
+
+      <p class="back-top"><a href="#main">Back to the top of this page</a></p>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <p class="note">
+        <strong class="quill" style="color:var(--accent)">QUILL</strong> stands for
+        Quality, Usable, Inclusive, Lightweight, Literate. It is a writing program for
+        Windows and macOS, made for people who use screen readers, by people who use
+        them too.
+      </p>
+      <nav aria-label="Documentation">
+        <h2>Documentation</h2>
+        <ul>
+          <li><a href="/docs/userguide.html">QUILL user guide</a></li>
+          <li><a href="/docs/quilllite-userguide.html">QUILL Lite user guide</a></li>
+          <li><a href="/docs/quillins.html">Quillin tutorial</a></li>
+          <li><a href="/faq.html">QUILL frequently asked questions</a></li>
+          <li><a href="/docs.html">All documentation for every app in the family</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Project">
+        <h2>Project</h2>
+        <ul>
+          <li><a href="https://github.com/Community-Access/quill/releases/tag/v0.9.0-beta.2">All QUILL 0.9.0 Beta 2 downloads, including macOS and portable</a></li>
+          <li><a href="https://github.com/Community-Access/quill/releases/tag/quill-lite-v1.1.2">All QUILL Lite 1.1.2 downloads, including portable</a></li>
+          <!-- Quillin Hub link removed until hub.quillforall.org is live; it returns when HUB_IS_LIVE in quill/ui/quillin_hub_submit.py becomes True. -->
+          <li><a href="/docs/contributing.html">Contributing to QUILL</a></li>
+          <li><a href="/docs/governance.html">How QUILL is governed</a></li>
+          <li><a href="mailto:support@community-access.org">Email QUILL support</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Privacy and security">
+        <h2>Privacy &amp; security</h2>
+        <ul>
+          <li><a href="/docs/privacy.html">QUILL's privacy policy</a></li>
+          <li><a href="/docs/security.html">Reporting a security problem</a></li>
+          <li><a href="/docs/responsible-ai-use.html">Responsible AI use</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

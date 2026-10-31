@@ -1,0 +1,140 @@
+# Compile QuillVille-Runtime-Setup.exe -- the standalone shared-runtime
+# installer published under the slot-named `runtime-<slot>` GitHub release tag
+# (see "Release channel slots" below, and installer\quillville-runtime.iss
+# for why it exists and what it deliberately leaves out).
+#
+# Separate from build_runtime.ps1 on purpose: every app's build_release.ps1
+# invokes the runtime build, and compiling a ~150 MB installer on each of
+# those runs would tax builds that only need the dist. Run this when the
+# runtime itself is being released:
+#
+#   .\standalone\runtime\build_runtime_installer.ps1 [-Iscc <path>] [-Sign] [-Publish]
+#
+# Output: standalone\runtime\dist\QuillVille-Runtime-Setup.exe
+# Publish: -Publish uploads the built asset to the slot's moving tag (creating
+#          the release if absent, never marked "latest"), which is the URL the
+#          native launcher fetches:
+#          releases/download/runtime-3.14/QuillVille-Runtime-Setup.exe.
+#          Deliberately NOT the repository's `latest` release: that follows the
+#          editor's release train, which carries no runtime asset.
+#
+# Release channel slots (2026-10): the tag is named for the slot the runtime
+# installs into -- `runtime-3.14` for Stable, `runtime-3.14-beta` for -Channel
+# beta (its own AppId, so it never replaces the Stable runtime's uninstall
+# entry) -- and each app's launcher repairs a missing runtime from its own
+# slot's tag. There is no Dev runtime installer: Dev runtimes do not repair
+# themselves ("Reinstall the Dev build").
+#
+# `runtime-latest` and `runtime-beta` are FROZEN at the last Python 3.13 runtime
+# (2026-10-12). Launchers built for 3.13 have them compiled in; a 3.14 runtime
+# published there installs into Runtime\3.14 while those launchers keep looking
+# in Runtime\3.13, so a repair would never start the app. This script refuses
+# to publish to them (quill/core/updater/runtime_slots.py, LEGACY_RUNTIME_TAGS).
+param(
+    [string]$Iscc = "",
+    [string]$Python = "",
+    [string]$QuillRepo = "",
+    [switch]$Sign,
+    [switch]$Publish,
+    [ValidateSet("stable", "beta")]
+    [string]$Channel = "stable"
+)
+
+$LegacyRuntimeTags = @("runtime-latest", "runtime-beta")
+$GitHubRepo = "Community-Access/quill"
+
+$ErrorActionPreference = "Stop"
+$runtimeRoot = $PSScriptRoot
+
+if (-not $QuillRepo) {
+    # standalone\runtime -> standalone -> the QUILL checkout root.
+    $QuillRepo = Split-Path -Parent (Split-Path -Parent $runtimeRoot)
+}
+. (Join-Path $QuillRepo "scripts\BuildEnv.ps1")
+$QuillRepo = Resolve-QuillRepo -Preferred $QuillRepo
+$Python = Resolve-QuillPython -Preferred $Python -QuillRepo $QuillRepo
+$Iscc = Resolve-QuillIscc -Preferred $Iscc
+
+if ($Sign) { $env:QUILL_SIGN = "1" }
+
+# A built, gate-passing runtime is the input; this script never builds one,
+# so it can never quietly ship a runtime the gates have not seen.
+$dist = Join-Path $runtimeRoot "dist\QuillVilleRuntime"
+$marker = Join-Path $dist "quillville-runtime.json"
+if (-not (Test-Path (Join-Path $dist "QuillVilleRuntime.exe")) -or -not (Test-Path $marker)) {
+    throw "No built runtime at $dist. Run build_runtime.ps1 first (and let its gates pass)."
+}
+
+# ...but "a runtime exists here" is not "this runtime is the current one". The
+# dist is a communal work area that survives between sessions, so the copy on
+# disk may have been frozen days ago from a different tree -- and this is the
+# script that PUBLISHES it, to a moving tag every Lite installer in the family
+# downloads from. On 2026-09-08 the runtime staged for publication was 28 files
+# behind the checkout and missing two QUILL Lite modules; the presence checks all
+# passed. Of everywhere this gate could run, here is where it matters most:
+# every other staleness ships to one app's users, this one ships to everyone's.
+& $Python (Join-Path $QuillRepo "scripts\check_runtime_freshness.py") $dist --source-root $QuillRepo
+if ($LASTEXITCODE -ne 0) {
+    throw "Refusing to package a runtime that is not built from this checkout (see above)."
+}
+
+# Version stamp: the python minor the runtime is built for plus the build
+# date from its own marker, e.g. "3.14.20261011". The install path and the
+# Lite installers' presence check key on the 3.14, so that leads.
+$markerData = Get-Content $marker -Raw | ConvertFrom-Json
+$buildDate = ([datetime]$markerData.build).ToString("yyyyMMdd")
+$pythonMinor = ($markerData.python -split "\.")[0..1] -join "."
+$version = "$pythonMinor.$buildDate"
+
+# Beta and Dev builds are never code-signed (owner decision 2026-10-04): the
+# Beta runtime slot is a Beta build, so -Sign is switched off for it with one
+# line saying so. The Stable runtime signs as before. docs/code-signing.md.
+$signVersion = if ($Channel -eq "beta") { "$version-beta" } else { $version }
+$null = Resolve-QuillSigning -QuillRepo $QuillRepo -Python $Python -Version $signVersion
+
+# Sign the runtime payload before it is embedded (a no-op unless QUILL_SIGN=1).
+$signer = Join-Path $QuillRepo "scripts\code_signing.py"
+& $Python $signer sign-build $dist --label "runtime payload"
+if ($LASTEXITCODE -ne 0) { throw "Code signing (runtime payload) failed." }
+
+$innoSign = @()
+if ($env:QUILL_SIGN -eq "1") {
+    $innoSign = @("/DSign", "/Squilltrusted=`$q$Python`$q `$q$signer`$q sign `$f")
+}
+# The slot always comes from the built runtime's own marker, never from the
+# .iss default, so a runtime built on a new Python minor cannot be packaged
+# into the previous minor's folder.
+$runtimeSlot = if ($Channel -eq "beta") { "$pythonMinor-beta" } else { $pythonMinor }
+$slotDefine = @("/dRuntimeSlot=$runtimeSlot")
+# The tag follows the slot, so a launcher repairs only from its own Python.
+$RuntimeTags = @("runtime-$runtimeSlot")
+foreach ($t in $RuntimeTags) {
+    if ($LegacyRuntimeTags -contains $t) { throw "$t is frozen at the Python 3.13 runtime; refusing to publish there." }
+}
+& $Iscc @innoSign @slotDefine "/dAppVersion=$version" (Join-Path $runtimeRoot "installer\quillville-runtime.iss") "/O$(Join-Path $runtimeRoot 'dist')"
+if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+
+$setup = Join-Path $runtimeRoot "dist\QuillVille-Runtime-Setup.exe"
+Write-Host ""
+Write-Host ("Built {0}  ({1:N1} MB, runtime {2})" -f $setup, ((Get-Item $setup).Length / 1MB), $version)
+
+if ($Publish) {
+    # The one outward-facing step: replace the asset under the moving tag the
+    # Lite installers and the native launcher download from. --clobber makes a
+    # republish idempotent; --latest=false keeps the runtime release from ever
+    # hijacking the repository's "latest" (the editor's release train owns it).
+    foreach ($RuntimeTag in $RuntimeTags) {
+        gh release view $RuntimeTag --repo $GitHubRepo *> $null
+        if ($LASTEXITCODE -ne 0) {
+            gh release create $RuntimeTag --repo $GitHubRepo --latest=false `
+                --title "QuillVille Runtime $runtimeSlot ($Channel, moving tag)" `
+                --notes "The shared QuillVille Runtime installer for the $Channel channel. App installers and the native launcher download QuillVille-Runtime-Setup.exe from this tag; it is republished whenever the runtime is released. Install any QuillVille app instead of downloading this directly."
+            if ($LASTEXITCODE -ne 0) { throw "gh release create $RuntimeTag failed." }
+        }
+        gh release upload $RuntimeTag $setup --clobber --repo $GitHubRepo
+        if ($LASTEXITCODE -ne 0) { throw "gh release upload to $RuntimeTag failed." }
+        Write-Host "Published $setup to releases/download/$RuntimeTag/ (runtime $version, $Channel)."
+    }
+} else {
+    Write-Host "Publish with: .\standalone\runtime\build_runtime_installer.ps1 -Publish [-Channel beta]"
+}

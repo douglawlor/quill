@@ -5,13 +5,24 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 
+from quill.core.error_codes import CodedError
 
-class ContextWindowExceeded(Exception):
+
+class ContextWindowExceeded(CodedError):
     """Raised when a prompt + response would exceed the model's context window."""
+
+    code = "QUILL-AI-BACKEND-CONTEXT-EXCEEDED"
 
 
 class AIBackend(ABC):
     name: str = "ai"
+
+    #: True for small on-device models (llama.cpp, Apple Foundation Models),
+    #: whose consistent failure modes justify the extra output-quality shaping
+    #: in :mod:`quill.core.ai.quality_filter` (#1319). Cloud provider backends
+    #: leave this False so they never pay for the negative-example prompt or the
+    #: post-filter retry.
+    is_local: bool = False
 
     @abstractmethod
     def is_available(self) -> tuple[bool, str | None]:

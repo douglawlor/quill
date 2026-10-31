@@ -1,0 +1,215 @@
+# Changelog -- Quill Weather
+
+All notable changes to Quill Weather are recorded here. The fuller, more
+detailed version of this changelog lives in `docs/CHANGELOG.md` (and its HTML
+and EPUB twins) and ships with the app.
+
+Quill Weather shares weather code with Quill Radio, but the two release and
+update independently. This version history begins with 2.2.0.
+
+## 2.2.1 - 2026-10-08
+
+Since build 2:
+
+- **Shared-runtime licensing.** Installed editions use the QuillVille Runtime,
+  which currently carries PyMuPDF 1.28.2 under AGPL-3.0 through the shared
+  GLOW dependency; Weather does not itself expose GLOW. Release-specific
+  source and legal review are required before the next public release.
+  Portable contents must be checked separately. See Licences and Notices and
+  the PyMuPDF distribution review.
+- **Controls that had no label now have a spoken name** (2026-10-30).
+  JAWS, NVDA and Narrator used to announce them as a bare role, such as
+  "edit" or "list". The Weather Center's status line now says "Weather source and freshness status".
+- **Sharp text at any display scaling** (2026-10-31). Quill Weather now handles
+  each monitor's scaling itself instead of letting Windows stretch it, so
+  text stays sharp at 125, 150 and 200 percent and on monitors with
+  different scaling, and windows and list columns keep their proportions.
+  Setting the environment variable `QUILL_DPI_UNAWARE` to `1` turns this off,
+  for diagnosing a display problem (#1702).
+- **Pygments in the notices** (2026-10-31). The shared runtime now bundles
+  Pygments, which QUILL and QUILL Lite use to read code and web pages for
+  spell check, so Quill Weather's third-party notices list it.
+
+Build 2:
+
+- **Where Quill Weather's own sounds play, and Alt+Shift+M to turn them off.** **Options > App Sounds Play On...** (Ctrl+Shift+S) offers System default, None (no sounds), or any sound card or headset by name; a weather alert is still spoken when its sound is off. After a change one sound plays on the new card, so you hear where it went. If that card is unplugged the sounds play on the system default until it is back, and Quill Weather says so once. **Alt+Shift+M** turns Quill Weather's sounds off and back on where they were, and **Options > App Sounds** shows a check mark while they are on. Each QUILL app keeps its own choice; "Share these choices with my other Quill apps" keeps them in step. Your screen reader is never moved. Asked for on QUILLVille by Rick Lewis.
+
+- Current conditions, Quick Weather, and local time now use a saved place's friendly name, such as Home or Summer Home.
+- Builds now offer only the shared installer and self-contained portable zip, with matching update selection and shared-runtime freshness checks.
+- The installer is per-user and records Weather's own version; the portable launcher stays offline and cannot register Windows startup or scheduled background checks.
+- Help now exposes Activity and Repeat Last Result, which were already available through the shared app shell.
+- Tray settings and Windows startup/background toggles now report failed changes and restore the menu's actual state.
+- **Help > What's New** (Ctrl+Shift+F1) opens the changelog in your browser, on the same key as every other QuillVille app.
+- **Help > Command Palette...** (Ctrl+Shift+P) and **Help > Product Requirements...** (Alt+Shift+F1) are on the Help menu.
+- **QUILL Transcribe on the QuillVille menu and the tray**, released on 1 November 2026.
+- The user guide teaches Ctrl+Alt+Shift+M for Start Weather Monitoring, no longer describes a Quillins menu, and marks Quill Radio's own commands as Radio's.
+
+### Show and hide key off by default (2026-10-05)
+
+- **No show and hide key until you choose one** (2026-10-05). The app
+  registered Ctrl+Alt+Shift+W system-wide, and other QuillVille apps use that key for
+  menu commands, so while this app ran theirs never fired. It now has no key by
+  default; **File > Show and Hide Key...** (Ctrl+Alt+Shift+H) lets you type
+  one, or leave it empty for none, and refuses a key any QuillVille app uses as
+  a command or as its own show and hide key, in one sentence naming the app.
+  Somebody who had the old key is moved to none and told once, at the next
+  launch; a key somebody chose is kept (`quill/core/family_chords.py`,
+  `quill/core/show_hide_keys.py`, `quill/ui/show_hide_key_picker.py`).
+
+### Tutorials, and every weather verb by name (2026-08-28)
+
+- **Help > Tutorials... (Ctrl+Alt+F1)** -- 11 guided tutorials, 60 steps, in
+  three tracks: your first ten minutes, being warned, and making it yours. The
+  middle track is the app's whole reason for existing, so it is five lessons:
+  start the watch, rehearse an alert, decide what gets through, keep the watch
+  running, and NOAA Weather Radio.
+
+- **A step names a command, not a key**; **Try it** runs it; and **Follow me**
+  watches the app once a second and moves you on when it can see you have done
+  the step -- your saved places growing, the watch starting, alert checks
+  pausing. It watches state rather than keystrokes, so the menu, the key, the
+  tray and the palette all count.
+
+- **Quill Weather has command ids at all now.** Every weather verb was a bound
+  menu item and nothing else, so the Command Palette -- which this app carries
+  -- could not reach a single one of them, and a tutorial step could not name
+  one. The ids are registered with the keys the menu labels already advertise,
+  so the menus are unchanged; they simply have names now.
+
+- **The book is generated from the lessons** (`docs/tutorials.md`, GATE-TUTDOC).
+
+### New
+
+- **Quill Weather has its own icon.** Until now it shipped a byte-identical copy
+  of Quill Radio's broadcast-wave icon, carried over when the app was
+  scaffolded -- so on a desktop with both installed, two different products wore
+  the same face in the taskbar, in Alt+Tab and in the tray, where a
+  tray-resident app lives its whole life. Quill Weather's icon is now a sun
+  behind a cloud on a sky-blue tile: the same rounded shape and amber accent as
+  the rest of the family, its own silhouette and its own colour. It is the one
+  glyph in the family that is a picture of a thing rather than a diagram,
+  because weather is the one app whose subject is a thing.
+- **Weather Guardian watches every place you have saved, not just one.** The
+  alert watch used to cover your primary location only, so a warning for work,
+  for family, or for where you were travelling went unheard. Now it covers every
+  saved location with no extra setup. Each new alert names its place when it is
+  spoken, sounds the alert, and posts its own tray notification, so you always
+  know *where* as well as *what*. Starting monitoring speaks one combined
+  summary -- "3 places: Tucson, Boston, and Reno. All clear right now." -- and
+  the status line and Start/Stop messages say either the one place's name or
+  "for 3 places". Picking exactly which places to watch is still to come; today
+  it is all of them.
+- **A QuillVille menu.** A top-level **QuillVille** menu lists the other apps in
+  the family -- **Open QUILL**, **Open Quill Radio** -- each opening in its own
+  window. Every QuillVille app carries the same menu in the same place, so
+  moving around the suite is muscle memory. The tray menu offers the same list.
+- **A missing companion app is offered, not refused.** Choosing to open a
+  sibling that is not installed used to dead-end at "not installed". Quill
+  Weather now asks whether you would like to download and install it, fetches
+  and verifies it in the background if you say yes, and opens it when it is
+  ready -- or offers the web release page if the download cannot be reached.
+  Nothing is downloaded without your yes.
+- **Announcements reach your braille display, not just your speech.** Every
+  message Quill Weather gives you -- a new warning, the all-clear, "monitoring
+  on for 3 places", a saved setting -- is now written to a connected braille
+  display as well as spoken. A braille reader with speech turned down previously
+  received nothing at all from this app. A burst of different messages settles
+  into a single write instead of flashing past faster than fingers can follow
+  (the first message still writes through immediately), and an error is held on
+  the display rather than being wiped by the next routine message. Braille goes
+  out through your screen reader, so it works wherever NVDA or JAWS is driving
+  the display.
+- **One announcement service behind every message.** Quill Weather's messages
+  now travel through the same shared announcement plumbing QUILL uses, reaching
+  speech, braille, and the status line together. One channel failing -- a
+  display unplugged, a screen reader that went away -- costs only that channel;
+  you still hear the message. The related preferences (braille on or off, the
+  braille style, how long an identical repeat is suppressed, sticky errors,
+  sound cues in the apps) are set in QUILL's Preferences and shared, because the
+  apps share one settings store on a machine.
+- **The QuillVille Runtime, and two lighter editions.** All the Quill apps now
+  share one Python runtime, installed once per user and reused by every app, so
+  each app you add after the first starts instantly. It is reference-counted --
+  removed only when the last app that needs it is uninstalled. Alongside the
+  full portable build and the full installer, there is now a **Companion
+  edition** (about 2 MB: just the app and its docs, offering to fetch the shared
+  runtime on first launch) and a **thin installer** that downloads the runtime
+  only if it is not already there. Every runtime download shows a fully
+  accessible progress bar that announces its percentage with NVDA, JAWS, and
+  Narrator.
+- **Fewer antivirus false positives.** The launcher is now a genuine, tiny
+  native program and the bundled Python is the official unmodified build.
+  Earlier versions used a renamed, modified copy of Python's `pythonw.exe`,
+  a pattern some antivirus tools flagged; it is gone.
+
+### Changed
+
+- **The download is less than half the size.** The portable ZIP went from about
+  176 MB to 79 MB and the installer from about 123 MB to 52 MB, by dropping
+  libraries Quill Weather never runs (a translation build tool, a PDF stack,
+  data-science and video libraries) that a broad packaging rule had been pulling
+  in. Nothing was removed from the app itself.
+- **Updates come from one shared release feed, each app taking only its own.**
+  **Help > Check for Updates...** reads the single Quill release feed but looks
+  only at the Quill Weather downloads in it, so a Quill Radio release is never
+  mistaken for a Quill Weather one. Each app still updates on its own schedule.
+- **Opening a sibling app moved from the File menu to the QuillVille menu.** The
+  File menu now holds just **Minimize to Tray** and **Exit**.
+
+## 2.2.0 -- first release
+
+Quill Weather's debut, split out of Quill Radio's weather work so it can be
+installed, updated, and left running on its own.
+
+### New
+
+- **A standalone weather watcher that lives in the system tray.** Close the
+  window and it keeps monitoring; **Start Quill Weather with Windows** puts it
+  on guard from login; and an optional scheduled background check watches with
+  no window open at all and toasts you when a new alert appears.
+- **A global show/hide hotkey -- Ctrl+Alt+Shift+W.** Press it from any app to
+  tuck Quill Weather to the tray (the watch keeps running) or bring it back and
+  focus it; it speaks "hidden to the tray" or "shown". The chord is unique to
+  Quill Weather in the QuillVille family, so it never collides with QUILL or
+  Quill Radio. Windows-only, and best-effort -- if another app already owns the
+  chord, Quill Weather simply leaves it be and still shows and hides from the
+  tray icon.
+- **Weather Guardian -- spoken alerts the moment they are issued.** Background
+  monitoring of your location's official National Weather Service watches,
+  warnings, and advisories, speaking each new one aloud (interrupting for
+  tornado/flash-flood-level events), announcing the all-clear, and tightening
+  its poll during severe weather.
+- **An alert sounder you control.** A bundled chime, with settings to silence
+  it, choose your own sound file (with a Play preview), and set how many times
+  it repeats -- plus a **Test Alert** that previews the whole experience (text,
+  sound, tray toast, dialog), clearly marked as a test.
+- **A full Weather Center.** Current conditions, the NWS forecast, an hourly
+  forecast, an extended daily outlook (up to 16 days), air quality, sunrise and
+  sunset, a locally-computed moon almanac (phase, illumination, moonrise,
+  moonset), and a two-clock time summary -- the current local time at the
+  searched location, the current local time where you are, and when the reading
+  was taken (collapsing to one clock when both share a time zone) -- all as
+  arrow-navigable, copyable, fully spoken text.
+- **Quick Weather and Active Alerts.** **Ctrl+Shift+Q** speaks a one-line
+  summary of your primary location with no window; **Active Alerts** opens the
+  Weather Center with focus already on the alerts list.
+- **Your local NOAA Weather Radio.** Find the transmitter covering your saved
+  location (and play it, when Quill Radio is installed). The full directory of
+  1,035 transmitters ships inside the app, so lookup works offline.
+- **Customize Features.** **Options > Customize Features...** turns whole areas
+  (Alert Monitoring, NOAA Weather Radio) on or off, hiding what you do not use --
+  the same customization Quill Radio offers.
+- **Open its siblings.** File > Open Quill Radio / Open QUILL, and the same from
+  the tray, so the apps are always a click apart, each in its own window. (These
+  moved to the QuillVille menu after this release -- see Unreleased.)
+- **Independent distribution and updates.** Its own installer and portable
+  build, and **Help > Check for Updates** knows which of the two you are running
+  and fetches the matching one.
+
+### Notes
+
+- No audio playback or recording engine ships with Quill Weather (it is a much
+  smaller download than Quill Radio). NOAA Weather Radio *playback* needs Quill
+  Radio; Quill Weather still finds your local transmitter.
+- Weather is also built into QUILL and Quill Radio -- this app is for when you
+  want the watch running on its own, independent of everything else.

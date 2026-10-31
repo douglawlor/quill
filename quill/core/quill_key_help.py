@@ -22,6 +22,14 @@ MODE_PREFIX = "prefix"
 #: Cheat-sheet for browse mode (after the QUILL key, then N).
 MODE_BROWSE = "browse"
 
+#: Second keys the QUILL key handler answers itself, before the keymap is
+#: consulted, so a keymap binding on one of them can never fire. N enters browse
+#: mode and ? opens this cheat sheet. (A is answered first only while text is
+#: selected, which is why the leader-A binding is documented as the
+#: no-selection half of the pair.) G was here until 2026-10-03 and silently ate
+#: the default leader G binding; a test now holds DEFAULT_KEYMAP off this set.
+RESERVED_LEADER_KEYS: frozenset[str] = frozenset({"N", "?"})
+
 #: Command ids for the structural quick-nav follow-on keys, mapped to the
 #: documented default key shown when no binding is configured.
 _DEFAULT_KEYS: dict[str, str] = {
@@ -39,6 +47,9 @@ _DEFAULT_KEYS: dict[str, str] = {
     "quill.quick_nav.block": "Tab",
     "quill.quick_nav.skip_forward": "]",
     "quill.quick_nav.skip_backward": "[",
+    "quill.quick_nav.inline_note": "N",
+    "quill.quick_nav.misspelling": "M",
+    "quill.quick_nav.page": "F",
 }
 
 
@@ -117,7 +128,6 @@ def build_cheat_sheet(
 
 def _build_prefix_groups(quill_key_label: str, selection_active: bool) -> tuple[KeyHelpGroup, ...]:
     entries = [KeyHelpEntry("N", "Enter browse mode")]
-    entries.append(KeyHelpEntry("G", "Go to anything (Quick Nav)"))
     entries.append(KeyHelpEntry("M", "Paste HTML clipboard as Markdown (magic paste)"))
     entries.append(KeyHelpEntry("V", "Browser Preview"))
     if selection_active:
@@ -161,6 +171,9 @@ def _build_browse_groups(
             entry("quill.quick_nav.block_quote", "Next or previous block quote", "block_quotes"),
             entry("quill.quick_nav.bookmark", "Next or previous bookmark", "bookmarks"),
             entry("quill.quick_nav.code_block", "Next or previous code block", "code_blocks"),
+            entry("quill.quick_nav.inline_note", "Next or previous inline note", None),
+            entry("quill.quick_nav.misspelling", "Next or previous misspelled word", None),
+            entry("quill.quick_nav.page", "Next or previous page (page breaks)", None),
             entry(
                 "quill.quick_nav.table_of_contents",
                 "Open the table of contents",
@@ -228,6 +241,22 @@ _CHORD_CATEGORY_TITLES: dict[str, str] = {
 #: back to the bare command id (with the prefix stripped) for any unknown
 #: command so user-defined chords still surface in some recognizable form.
 _CHORD_COMMAND_TITLES: dict[str, str] = {
+    # Took the leader G on 2026-09-17 when favourite folders left the
+    # three-modifier chords for the leader (bad.md §0.6, rule 7).
+    "file.open_from_favorite_folder": "Open From Favourite Folder",
+    # Its two managing verbs joined it there on 2026-09-17, on positions the
+    # leader reclaim freed (bad.md 3.5, P1.11), together with the intake
+    # report -- a once-per-file reading, not an editing-loop verb.
+    "file.add_favorite_folder": "Add Favourite Folder",
+    "file.remove_favorite_folder": "Remove Favourite Folder",
+    "tools.document_intake_report": "Document Intake Report",
+    "edit.magic_paste": "Magic Paste",
+    "format.toggle_numbered_list": "Numbered List",
+    # The verbosity trio, which had a chord only in the stale default profile
+    # until 2026-09-17 and now has one in DEFAULT_KEYMAP (bad.md P2.6).
+    "verbosity.toggle_quiet": "Toggle Quiet Mode",
+    "verbosity.toggle_meeting": "Toggle Meeting Mode",
+    "verbosity.undo": "Undo The Last Verbosity Change",
     "file.open_from_remote": "Open From Remote",
     "file.save_to_remote": "Save To Remote",
     "file.manage_remote_sites": "Manage Remote Sites",
@@ -242,9 +271,24 @@ _CHORD_COMMAND_TITLES: dict[str, str] = {
     "tools.dictation_toggle": "Dictation Toggle",
     "tools.describe_image": "Describe Image",
     "edit.copy_selection_for_email": "Copy Selection For Email",
+    "app.preferences_hub": "More Preferences",
+    "edit.open_review_buffer": "Review Buffer",
+    "view.text_size_up": "Increase Text Size",
+    "view.text_size_down": "Decrease Text Size",
+    "view.text_size_reset": "Reset Text Size",
+    "format.editor_font": "Editor Font",
+    "format.selection_font": "Font For Selection",
+    # Three leader chords whose Key Describer title was being machine-derived
+    # from the command id, which is what GATE-DESCRIBE exists to catch: the
+    # cheat sheet read "Play Favorite" and "Sound Enhancements" and
+    # "Replace All" only because those ids happen to read cleanly, and the
+    # gate cannot tell a lucky id from an authored title.
+    "radio.play_favorite": "Play Favourite Station",
+    "media.sound_enhancements": "Sound Enhancements",
+    "edit.replace_all": "Replace All",
     "tools.sticky_note_capture": "Sticky Note Capture",
     "view.browser_preview": "Browser Preview",
-    "view.switch_editing_lens": "Switch Editing Lens",
+    "format.switch_document_format": "Switch Document Format",
     "format.list_manager": "List Manager",
     "format.insert_html_tag": "Insert HTML Tag",
     "power.paste_html_as_markdown": "Paste HTML As Markdown",
@@ -258,6 +302,50 @@ _CHORD_COMMAND_TITLES: dict[str, str] = {
     "navigate.go_to_anything": "Go To Anything",
     "view.announce_contrast": "Announce Contrast",
     "edit.open_copy_tray": "Open Copy Tray",
+    # Authored for GATE-DESCRIBE (2026-08-27): every default chord command
+    # carries a spoken title; the derived fallback is for user-defined
+    # chords only.
+    "file.open_github_repository": "Open Remote GitHub Repository",
+    "file.open_github_file_url": "Open Remote GitHub File URL",
+    "file.github_save_back": "Save To GitHub",
+    "file.github_manage_accounts": "Manage GitHub Accounts",
+    "file.open_github_items": "Open GitHub Issues And Pull Requests",
+    "tools.speech_dictate": "Dictate Into Document",
+    "tools.speech_batch_export": "Batch Speech Export",
+    "tools.find_recording_chapters": "Find Chapters in a Recording",
+    "radio.play_pause": "Radio Play Or Pause",
+    "radio.stop": "Radio Stop",
+    "radio.mute_toggle": "Radio Mute Toggle",
+    "radio.record_toggle": "Radio Record Toggle",
+    "podcasts.play_pause": "Podcast Play Or Pause",
+    "podcasts.stop": "Podcast Stop",
+    "podcasts.skip_forward": "Podcast Skip Forward",
+    "podcasts.skip_back": "Podcast Skip Back",
+    "tools.post_to_mastodon": "Post To Mastodon",
+    "file.batch_conversion": "Batch Conversion",
+    "edit.expand_selection": "Expand Selection",
+    "edit.shrink_selection": "Shrink Selection",
+    "format.toggle_tab_insert_mode": "Toggle Tab Insert Mode",
+    "github.create_repository": "Create GitHub Repository",
+    "github.fork_repository": "Fork GitHub Repository",
+    "github.rename_repository": "Rename GitHub Repository",
+    "github.change_repository_visibility": "Change GitHub Repository Visibility",
+    "github.change_default_branch": "Change GitHub Default Branch",
+    "github.configure_branch_protection": "Configure GitHub Branch Protection",
+    "github.delete_branch": "Delete GitHub Branch",
+    "github.commit_multiple_files": "Commit Multiple Files To GitHub",
+    "edit.copy_to_tray_1": "Copy To Tray 1",
+    "edit.copy_to_tray_2": "Copy To Tray 2",
+    "edit.copy_to_tray_3": "Copy To Tray 3",
+    "edit.copy_to_tray_4": "Copy To Tray 4",
+    "edit.copy_to_tray_5": "Copy To Tray 5",
+    "edit.copy_to_tray_6": "Copy To Tray 6",
+    "edit.copy_to_tray_7": "Copy To Tray 7",
+    "edit.copy_to_tray_8": "Copy To Tray 8",
+    "edit.copy_to_tray_9": "Copy To Tray 9",
+    "edit.copy_to_tray_10": "Copy To Tray 10",
+    "edit.copy_to_tray_11": "Copy To Tray 11",
+    "edit.copy_to_tray_12": "Copy To Tray 12",
 }
 
 

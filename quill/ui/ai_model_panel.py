@@ -27,7 +27,8 @@ from quill.core.ai.model_tiers import (
     load_tiers,
     switch_active_tier,
 )
-from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
+from quill.ui.dialog_contract import apply_modal_ids, dialog_alive, show_modal_dialog
+from quill.ui.dpi import dip_size
 
 
 def _uses_foundation_models() -> bool:
@@ -56,7 +57,7 @@ class AIModelDialog:
         self.dialog = wx.Dialog(
             parent, title="AI Model & Connection", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
         )
-        self.dialog.SetSize((560, 520))
+        self.dialog.SetSize(dip_size(self.dialog, 560, 520))
         root = wx.BoxSizer(wx.VERTICAL)
 
         wrap = 520
@@ -100,6 +101,19 @@ class AIModelDialog:
                 wx.ALL,
                 12,
             )
+            # Machine-aware upgrade hint (Phase 3): when the saved choice is a smaller
+            # model than this machine can comfortably run, surface a one-step, spoken
+            # suggestion. Never auto-downloads — the user still picks below.
+            from quill.core.model_upgrade import suggest_llm_upgrade
+
+            saved_choice = load_model_choice()
+            if saved_choice != "auto":
+                suggestion = suggest_llm_upgrade(saved_choice, total_ram_gb())
+                if suggestion is not None:
+                    hint = wx.StaticText(self.dialog, label=suggestion.message())
+                    hint.SetName("Model upgrade suggestion")
+                    root.Add(hint, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
+                    self._announce(suggestion.message())
             root.Add(wx.StaticText(self.dialog, label="On-device model"), 0, wx.LEFT | wx.RIGHT, 12)
             self._ids = ["auto", *MODELS.keys()]
             labels = [f"Recommended ({MODELS[rec].name})"]
@@ -263,6 +277,8 @@ class AIModelDialog:
         ).start()
 
     def _after_download(self, message: str) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the download finished (#1067)
         self.download_button.Enable(True)
         self.status.SetLabel(message)
         self._announce("Download finished")

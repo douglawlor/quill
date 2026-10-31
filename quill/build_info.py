@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import sys
 from types import ModuleType
+from typing import cast
 
-from quill import __version__
+from quill import __build__, __version__
 
 
 def _load() -> ModuleType | None:
@@ -30,7 +31,7 @@ def _load() -> ModuleType | None:
     try:
         from quill import _build_info  # type: ignore[attr-defined]
 
-        return _build_info
+        return cast(ModuleType, _build_info)
     except Exception:
         return None
 
@@ -46,14 +47,44 @@ def get_display_version() -> str:
     """
     if _BUILD_INFO is None:
         return f"QUILL for All {__version__} (development build)"
-    return _BUILD_INFO.FULL_DISPLAY_VERSION
+    return str(_BUILD_INFO.FULL_DISPLAY_VERSION)
 
 
 def get_short_version() -> str:
     """Channel-annotated version only, e.g. ``"0.7.0 Beta 1"``."""
     if _BUILD_INFO is None:
         return __version__
-    return _BUILD_INFO.DISPLAY_VERSION
+    return str(_BUILD_INFO.DISPLAY_VERSION)
+
+
+def release_build() -> int:
+    """The release build number of the running build (``1`` for 1.0.0 build 1),
+    or 0 for a Dev build and for a generated module older than build numbers."""
+    if _BUILD_INFO is None:
+        return int(__build__)
+    return int(getattr(_BUILD_INFO, "RELEASE_BUILD", 0) or 0)
+
+
+def feed_version() -> str:
+    """The running build's version as the signed release feed spells it.
+
+    :func:`get_short_version` plus the release build for Stable, Beta and
+    Release Candidate builds (``1.0.0+2``, so a rebuild of the same version is
+    offered to a copy of the earlier build). A Dev build adds its build stamp --
+    ``1.1.0-dev.20261003.4`` -- because "1.1.0 Dev" alone cannot tell two Dev
+    builds apart, and an update check that cannot would offer the same Dev
+    build again forever.
+    """
+    from quill.core.versioning import with_build
+
+    if _BUILD_INFO is None:
+        return with_build(__version__, __build__)
+    channel = str(getattr(_BUILD_INFO, "CHANNEL", "stable"))
+    if channel != "dev":
+        return with_build(str(_BUILD_INFO.DISPLAY_VERSION), release_build())
+    stamp = str(getattr(_BUILD_INFO, "BUILD_STAMP", "")).strip()
+    base = str(getattr(_BUILD_INFO, "BASE_VERSION", __version__))
+    return f"{base}-dev.{stamp}" if stamp else str(_BUILD_INFO.DISPLAY_VERSION)
 
 
 def get_support_info() -> str:
@@ -69,7 +100,8 @@ def get_support_info() -> str:
     python_version = ".".join(str(part) for part in sys.version_info[:3])
     lines = [
         f"Product: {_BUILD_INFO.PRODUCT_NAME}",
-        f"Version: {_BUILD_INFO.DISPLAY_VERSION}",
+        f"Version: {_BUILD_INFO.DISPLAY_VERSION}"
+        + (f" (build {release_build()})" if release_build() else ""),
         f"Build: {_BUILD_INFO.BUILD_STAMP}",
         f"Channel: {_BUILD_INFO.CHANNEL}",
         f"Commit: {_BUILD_INFO.GIT_SHA}",
@@ -83,6 +115,34 @@ def get_support_info() -> str:
 def is_release_build() -> bool:
     """True when the generated module exists and is the stable channel."""
     return _BUILD_INFO is not None and _BUILD_INFO.CHANNEL == "stable"
+
+
+def _load_offline_marker() -> ModuleType | None:
+    """Import the generated offline-edition marker, or None if absent.
+
+    The marker (``quill/_offline_edition.py``) is written at build time by
+    ``scripts/build_windows_distribution.py`` and is gitignored. Its absence
+    (a source/dev checkout, or a slim install built before the marker existed)
+    means a normal install where optional components download on demand.
+    """
+    try:
+        from quill import _offline_edition  # type: ignore[attr-defined]
+
+        return cast(ModuleType, _offline_edition)
+    except Exception:
+        return None
+
+
+def is_offline_edition() -> bool:
+    """True when this running build is the self-contained Offline Edition.
+
+    The Offline Edition bundles every optional component and suppresses the
+    Download action in Download Optional Components (the extras are already
+    present, and the target machine is expected to have no internet). Always
+    False for a normal install or a development checkout.
+    """
+    marker = _load_offline_marker()
+    return bool(marker is not None and getattr(marker, "OFFLINE_EDITION", False))
 
 
 def resolve_running_version(*, override: str | None = None) -> str:
@@ -107,9 +167,12 @@ def resolve_running_version(*, override: str | None = None) -> str:
 
 
 __all__ = [
+    "feed_version",
     "get_display_version",
     "get_short_version",
     "get_support_info",
     "is_release_build",
+    "is_offline_edition",
+    "release_build",
     "resolve_running_version",
 ]

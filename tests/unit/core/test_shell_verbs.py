@@ -17,6 +17,7 @@ class _FakeSettings:
     shell_verb_ocr_structured: bool = False
     shell_verb_open: bool = False
     shell_verb_read: bool = False
+    shell_verb_convert: bool = False
 
 
 def test_default_verbs_have_unique_ids_and_actions() -> None:
@@ -89,3 +90,43 @@ def test_ai_verb_requires_assistant() -> None:
         assistant_enabled=True,
     )
     assert [verb.action for verb in with_ai] == ["ocr-structured"]
+
+
+def test_convert_verb_present_and_targets_media() -> None:
+    verb = verb_for_action("convert")
+    assert verb is not None
+    assert verb.verb_id == "convert"
+    assert verb.settings_key == "shell_verb_convert"
+    # Applies to common audio + video containers, not to text/images.
+    assert verb.applies_to(".mp3") and verb.applies_to(".mp4")
+    assert not verb.applies_to(".txt")
+
+
+def test_convert_verb_media_matches_engine_extensions() -> None:
+    from quill.core.audio.convert import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+    from quill.core.shell_verbs import MEDIA_EXTENSIONS
+
+    # .ts is deliberately off the Explorer verb (TypeScript owns it on most machines).
+    assert set(MEDIA_EXTENSIONS) == (set(AUDIO_EXTENSIONS) | set(VIDEO_EXTENSIONS)) - {".ts"}
+
+
+def test_convert_verb_follows_its_toggle_now_the_converter_is_released(monkeypatch) -> None:
+    # Quill Converter shipped publicly on 2026-09-27, so the verb is no longer
+    # withheld from public builds: its own toggle decides, in either build.
+    for dev in (None, "1"):
+        if dev is None:
+            monkeypatch.delenv("QUILL_DEV_BUILD", raising=False)
+        else:
+            monkeypatch.setenv("QUILL_DEV_BUILD", dev)
+        on = enabled_verbs(
+            settings_values=_FakeSettings(shell_verb_convert=True),
+            master_enabled=True,
+            assistant_enabled=False,
+        )
+        off = enabled_verbs(
+            settings_values=_FakeSettings(shell_verb_convert=False),
+            master_enabled=True,
+            assistant_enabled=False,
+        )
+        assert [verb.action for verb in on] == ["convert"]
+        assert [verb.action for verb in off] == []

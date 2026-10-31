@@ -8,9 +8,10 @@ sound can be played on expansion if configured.
 from __future__ import annotations
 
 import datetime
+import os
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
 _TRIGGER_CHARS: frozenset[str] = frozenset({
     " ",
@@ -29,7 +30,51 @@ _TRIGGER_CHARS: frozenset[str] = frozenset({
     "'",
 })
 
+
+def is_trigger_char(character: str) -> bool:
+    """Would *character*, typed after a word, end it and offer an expansion?
+
+    Public so a caller can ask before doing anything expensive. QUILL Lite read
+    the whole document on every keystroke to find out whether an expansion was
+    even possible, and the answer is no for every letter anybody types
+    (bad.md T1).
+    """
+    return character in _TRIGGER_CHARS
+
+
 _ABBREVIATIONS_FILE = "abbreviations.json"
+
+#: The category that marks an entry as an **AutoCorrect** correction rather than
+#: an abbreviation. Corrections live in this same library and file -- one store,
+#: one manager, one backup -- but they are not abbreviations: they fire only
+#: while the separate *Correct common misspellings as I type* setting is on, by
+#: the stricter word rules in :mod:`quill.core.autocorrect`, and never expand
+#: through this module, Quick Insert or Quill Inkwell. Every matcher here skips
+#: them, which is what keeps turning abbreviations on from also turning
+#: corrections on.
+AUTOCORRECT_CATEGORY = "AutoCorrect"
+
+
+#: Which trigger characters an entry accepts (``triggers``). ``"manual"`` never
+#: auto-expands -- the entry is only reachable from Quick Insert, which is the
+#: safe home for long or destructive expansions.
+TRIGGER_MODES: tuple[str, ...] = ("both", "space", "punctuation", "manual")
+
+#: What is announced when an entry expands (``speak_mode``).
+SPEAK_MODES: tuple[str, ...] = ("silent", "name", "expansion")
+
+#: Per-entry override of the global expansion sound (``sound``).
+SOUND_MODES: tuple[str, ...] = ("inherit", "on", "off")
+
+#: Whitespace trigger characters, as opposed to punctuation ones. Used to decide
+#: whether an entry whose ``triggers`` is ``"space"`` or ``"punctuation"``
+#: accepts the character that actually fired.
+_SPACE_TRIGGERS: frozenset[str] = frozenset({" ", "\n", "\t"})
+
+#: The current on-disk schema. v1 files (no per-entry settings) load unchanged
+#: because every v2 field has a default; a v2 file read by an older build simply
+#: ignores the extra keys and still expands.
+SCHEMA_VERSION = 2
 
 
 @dataclass(slots=True)
@@ -40,6 +85,57 @@ class Abbreviation:
     case_sensitive: bool = False
     enabled: bool = True
     description: str = ""
+    #: Free-text grouping ("" is Uncategorised). Filters the manager list and
+    #: Quick Insert; also the unit Quill Inkwell enables or disables as a set.
+    category: str = ""
+    #: "silent" | "name" | "expansion" -- what is spoken on expansion.
+    speak_mode: str = "silent"
+    #: "inherit" | "on" | "off" -- per-entry override of the global sound.
+    sound: str = "inherit"
+    #: Append a space after the expansion (after the trigger punctuation, when
+    #: punctuation is what fired, so the text still reads correctly).
+    trailing_space: bool = False
+    #: "both" | "space" | "punctuation" | "manual" -- see TRIGGER_MODES.
+    triggers: str = "both"
+    #: Quick Insert sorts by recency of use; both are maintained at the call site.
+    usage_count: int = 0
+    last_used: str = ""
+    #: Applications this entry may fire in, by executable name without the
+    #: extension and lowercase ("outlook", "code"). Empty means everywhere,
+    #: which is what every existing entry is and stays.
+    #:
+    #: This only bites system-wide (Quill Inkwell): inside QUILL's own editor
+    #: there is one application and scoping to it would be a setting that could
+    #: only ever switch an entry off. A signature belongs in a mail client, a
+    #: code snippet belongs in an editor, and an expander that fires both
+    #: everywhere is one people turn off.
+    apps: tuple[str, ...] = ()
+
+    def matches_app(self, process_name: str) -> bool:
+        """Whether this entry may fire in the application currently in front.
+
+        An entry with no apps fires anywhere -- that is the default and the
+        overwhelming majority. When the caller cannot tell what is in front
+        (no process name), a *scoped* entry does not fire: the safe direction
+        for "I do not know where this would land" is not to type into it.
+        """
+        if not self.apps:
+            return True
+        name = str(process_name or "").strip().lower()
+        if not name:
+            return False
+        stem = name.rsplit(".", 1)[0] if name.endswith(".exe") else name
+        return stem in self.apps
+
+    def accepts_trigger(self, char: str) -> bool:
+        """Whether this entry may be fired by trigger character *char*."""
+        if self.triggers == "manual":
+            return False
+        if self.triggers == "space":
+            return char in _SPACE_TRIGGERS
+        if self.triggers == "punctuation":
+            return char not in _SPACE_TRIGGERS
+        return True
 
 
 @dataclass(slots=True)
@@ -82,11 +178,12 @@ class AbbreviationLibrary:
         return list(self.abbreviations)
 
     def enabled_only(self) -> list[Abbreviation]:
-        return [a for a in self.abbreviations if a.enabled]
+        """Enabled abbreviations -- AutoCorrect corrections are not among them."""
+        return [a for a in self.abbreviations if a.enabled and a.category != AUTOCORRECT_CATEGORY]
 
     def find_by_trigger(self, text: str, case_sensitive: bool = False) -> Abbreviation | None:
         for a in sorted(self.abbreviations, key=lambda x: len(x.abbreviation), reverse=True):
-            if not a.enabled:
+            if not a.enabled or a.category == AUTOCORRECT_CATEGORY:
                 continue
             if a.case_sensitive or case_sensitive:
                 if a.abbreviation == text:
@@ -104,6 +201,14 @@ class AbbreviationMatch:
     resolved_text: str
     cursor_offset: int
     has_cursor: bool
+    #: The entry that matched, so the call site can honor its per-entry speech
+    #: and sound settings without looking it up again. Optional for backward
+    #: compatibility with callers constructing a match directly.
+    abbreviation: Abbreviation | None = None
+    #: Insert one space *after* the trigger character. Only ever set when the
+    #: entry asked for a trailing space and the trigger was punctuation -- a
+    #: space trigger already leaves one, and doubling it reads badly.
+    trailing_space: bool = False
 
 
 _BUILTINS: list[tuple[str, str, str]] = [
@@ -147,10 +252,19 @@ def resolve_expansion(expansion: str, clipboard_text: str = "") -> tuple[str, in
     cursor_offset is relative to the start of resolved_text.
     """
     text = expansion
+    # An empty clipboard deliberately leaves ``${clipboard}`` in place rather
+    # than silently inserting nothing: the visible token tells the user why the
+    # expansion looks wrong, and re-copying and expanding again fixes it.
     if clipboard_text:
         text = text.replace("${clipboard}", clipboard_text)
+    now = datetime.datetime.now()
+    text = text.replace("${datetime}", now.strftime("%B %d, %Y %I:%M %p"))
     text = text.replace("${date}", datetime.date.today().strftime("%B %d, %Y"))
-    text = text.replace("${time}", datetime.datetime.now().strftime("%I:%M %p"))
+    text = text.replace("${time}", now.strftime("%I:%M %p"))
+    text = text.replace("${day}", now.strftime("%d").lstrip("0") or "0")
+    text = text.replace("${month}", now.strftime("%B"))
+    text = text.replace("${year}", now.strftime("%Y"))
+    text = text.replace("${username}", os.environ.get("USERNAME", os.environ.get("USER", "")))
     has_cursor = "${cursor}" in text
     cursor_offset = len(text)
     if has_cursor:
@@ -164,11 +278,23 @@ def try_expand(
     caret: int,
     library: AbbreviationLibrary,
     clipboard_text: str = "",
+    *,
+    clipboard_provider: Callable[[], str] | None = None,
 ) -> AbbreviationMatch | None:
     """Check for an abbreviation ending just before the character at caret-1.
 
     caret-1 must be a trigger character (space, punctuation, etc.).
     Returns an AbbreviationMatch or None.
+
+    *clipboard_provider*, when given, is called instead of *clipboard_text* --
+    and only once an abbreviation has actually matched and its expansion
+    contains ``${clipboard}`` (#1346 follow-up). The Windows clipboard is a
+    shared, single-owner OS resource: opening it is a cross-process
+    synchronization point that can block behind a clipboard manager or a screen
+    reader's own clipboard polling. The old contract made the caller fetch it
+    up front, which in practice meant one clipboard open *per keystroke*;
+    matches are rare and ``${clipboard}`` expansions rarer, so the provider
+    turns that into approximately never.
     """
     if caret < 2 or caret > len(text):
         return None
@@ -183,89 +309,77 @@ def try_expand(
         return None
     token = text[token_start:token_end]
     candidates = sorted(
-        (a for a in library.abbreviations if a.enabled),
+        (a for a in library.abbreviations if a.enabled and a.category != AUTOCORRECT_CATEGORY),
         key=lambda a: len(a.abbreviation),
         reverse=True,
     )
     for abbr in candidates:
+        if not abbr.accepts_trigger(trigger_char):
+            continue
         if abbr.case_sensitive:
             match = token == abbr.abbreviation
         else:
             match = token.lower() == abbr.abbreviation.lower()
         if match:
-            resolved, cursor_offset, has_cursor = resolve_expansion(abbr.expansion, clipboard_text)
+            clip = clipboard_text
+            if clipboard_provider is not None and "${clipboard}" in abbr.expansion:
+                clip = clipboard_provider()
+            resolved, cursor_offset, has_cursor = resolve_expansion(abbr.expansion, clip)
             return AbbreviationMatch(
                 token_start=token_start,
                 token_end=token_end,
                 resolved_text=resolved,
                 cursor_offset=cursor_offset,
                 has_cursor=has_cursor,
+                abbreviation=abbr,
+                trailing_space=abbr.trailing_space and trigger_char not in _SPACE_TRIGGERS,
             )
     return None
 
 
-def load_abbreviation_library(data_dir: Path | None = None) -> AbbreviationLibrary:
-    from quill.core import paths
-    from quill.core.storage import read_json
+# Quillin-contributed abbreviations moved to their own module under GATE-11
+# (extract, never rebaseline); re-exported so every existing import still works.
+from quill.core.abbreviations_contributed import (  # noqa: E402
+    build_contributed_library as build_contributed_library,
+)
+from quill.core.abbreviations_contributed import (  # noqa: E402
+    contributed_abbreviation_id as contributed_abbreviation_id,
+)
 
-    base = data_dir if data_dir is not None else paths.app_data_dir()
-    path = base / _ABBREVIATIONS_FILE
-    if not path.exists():
-        return _make_default_library()
-    # read_json returns its default (not a raise) on a corrupt/unreadable file.
-    # Use a sentinel so a present-but-corrupt file degrades to the built-in
-    # defaults rather than an empty library (passing default={} would look like
-    # a valid-but-empty payload and silently wipe the user's abbreviations).
-    corrupt = object()
-    try:
-        data = read_json(path, default=corrupt)
-    except Exception:  # noqa: BLE001
-        return _make_default_library()
-    if data is corrupt or not isinstance(data, dict):
-        return _make_default_library()
-    abbreviations: list[Abbreviation] = []
-    for raw in data.get("abbreviations", []):
-        if not isinstance(raw, dict):
-            continue
-        try:
-            abbreviations.append(
-                Abbreviation(
-                    id=str(raw.get("id", uuid.uuid4())),
-                    abbreviation=str(raw.get("abbreviation", "")),
-                    expansion=str(raw.get("expansion", "")),
-                    case_sensitive=bool(raw.get("case_sensitive", False)),
-                    enabled=bool(raw.get("enabled", True)),
-                    description=str(raw.get("description", "")),
-                )
-            )
-        except Exception:  # noqa: BLE001
-            continue
-    return AbbreviationLibrary(
-        version=int(data.get("version", 1)),
-        abbreviations=abbreviations,
-    )
+# The on-disk half moved to its own module under GATE-11 (extract, never
+# rebaseline); re-exported so every existing import still works.
+from quill.core.abbreviations_store import (  # noqa: E402
+    load_abbreviation_library as load_abbreviation_library,
+)
+from quill.core.abbreviations_store import (  # noqa: E402
+    save_abbreviation_library as save_abbreviation_library,
+)
 
 
-def save_abbreviation_library(library: AbbreviationLibrary, data_dir: Path | None = None) -> None:
-    from quill.core import paths
-    from quill.core.storage import write_json_atomic
+def record_use(library: AbbreviationLibrary, abbreviation_id: str) -> None:
+    """Note that an entry was just used (Quick Insert sorts on this)."""
+    for a in library.abbreviations:
+        if a.id == abbreviation_id:
+            a.usage_count += 1
+            a.last_used = datetime.datetime.now(datetime.UTC).isoformat()
+            return
 
-    base = data_dir if data_dir is not None else paths.app_data_dir()
-    path = base / _ABBREVIATIONS_FILE
-    write_json_atomic(
-        path,
-        {
-            "version": library.version,
-            "abbreviations": [
-                {
-                    "id": a.id,
-                    "abbreviation": a.abbreviation,
-                    "expansion": a.expansion,
-                    "case_sensitive": a.case_sensitive,
-                    "enabled": a.enabled,
-                    "description": a.description,
-                }
-                for a in library.abbreviations
-            ],
-        },
+
+def categories(library: AbbreviationLibrary) -> list[str]:
+    """Every category in use, in first-seen order. "" (Uncategorised) is
+    reported as the empty string and sorts first at the call site."""
+    seen: list[str] = []
+    for a in library.abbreviations:
+        if a.category not in seen:
+            seen.append(a.category)
+    return seen
+
+
+def quick_insert_order(library: AbbreviationLibrary) -> list[Abbreviation]:
+    """Enabled entries ordered for the Quick Insert picker: most-used first,
+    then alphabetically. ``manual`` entries are included -- Quick Insert is the
+    only way to reach them."""
+    return sorted(
+        library.enabled_only(),
+        key=lambda a: (-a.usage_count, a.abbreviation.lower()),
     )

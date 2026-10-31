@@ -40,8 +40,10 @@ from quill.ui.dialog_contract import (
     apply_listbox_activation,
     apply_modal_ids,
     focus_primary_control,
+    ok_cancel_platform_order,
     show_message_box,
 )
+from quill.ui.dpi import dip_size
 
 
 class DialogMode(Enum):
@@ -133,7 +135,9 @@ class RemoteSitesDialog(wx.Dialog):
         mode: DialogMode = DialogMode.OPEN,
         title: str = "Open from Remote",
     ) -> None:
-        super().__init__(parent, title=title, size=(820, 480), style=wx.DEFAULT_DIALOG_STYLE)
+        super().__init__(
+            parent, title=title, size=dip_size(parent, 820, 480), style=wx.DEFAULT_DIALOG_STYLE
+        )
         self._mode = mode
         self._result: RemoteSitesResult | None = None
         self._build_ui()
@@ -215,8 +219,10 @@ class RemoteSitesDialog(wx.Dialog):
         cancel = wx.Button(panel, id=wx.ID_CANCEL, label="&Cancel")
         ok.SetName("Open from selected site" if is_open else "Save to selected site")
         cancel.SetName("Cancel")
-        button_row.Add(ok, 0, wx.EXPAND | wx.RIGHT, 4)
-        button_row.Add(cancel, 0, wx.EXPAND)
+        # #53: native button order -- Cancel-left/OK-right on macOS.
+        first_btn, second_btn = ok_cancel_platform_order(ok, cancel)
+        button_row.Add(first_btn, 0, wx.EXPAND | wx.RIGHT, 4)
+        button_row.Add(second_btn, 0, wx.EXPAND)
         root.Add(button_row, 0, wx.EXPAND | wx.ALL, 8)
 
         panel.SetSizer(root)
@@ -341,7 +347,7 @@ class _SiteEditorDialog(wx.Dialog):
         super().__init__(
             parent,
             title="New Remote Site" if site is None else f"Edit {site.name}",
-            size=(480, 360),
+            size=dip_size(parent, 480, 360),
             style=wx.DEFAULT_DIALOG_STYLE,
         )
         self._site = site
@@ -384,7 +390,7 @@ class _SiteEditorDialog(wx.Dialog):
         self._host_ctrl.SetName("Host name")
         grid.Add(self._host_ctrl, 1, wx.EXPAND)
 
-        grid.Add(wx.StaticText(panel, label="&Port:"))
+        grid.Add(wx.StaticText(panel, label="P&ort:"))
         self._port_ctrl = wx.TextCtrl(
             panel,
             value=str(self._site.port if self._site and self._site.port else ""),
@@ -397,7 +403,7 @@ class _SiteEditorDialog(wx.Dialog):
         self._username_ctrl.SetName("User name")
         grid.Add(self._username_ctrl, 1, wx.EXPAND)
 
-        grid.Add(wx.StaticText(panel, label="&Password:"))
+        grid.Add(wx.StaticText(panel, label="P&assword:"))
         self._password_ctrl = wx.TextCtrl(panel, style=wx.TE_PASSWORD)
         self._password_ctrl.SetName("Password")
         if self._site is not None:

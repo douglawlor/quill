@@ -49,7 +49,7 @@ No ``wx`` imports: this is pure model code. It is imported lazily by
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from typing import Any
 
 from quill.core.settings import Settings
@@ -65,6 +65,45 @@ SETTINGS_SCHEMA_VERSION = 2
 #: Bucket for fields that have no registry spec (still serialized when they
 #: differ from the default, never lost).
 UNGROUPED_KEY = "_ungrouped"
+
+#: Settings keys retired by the QuillRichEdit promotion (0.9.0-beta3): the
+#: editor-surface experiment is decided, so every surface knob is gone and the
+#: braille fix is on by default (``braille_editor_system_edit_fix`` +
+#: ``braille_editor_hide_border`` on the Braille tab). Old overrides — including
+#: an experimental-era ``editor_hide_border`` False — are dropped on load so
+#: every upgrader lands on the promoted default. The keys are stripped here (not
+#: just ignored by ``Settings.from_dict``) so the UI can surface the one-time
+#: "your editor settings were simplified" notice and rewrite the cleaned file.
+RETIRED_SETTINGS_KEYS = frozenset({
+    "editor_control_kind",
+    "editor_use_legacy_richedit",
+    "experimental_editor_surface",
+    "experimental_editor_surfaces_enabled",
+    "experimental_richedit_emulate_sysedit",
+    "editor_hide_border",
+    # The read-only rich text lens (never shipped on; superseded by rich mode).
+    "editor_surface",
+    # Post-Save-As surface reload sync (superseded by the Document Format
+    # switcher's explicit retargeting).
+    "save_as_surface_sync",
+})
+
+#: Retired keys actually seen in the loaded document this launch (consume-once
+#: via :func:`pop_retired_settings_keys`). In-process only, like
+#: ``migration_backup._recent_migrations``.
+_retired_keys_seen: list[str] = []
+
+
+def pop_retired_settings_keys() -> list[str]:
+    """Return and clear the retired keys found in the loaded settings file.
+
+    Non-empty exactly when the user upgraded across the QuillRichEdit promotion
+    with old surface overrides on disk; the UI surfaces the one-time migration
+    notice and saves the cleaned delta back.
+    """
+    seen = list(_retired_keys_seen)
+    _retired_keys_seen.clear()
+    return seen
 
 
 def _group_for_key(key: str) -> str:
@@ -135,23 +174,33 @@ def migrate(raw: object) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     if "groups" in raw:
-        return _flatten_groups(raw.get("groups"))
-    # Legacy flat document: every key is already a candidate field.
-    return {str(key): value for key, value in raw.items() if key != "schema_version"}
+        flat = _flatten_groups(raw.get("groups"))
+    else:
+        # Legacy flat document: every key is already a candidate field.
+        flat = {str(key): value for key, value in raw.items() if key != "schema_version"}
+    for key in sorted(RETIRED_SETTINGS_KEYS & flat.keys()):
+        flat.pop(key)
+        if key not in _retired_keys_seen:
+            _retired_keys_seen.append(key)
+    return flat
 
 
 def _accepts(key: str, value: Any) -> bool:
     try:
         Settings.from_dict({key: value})
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return False
     return True
 
 
 def _safe_from_dict(flat: dict[str, Any]) -> Settings:
+    # OverflowError is included alongside (TypeError, ValueError): a JSON ``1e999``
+    # parses to ``float('inf')`` and an ``int(inf)`` cast inside ``from_dict``
+    # raises OverflowError, which -- uncaught -- would crash startup on every
+    # launch. Treating it like any other bad value drops the offending field.
     try:
         return Settings.from_dict(flat)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         # A corrupt value raised on the whole load; keep every field that
         # validates on its own and drop only the offending ones.
         good: dict[str, Any] = {}
@@ -159,7 +208,7 @@ def _safe_from_dict(flat: dict[str, Any]) -> Settings:
             try:
                 Settings.from_dict({key: value})
                 good[key] = value
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 continue
         return Settings.from_dict(good)
 
@@ -172,3 +221,57 @@ def from_versioned(raw: object) -> Settings:
     document yields an all-defaults :class:`Settings`.
     """
     return _safe_from_dict(migrate(raw))
+
+
+def is_future_settings_document(raw: object) -> bool:
+    """Return True when ``raw`` was written by a *newer* schema than this build.
+
+    The shared ``%APPDATA%\\Quill`` store is written by several apps of possibly
+    different vintages. A file stamped with a schema above this build's must not
+    be rewritten (that would downgrade a newer app's data); the loader reads it
+    for in-memory use and leaves it untouched.
+    """
+    if not isinstance(raw, dict):
+        return False
+    version = raw.get("schema_version")
+    return isinstance(version, int) and version > SETTINGS_SCHEMA_VERSION
+
+
+def _known_setting_keys() -> set[str]:
+    # Fields this build recognizes, plus keys it deliberately retires -- neither
+    # is "unknown". Anything else in a same-version file was written by a newer
+    # sibling app and must survive this build's rewrite.
+    return {f.name for f in fields(Settings)} | set(RETIRED_SETTINGS_KEYS)
+
+
+def reconcile_unknown_overrides(raw: dict[str, Any], desired: dict[str, Any]) -> dict[str, Any]:
+    """Return ``desired`` with override keys this build does not recognize
+    carried forward from ``raw`` -- verbatim, in their original group.
+
+    Adding a setting *field* does not bump ``schema_version``, so the common
+    multi-vintage case is two same-version apps where one has a field the other
+    lacks. Without this, the older app's rewrite (dropping the unknown field)
+    silently discards the newer app's setting. Retired and known keys are left
+    to the normal delta path; only genuinely unrecognized keys are preserved.
+    """
+    raw_groups = raw.get("groups")
+    if not isinstance(raw_groups, dict):
+        # A legacy flat file has no "groups"; migration owns that shape.
+        return desired
+    known = _known_setting_keys()
+    merged_groups = {
+        name: dict(bucket)
+        for name, bucket in desired.get("groups", {}).items()
+        if isinstance(bucket, dict)
+    }
+    carried = False
+    for group_name, bucket in raw_groups.items():
+        if not isinstance(bucket, dict):
+            continue
+        for key, value in bucket.items():
+            if str(key) not in known:
+                merged_groups.setdefault(str(group_name), {})[str(key)] = value
+                carried = True
+    if not carried:
+        return desired
+    return {**desired, "groups": merged_groups}

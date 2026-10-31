@@ -1,0 +1,665 @@
+"""Internet Radio > Manage Favorites... -- the favorites, made organizable.
+
+A screen-reader-first manager for saved stations, shared verbatim by
+embedded QUILL and standalone Quill Radio: a live search box over
+everything (name, country, language, tags, folder, homepage), a tree of
+arbitrarily nested folders (path-based; see ``core/radio/favorites.py``),
+and podcast-grade ordering -- Move Up/Down inside a folder, plus the
+Mark-and-Move pattern (Mark for Move, then Move Above / Move Below any
+other station, adopting its folder) for long hops.
+
+Folders here live as long as they hold stations: filing a station into a
+path creates the folders on the way, and deleting a folder simply walks
+its stations back to the top level -- stations are never deleted with it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
+from quill.core.radio.favorites import FavoriteStation, RadioFavoritesStore
+from quill.ui.dialog_contract import (
+    announce_surface_exit,
+    apply_modal_ids,
+    bind_close_button,
+    show_modal_dialog,
+)
+from quill.ui.dpi import dip_size
+from quill.ui.radio import favorites_details, favorites_marks
+
+_TOP_LEVEL_CHOICE = "(Top level -- no folder)"
+_NEW_FOLDER_CHOICE = "(New folder...)"
+
+
+def apply_readable_tree_colours(tree: Any) -> None:
+    """Force a favorites ``wx.TreeCtrl`` to the system window/text colours (#3).
+
+    Some Windows configurations render a bare ``wx.TreeCtrl`` with a background
+    that ignores the desktop theme, leaving it near-invisible for low-vision
+    users. Setting the colours explicitly from ``wx.SystemSettings`` makes the
+    tree honour the active theme and Windows High Contrast mode. This is a
+    contrast/legibility fix only -- NOT a dark-mode or theme preference (no
+    hard-coded colours, no toggle): it just pins the tree to the same
+    theme-resolved colours every other native control already uses.
+    """
+    import wx
+
+    tree.SetBackgroundColour(wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOW))
+    tree.SetForegroundColour(wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWTEXT))
+
+
+def move_announcement(store: RadioFavoritesStore, key: str, delta: int) -> str:
+    """Spoken result of a Move Up/Down, naming the neighbor it now sits next to.
+
+    wx-free so it is unit-testable. Reports the station now on the side the
+    entry moved toward ("Moved down, now above X"); at a folder edge it names
+    the other neighbor instead, so the announcement always has a reference
+    point when one exists (quill-radio #1)."""
+    direction = "down" if delta > 0 else "up"
+    toward = store.neighbor_in_folder(key, 1 if delta > 0 else -1)
+    if toward is not None:
+        side = "above" if delta > 0 else "below"
+        return f"Moved {direction}, now {side} {toward.display_label}"
+    away = store.neighbor_in_folder(key, -1 if delta > 0 else 1)
+    if away is not None:
+        side = "below" if delta > 0 else "above"
+        return f"Moved {direction}, now {side} {away.display_label}"
+    return f"Moved {direction}"
+
+
+class FavoritesManagerDialog:
+    """Search, play, remove, reorder, and file favorite stations."""
+
+    def __init__(
+        self,
+        parent: object,
+        *,
+        favorites: RadioFavoritesStore,
+        controller: object,
+        announce_cb: Callable[[str], None] | None = None,
+        on_changed: Callable[[], None] | None = None,
+        on_switch_to_manual: Callable[[], None] | None = None,
+        sort: str = "manual",
+        folder_sorts: dict[str, str] | None = None,
+        windows: object | None = None,
+        host: object | None = None,
+    ) -> None:
+        import wx
+
+        self._wx = wx
+        self._store = favorites
+        self._controller = controller
+        # The app frame, when there is one. The folder queue hangs on it so
+        # Next and Previous keep working after this window closes.
+        self._host = host
+        self._announce = announce_cb or (lambda _m: None)
+        self._on_changed = on_changed or (lambda: None)
+        # Persist "sort is now manual" in the host's history. Called when a
+        # reorder from a sorted view switches the list to manual order.
+        self._on_switch_to_manual = on_switch_to_manual or (lambda: None)
+        # Display order for the tree. When it is not "manual", a reorder switches
+        # the sort to manual WITHOUT rewriting the stored order (matching the main
+        # list) -- so Move Up/Down works from the default A-Z view, and a
+        # hand-arranged order is never overwritten by the visible view (#1186).
+        self._sort = sort
+        self._folder_sorts = folder_sorts or {}
+        self._marked_key: str | None = None
+        self._menu_id_refs: list[object] = []
+        # Modeless wx.Frame (persistent menu bar + &Window menu, controls on an
+        # inner panel) when standalone Radio supplies a WindowManager; an
+        # unchanged modal wx.Dialog for embedded QUILL. self.dialog stays the
+        # top-level window so child dialogs (rename/move/remove) parent correctly.
+        self._windows = windows
+        self._modeless = windows is not None
+        if self._modeless:
+            # No parent, on purpose: an owned frame floats glued above its
+            # owner and reads as an overlay; a peer window stands on its own.
+            self._win = wx.Frame(
+                None, title="Manage Favorite Stations", style=wx.DEFAULT_FRAME_STYLE
+            )
+            self._surface = wx.Panel(self._win, style=wx.TAB_TRAVERSAL)
+            self._build_surface_menu_bar()
+            self._win.Bind(wx.EVT_CHAR_HOOK, self._on_char_hook)
+            self._win.Bind(wx.EVT_CLOSE, self._on_close)
+        else:
+            self._win = wx.Dialog(
+                parent,
+                title="Manage Favorite Stations",
+                style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
+            )
+            self._surface = self._win
+        self.dialog = self._win  # top-level window; child dialogs parent to it
+        self._win.SetMinSize(dip_size(self._win, 720, 560))
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        search_row = wx.BoxSizer(wx.HORIZONTAL)
+        search_row.Add(
+            wx.StaticText(self._surface, label="Search favorites (&K):"),
+            0,
+            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+            6,
+        )
+        self._search_ctrl = wx.TextCtrl(self._surface)
+        self._search_ctrl.SetName(
+            "Filter favorites as you type; matches names, countries, tags, and folders"
+        )
+        search_row.Add(self._search_ctrl, 1, wx.EXPAND)
+        root.Add(search_row, 0, wx.EXPAND | wx.ALL, 10)
+
+        root.Add(
+            wx.StaticText(self._surface, label="Favorites and folders (&L)"),
+            0,
+            wx.LEFT | wx.TOP,
+            10,
+        )
+        self._tree = wx.TreeCtrl(
+            self._surface, style=wx.TR_HAS_BUTTONS | wx.TR_LINES_AT_ROOT | wx.TR_HIDE_ROOT
+        )
+        self._tree.SetName(
+            "Favorite stations, organized in folders; Enter plays, Delete removes, "
+            "Shift+F10 opens all actions"
+        )
+        apply_readable_tree_colours(self._tree)  # low-vision legibility (#3)
+        root.Add(self._tree, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
+
+        self._status = wx.StaticText(self._surface, label="")
+        self._status.SetName("Status")
+        root.Add(self._status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 8)
+
+        # What the highlighted row is, and the note you wrote about it. Built
+        # in favorites_details (GATE-11) -- see that module on why a note
+        # belongs in a pane rather than behind a dialog.
+        favorites_details.build(self, self._surface, root)
+
+        row1 = wx.BoxSizer(wx.HORIZONTAL)
+        self._play_btn = self._button(row1, "&Play", self._on_play, "Play the selected station")
+        self._remove_btn = self._button(
+            row1, "&Remove", self._on_remove, "Remove the selected station from favorites"
+        )
+        self._up_btn = self._button(
+            row1, "Move &Up", lambda: self._on_move(-1), "Move the station up within its folder"
+        )
+        self._down_btn = self._button(
+            row1,
+            "Move &Down",
+            lambda: self._on_move(1),
+            "Move the station down within its folder",
+        )
+        self._folder_btn = self._button(
+            row1,
+            "Move to F&older...",
+            self._on_move_to_folder,
+            "File the selected station into a folder; type / to nest folders",
+        )
+        root.Add(row1, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
+
+        row2 = wx.BoxSizer(wx.HORIZONTAL)
+        self._mark_btn = self._button(
+            row2,
+            "&Mark for Move",
+            self._on_mark,
+            "Mark the selected station, then Move Above or Move Below a destination",
+        )
+        self._above_btn = self._button(
+            row2,
+            "Move &Above",
+            lambda: self._on_move_marked(True),
+            "Place the marked station directly above the selected one, joining its folder",
+        )
+        self._below_btn = self._button(
+            row2,
+            "Move Be&low",
+            lambda: self._on_move_marked(False),
+            "Place the marked station directly below the selected one, joining its folder",
+        )
+        self._new_folder_btn = self._button(
+            row2,
+            "New Fol&der...",
+            self._on_new_folder,
+            "Create a folder (Ctrl+Shift+E); you choose where it lives",
+        )
+        self._rename_btn = self._button(
+            row2,
+            "Re&name...",
+            self._on_rename,
+            "Rename the selected station or folder (F2); a blank station name "
+            "restores the directory's own",
+        )
+        self._delete_folder_btn = self._button(
+            row2,
+            "Delete Fol&der...",
+            self._on_delete_folder,
+            "Delete the selected folder; its stations return to the top level",
+        )
+        self._remove_all_btn = self._button(
+            row2,
+            "Remove A&ll...",
+            self._on_remove_all,
+            "Remove every favorite (folders are kept); a backup is saved so it can be undone",
+        )
+        row2.AddStretchSpacer()
+        if not self._modeless:
+            # Only the modal dialog carries a Close button: a real window
+            # closes with Alt+F4/Ctrl+F4, Ctrl+W, or Escape (2026-08-23).
+            close_btn = wx.Button(self._surface, wx.ID_CANCEL, "Close")
+            bind_close_button(self._win, close_btn, modeless=False)
+            close_btn.SetName("Close the favorites manager")
+            row2.Add(close_btn)
+        root.Add(row2, 0, wx.EXPAND | wx.ALL, 10)
+
+        self._surface.SetSizer(root)
+        if self._modeless:
+            outer = wx.BoxSizer(wx.VERTICAL)
+            outer.Add(self._surface, 1, wx.EXPAND)
+            self._win.SetSizer(outer)
+
+        self._search_ctrl.Bind(wx.EVT_TEXT, lambda _e: self._refresh_tree())
+        self._tree.Bind(wx.EVT_TREE_SEL_CHANGED, lambda _e: self._on_selection_changed())
+        self._tree.Bind(wx.EVT_TREE_ITEM_ACTIVATED, lambda _e: self._on_play())
+        # Right-click is the item event; Shift+F10 and the Applications key can
+        # arrive as a bare EVT_CONTEXT_MENU. Both must reach the same menu.
+        for context_event in (wx.EVT_TREE_ITEM_MENU, wx.EVT_CONTEXT_MENU):
+            self._tree.Bind(context_event, self._on_context_menu)
+        self._tree.Bind(wx.EVT_KEY_DOWN, self._on_tree_key)
+
+        self._refresh_tree()
+
+    # -- construction helpers -------------------------------------------------
+
+    def _button(self, sizer: Any, label: str, handler: Callable[[], None], accessible: str) -> Any:
+        wx = self._wx
+        button = wx.Button(self._surface, label=label)
+        button.SetName(accessible)
+        button.Bind(wx.EVT_BUTTON, lambda _e: handler())
+        sizer.Add(button, 0, wx.RIGHT, 6)
+        return button
+
+    def _build_surface_menu_bar(self) -> None:
+        """Menu bar for the modeless frame: &Close + the shared &Window menu."""
+        wx = self._wx
+        menu_bar = wx.MenuBar()
+        surface_menu = wx.Menu()
+        close_id = wx.NewIdRef()
+        surface_menu.Append(close_id, "&Close\tCtrl+W")
+        self._win.Bind(wx.EVT_MENU, lambda _e: self._win.Close(), id=close_id)
+        menu_bar.Append(surface_menu, "&Favorites")
+        # The app's own Station commands, so Alt+S opens the same menu here it
+        # opens in the main window -- see surface_app_menu for the report.
+        from quill.ui.radio import surface_app_menu
+
+        self._menu_id_refs.extend(
+            surface_app_menu.install(
+                win=self._win,
+                host=surface_app_menu.host_of(self),
+                menu_bar=menu_bar,
+                wx=wx,
+                skip=("open_manage_radio_favorites",),
+            )
+        )
+        self._windows.install(self._win, menu_bar)
+        self._win.SetMenuBar(menu_bar)
+        self._menu_id_refs.append(close_id)
+
+    def _on_char_hook(self, event: object) -> None:
+        if event.GetKeyCode() == self._wx.WXK_ESCAPE or (
+            event.GetKeyCode() == self._wx.WXK_F4 and event.ControlDown()
+        ):
+            self._win.Close()
+            return
+        event.Skip()
+
+    def _on_close(self, event: object) -> None:
+        previous = self._windows.previous_key(self._win)
+        self._windows.unregister(self._win)
+        announce_surface_exit("Manage Favorites", self._announce)
+        self._on_changed()
+        event.Skip()
+        self._win.Destroy()
+        if previous:
+            self._windows.activate(previous)
+
+    def show(self) -> None:
+        wx = self._wx
+        if self._modeless:
+            from quill.ui.dialog_contract import show_modeless_surface
+
+            # The transport keyboard here too -- with the WindowManager's
+            # Ctrl+Tab / Ctrl+1..9 rows folded into the same table, because
+            # setting an accelerator table replaces the previous one.
+            from quill.ui.radio import transport_keys
+
+            transport_keys.install(
+                self._win, self, wx=self._wx, extra_entries=self._windows.accelerator_entries()
+            )
+            self._windows.register(self._win, "Manage Favorites")
+            show_modeless_surface(self._win, "Manage Favorites", announce=self._announce)
+            return
+        self._win.CentreOnParent()
+        apply_modal_ids(self._win, cancel_id=wx.ID_CANCEL)
+        # The transport keyboard, so the player is reachable from here too.
+        from quill.ui.radio import transport_keys
+
+        transport_keys.install(self._win, self, wx=self._wx)
+        try:
+            show_modal_dialog(self._win, "Manage Favorite Stations", announce=self._announce)
+        finally:
+            self._win.Destroy()
+
+    # -- tree -----------------------------------------------------------------
+
+    def _refresh_tree(self, keep_key: str | None = None) -> None:
+        query = self._search_ctrl.GetValue().strip()
+        tree = self._tree
+        tree.DeleteAllItems()
+        root = tree.AddRoot("Favorites")
+        select_item = None
+        marks = favorites_marks.dialog_marks(self)  # "(marked)" rows: xradio2 4.10
+
+        if query:
+            # A filter flattens the view: every match in one list, its folder
+            # spoken as part of the label, so results are one arrow-key apart.
+            # Each label says why it matched -- a team, your tag -- and its folder.
+            from quill.core.radio.station_lookup import favorite_label
+
+            matches = self._store.search(query)
+            for favorite in matches:
+                label = favorite_label(favorite, query)
+                item = tree.AppendItem(root, favorites_marks.label_for(marks, favorite.key, label))
+                tree.SetItemData(item, ("station", favorite.key))
+                if favorite.key == keep_key:
+                    select_item = item
+            self._set_status(f"{len(matches)} match(es) for {query}")
+        else:
+            folder_items: dict[str, Any] = {}
+
+            def folder_item(path: str) -> Any:
+                if not path:
+                    return root
+                existing = folder_items.get(path)
+                if existing is not None:
+                    return existing
+                parent_path, _, name = path.rpartition("/")
+                parent = folder_item(parent_path)
+                item = tree.AppendItem(parent, name)
+                tree.SetItemData(item, ("folder", path))
+                folder_items[path] = item
+                return item
+
+            for path in self._store.folders_in_display_order(self._sort):
+                folder_item(path)
+            for favorite in self._store.favorites_in_display_order(self._sort, self._folder_sorts):
+                parent = folder_item(favorite.folder)
+                label = favorites_marks.label_for(marks, favorite.key, favorite.display_label)
+                item = tree.AppendItem(parent, label)
+                tree.SetItemData(item, ("station", favorite.key))
+                if favorite.key == keep_key:
+                    select_item = item
+            count = len(self._store.favorites)
+            folders = len(self._store.folder_names())
+            self._set_status(f"{count} favorite(s), {folders} folder(s)")
+
+        tree.ExpandAll()
+        first, _cookie = tree.GetFirstChild(root)
+        if select_item is not None:
+            tree.SelectItem(select_item)
+        elif first.IsOk():
+            tree.SelectItem(first)
+        self._on_selection_changed()
+
+    def _selected(self) -> tuple[str, str] | None:
+        """("station", key) or ("folder", path) for the tree selection."""
+        item = self._tree.GetSelection()
+        if not item.IsOk():
+            return None
+        data = self._tree.GetItemData(item)
+        if isinstance(data, tuple) and len(data) == 2:
+            return data
+        return None
+
+    def _selected_favorite(self) -> FavoriteStation | None:
+        selected = self._selected()
+        if selected is None or selected[0] != "station":
+            return None
+        return self._store.find(selected[1])
+
+    def _set_status(self, text: str) -> None:
+        self._status.SetLabel(text)
+
+    def _on_selection_changed(self) -> None:
+        favorites_details.refresh(self)
+        selected = self._selected()
+        is_station = selected is not None and selected[0] == "station"
+        is_folder = selected is not None and selected[0] == "folder"
+        playing = is_station and self._is_favorite_playing(self._selected_favorite())
+        self._play_btn.SetLabel("&Stop" if playing else "&Play")
+        self._play_btn.SetName("Stop this station" if playing else "Play the selected station")
+        self._play_btn.Enable(is_station)
+        self._remove_btn.Enable(is_station)
+        self._folder_btn.Enable(is_station)
+        self._mark_btn.Enable(is_station)
+        # Reordering (Move Up/Down/Above/Below) is offered for any station: from
+        # a sorted view the first move switches the list to manual order (baking
+        # what you see), so the buttons are never inertly greyed out.
+        marked = self._marked_key is not None
+        self._up_btn.Enable(is_station)
+        self._down_btn.Enable(is_station)
+        self._above_btn.Enable(is_station and marked)
+        self._below_btn.Enable(is_station and marked)
+        self._rename_btn.Enable(is_station or is_folder)
+        self._delete_folder_btn.Enable(is_folder)
+
+    # -- actions ----------------------------------------------------------------
+
+    def _changed(self, keep_key: str | None = None) -> None:
+        self._on_changed()
+        self._refresh_tree(keep_key)
+
+    def _is_favorite_playing(self, favorite: FavoriteStation | None) -> bool:
+        from quill.ui.radio.playback_state import ACTIVE_STATES
+
+        if favorite is None:
+            return False
+        state = self._controller.state
+        return (
+            state.station is not None
+            and state.station.stream_url == favorite.station.stream_url
+            and state.state in ACTIVE_STATES
+        )
+
+    def _on_play(self) -> None:
+        favorite = self._selected_favorite()
+        if favorite is None:
+            return
+        # One button, honest label: while this station plays it reads Stop.
+        if self._is_favorite_playing(favorite):
+            self._controller.stop()
+            self._announce("Radio stopped.")
+        else:
+            self._controller.play_station(favorite.station)
+            self._announce(f"Playing {favorite.display_label}.")
+        self._on_selection_changed()
+
+    def _cursor_args(self) -> dict:
+        """What favorites_delete needs in order to say where the cursor lands."""
+        return {
+            "query": self._search_ctrl.GetValue().strip(),
+            "sort": self._sort,
+            "folder_sorts": self._folder_sorts,
+        }
+
+    def _on_remove(self) -> None:
+        from quill.ui.radio import favorites_delete
+
+        favorites_delete.remove_selected(self)
+
+    def _on_remove_all(self) -> None:
+        from quill.ui.radio.favorite_actions import remove_all_favorites
+
+        if remove_all_favorites(self.dialog, self._store, announce=self._announce):
+            self._marked_key = None
+            self._changed()
+
+    def _switch_to_manual_if_needed(self, folder: str) -> bool:
+        """If *folder* is in a sorted order, switch the whole list to manual
+        WITHOUT rewriting the stored order -- mirroring the main window's
+        Alt+Shift+Up/Down. Returns True when a switch happened.
+
+        Crucially this does not bake the sorted display over the stored list:
+        doing so silently destroyed a hand-arranged order with no way to recover
+        it (#1186). The move's tree reload reveals the preserved order, and the
+        caller announces "Switched to manual order," so only the sort changes."""
+        if self._folder_sorts.get(folder, self._sort) == "manual":
+            return False
+        self._sort = "manual"
+        self._folder_sorts = {}
+        self._on_switch_to_manual()
+        return True
+
+    def _on_move(self, delta: int) -> None:
+        favorite = self._selected_favorite()
+        if favorite is None:
+            return
+        switched = self._switch_to_manual_if_needed(favorite.folder)
+        if not self._store.move(favorite.key, delta=delta):
+            self._announce("Already at the edge of its folder.")
+            if switched:
+                self._changed(keep_key=favorite.key)
+            return
+        self._changed(keep_key=favorite.key)
+        prefix = "Switched to manual order. " if switched else ""
+        self._announce(prefix + move_announcement(self._store, favorite.key, delta))
+
+    def _on_mark(self) -> None:
+        favorite = self._selected_favorite()
+        if favorite is None:
+            return
+        self._marked_key = favorite.key
+        self._on_selection_changed()
+        self._announce(
+            f"Marked {favorite.display_label}. Select a destination, then Move Above or Move Below."
+        )
+
+    def _on_move_marked(self, before: bool) -> None:
+        marked = self._marked_key
+        target = self._selected_favorite()
+        if marked is None or target is None:
+            return
+        switched = self._switch_to_manual_if_needed(target.folder)
+        if not self._store.move_relative_to(marked, target.key, before=before):
+            self._announce("Could not move the marked station there.")
+            if switched:
+                self._changed(keep_key=marked)
+            return
+        moved = self._store.find(marked)
+        self._marked_key = None
+        self._changed(keep_key=marked)
+        where = "above" if before else "below"
+        suffix = f", in {moved.folder}" if moved is not None and moved.folder else ""
+        prefix = "Switched to manual order. " if switched else ""
+        self._announce(f"{prefix}Moved {where} {target.display_label}{suffix}.")
+
+    def _on_move_to_folder(self) -> None:
+        from quill.ui.radio.favorite_actions import move_favorite_to_folder
+
+        favorite = self._selected_favorite()
+        if favorite is None:
+            return
+        if move_favorite_to_folder(self.dialog, self._store, favorite, announce=self._announce):
+            self._changed(keep_key=favorite.key)
+
+    def _on_rename(self) -> None:
+        """Rename whatever is selected: a station gets a custom display name,
+        a folder renames in place (carrying its subfolders along)."""
+        selected = self._selected()
+        if selected is None:
+            return
+        if selected[0] == "station":
+            self._on_rename_station()
+        else:
+            self._on_rename_folder()
+
+    def _on_rename_station(self) -> None:
+        from quill.ui.radio.favorite_actions import rename_favorite
+
+        favorite = self._selected_favorite()
+        if favorite is None:
+            return
+        if rename_favorite(self.dialog, self._store, favorite, announce=self._announce):
+            self._changed(keep_key=favorite.key)
+
+    def _on_rename_folder(self) -> None:
+        wx = self._wx
+        selected = self._selected()
+        if selected is None or selected[0] != "folder":
+            return
+        path = selected[1]
+        parent_path, _, current = path.rpartition("/")
+        entry = wx.TextEntryDialog(self.dialog, "Folder name:", "Rename Folder", value=current)
+        try:
+            if entry.ShowModal() != wx.ID_OK:  # dialog_button_contract: exempt
+                return
+            name = entry.GetValue().strip().strip("/")
+        finally:
+            entry.Destroy()
+        if not name or name == current:
+            return
+        new_path = f"{parent_path}/{name}" if parent_path else name
+        touched = self._store.rename_folder(path, new_path)
+        self._changed()
+        self._announce(f"Folder renamed to {name}; {touched} station(s) came along.")
+
+    def _on_delete_folder(self) -> None:
+        from quill.ui.radio import favorites_delete
+
+        selected = self._selected()
+        if selected is None or selected[0] != "folder":
+            return
+        path = selected[1]
+        if not favorites_delete.confirm_folder_delete(self._wx, self.dialog, path):
+            return
+        landing = favorites_delete.landing_after_folder_delete(
+            self._store, path=path, sort=self._sort, folder_sorts=self._folder_sorts
+        )
+        moved = self._store.delete_folder(path)
+        self._changed(keep_key=landing)
+        self._announce(f"Folder {path} deleted; {moved} station(s) moved to the top level.")
+
+    # -- keyboard and context menu -------------------------------------------
+
+    def _on_tree_key(self, event: Any) -> None:
+        wx = self._wx
+        code = event.GetKeyCode()
+        if favorites_marks.handle_dialog_key(self, event):
+            return
+        if code in (wx.WXK_DELETE, wx.WXK_NUMPAD_DELETE):
+            selected = self._selected()
+            if selected is not None and selected[0] == "station":
+                self._on_remove()
+            elif selected is not None and selected[0] == "folder":
+                self._on_delete_folder()
+            return
+        if code == wx.WXK_F2:
+            self._on_rename()
+            return
+        if code == ord("E") and event.ControlDown() and event.ShiftDown():
+            self._on_new_folder()
+            return
+        event.Skip()
+
+    def _on_new_folder(self) -> None:
+        from quill.ui.radio.favorite_actions import create_folder_prompt
+
+        selected = self._selected()
+        initial_parent = selected[1] if selected is not None and selected[0] == "folder" else ""
+        if create_folder_prompt(
+            self.dialog, self._store, announce=self._announce, initial_parent=initial_parent
+        ):
+            self._changed()
+
+    def _on_context_menu(self, event: Any) -> None:
+        """The row menu. Built in ``favorites_menu`` -- see that module's note
+        on why the id refs it returns have to be pinned here."""
+        from quill.ui.radio import favorites_menu
+
+        self._context_menu_id_refs = favorites_menu.popup(self, event)

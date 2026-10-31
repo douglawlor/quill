@@ -1,0 +1,627 @@
+"""QUILL Lite -- QUILL with everything removed except the editor.
+
+One document per window, plain text or rich text, and nothing else. It exists
+for the person who wants Notepad or WordPad with QUILL's accessibility and finds
+the full writing environment more than they need: no tabs, no conversion, no
+comparison, no publishing, no extensions, no setup wizard, no command palette.
+
+It is explicitly **not** a replacement for QUILL, and explicitly **not** a place
+new features go. Anyone who wants any of the list above wants QUILL, and
+QUILL Lite is built so it cannot grow into it: its whole product is one window
+class, one editor surface and one command table.
+
+What it does *not* reimplement is the part that took QUILL years to get right.
+The editor is the same native ``RICHEDIT50W`` (:mod:`quill.ui.richedit_editing`
+over :mod:`quill.ui.richedit_rtf_surface`), RTF still goes through the Text
+Object Model, RTF still passes :func:`~quill.io.rtf_safety.scan_rtf_safety`
+before a byte reaches the control, dialogs still go through the dialog contract,
+and F1 still answers through the family's context-help engine.
+
+**Bootstrap deliberately differs from its siblings.** Radio, Cast, Weather,
+Studio and Inkwell each run one window and take the family single-instance lock
+in :mod:`quill.core.ipc`, whose lock and queue live in QUILL's own data
+directory. QUILL Lite runs *many* windows in one process and keeps a separate
+data store, so it uses ``wx.SingleInstanceChecker`` (a kernel object, with no
+file to go stale) plus its own inbox under
+``%LOCALAPPDATA%\\QuillLite`` -- a machine that has never had QUILL installed
+must not grow an ``%APPDATA%\\Quill`` folder because somebody opened a text file.
+
+Origin: contributed as PR #1490 by Steven Scott (``doubletaponair``), MIT, and
+adopted into the family here. The ``tomTrue`` bug that PR isolated is fixed in
+:mod:`quill.ui.richedit_rtf_surface`, where every QUILL user gets it too.
+"""
+
+from __future__ import annotations
+
+import copy
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+import wx
+
+from quill.apps.lite_printing import PrintSettings
+from quill.apps.lite_recovery import LiteRecoveryMixin
+from quill.apps.lite_services import LiteServicesMixin
+from quill.apps.lite_session import LiteSessionMixin
+from quill.apps.lite_settings_persistence import LiteSettingsPersistenceMixin
+from quill.apps.lite_shell import QuillLiteShell
+from quill.apps.lite_sr_watchdog import LiteSrWatchdogMixin
+from quill.apps.lite_updates import check_at_launch
+from quill.apps.lite_voice import ScreenReaderVoice
+from quill.apps.lite_window import DocumentFrame
+from quill.apps.lite_windows import LiteWindowsMixin
+from quill.core.lite import APP_ID, APP_NAME, APP_VERSION
+from quill.core.lite import features as features_mod
+from quill.core.lite import inbox as inbox_mod
+from quill.core.lite import keymap as keymap_mod
+from quill.core.lite import recovery as recovery_mod
+from quill.core.lite.open_prepare import prepare_in_background
+from quill.core.lite.paths import data_dir
+from quill.core.net import configure_ssl_trust
+from quill.core.windows_editor import translate_notepad_argv
+from quill.ui.dialog_contract import show_message_box
+from quill.ui.richedit_editing import PLAIN, RICH
+
+__all__ = ["OPTIONAL_COMPONENTS", "REQUIRED_COMPONENTS", "QuillLiteApp", "main"]
+
+_TITLE = APP_NAME
+_VERSION = APP_VERSION
+_REPO = "Community-Access/quill"
+
+#: QUILL Lite is a text editor. It plays nothing, records nothing, converts
+#: nothing, and therefore stages neither ffmpeg nor libmpv into the shared
+#: runtime. Declared here and mirrored in ``standalone/runtime/app-profiles.json``,
+#: which ``tests/unit/structure/test_app_profiles.py`` checks cannot drift.
+REQUIRED_COMPONENTS: tuple[str, ...] = ()
+OPTIONAL_COMPONENTS: tuple[str, ...] = ()
+
+#: How often the inbox is checked for a request from a second launch. Half a
+#: second is below the threshold at which opening a file from Explorer feels
+#: like a delay, and far above the cost of one ``glob`` on an empty directory.
+_INBOX_POLL_MS = 500
+
+
+class QuillLiteApp(
+    LiteWindowsMixin,
+    LiteRecoveryMixin,
+    LiteSessionMixin,
+    LiteServicesMixin,
+    LiteSettingsPersistenceMixin,
+    LiteSrWatchdogMixin,
+    wx.App,
+):
+    """The window registry, the settings owner, and the single-instance inbox."""
+
+    def __init__(self, paths: list[Path], mode: str | None) -> None:
+        self._initial_paths = paths
+        self._initial_mode = mode
+        self.frames: list[DocumentFrame] = []
+        self.active_frame: DocumentFrame | None = None
+        self.voice = ScreenReaderVoice()
+        self.print_settings: PrintSettings | None = None
+        self.shell: QuillLiteShell | None = None
+        #: Which areas of the app exist at all. Everything unknown is on;
+        #: quill.core.lite.features.DEFAULT_OFF is the small set that starts off
+        #: because it would be wrong on rather than merely unused.
+        self.features: Any = None
+        self.copy_tray: Any = None
+        self.clip_library: Any = None
+        self.abbreviations: Any = None
+        #: What each document remembers about itself between sessions: its nine
+        #: numbered bookmarks and where the cursor was. One store for the whole
+        #: app, keyed by file path -- see LiteServicesMixin._load_document_memory
+        #: for why it cannot be one per window.
+        self.document_memory: Any = None
+        #: The clipboard collector's growing buffer. One per session, shared by
+        #: every document: gathering quotes out of three files into one place is
+        #: exactly the case it exists for.
+        self.collected = ""
+        #: How many pieces are in the collector. Counted rather than inferred
+        #: from the dividers in ``collected``, because a piece that contains a
+        #: divider made that count wrong (bad.md C7).
+        self.collected_pieces = 0
+        self.shutting_down = False
+        super().__init__(redirect=False)
+
+    def OnInit(self) -> bool:  # noqa: N802 - wx API shape
+        self.SetAppName(APP_ID)
+        self.data_dir = data_dir()
+        self.settings = self._load_settings()
+        self._settings_baseline = copy.deepcopy(self.settings)  # F-11: merge on save
+        # Here and not in __init__, where it was until 2026-09-17 and where it
+        # read self.settings **before OnInit had loaded it** -- so constructing
+        # the app raised AttributeError and QUILL Lite did not start at all.
+        # Nothing caught it because every unit test builds a stub window rather
+        # than the wx.App, and the one thing that does construct it is the live
+        # probe, which is run by hand.
+        self.voice.throttle_ms = int(getattr(self.settings, "announcement_throttle_ms", 0) or 0)
+        inbox_mod.claim_instance_marker()
+        # F1 help for the whole app, with QUILL Lite's own purpose catalogue.
+        # Without activate() every SetHelpText in the app stores nothing, because
+        # wx needs a HelpProvider before it will keep help text at all.
+        from quill.core import lite_surface_help
+        from quill.ui import app_context_help
+
+        app_context_help.activate(lite_surface_help.purpose_for_title)
+
+        # Never say "Entered Preferences dialog" / "Exited Preferences dialog".
+        # The shared modal contract offers those cues and QUILL makes them a
+        # setting; QUILL Lite answers no, once, for every dialog it will ever
+        # show. A screen reader already announces a dialog by its title when it
+        # opens and announces where focus lands when it closes, so the cue is a
+        # second telling of something the user was told a moment ago -- which is
+        # GATE-13's rule, and the reason a listener describes an app as chatty
+        # without ever being able to say which sentence was the wrong one.
+        from quill.ui.dialog_contract import set_transition_announcement_policy
+
+        set_transition_announcement_policy(lambda: False)
+
+        self.print_settings = PrintSettings(self.settings)
+        # The earcon player, so the as-you-type spelling alert has something to
+        # reach. QUILL Lite had no sound stack at all: the alert was a status-bar
+        # line and nothing else, which on an unwatched bar is not an alert. Never
+        # fatal -- a machine with no audio, or no pack, simply stays quiet, and
+        # the status bar carries the words either way.
+        from quill.core.sound_events import SoundEvent
+        from quill.ui.companion_cues import init_app_sound, post_cue
+
+        init_app_sound(app_id="quilllite", app_name=APP_NAME)  # and where they play
+        # The one cue that says the app is *up*. A launch is the longest silence
+        # in the whole product -- a window appears, the reader announces a title,
+        # and nothing before that says the double-click worked.
+        post_cue(SoundEvent.APP_STARTED)
+        #: Suppresses the document cue for the windows that open *as part of*
+        #: starting. Reported: the launch sound and the new-document sound
+        #: arrived on top of each other and read as one muddled noise.
+        #:
+        #: A pause between them was the obvious fix and the wrong one. They are
+        #: not two events that need spacing -- they are one event announced
+        #: twice. Starting up *is* getting a document; nobody opened it, and a
+        #: cue is for something that happened, not for something that came with
+        #: the thing that happened. Cleared once the app is running, so the very
+        #: next Ctrl+N sounds exactly as it should.
+        self.starting_up = True
+        self.features = features_mod.load_features(self.data_dir)
+        # The shipped keys with this user's overrides on top. One resolved
+        # answer, so the menu label, the accelerator and the Ctrl+F1 list
+        # cannot disagree about what a command's key is.
+        self.keymap = keymap_mod.load_keymap(self.data_dir)
+        self._load_optional_stores()
+        self.shell = QuillLiteShell(self, (self.settings.window_width, self.settings.window_height))
+        if self.settings.window_maximized:
+            self.shell.Maximize(True)
+        self.shell.Bind(wx.EVT_SIZE, self._remember_shell_size)
+        self.SetTopWindow(self.shell)
+        self.shell.Show()
+
+        recovered = self._restore_pending_work()
+        opened = recovered
+        for path in self._initial_paths:
+            if self.open_path(path):
+                opened = True
+        # Last session's documents, but never over the top of files named on the
+        # command line: somebody who double-clicked a file asked for that file,
+        # and burying it under yesterday's four would be answering a different
+        # question.
+        if not self._initial_paths and self.settings.restore_session:
+            opened = self._restore_session() or opened
+        # A blank document unless the user has said they would rather not have
+        # one. An explicit --new/--plain/--rich on the command line still wins:
+        # that is somebody asking for a document, and a preference answers what
+        # happens when nobody asks.
+        if self._initial_mode is not None or (
+            not opened and self.settings.open_blank_document_at_startup
+        ):
+            self.new_window(self._initial_mode or self.settings.default_mode)
+        self._inbox_timer = wx.Timer(self)
+        self.Bind(wx.EVT_TIMER, self._poll_inbox, self._inbox_timer)
+        self._inbox_timer.Start(_INBOX_POLL_MS)
+        # Everything that opens from here on is somebody's doing, and says so.
+        self.starting_up = False
+        # The quiet once-a-day update check; silent unless there is one.
+        check_at_launch(self)
+        self._start_sr_watchdog()  # a reader dying mid-session saves work first
+        return True
+
+    def next_document_number(self) -> int:
+        """The lowest number no open document is using.
+
+        Numbers are a **handle**, not a history: Alt+1 to Alt+9 reach the first
+        nine of them, the Window menu is written in them, and every title leads
+        with one. A counter that only ever went up spent that handle -- open and
+        close a document ten times in a morning and the next one is "document 11",
+        with no Alt+digit and no short way back to it, while documents 1 to 10 are
+        numbers nothing can have. So a closed document's number goes back in the
+        pool and the next new document takes the lowest one free.
+
+        What does **not** happen is renumbering: an open document keeps the number
+        it was given for as long as it is open, because a number that changes while
+        somebody is away from that window is a number nobody can rely on. Only a
+        number nothing is using is ever handed out again.
+        """
+        taken = {int(getattr(frame, "number", 0) or 0) for frame in self.frames}
+        number = 1
+        while number in taken:
+            number += 1
+        return number
+
+    def _remember_shell_size(self, event: wx.SizeEvent) -> None:
+        """Keep the shell's geometry, which is what reopens next session.
+
+        On the shell rather than on a document: with MDI there is one window to
+        remember, and a maximised child inside a small shell is still a small
+        window.
+        """
+        if self.shell is not None and not self.shutting_down:
+            self.settings.window_maximized = self.shell.IsMaximized()
+            if not self.settings.window_maximized:
+                width, height = self.shell.GetSize()
+                self.settings.window_width = int(width)
+                self.settings.window_height = int(height)
+        event.Skip()
+
+    def new_window(
+        self,
+        mode: str,
+        path: Path | None = None,
+        recovery_slot: recovery_mod.RecoverySlot | None = None,
+    ) -> DocumentFrame:
+        frame = DocumentFrame(self, path=path, mode=mode, recovery_slot=recovery_slot)
+        self.frames.append(frame)
+        self.refresh_all_menus()
+        frame.Show()
+        self.focus_frame(frame)
+        return frame
+
+    def open_path(self, path: Path, reuse: DocumentFrame | None = None) -> bool:
+        """Open *path*, focusing the window that already has it if there is one."""
+        path = Path(path)
+        existing = self._frame_for(path)
+        if existing is not None:
+            self.focus_frame(existing)
+            return True
+        if not path.exists() and not self._offer_to_create(path):
+            return False
+        if not self._confirm_large_file(path):
+            return False
+        if reuse is not None:
+            if not reuse.load(path):
+                return False
+            self.focus_frame(reuse)
+            return True
+        mode = RICH if path.suffix.lower() == ".rtf" else PLAIN
+        if prepare_in_background(path):  # F-05: a large or networked file
+            self.new_window(mode).begin_background_load(path)
+            return True
+        frame = DocumentFrame(self, path=path, mode=mode)
+        if frame.path is None:  # the load failed and already reported why
+            frame.Destroy()
+            return False
+        self.frames.append(frame)
+        self.refresh_all_menus()
+        frame.Show()
+        self.focus_frame(frame)
+        return True
+
+    def _frame_for(self, path: Path) -> DocumentFrame | None:
+        """The window already editing *path*, if any (case- and link-tolerant)."""
+        for frame in self.frames:
+            held = frame.path or getattr(frame, "opening_path", None)
+            if held is not None and _same_file(held, path):
+                return frame
+        return None
+
+    def _confirm_large_file(self, path: Path) -> bool:
+        """Ask before opening a file big enough to hang the editor. True to go on.
+
+        QUILL Lite had no size guard at all until 2026-09-16 -- nothing in its
+        tree called ``stat()`` before reading -- so a 200 MB log opened by
+        ``read_text`` straight into a ``wx.TextCtrl`` with no warning, no
+        progress and no way out. For a Notepad replacement that is the scenario
+        rather than an edge case (bad.md V1).
+
+        The threshold and the wording are QUILL's, from the shared, wx-free
+        ``large_file_guard``, so the two editors cannot disagree about what
+        counts as large or about how they say so.
+
+        Here rather than in the window: ``open_path`` is the one funnel every
+        route goes through -- File > Open, the command line, the shell's Open,
+        a recent-files entry and a session restore -- so the guard is asked
+        once and cannot be walked around.
+        """
+        from quill.ui.large_file_guard import open_prompt
+
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return True  # unreadable size is the open path's problem to report
+        prompt = open_prompt(path.name, size, APP_NAME)
+        if prompt is None:
+            return True
+        message, refused = prompt
+        if refused:  # #1614: past the shared hard ceiling, say no instead of crashing
+            show_message_box(message, APP_NAME, wx.OK)
+            return False
+        return show_message_box(message, APP_NAME, wx.YES_NO | wx.ICON_QUESTION) == wx.YES
+
+    def _offer_to_create(self, path: Path) -> bool:
+        """Notepad's oldest behaviour: a name that does not exist offers to be one."""
+        answer = show_message_box(
+            f"{path.name} does not exist. Create it?",
+            APP_NAME,
+            wx.YES_NO | wx.ICON_QUESTION,
+        )
+        if answer != wx.YES:
+            return False
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+        except OSError as exc:
+            show_message_box(
+                f"Could not create {path}.\n\n{exc}",
+                APP_NAME,
+                wx.OK | wx.ICON_ERROR,
+            )
+            return False
+        return True
+
+    def focus_frame(self, frame: DocumentFrame) -> None:
+        """Bring *frame* to the front of the shell and put the caret in it.
+
+        ``Activate`` rather than ``Raise``: an MDI child is not a top-level
+        window, so raising it does nothing. The shell is raised too, for the
+        case where the request came from a second launch and the whole
+        application is behind something else.
+        """
+        if self.shell is not None:
+            self.shell.Iconize(False)
+            self.shell.Raise()
+        if frame.IsIconized():
+            frame.Iconize(False)
+        frame.Show()
+        frame.Activate()
+        try:
+            frame.control.SetFocus()
+        except RuntimeError:
+            pass  # the child is on its way out; the next activation focuses it
+        self.active_frame = frame
+
+    def cycle(self, frame: DocumentFrame, step: int) -> None:
+        if len(self.frames) < 2:
+            self.voice.speak("Only one window")
+            return
+        index = self.frames.index(frame)
+        self.focus_frame(self.frames[(index + step) % len(self.frames)])
+
+    def forget_frame(self, frame: DocumentFrame) -> None:
+        if frame in self.frames:
+            self.frames.remove(frame)
+        if self.active_frame is frame:
+            self.active_frame = None
+        self.save_settings()
+        self.refresh_all_menus()
+        if not self.frames and self.shell is not None:
+            # The empty bar shows again now, so bring it up to date with any key
+            # or feature changed since it was built -- after the child is gone,
+            # not while its bar still holds the slot (ShellMenuMixin).
+            wx.CallAfter(self.shell.rebuild_empty_menu)
+
+    def exit_all(self) -> None:
+        """Close every document, asking about each. One refusal cancels the lot.
+
+        The shell goes last and is what actually ends the session: closing the
+        children alone would leave an empty window behind, which reads as "Exit
+        did not work".
+        """
+        for frame in list(self.frames):
+            if not frame.confirm_discard():
+                return
+        self.remember_session()
+        self.flush_settings_writes()
+        self.stop_background_sources()
+        for frame in list(self.frames):
+            frame.modified = False  # already answered for, above
+            frame.Close()
+        if self.shell is not None:
+            self.shell.Close()
+
+    def refresh_all_menus(self) -> None:
+        for frame in self.frames:
+            try:
+                frame.refresh_recent_menu()
+                frame.refresh_window_menu()
+            except RuntimeError:
+                pass  # a window mid-destruction; the list is about to be rebuilt
+
+    def reapply_settings(self) -> None:
+        """Push the current settings into every open window.
+
+        One method rather than a loop at each call site: every setting change --
+        the two View-menu toggles, the text-size keys, the font chooser and the
+        Preferences window -- has to reach *all* the windows, and four
+        near-identical loops is four chances for one of them to forget a step.
+        Everything here is cheap enough to do wholesale.
+        """
+        # The voice first: it is the app's, not a window's, and a throttle
+        # somebody has just set should apply to the very next thing said rather
+        # than from the next launch (bad.md A5).
+        self.voice.throttle_ms = int(getattr(self.settings, "announcement_throttle_ms", 0) or 0)
+        for frame in self.frames:
+            frame._apply_editor_font()
+            frame.apply_theme()
+            frame.editor.set_word_wrap(self.settings.word_wrap)
+            frame.restart_autosave()
+            frame.apply_status_bar_visibility()
+            frame._sync_check_items()
+
+    # -- the single-instance inbox --------------------------------------- #
+
+    def stop_background_sources(self) -> None:
+        """Stop app-owned polling before closing children; safe on repeated exit."""
+        self.shutting_down = True
+        if getattr(self, "_settings_notice_pending", False):
+            self._report_settings_failure()
+        timer = getattr(self, "_inbox_timer", None)
+        self._inbox_timer = None
+        if timer is not None:
+            timer.Stop()
+        LiteSrWatchdogMixin._stop_sr_watchdog(self)  # safe on any stand-in
+        if getattr(self, "task_manager", None) is not None:  # F-05's background opens
+            self.task_manager.shutdown(wait=False, cancel_pending=True)
+
+    def OnExit(self) -> int:  # noqa: N802 - wx API shape
+        self.stop_background_sources()
+        return 0
+
+    def _poll_inbox(self, _event: wx.TimerEvent) -> None:
+        if self.shutting_down:
+            return
+        for line in inbox_mod.read_requests():
+            if self.shutting_down:
+                if line in {inbox_mod.NEW_DEFAULT, inbox_mod.NEW_RICH, inbox_mod.NEW_PLAIN}:
+                    mode = line.partition(":")[2] or None
+                    inbox_mod.post_request([], mode)
+                else:
+                    inbox_mod.post_request([Path(line)], None)
+                continue
+            if line == inbox_mod.NEW_DEFAULT:
+                self.new_window(self.settings.default_mode)
+            elif line == inbox_mod.NEW_RICH:
+                self.new_window(RICH)
+            elif line == inbox_mod.NEW_PLAIN:
+                self.new_window(PLAIN)
+            else:
+                self.open_path(Path(line))
+
+
+def _same_file(first: Path, second: Path) -> bool:
+    """True when two paths name the same file, tolerating case and links."""
+    try:
+        if first.resolve() == second.resolve():
+            return True
+        return os.path.samefile(first, second)
+    except OSError:
+        return str(first).lower() == str(second).lower()
+
+
+def _allow_foreground(pid: int) -> None:
+    """Let the already-running instance raise its window in front of this one.
+
+    Windows refuses a foreground change requested by a process that is not in
+    the foreground; only the process that *is* may hand the right over. Without
+    this the handover still opens the file -- into a window behind everything
+    else, which the user then has to go and find.
+    """
+    if sys.platform != "win32" or not pid:
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.user32.AllowSetForegroundWindow(pid)
+    except Exception:  # noqa: BLE001 - a focus courtesy must never block a launch
+        pass
+
+
+def _parse_args(argv: list[str]) -> tuple[list[Path], str | None, bool, bool]:
+    """``(paths, mode, check, new_instance)`` from the command line."""
+    paths: list[Path] = []
+    mode: str | None = None
+    check = False
+    new_instance = False
+    for arg in argv:
+        if arg == "--check":
+            check = True
+        elif arg == "--rich":
+            mode = RICH
+        elif arg == "--plain":
+            mode = PLAIN
+        elif arg == "--new-instance":
+            new_instance = True
+        elif arg in {"-h", "--help", "/?"}:
+            print(_USAGE)
+            raise SystemExit(0)
+        else:
+            paths.append(Path(arg))
+    return paths, mode, check, new_instance
+
+
+_USAGE = f"""{APP_NAME} {APP_VERSION} -- a notepad-scale editor built for screen readers.
+
+  quill-lite [--rich | --plain] [file ...]
+
+  --rich    open a new rich text window as well as any files named
+  --plain   open a new plain text window as well as any files named
+  --check   write a diagnostic to the data folder and exit without a window
+  --new-instance
+            open a second QUILL Lite window with its own document numbering,
+            instead of handing the files to the copy that is already running
+"""
+
+
+def main() -> int:
+    configure_ssl_trust()  # one certificate check, before any network use
+    if sys.argv[1:2] in (["--notes"], ["notes"]):  # the same notes CLI as QUILL
+        from quill.core.inline_notes_cli import run as run_notes
+
+        return run_notes(sys.argv[2:])
+    from quill.core.data_location import apply_pending_at_launch
+    from quill.core.paths import use_running_app_data_dir
+
+    # QUILL Lite keeps its own store, and the shared core has two caches that
+    # have to land in it rather than in QUILL's folder: the comtypes
+    # generated-wrapper cache (reached by the native Rich Edit surface, so on
+    # the very first window) and the managed Hunspell dir. Both used to resolve
+    # to %APPDATA%\Quill, which created that folder on machines that had never
+    # had QUILL installed -- the one thing core/lite/paths.py opens by saying
+    # QUILL Lite does not do. Declared here, before anything can ask.
+    #
+    # Narrow on purpose: this does NOT redirect app_data_dir(), because
+    # QUILL Lite reaches QUILL's folder deliberately in three places (share
+    # QUILL's dictionary, share QUILL's abbreviations, list QUILL's sound
+    # schemes) and those must keep meaning QUILL's.
+    use_running_app_data_dir(data_dir)
+
+    # Every app in the family applies a queued Data Folder move before reading
+    # anything, so a move queued from one app happens at whichever app launches
+    # next. QUILL Lite keeps its own store and so has nothing of its own to move,
+    # but it is part of the family and must not be the app that strands
+    # somebody's queued change.
+    apply_pending_at_launch()
+
+    paths, mode, check, new_instance = _parse_args(translate_notepad_argv(sys.argv[1:]))
+    if check:
+        from quill.apps.lite_check import run_check
+
+        return run_check()
+
+    # One process, many windows: a second launch (Explorer, or Windows starting
+    # us in Notepad's place) hands its files to the first and exits.
+    checker = wx.SingleInstanceChecker(f"{APP_ID}-{wx.GetUserId()}")
+    if checker.IsAnotherRunning() and not new_instance:
+        _allow_foreground(inbox_mod.running_instance_pid())
+        if inbox_mod.post_request(paths, mode):
+            return 0
+        # The handover failed (a read-only or full profile). Opening a second
+        # process is worse than nothing but far better than a launch that
+        # silently does nothing at all.
+
+    from quill.stability.logging_config import configure_logging
+
+    log_listener = configure_logging(data_dir() / "logs")
+    from quill.platform.windows.dpi_awareness import enable_dpi_awareness
+
+    enable_dpi_awareness()  # before the first window, or Windows stretches it (#1702)
+    app = QuillLiteApp(paths, mode)
+    try:
+        app.MainLoop()
+    finally:
+        inbox_mod.clear_instance_marker()
+        log_listener.stop()
+    del checker
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

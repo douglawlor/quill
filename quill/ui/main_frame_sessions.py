@@ -105,13 +105,39 @@ class SessionsMixin:
         ids.clear()
         tabs = getattr(self, "_document_tabs", None)
         if not tabs:
+            # A single document with no tab strip yet (the untitled startup
+            # document) is still window 1 — list it so the Window menu never
+            # claims the workspace is empty (#feedback 2026-08-06).
+            title = ""
+            get_title = getattr(self, "_current_document_title", None)
+            if callable(get_title):
+                try:
+                    title = str(get_title() or "")
+                except Exception:  # noqa: BLE001 - menu refresh must never fail
+                    title = ""
+            doc_id = self._wx.NewIdRef()
+            binding = self._binding_for("window.go_to_document_1")
+            accel = f" ({binding})" if binding else ""
+            window_menu.Append(doc_id, f"&1: {title or 'Untitled'}{accel} (active)")
+            ids[int(doc_id)] = -1  # sentinel: the tabless single document
+            self._window_doc_menu_ids = ids
             return
         active = getattr(self, "_active_tab_index", -1)
         for i, tab in enumerate(tabs):
             doc_id = self._wx.NewIdRef()
             name = getattr(tab.document, "name", f"Document {i + 1}")
             suffix = " (active)" if i == active else ""
-            window_menu.Append(doc_id, f"&{i + 1}: {name}{suffix}")
+            # Surface the global Alt+digit hotkey on the first ten documents so it
+            # is discoverable from the menu. Shown inline rather than as a "\t"
+            # accelerator: the functional accelerator already lives in the frame
+            # table, and a second menu accelerator for the same key (on a
+            # different, dynamically-created id) would conflict.
+            accel = ""
+            if i < 10:
+                binding = self._binding_for(f"window.go_to_document_{i + 1}")
+                if binding:
+                    accel = f" ({binding})"
+            window_menu.Append(doc_id, f"&{i + 1}: {name}{accel}{suffix}")
             ids[int(doc_id)] = i
         self._window_doc_menu_ids = ids
 
@@ -121,6 +147,11 @@ class SessionsMixin:
         index = ids.get(menu_id)
         if index is None:
             event.Skip()
+            return
+        if index == -1:  # the tabless single document: just return focus to it
+            editor = getattr(self, "editor", None)
+            if editor is not None:
+                editor.SetFocus()
             return
         self._select_tab(index)
 

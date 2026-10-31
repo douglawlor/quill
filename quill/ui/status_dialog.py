@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, focus_primary_control
+from quill.ui.dpi import dip, dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 
 class HelpStatusDialog:
@@ -24,7 +26,7 @@ class HelpStatusDialog:
             title="Application Status",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((820, 620))
+        self.dialog.SetSize(dip_size(self.dialog, 820, 620))
         sizer = wx.BoxSizer(wx.VERTICAL)
         nb = wx.Notebook(self.dialog)
         nb.SetName("System status sections")
@@ -37,9 +39,10 @@ class HelpStatusDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES,
         )
         self._status_list.SetName("Status overview")
-        self._status_list.AppendColumn("Section", width=130)
-        self._status_list.AppendColumn("Setting", width=220)
-        self._status_list.AppendColumn("Value", width=380)
+        set_spoken_name(self._status_list, "Status overview")
+        self._status_list.AppendColumn("Section", width=dip(self._status_list, 130))
+        self._status_list.AppendColumn("Setting", width=dip(self._status_list, 220))
+        self._status_list.AppendColumn("Value", width=dip(self._status_list, 380))
         sp_sizer.Add(self._status_list, 1, wx.EXPAND | wx.ALL, 6)
         status_panel.SetSizer(sp_sizer)
         nb.AddPage(status_panel, "Status")
@@ -52,11 +55,12 @@ class HelpStatusDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES,
         )
         self._tasks_list.SetName("Tasks and downloads")
-        self._tasks_list.AppendColumn("Task / Model", width=220)
-        self._tasks_list.AppendColumn("Status", width=90)
-        self._tasks_list.AppendColumn("Progress", width=90)
-        self._tasks_list.AppendColumn("Started", width=160)
-        self._tasks_list.AppendColumn("Finished", width=160)
+        set_spoken_name(self._tasks_list, "Tasks and downloads")
+        self._tasks_list.AppendColumn("Task / Model", width=dip(self._tasks_list, 220))
+        self._tasks_list.AppendColumn("Status", width=dip(self._tasks_list, 90))
+        self._tasks_list.AppendColumn("Progress", width=dip(self._tasks_list, 90))
+        self._tasks_list.AppendColumn("Started", width=dip(self._tasks_list, 160))
+        self._tasks_list.AppendColumn("Finished", width=dip(self._tasks_list, 160))
         tp_sizer.Add(self._tasks_list, 1, wx.EXPAND | wx.ALL, 6)
         tasks_panel.SetSizer(tp_sizer)
         nb.AddPage(tasks_panel, "Tasks & Downloads")
@@ -69,10 +73,11 @@ class HelpStatusDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES,
         )
         self._features_list.SetName("Features")
-        self._features_list.AppendColumn("Feature ID", width=230)
-        self._features_list.AppendColumn("Name", width=210)
-        self._features_list.AppendColumn("Category", width=130)
-        self._features_list.AppendColumn("Status", width=80)
+        set_spoken_name(self._features_list, "Features")
+        self._features_list.AppendColumn("Feature ID", width=dip(self._features_list, 230))
+        self._features_list.AppendColumn("Name", width=dip(self._features_list, 210))
+        self._features_list.AppendColumn("Category", width=dip(self._features_list, 130))
+        self._features_list.AppendColumn("Status", width=dip(self._features_list, 80))
         fp_sizer.Add(self._features_list, 1, wx.EXPAND | wx.ALL, 6)
         features_panel.SetSizer(fp_sizer)
         nb.AddPage(features_panel, "Features")
@@ -85,6 +90,7 @@ class HelpStatusDialog:
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2,
         )
         self._actions_ctrl.SetName("Recent actions")
+        set_spoken_name(self._actions_ctrl, "Recent actions")
         ap_sizer.Add(self._actions_ctrl, 1, wx.EXPAND | wx.ALL, 6)
         actions_panel.SetSizer(ap_sizer)
         nb.AddPage(actions_panel, "Actions")
@@ -117,8 +123,49 @@ class HelpStatusDialog:
         if callable(self._refresh_callback):
             self._refresh_callback()
 
+    def _capture_focus(self, list_ctrl: Any) -> int:
+        """Return the focused row index, or -1 if none is focused.
+
+        Called before a rebuild so periodic auto-refresh (every 2s while the
+        dialog is open) can restore keyboard position afterward instead of
+        silently dropping it (#969).
+        """
+        wx = self._wx
+        return int(list_ctrl.GetNextItem(-1, wx.LIST_NEXT_ALL, wx.LIST_STATE_FOCUSED))
+
+    def _restore_focus(self, list_ctrl: Any, previous_index: int) -> None:
+        """Re-apply the focused/selected row a rebuild would otherwise clear.
+
+        wx.ListCtrl.DeleteAllItems() drops the control's notion of "current
+        item" even though the control itself keeps OS keyboard focus, so a
+        Down-arrow the user just pressed is silently undone the next time the
+        dialog's live-update timer fires (#969: "move down through the list,
+        focus is put back at the top"). Row order is stable across refreshes
+        (the same data is rebuilt in the same order every time), so restoring
+        by index is safe; the index is clamped in case the row count shrank.
+        """
+        if previous_index < 0:
+            return
+        wx = self._wx
+        count = list_ctrl.GetItemCount()
+        if count == 0:
+            return
+        target = min(previous_index, count - 1)
+        state = wx.LIST_STATE_FOCUSED | wx.LIST_STATE_SELECTED
+        list_ctrl.SetItemState(target, state, state)
+        list_ctrl.EnsureVisible(target)
+
     def refresh(self, data: dict) -> None:
-        """Repopulate all list controls with updated data."""
+        """Repopulate all list controls with updated data.
+
+        Preserves each list's focused row across the rebuild (#969) so a
+        periodic live-update tick never yanks keyboard position back to the
+        top while the user is navigating.
+        """
+        status_focus = self._capture_focus(self._status_list)
+        tasks_focus = self._capture_focus(self._tasks_list)
+        features_focus = self._capture_focus(self._features_list)
+
         self._status_list.DeleteAllItems()
         # Blank the Section cell when it repeats the row above. Otherwise a
         # screen reader re-reads the section name ("Overview", "Overview"...) on
@@ -130,6 +177,7 @@ class HelpStatusDialog:
             self._status_list.SetItem(idx, 1, setting)
             self._status_list.SetItem(idx, 2, str(value))
             last_section = section
+        self._restore_focus(self._status_list, status_focus)
 
         self._tasks_list.DeleteAllItems()
         for task, status, progress, started, finished in data.get("task_rows", []):
@@ -139,6 +187,7 @@ class HelpStatusDialog:
             self._tasks_list.SetItem(idx, 2, str(progress))
             self._tasks_list.SetItem(idx, 3, started)
             self._tasks_list.SetItem(idx, 4, finished)
+        self._restore_focus(self._tasks_list, tasks_focus)
 
         self._features_list.DeleteAllItems()
         for fid, name, cat, state in data.get("feature_rows", []):
@@ -147,6 +196,7 @@ class HelpStatusDialog:
             self._features_list.SetItem(idx, 1, name)
             self._features_list.SetItem(idx, 2, cat)
             self._features_list.SetItem(idx, 3, state)
+        self._restore_focus(self._features_list, features_focus)
 
         actions = "\n".join(f"- {a}" for a in data.get("actions", []))
         self._actions_ctrl.ChangeValue(actions)
@@ -155,7 +205,10 @@ class HelpStatusDialog:
         if not self.dialog.IsShown():
             self.dialog.Show()
         self.dialog.Raise()
-        self.dialog.SetFocus()
+        # Land on the first control of the visible tab, not the notebook tab
+        # strip (a bare dialog.SetFocus() forwards to the notebook). This is a
+        # non-modal window shown via Show(), so it routes focus itself.
+        focus_primary_control(self.dialog)
 
     def is_alive(self) -> bool:
         try:

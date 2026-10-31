@@ -16,11 +16,15 @@ import sys
 import time
 from dataclasses import dataclass
 
+from quill.core.error_codes import CodedError
+
 DEFAULT_TABLE = "en-ueb-g2"
 
 
-class WorkerError(Exception):
+class WorkerError(CodedError):
     """A translation request failed (worker crash, bad output, or liblouis error)."""
+
+    code = "QUILL-BRAILLE-WORKER-FAILED"
 
 
 class WorkerTimeoutError(WorkerError):
@@ -49,7 +53,7 @@ def _worker_command() -> list[str]:
     return [sys.executable, "-m", "quill.core.braille_worker"]
 
 
-def _invoke(request: dict[str, str], *, timeout: float) -> dict[str, str]:
+def _invoke(request: dict[str, object], *, timeout: float) -> dict[str, object]:
     """Run the worker once and return its parsed JSON result.
 
     Raises WorkerTimeoutError on timeout, WorkerUnavailableError when the
@@ -60,7 +64,12 @@ def _invoke(request: dict[str, str], *, timeout: float) -> dict[str, str]:
     from quill.stability.safe_subprocess import run_subprocess_safely
 
     try:
-        completed = run_subprocess_safely([*_worker_command(), payload], timeout_seconds=timeout)
+        # The payload travels on stdin, never argv: a whole document's text
+        # can run to hundreds of KB, well past Windows' ~32K CreateProcess
+        # command-line-length limit, which made back/forward-translating any
+        # sizeable document fail to launch at all (silently, from the user's
+        # perspective -- confirmed by a live report on a ~450KB BRF file).
+        completed = run_subprocess_safely(_worker_command(), timeout_seconds=timeout, input=payload)
     except subprocess.TimeoutExpired as exc:
         _last_error = "worker timed out"
         raise WorkerTimeoutError("liblouis worker timed out") from exc
@@ -77,7 +86,7 @@ def _invoke(request: dict[str, str], *, timeout: float) -> dict[str, str]:
         _last_error = "worker returned no result"
         raise WorkerError("liblouis worker returned no result")
     try:
-        result: dict[str, str] = json.loads(lines[-1])
+        result: dict[str, object] = json.loads(lines[-1])
     except ValueError as exc:
         _last_error = "worker returned unparsable result"
         raise WorkerError("liblouis worker returned an unparsable result") from exc
@@ -104,6 +113,21 @@ def back_translate(brf_text: str, table: str = DEFAULT_TABLE, *, timeout: float 
             "result", ""
         )
     )
+
+
+def detect_backtranslations(
+    sample: str, *, tables: list[str], timeout: float = 30.0
+) -> dict[str, str]:
+    """Back-translate *sample* against every candidate table in ONE worker run.
+
+    Returns {table: back-translated text} for every candidate that produced
+    output. Scoring/choosing lives in :mod:`quill.core.braille_detect`.
+    """
+    outcome = _invoke({"cmd": "detect", "text": sample, "tables": tables}, timeout=timeout)
+    results = outcome.get("results", {})
+    if not isinstance(results, dict):
+        raise WorkerError("liblouis worker returned a malformed detect result")
+    return {str(k): str(v) for k, v in results.items()}
 
 
 def worker_status() -> WorkerStatus:

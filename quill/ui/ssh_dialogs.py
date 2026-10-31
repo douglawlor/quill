@@ -25,6 +25,8 @@ from quill.ui.dialog_contract import (
     apply_modal_ids,
     show_modal_dialog,
 )
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 _AUTH_LABELS = [
     ("Password", AUTH_PASSWORD),
@@ -95,6 +97,7 @@ class QuickConnectDialog:
         key_picker = wx.BoxSizer(wx.HORIZONTAL)
         self.key_path = wx.TextCtrl(self.dialog, value=site.key_path)
         self.key_path.SetName("Private key file path")
+        set_spoken_name(self.key_path, "Private key file path")
         self.key_path.SetToolTip(
             "Path to your SSH private key file on disk. OpenSSH, PEM, and PuTTY "
             "(.ppk) formats are supported. The file itself is not opened until "
@@ -208,6 +211,7 @@ class SiteEditDialog:
         self.key_path_picker = wx.BoxSizer(wx.HORIZONTAL)
         self.key_path = wx.TextCtrl(self.dialog, value=site.key_path)
         self.key_path.SetName("Private key file path")
+        set_spoken_name(self.key_path, "Private key file path")
         self.key_path.SetToolTip(
             "Path to your SSH private key file on disk. OpenSSH, PEM, and PuTTY "
             "(.ppk) formats are supported. The file itself is not opened until "
@@ -304,7 +308,7 @@ class SiteManagerDialog:
         self.dialog = wx.Dialog(
             parent, title="SSH Site Manager", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
         )
-        self.dialog.SetSize((520, 460))
+        self.dialog.SetSize(dip_size(self.dialog, 520, 460))
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
             wx.StaticText(self.dialog, label="Saved sites"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 12
@@ -375,7 +379,7 @@ class SiteManagerDialog:
             self.dialog,
             f'Delete the saved site "{current.name}"?',
             "Delete Site",
-            wx.YES_NO | wx.ICON_QUESTION,
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION,
         ) as confirm:
             if confirm.ShowModal() != wx.ID_YES:
                 return
@@ -422,7 +426,7 @@ class RemoteBrowserDialog:
         self.dialog = wx.Dialog(
             parent, title="Open Remote File", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
         )
-        self.dialog.SetSize((620, 520))
+        self.dialog.SetSize(dip_size(self.dialog, 620, 520))
         root = wx.BoxSizer(wx.VERTICAL)
         self.path_label = wx.StaticText(self.dialog, label=self._cwd)
         root.Add(self.path_label, 0, wx.ALL, 10)

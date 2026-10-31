@@ -1,0 +1,279 @@
+"""Find in this folder: the browse tree's scoped, bounded search.
+
+Extracted from ``browse_tree_dialog`` under GATE-11 (extract, never
+rebaseline), and a self-contained concern: everything here answers *which rows
+under this folder match*, and how the tree shows and then clears that answer.
+The host passes itself in, exactly like ``browse_refresh`` and
+``browse_tree_menu``.
+
+The search recurses the subtree under the highlighted folder only, within
+bounds -- depth, results, and folder fetches -- so searching from a big branch
+(or TuneIn's remote tree) stays scoped instead of walking the whole internet.
+Hitting a bound is reported, never silent.
+
+It matches a row's **label and its description** (2026-08-24, list.md 5.1):
+on a podcast show's branch this is "episode search inside one show", and a
+show that numbers its episodes and puts the subject in the notes -- most
+interview podcasts -- is precisely where a title-only search finds nothing.
+The count is announced on every search, matches or not.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from quill.core.radio.page_url import looks_like_url
+
+#: How deep to recurse, the most results to collect, and the most folder
+#: fetches to spend before saying "search a smaller folder for the rest".
+FIND_MAX_DEPTH = 6
+FIND_MAX_RESULTS = 2000
+FIND_MAX_FETCHES = 80
+
+
+def searchable_text(node: Any) -> str:
+    """Everything about a row a search should look inside, lower-cased.
+
+    The label, and -- for a podcast episode or a book chapter -- the
+    publisher's own description, which the row already carries as
+    ``RadioStation.notes`` for the details panel (list.md 5.1). A show that
+    numbers its episodes and describes them in the notes is exactly the case
+    where searching titles alone finds nothing at all.
+    """
+    parts = [str(getattr(node, "label", "") or "")]
+    station = getattr(node, "station", None)
+    if station is not None:
+        parts.append(str(getattr(station, "notes", "") or ""))
+    return " ".join(parts).lower()
+
+
+def _collect_matches(
+    host: Any, node_id: str, ql: str, depth: int, acc: list[dict], budget: dict
+) -> bool:
+    """Recurse the subtree under *node_id*, appending leaf node-data whose
+    label contains *ql*. Returns True if a bound cut the walk short.
+
+    One loop for every source, because every source now answers the same
+    question the same way. The old version needed a parallel mapping
+    (``_subtree_children``) kept in step with ``_add_children`` by hand, and
+    it silently skipped any source nobody remembered to add to it.
+    """
+    if len(acc) >= FIND_MAX_RESULTS:
+        return True
+    if depth > FIND_MAX_DEPTH or budget["fetches"] >= FIND_MAX_FETCHES:
+        return True
+    budget["fetches"] += 1
+    capped = False
+    for child in host._fetch_children(node_id):
+        if child.is_action:
+            continue
+        if child.is_folder:
+            capped = _collect_matches(host, child.node_id, ql, depth + 1, acc, budget) or capped
+        elif ql in searchable_text(child):
+            acc.append(host._leaf_data(child))
+        if len(acc) >= FIND_MAX_RESULTS:
+            return True
+    return capped
+
+
+def find_matches(host: Any, node_id: str, query: str) -> tuple[list[dict], bool]:
+    """Leaf node-data under *node_id* matching *query* (case-insensitive),
+    plus whether a bound cut the search short."""
+    acc: list[dict] = []
+    budget = {"fetches": 0}
+    capped = _collect_matches(host, node_id, query.strip().lower(), 0, acc, budget)
+    return acc, capped
+
+
+def find_anchor_node(host: Any) -> Any:
+    """The folder to search from: the highlighted node if it is one, else
+    the nearest folder above it, so searching while on a station searches
+    the folder that station is in. None if nothing searchable is selected."""
+    tree = host._tree
+    try:
+        node = tree.GetSelection()
+    except RuntimeError:
+        return None
+    while node is not None and node.IsOk():
+        if host._is_folder_data(host._node_data(node)):
+            return node
+        node = tree.GetItemParent(node)
+    return None
+
+
+#: Rows where the Find box means "search everywhere", not "filter this folder":
+#: the Search All Sources action itself, and the results branch it leaves behind
+#: -- typing a new query while standing in the last answer is a new search.
+_SEARCH_EVERYTHING_ROWS = frozenset({"searchall", "searchresults"})
+
+
+def _selected_node_id(host: Any) -> str:
+    """The highlighted row's own node id, or ``""``. Never raises."""
+    try:
+        node = host._tree.GetSelection()
+        data = host._node_data(node) if node is not None else None
+    except (RuntimeError, AttributeError):
+        return ""
+    return str((data or {}).get("node_id", ""))
+
+
+def on_find(host: Any) -> None:
+    query = host._find_ctrl.GetValue().strip()
+    if not query:
+        host._announce("Type something to find in this folder.")
+        return
+    # The SELECTED row first, before anchoring. Search All Sources is an
+    # *action* row, not a folder, so find_anchor_node walks straight past it to
+    # the invisible root and answers None -- which is how typing in the Find box
+    # while standing on it produced "highlight a source or folder to search in
+    # first" about the one row that needs neither (reported 2026-08-26, second
+    # pass). Reading the selection first is also what makes standing anywhere
+    # inside the results start a new search rather than filter them.
+    if looks_like_url(query):
+        # A website address is not a row label, so scoping it to the highlighted
+        # folder answers nothing, always -- which is exactly what it did (#1491,
+        # "oj991.com"). Standing anywhere, it means "find this website's
+        # streams", and Search All Sources is where that is answered.
+        from quill.ui.radio import browse_search_all
+
+        browse_search_all.run(host, query=query)
+        return
+    selected = _selected_node_id(host)
+    if selected in _SEARCH_EVERYTHING_ROWS:
+        from quill.ui.radio import browse_search_all
+
+        browse_search_all.run(host, query=query)
+        return
+    anchor = find_anchor_node(host)
+    if anchor is None:
+        host._announce("Highlight a source or folder to search in first.")
+        return
+    data = host._node_data(anchor)
+    if data is None:
+        return
+    node_id = str(data["node_id"])
+    if node_id in _SEARCH_EVERYTHING_ROWS:
+        # Standing on Search All Sources (or on the results it produced) and
+        # typing in the Find box means the same thing as pressing Enter on the
+        # row: search everything for this. The alternative -- "type something to
+        # find in this folder", about a row that is not a folder -- is the app
+        # refusing to understand a perfectly clear instruction.
+        from quill.ui.radio import browse_search_all
+
+        browse_search_all.run(host, query=query)
+        return
+    label = host._tree.GetItemText(anchor)
+    host._announce(f"Searching {label} for {query}...")
+
+    def _work(**_kwargs: Any) -> tuple[list[dict], bool, str]:
+        # The fast, branch-aware route first (Apple's search API, the local
+        # catalog); the bounded crawl only when no faster channel fits.
+        from quill.core.radio import branch_find
+
+        fast = branch_find.fast_find(
+            node_id,
+            query,
+            safe_mode=host._safe_mode,
+            catalog=getattr(host, "_catalog", None),
+        )
+        if fast is not None:
+            nodes, provenance = fast
+            return [{**host._row_data(n), "note": n.note} for n in nodes], False, provenance
+        matches, capped = find_matches(host, node_id, query)
+        return matches, capped, ""
+
+    def _ok(_op: str, result: object) -> None:
+        # Already on the UI thread (call_ui_safely marshals + guards this);
+        # call directly. A second raw CallAfter would run outside that guard,
+        # so a closed dialog would hit a destroyed TreeCtrl and raise.
+        matches, capped, provenance = result if isinstance(result, tuple) else ([], False, "")
+        show_find_results(host, anchor, label, matches, capped, provenance=provenance)
+
+    host._task_manager.submit("radio-browse-find", _work, on_success=_ok, on_failure=None)
+
+
+def show_find_results(
+    host: Any,
+    anchor: Any,
+    label: str,
+    matches: list[dict],
+    capped: bool,
+    *,
+    provenance: str = "",
+) -> None:
+    if not host._tree:  # dialog closed while the search was in flight
+        return
+    tree = host._tree
+    if not anchor.IsOk():
+        return
+    host._find_return_node = anchor
+    host._find_active = True
+    tree.DeleteChildren(anchor)
+    for node_data in matches:
+        # The note travels with the row: a ccMixter result keeps its licence,
+        # a TuneIn result keeps "resolves when you play it". A search result
+        # stripped of what its source said about it is a worse row than the
+        # one browsing would have shown.
+        text = str(node_data["label"])
+        note = str(node_data.get("note") or "")
+        child = tree.AppendItem(anchor, f"{text}  ({note})" if note else text)
+        tree.SetItemData(child, node_data)
+        if host._is_folder_data(node_data):
+            # A fast route can answer with folders (a podcast show that expands
+            # into its episodes); give each its lazy placeholder so it does.
+            tree.SetItemData(tree.AppendItem(child, "Loading..."), dict(host._placeholder()))
+    if not matches:
+        empty = tree.AppendItem(anchor, f"No matches in {label}.")
+        tree.SetItemData(empty, dict(host._placeholder()))
+    anchor_data = host._node_data(anchor)
+    if anchor_data is not None:
+        anchor_data["loaded"] = True  # results replace the normal lazy children
+    tree.Expand(anchor)
+    count = len(matches)
+    more = " Showing the first results; search a smaller folder for the rest." if capped else ""
+    origin = f" {provenance.capitalize()}." if provenance else ""
+    host._announce(
+        f"{count} match{'es' if count != 1 else ''} in {label}.{origin}"
+        f"{more} Clear to return to the folder."
+    )
+    first, _cookie = tree.GetFirstChild(anchor)
+    if first.IsOk():
+        tree.SelectItem(first)
+        tree.SetFocus()
+
+
+def clear_find(host: Any) -> None:
+    # ChangeValue, not SetValue: this also runs from the empty-query reset
+    # (typing then erasing the field), and SetValue would fire EVT_TEXT back
+    # into that binding (see search_reset.bind_empty_query_reset's contract).
+    host._find_ctrl.ChangeValue("")
+    # Escape means "drop the results I am looking at", and Search All Sources
+    # results are results too -- clearing only the scoped find would leave the
+    # other list behind and read as Escape not working.
+    from quill.ui.radio import browse_search_all
+
+    if browse_search_all.clear_results(host) and getattr(host, "_find_return_node", None) is None:
+        host._find_active = False
+        host._announce("Search results cleared.")
+        return
+    node = host._find_return_node
+    host._find_return_node = None
+    was_active = host._find_active
+    host._find_active = False
+    if node is None or not node.IsOk():
+        return
+    data = host._node_data(node)
+    if host._is_folder_data(data) and data is not None:
+        # Drop the result leaves and reset the folder to its unexpanded state,
+        # so re-opening it browses normally again.
+        data["loaded"] = False
+        host._tree.DeleteChildren(node)
+        host._tree.SetItemData(host._tree.AppendItem(node, "Loading..."), dict(host._placeholder()))
+        host._tree.Collapse(node)
+    # The cursor goes back on the folder you searched from -- its result rows
+    # have just been deleted, so it has to land somewhere real. Focus is left
+    # exactly where it was: clearing is a refresh, not a destination, and
+    # somebody who cleared from the Find box is still typing there.
+    host._tree.SelectItem(node)
+    if was_active:
+        host._announce(f"Search cleared. Back on {host._tree.GetItemText(node)}.")

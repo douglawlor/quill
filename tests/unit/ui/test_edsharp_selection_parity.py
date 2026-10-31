@@ -7,7 +7,7 @@ import pytest
 from quill.core.a11y_regions import RegionTracker
 from quill.core.document import Document
 from quill.core.locations import LocationRing
-from quill.platform.windows.sr_announce import (
+from quill.platform.sr_announce import (
     clear_transcript,
     enable_transcript_capture,
     transcript_entries,
@@ -153,6 +153,14 @@ def _build_frame(text: str = "Hello world", insertion_point: int = 0) -> MainFra
             "status_bar_order": ["message"],
             "status_bar_hidden": [],
             "announcement_throttle_ms": 0,
+            # Named rather than defaulted (2026-09-10). start_selection now
+            # asks CueMixin.action_channels which channel to use, and under the
+            # "sound" default that answer depends on whether a sound pack is
+            # loaded -- which depends on whether some *earlier* test in the
+            # session loaded one. These tests are about the sentence, so they
+            # ask for the mode that produces one. The channel selection itself
+            # is covered in test_quill_action_feedback.py.
+            "action_feedback": "speech",
         },
     )()
     return frame

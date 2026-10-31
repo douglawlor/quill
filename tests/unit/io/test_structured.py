@@ -14,6 +14,62 @@ def test_read_structured_json_formats_document(tmp_path: Path) -> None:
     assert document.text == '{\n  "a": 1,\n  "b": 2\n}\n'
 
 
+def test_read_structured_malformed_json_falls_back_to_raw_text(tmp_path: Path) -> None:
+    # #1228: opening a malformed .json must not raise JSONDecodeError out of the open
+    # flow. Fall back to the file's raw text so the user can read/repair it, and record
+    # the parse error in metadata instead of crashing.
+    target = tmp_path / "broken.json"
+    raw = '{\n  "a": 1\n  "b": 2\n}\n'  # missing comma between members
+    target.write_text(raw, encoding="utf-8")
+    document = read_structured_document(target)
+    assert document.text == raw
+    assert document.source_metadata["source_kind"] == "text"
+    assert document.source_metadata["quality_score"] == 0
+    assert "JSONDecodeError" in str(document.source_metadata["structured_parse_error"])
+
+
+def test_read_structured_malformed_xml_falls_back_to_raw_text(tmp_path: Path) -> None:
+    # #1228 (same class): a malformed .xml opens as raw text rather than crashing.
+    target = tmp_path / "broken.xml"
+    raw = "<root><a>1</root>"  # unclosed <a>
+    target.write_text(raw, encoding="utf-8")
+    document = read_structured_document(target)
+    assert document.text == raw
+    assert document.source_metadata["source_kind"] == "text"
+    assert "structured_parse_error" in document.source_metadata
+
+
+def test_read_structured_json_with_utf8_bom_parses(tmp_path: Path) -> None:
+    # #1278: a UTF-8 BOM must not defeat the JSON parser (it crashed the open flow
+    # before #1228 and degraded to raw text after). The BOM is stripped from the
+    # editable text and remembered as utf-8-sig so a save re-adds it.
+    target = tmp_path / "bom.json"
+    target.write_bytes(b"\xef\xbb\xbf" + b'{"b":2,"a":1}')
+    document = read_structured_document(target)
+    assert document.text == '{\n  "a": 1,\n  "b": 2\n}\n'
+    assert document.encoding == "utf-8-sig"
+    assert document.source_metadata["source_kind"] == "json"
+    assert "structured_parse_error" not in document.source_metadata
+
+
+def test_read_structured_xml_with_utf8_bom_parses(tmp_path: Path) -> None:
+    # #1278 (same class): BOM-prefixed .xml formats instead of falling back to raw.
+    target = tmp_path / "bom.xml"
+    target.write_bytes(b"\xef\xbb\xbf" + b"<root><a>1</a></root>")
+    document = read_structured_document(target)
+    assert "  <a>1</a>" in document.text
+    assert document.source_metadata["source_kind"] == "xml"
+
+
+def test_read_structured_json_preserves_crlf_line_ending(tmp_path: Path) -> None:
+    # The BOM-aware read also carries the file's original line ending through, so
+    # saving a CRLF .json does not silently rewrite every line.
+    target = tmp_path / "crlf.json"
+    target.write_bytes(b'{\r\n  "a": 1\r\n}\r\n')
+    document = read_structured_document(target)
+    assert document.line_ending == "\r\n"
+
+
 def test_read_structured_toml_validates_document(tmp_path: Path) -> None:
     target = tmp_path / "sample.toml"
     target.write_text('name = "quill"\n', encoding="utf-8")
@@ -78,19 +134,167 @@ def test_read_structured_docx_extracts_text(monkeypatch, tmp_path: Path) -> None
     assert "World" in document.text
 
 
-def test_read_structured_doc_extracts_text(monkeypatch, tmp_path: Path) -> None:
-    target = tmp_path / "sample.doc"
-    target.write_bytes(b"\xd0\xcf\x11\xe0")
+def test_read_structured_docx_pandoc_engine(monkeypatch, tmp_path: Path) -> None:
+    # docx_engine="pandoc" converts through Pandoc and records that engine in
+    # the metadata; MarkItDown must not be consulted.
+    target = tmp_path / "sample.docx"
+    target.write_bytes(b"PK\x03\x04")
+
+    class _Result:
+        text = "# Pandoc Extract\n\nRicher structure\n"
+
+    monkeypatch.setattr(
+        "quill.io.pandoc.convert_document_with_pandoc",
+        lambda _path, _kind, **_kw: _Result(),
+    )
     monkeypatch.setattr(
         "quill.io.structured.convert_with_markitdown",
-        lambda _path: "# Word Extract\n\nLegacy Word text\n",
+        lambda _path: (_ for _ in ()).throw(AssertionError("markitdown must not run")),
+    )
+    document = read_structured_document(target, docx_engine="pandoc")
+    assert document.source_metadata["engine"] == "pandoc"
+    assert "Richer structure" in document.text
+
+
+def test_read_structured_docx_pandoc_engine_falls_back(monkeypatch, tmp_path: Path) -> None:
+    # When Pandoc is missing or fails, the pandoc preference degrades to the
+    # default MarkItDown chain instead of failing the open.
+    target = tmp_path / "sample.docx"
+    target.write_bytes(b"PK\x03\x04")
+    monkeypatch.setattr(
+        "quill.io.pandoc.convert_document_with_pandoc",
+        lambda _path, _kind, **_kw: (_ for _ in ()).throw(RuntimeError("no pandoc")),
+    )
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: "# DOCX Extract\n\nHello\n",
+    )
+    document = read_structured_document(target, docx_engine="pandoc")
+    assert document.source_metadata["engine"] == "markitdown"
+
+
+def test_read_structured_docx_fallback_uses_python_docx(monkeypatch, tmp_path: Path) -> None:
+    # #1279: without MarkItDown the Word read goes through python-docx (a base
+    # dependency), so headings, lists, and tables survive instead of being flattened
+    # to one line per paragraph. No pack hint either -- this path is good.
+    target = tmp_path / "styled.docx"
+    target.write_bytes(b"PK\x03\x04")
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(ImportError("markitdown not available")),
+    )
+    monkeypatch.setattr(
+        "quill.io.docx_text.read_docx_text",
+        lambda _path: "# Title\n\n- A bullet\n\n| H1 | H2 |\n| --- | --- |\n| A | B |\n",
+    )
+    monkeypatch.setattr("quill.io.structured._guard_office_zip", lambda _path: None)
+    monkeypatch.setattr("quill.io.structured.extraction_pack_missing", lambda: True)
+
+    document = read_structured_document(target)
+
+    assert document.source_metadata["engine"] == "python-docx"
+    assert "# Title" in document.text
+    assert "| H1 | H2 |" in document.text
+    assert "extraction_pack_missing" not in document.source_metadata
+
+
+def test_read_structured_docx_fallback_has_no_banner(monkeypatch, tmp_path: Path) -> None:
+    # #1279: without the optional MarkItDown component the reader falls back to the
+    # raw OOXML paragraph extract. That extract must contain the document's own text
+    # only -- the old "# DOCX Extract" banner read as stray text at the top of every
+    # Word file the user opened.
+    target = tmp_path / "sample.docx"
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            f'<w:document xmlns:w="{namespace}"><w:body>'
+            "<w:p><w:r><w:t>Hello Word</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t>Second line</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(ImportError("markitdown not available")),
+    )
+
+    document = read_structured_document(target)
+
+    # Two paragraphs, separated as paragraphs (#1488), by QUILL's own Word reader.
+    assert document.text == "Hello Word\n\nSecond line\n"
+    assert document.source_metadata["source_kind"] == "docx"
+
+
+def test_read_structured_docx_fallback_no_longer_nags_about_the_extraction_pack(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # 2026-10-16: QUILL's own Word reader keeps headings, lists and tables, so
+    # a good read no longer points at a 150 MB download -- which in a shipped
+    # build could not have helped anyway (the frozen MarkItDown shadows it).
+    target = tmp_path / "sample.docx"
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            f'<w:document xmlns:w="{namespace}"><w:body>'
+            "<w:p><w:r><w:t>Hello Word</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(ImportError("markitdown not available")),
+    )
+    monkeypatch.setattr("quill.io.structured.extraction_pack_missing", lambda: True)
+
+    document = read_structured_document(target)
+
+    assert "extraction_pack_missing" not in document.source_metadata
+    assert document.source_metadata["engine"] in {"python-docx", "word-xml"}
+
+
+def test_read_structured_docx_fallback_omits_flag_when_pack_is_installed(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "sample.docx"
+    namespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            f'<w:document xmlns:w="{namespace}"><w:body>'
+            "<w:p><w:r><w:t>Hello Word</w:t></w:r></w:p>"
+            "</w:body></w:document>",
+        )
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(ValueError("empty output")),
+    )
+    monkeypatch.setattr("quill.io.structured.extraction_pack_missing", lambda: False)
+
+    document = read_structured_document(target)
+
+    assert "extraction_pack_missing" not in document.source_metadata
+
+
+def test_read_structured_doc_without_libreoffice_says_what_to_do(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # MarkItDown has no .doc reader, so it is no longer asked; without
+    # LibreOffice the file opens as one sentence naming the Save As that fixes it.
+    target = tmp_path / "sample.doc"
+    target.write_bytes(b"\xd0\xcf\x11\xe0")
+    monkeypatch.setattr("quill.core.external_tools.libreoffice_executable", lambda: None)
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(AssertionError("MarkItDown cannot read .doc")),
     )
 
     document = read_structured_document(target)
 
     assert document.source_metadata["source_kind"] == "doc"
-    assert document.source_metadata["engine"] == "markitdown"
-    assert "Legacy Word text" in document.text
+    assert document.source_metadata["engine"] == "unavailable"
+    assert "Word Document (.docx)" in document.text
+    assert "(free, from libreoffice.org)" in document.text
+    assert "[QUILL-" not in document.text
 
 
 def test_read_structured_epub_extracts_text(tmp_path: Path) -> None:
@@ -107,7 +311,8 @@ def test_read_structured_odt_extracts_text(tmp_path: Path) -> None:
     with zipfile.ZipFile(target, "w") as archive:
         archive.writestr("content.xml", "<office><text:p>Hello ODT</text:p></office>")
     document = read_structured_document(target)
-    assert "# ODT Extract" in document.text
+    # #1279: the extract carries the document's own text, with no synthetic banner.
+    assert "# ODT Extract" not in document.text
     assert "Hello ODT" in document.text
 
 
@@ -127,7 +332,7 @@ def test_read_structured_pdf_attaches_metadata(monkeypatch, tmp_path: Path) -> N
     target.write_bytes(b"%PDF-1.4")
     monkeypatch.setattr(
         "quill.io.structured.extract_pdf_text",
-        lambda _path: PdfExtractionResult(
+        lambda _path, *, password=None: PdfExtractionResult(
             text="Extracted PDF text\n",
             quality_score=81,
             engine="pdfplumber",
@@ -140,6 +345,56 @@ def test_read_structured_pdf_attaches_metadata(monkeypatch, tmp_path: Path) -> N
     assert document.source_metadata["source_kind"] == "pdf"
     assert document.source_metadata["quality_score"] == 81
     assert document.source_metadata["page_count"] == 2
+
+
+def test_read_structured_pdf_attaches_embedded_outline(monkeypatch, tmp_path: Path) -> None:
+    # A PDF's embedded outline (title, page) pairs are carried in source_metadata
+    # so the open flow can import them as bookmarks.
+    target = tmp_path / "outline.pdf"
+    target.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(
+        "quill.io.structured.extract_pdf_text",
+        lambda _path, *, password=None: PdfExtractionResult(
+            text="Extracted PDF text\n",
+            quality_score=81,
+            engine="pdfplumber",
+            page_count=3,
+            extracted_pages=3,
+            page_scores=[81, 79, 80],
+        ),
+    )
+    monkeypatch.setattr(
+        "quill.io.structured.extract_pdf_outline_entries",
+        lambda _path, *, password=None: [("Chapter 1", 1, 1), ("Section 1.1", 2, 2)],
+    )
+    document = read_structured_document(target)
+    # The pairs keep the shape older builds and stored sessions read; the
+    # nesting rides beside them for Go To's wording only.
+    assert document.source_metadata["pdf_outline"] == [("Chapter 1", 1), ("Section 1.1", 2)]
+    assert document.source_metadata["pdf_outline_levels"] == [1, 2]
+
+
+def test_read_structured_pdf_omits_outline_key_when_empty(monkeypatch, tmp_path: Path) -> None:
+    target = tmp_path / "no-outline.pdf"
+    target.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr(
+        "quill.io.structured.extract_pdf_text",
+        lambda _path, *, password=None: PdfExtractionResult(
+            text="Extracted PDF text\n",
+            quality_score=81,
+            engine="pdfplumber",
+            page_count=1,
+            extracted_pages=1,
+            page_scores=[81],
+        ),
+    )
+    monkeypatch.setattr(
+        "quill.io.structured.extract_pdf_outline_entries",
+        lambda _path, *, password=None: [],
+    )
+    document = read_structured_document(target)
+    assert "pdf_outline" not in document.source_metadata
+    assert "pdf_outline_levels" not in document.source_metadata
 
 
 def test_read_structured_xlsx_uses_markitdown_when_available(monkeypatch, tmp_path: Path) -> None:
@@ -157,32 +412,39 @@ def test_read_structured_xlsx_uses_markitdown_when_available(monkeypatch, tmp_pa
     assert "| Item | Amount |" in document.text
 
 
-def test_read_structured_pdf_prefers_markitdown_when_quality_is_low(
+def test_read_structured_pdf_no_longer_gives_markitdown_an_automatic_85(
     monkeypatch, tmp_path: Path
 ) -> None:
+    # Item 28: the normal open used to run MarkItDown on any low score, replace
+    # the whole text with its answer (pages and all) and call it 85/100 without
+    # looking. MarkItDown is now offered pages inside the shared reader, scored
+    # by the same rules; the open path itself never calls it.
     target = tmp_path / "sample.pdf"
     target.write_bytes(b"%PDF-1.4")
     monkeypatch.setattr(
         "quill.io.structured.extract_pdf_text",
-        lambda _path: PdfExtractionResult(
-            text="",
+        lambda _path, *, password=None: PdfExtractionResult(
+            text="Page one\fPage two\n",
             quality_score=12,
             engine="pdfplumber",
             page_count=2,
-            extracted_pages=0,
+            extracted_pages=2,
             page_scores=[12, 8],
+            page_engines=["pdfplumber", "markitdown"],
         ),
     )
-    monkeypatch.setattr(
-        "quill.io.structured.convert_with_markitdown",
-        lambda _path: "# PDF Extract\n\nReadable PDF text\n",
-    )
+
+    def _never(_path: Path) -> str:
+        raise AssertionError("structured must not call MarkItDown for a PDF")
+
+    monkeypatch.setattr("quill.io.structured.convert_with_markitdown", _never)
 
     document = read_structured_document(target)
 
-    assert document.source_metadata["engine"] == "pdfplumber + markitdown"
+    assert document.text == "Page one\fPage two\n"
+    assert document.source_metadata["quality_score"] == 12
+    assert document.source_metadata["page_engines"] == ["pdfplumber", "markitdown"]
     assert document.source_metadata["markitdown_used"] is True
-    assert "Readable PDF text" in document.text
 
 
 def test_read_structured_pptx_extracts_headings_lists_tables_and_notes(
@@ -209,19 +471,42 @@ def test_read_structured_pptx_extracts_headings_lists_tables_and_notes(
     assert "Speaker note line" in document.text
 
 
-def test_read_structured_ppt_extracts_text(monkeypatch, tmp_path: Path) -> None:
-    target = tmp_path / "sample.ppt"
-    target.write_bytes(b"\xd0\xcf\x11\xe0")
+def test_read_structured_pptx_fallback_has_no_banner(monkeypatch, tmp_path: Path) -> None:
+    # #1279: the built-in slide extract starts at the first slide title, not at a
+    # "# PPTX Extract: <file>" banner.
+    target = tmp_path / "deck.pptx"
+    p_ns = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    a_ns = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr(
+            "ppt/slides/slide1.xml",
+            f'<p:sld xmlns:p="{p_ns}" xmlns:a="{a_ns}"><p:cSld><p:spTree>'
+            "<p:sp><p:txBody><a:p><a:r><a:t>Opening slide</a:t></a:r></a:p></p:txBody></p:sp>"
+            "</p:spTree></p:cSld></p:sld>",
+        )
     monkeypatch.setattr(
         "quill.io.structured.convert_with_markitdown",
-        lambda _path: "# Slide Title\n\nSpeaker note line\n",
+        lambda _path: (_ for _ in ()).throw(ImportError("markitdown not available")),
     )
 
     document = read_structured_document(target)
 
+    assert "PPTX Extract" not in document.text
+    assert "Opening slide" in document.text
+
+
+def test_read_structured_ppt_without_libreoffice_says_what_to_do(
+    monkeypatch, tmp_path: Path
+) -> None:
+    target = tmp_path / "sample.ppt"
+    target.write_bytes(b"\xd0\xcf\x11\xe0")
+    monkeypatch.setattr("quill.core.external_tools.libreoffice_executable", lambda: None)
+
+    document = read_structured_document(target)
+
     assert document.source_metadata["source_kind"] == "ppt"
-    assert document.source_metadata["engine"] == "markitdown"
-    assert "Speaker note line" in document.text
+    assert document.source_metadata["engine"] == "unavailable"
+    assert "PowerPoint Presentation (.pptx)" in document.text
 
 
 def test_read_structured_pages_gracefully_handles_missing_deps(tmp_path: Path, monkeypatch) -> None:
@@ -249,7 +534,8 @@ def test_read_structured_pages_gracefully_handles_missing_deps(tmp_path: Path, m
 
     assert "Pages import not available" in document.text
     assert "pip install keynote-parser" in document.text
-    assert "pip install markitdown" in document.text
+    assert "Download Optional Components" in document.text
+    assert "PDF and Office text extraction" in document.text
     assert document.source_metadata["source_kind"] == "pages"
     assert document.source_metadata["quality_score"] == 0
 
@@ -259,7 +545,8 @@ def test_pptx_slide_table_blocks_renders_multiple_body_rows() -> None:
     # XML Element and a list[str]. A multi-body-row table must render every row.
     import xml.etree.ElementTree as ET
 
-    from quill.io.structured import _PPTX_NAMESPACES, _pptx_slide_table_blocks
+    from quill.io.office_slides import PPTX_NAMESPACES as _PPTX_NAMESPACES
+    from quill.io.office_slides import slide_table_blocks as _pptx_slide_table_blocks
 
     a = _PPTX_NAMESPACES["a"]
 
@@ -309,42 +596,53 @@ class _StubWorkbook:
 def test_spreadsheet_read_caps_rows_so_a_huge_sheet_cannot_exhaust_memory() -> None:
     # PERF-11: the reader must stop pulling rows at the cap rather than
     # materializing every row of a very large sheet.
-    from quill.io.structured import _SPREADSHEET_MAX_ROWS, _read_workbook_as_text
+    from quill.io.office_sheets import MAX_ROWS as _SPREADSHEET_MAX_ROWS
+    from quill.io.office_sheets import render_workbook
 
     sheet = _StubWorksheet("Big", total_rows=1_000_000)
     workbook = _StubWorkbook([sheet])
 
-    document = _read_workbook_as_text(Path("big.xlsx"), workbook)
+    text = render_workbook(workbook)
 
     # Only the capped number of rows were ever pulled from the lazy iterator.
     assert sheet.rows_pulled == _SPREADSHEET_MAX_ROWS
-    assert "## Sheet: Big" in document.text
+    assert "## Sheet: Big" in text
+    # #1279: the workbook's own structure only -- no "# Spreadsheet Extract" banner.
+    assert text.startswith("## Sheet: Big")
 
 
 def test_spreadsheet_read_caps_columns_for_very_wide_rows() -> None:
     # PERF-11: a very wide row is trimmed to the column cap.
-    from quill.io.structured import _SPREADSHEET_MAX_COLS, _read_workbook_as_text
+    from quill.io.office_sheets import MAX_COLS as _SPREADSHEET_MAX_COLS
+    from quill.io.office_sheets import render_workbook
 
     sheet = _StubWorksheet("Wide", total_rows=1, columns=500)
     workbook = _StubWorkbook([sheet])
+    notes: list[str] = []
 
-    document = _read_workbook_as_text(Path("wide.xlsx"), workbook)
+    text = render_workbook(workbook, notes)
 
-    header = next(line for line in document.text.splitlines() if line.startswith("| r0c0"))
+    header = next(line for line in text.splitlines() if line.startswith("| r0c0"))
     # The header row holds at most the capped number of columns.
     assert header.count(" | ") <= _SPREADSHEET_MAX_COLS
-    assert "r0c499" not in document.text
+    assert "r0c499" not in text
+    # ...and the cut is said, not hidden.
+    assert notes and '"Wide"' in notes[0]
 
 
-def test_corrupt_xlsx_surfaces_actionable_error(tmp_path: Path) -> None:
+def test_corrupt_xlsx_surfaces_actionable_error(monkeypatch, tmp_path: Path) -> None:
     # M-11: a BadZipFile xlsx must return a message asking the user to repair
     # the file, not the generic "import not available" message.
-    from quill.io.structured import _format_spreadsheet
-
     bad_xlsx = tmp_path / "corrupt.xlsx"
     bad_xlsx.write_bytes(b"this is not a zip file")
+    monkeypatch.setattr(
+        "quill.io.structured.convert_with_markitdown",
+        lambda _path: (_ for _ in ()).throw(ImportError("markitdown not available")),
+    )
 
-    text, meta = _format_spreadsheet(bad_xlsx)
+    document = read_structured_document(bad_xlsx)
 
-    assert "corrupted" in text.lower() or "not a valid" in text.lower()
-    assert "import not available" not in text
+    assert "damaged" in document.text
+    assert "save it again" in document.text
+    assert "import not available" not in document.text
+    assert document.source_metadata["engine"] == "unavailable"

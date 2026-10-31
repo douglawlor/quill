@@ -3,9 +3,8 @@
 The default offline provider. It drives a whisper.cpp command-line executable
 (``whisper-cli`` / ``main``) as a subprocess via
 :func:`quill.stability.safe_subprocess.run_subprocess_safely`, and downloads GGML
-models over HTTPS from the Hugging Face Hub whisper.cpp repository
-(``ggerganov/whisper.cpp``) — the source listed in #617 — without adding a heavy
-``huggingface_hub`` dependency.
+models over HTTPS from QUILL's own SHA-256-verified ``assets-v1`` release — no
+Hugging Face, and no ``huggingface_hub`` dependency.
 
 Design rules (#617 section 8.2 / section 17):
 
@@ -23,13 +22,11 @@ download paths are thin wrappers over them.
 
 from __future__ import annotations
 
-import hashlib
+import io
 import json
 import os
 import shutil
-import ssl
 import tempfile
-import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -50,16 +47,22 @@ PROVIDER_ID = "whispercpp"
 
 # Narrow security allowlist for the whisper.cpp CLI basename (with/without the
 # Windows .exe suffix). QUILL never runs an arbitrary executable for speech.
+#
+# Note: the bare ``whisper`` / ``whisper.exe`` name is deliberately EXCLUDED. It
+# belongs to the openai-whisper PyPI package CLI (``pip install openai-whisper``),
+# which is a *different* program with an incompatible flag dialect (--model /
+# --output_format / --output_dir, not whisper.cpp's -m / -f / -oj / -of).
+# Accepting it made QUILL find ``whisper.EXE`` on PATH when a user had the
+# Python package installed but not whisper.cpp, then feed it whisper.cpp flags
+# that its argparse rejected with exit code 2 ("Transcription failed (code 2)",
+# issue #931). whisper.cpp ships as ``whisper-cli`` (newer) or ``main`` (older).
 _ALLOWED_BASENAMES = frozenset({
     "whisper-cli",
-    "whisper",
     "main",
     "whisper-cli.exe",
-    "whisper.exe",
     "main.exe",
 })
 
-_VERIFIED_TLS = ssl.create_default_context()
 _DOWNLOAD_TIMEOUT_S = 30.0
 _TRANSCRIBE_TIMEOUT_S = 1800.0  # 30 min ceiling for a long file
 
@@ -141,6 +144,9 @@ def build_whisper_command(
         args.append("-tr")
     if request.diarize:
         args.append("-tdrz")  # whisper.cpp tinydiarize: mark speaker turns
+    if request.initial_prompt:
+        # Bias recognition toward the user's vocabulary (dictation profile).
+        args += ["--prompt", request.initial_prompt]
     return args
 
 
@@ -176,23 +182,59 @@ def resolve_whisper_executable(configured_path: str | None = None) -> str | None
         "whisper-cli",
         "main.exe",
         "main",
-        "whisper.exe",
-        "whisper",
     )
     for directory in engine_search_dirs():
         for name in bundled_names:
             probe = directory / name
             if probe.is_file() and probe.name.lower() in _ALLOWED_BASENAMES:
                 return str(probe)
-    for name in ("whisper-cli", "whisper", "main"):
+    for name in ("whisper-cli", "main"):
         found = shutil.which(name)
         if found and Path(found).name.lower() in _ALLOWED_BASENAMES:
             return found
     return None
 
 
-def _model_path(model_id: str) -> Path:
+def _downloaded_model_path(model_id: str) -> Path:
+    """Where a user-downloaded copy of *model_id* lives (the app-data dir).
+
+    Write/remove operations always target this path specifically -- never the
+    bundled copy below, which :func:`download_model`/:func:`remove_model` must
+    never overwrite or delete (it is shipped with the app, not user data).
+    """
     return models.models_root() / PROVIDER_ID / f"ggml-{model_id}.bin"
+
+
+def _bundled_whisper_model_path(model_id: str) -> Path | None:
+    """A bundled GGML model shipped with the app, if present for *model_id*.
+
+    The Offline Edition build stages the default model (see
+    ``_stage_whisper_model`` in ``scripts/build_windows_distribution.py``)
+    under ``{app}/speech-models-bundled/whispercpp/``, mirroring
+    ``quill.core.read_aloud._bundled_kokoro_model_dir`` -- so whisper.cpp, the
+    default/required offline engine, transcribes with zero network access and
+    no download step, not even the smallest "tiny" model. Returns None when no
+    bundled copy of this specific model exists (the common case: regular
+    installer, portable, and source runs never stage one).
+    """
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if not app_root:
+        return None
+    candidate = Path(app_root) / "speech-models-bundled" / PROVIDER_ID / f"ggml-{model_id}.bin"
+    return candidate if candidate.is_file() else None
+
+
+def _model_path(model_id: str) -> Path:
+    """Where to *read* model_id's GGML file from for transcription: a
+    user-downloaded copy if present, else the bundled copy shipped with the
+    app, else the (download target) data dir path. Never use this for
+    writes/removal -- see :func:`_downloaded_model_path`.
+    """
+    downloaded = _downloaded_model_path(model_id)
+    if downloaded.is_file():
+        return downloaded
+    bundled = _bundled_whisper_model_path(model_id)
+    return bundled if bundled is not None else downloaded
 
 
 # --------------------------------------------------------------------------- #
@@ -224,9 +266,10 @@ class WhisperCppProvider:
             return ProviderInstallStatus(
                 installed=False,
                 detail=(
-                    "The offline speech engine is not installed. Re-run the QUILL "
-                    "installer and enable the offline speech engine component, or "
-                    "place whisper-cli under tools/speech/whispercpp."
+                    "The offline speech engine is not installed yet. Use "
+                    "Help > Download Optional Components to fetch it "
+                    "(about 8 MB, verified), or place whisper-cli under "
+                    "tools/speech/whispercpp."
                 ),
             )
         return ProviderInstallStatus(installed=True, detail=exe)
@@ -234,10 +277,37 @@ class WhisperCppProvider:
     # -- models ----------------------------------------------------------- #
 
     def list_supported_models(self) -> list[SpeechModelInfo]:
-        return list(catalog.WHISPER_CPP_MODELS)
+        # offered() filters de-supported entries (large-v3: unmirrorable at
+        # ~3.1 GB); an installed copy still resolves via model_by_id.
+        return catalog.offered(catalog.WHISPER_CPP_MODELS)
 
     def list_installed_models(self) -> list[InstalledSpeechModel]:
-        return [m for m in models.load_installed_models() if m.provider_id == PROVIDER_ID]
+        recorded = [m for m in models.load_installed_models() if m.provider_id == PROVIDER_ID]
+        # A bundled model (Offline Edition) has no download-time record in the
+        # JSON store -- it shipped with the app, nothing was ever "downloaded".
+        # Synthesize a matching entry so Manage Speech Models shows it as
+        # installed too, same as a real download would, without ever writing
+        # it to the store (a synthesized entry disappears the moment the
+        # bundled file does; a real download's record does not).
+        recorded_ids = {m.id for m in recorded}
+        for info in catalog.WHISPER_CPP_MODELS:
+            if info.id in recorded_ids:
+                continue
+            bundled = _bundled_whisper_model_path(info.id)
+            if bundled is None:
+                continue
+            recorded.append(
+                InstalledSpeechModel(
+                    id=info.id,
+                    display_name=info.display_name,
+                    path=bundled,
+                    size_mb=info.approximate_size_mb,
+                    provider_id=PROVIDER_ID,
+                    sha256=info.sha256,
+                    installed_at="",
+                )
+            )
+        return recorded
 
     def estimate_model_size(self, model_id: str) -> SizeEstimate:
         info = catalog.model_by_id(model_id)
@@ -254,7 +324,7 @@ class WhisperCppProvider:
         info = catalog.model_by_id(model_id)
         if info is None or not info.download_url:
             raise SpeechError(f"No download is available for the '{model_id}' model.")
-        target = _model_path(model_id)
+        target = _downloaded_model_path(model_id)
         target.parent.mkdir(parents=True, exist_ok=True)
         _download_to_file(info, target, progress)
         installed = InstalledSpeechModel(
@@ -270,7 +340,12 @@ class WhisperCppProvider:
         return installed
 
     def remove_model(self, model_id: str) -> None:
-        target = _model_path(model_id)
+        # Only the user-downloaded copy is ever removable -- never the bundled
+        # copy shipped with the Offline Edition (see _downloaded_model_path).
+        # If only a bundled copy exists, this is a safe no-op: the model stays
+        # available (list_installed_models still reports it via the bundled
+        # fallback), matching how Kokoro's Remove never touches its bundled copy.
+        target = _downloaded_model_path(model_id)
         if target.exists():
             target.unlink()
         models.remove_installed_model(model_id, PROVIDER_ID)
@@ -358,59 +433,103 @@ class WhisperCppProvider:
         return None
 
 
+# Both #1 and the checksum-mismatch case mean the same thing to a user: the
+# pin QUILL shipped with no longer matches what's published, and retrying
+# won't help -- only a QUILL update will. The error code differs so support
+# can tell which check caught it.
+_STALE_MODEL_MESSAGE = "This QUILL build's model reference is out of date. Please update QUILL."
+
+
+class WhisperModelReferenceStaleError(SpeechError):
+    """The pinned Hugging Face revision/file for a whisper.cpp model is gone."""
+
+    code = "QUILL-SPEECH-WHISPER-DL-404"
+
+
+class WhisperModelChecksumError(SpeechError):
+    """The downloaded whisper.cpp model file did not match its pinned sha256."""
+
+    code = "QUILL-SPEECH-WHISPER-DL-CHK"
+
+
+class WhisperModelDownloadNetworkError(SpeechError):
+    """A whisper.cpp model download failed for a network/connectivity reason."""
+
+    code = "QUILL-SPEECH-WHISPER-DL-NET"
+
+
 def _download_to_file(
     info: SpeechModelInfo, target: Path, progress: ProgressCallback | None
 ) -> None:
-    """Stream a model file from the Hugging Face Hub over verified HTTPS.
+    """Fetch a whisper.cpp GGML file from QUILL's own assets-v1 mirror.
 
-    GATE-9 / network-egress: this is the only outbound call here; it runs only on
-    an explicit user "download model" action, uses a verified TLS context, and is
-    blocked in Safe Mode by the caller. The file is written to a temp path and
-    atomically moved into place, then sha256-verified when a hash is known.
+    QUILL no longer contacts Hugging Face: every offered model is re-hosted on the
+    ``assets-v1`` release and downloaded + SHA-256-verified through the shared
+    download core. The only unmirrored model is ``large-v3`` (~3 GB, above
+    GitHub's 2 GiB/file release-asset limit); selecting it raises a clear
+    manual-install message instead of a network call.
+
+    GATE-9 / network-egress: the only outbound call is the shared, verified
+    ``release_assets`` download; it runs only on an explicit user "download model"
+    action and is blocked in Safe Mode by the caller.
     """
-    url = info.download_url or ""
-    if not url.lower().startswith("https://"):
-        raise SpeechError("Model downloads must use a secure (HTTPS) address.")
-    headers = {"User-Agent": "QUILL"}
-    from quill.core.speech.hf_auth import load_hf_token
+    from quill.core.release_assets import ReleaseAssetError
+    from quill.core.speech import model_mirrors
 
-    token = load_hf_token()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(url, headers=headers)
-    digest = hashlib.sha256()
-    fd, raw_temp = tempfile.mkstemp(
-        prefix=f".{target.name}.", suffix=".part", dir=str(target.parent)
-    )
-    temp_path = Path(raw_temp)
+    mirror = model_mirrors.mirror_for(PROVIDER_ID, info.id)
+    if mirror is None:
+        raise WhisperModelReferenceStaleError(_manual_install_message(info, target))
     try:
-        with (
-            urllib.request.urlopen(  # noqa: S310 - HTTPS enforced above
-                request, timeout=_DOWNLOAD_TIMEOUT_S, context=_VERIFIED_TLS
-            ) as response,
-            os.fdopen(fd, "wb") as out,
-        ):
-            total = int(response.headers.get("Content-Length", 0) or 0)
-            read = 0
-            while True:
-                chunk = response.read(1 << 16)
-                if not chunk:
-                    break
-                out.write(chunk)
-                digest.update(chunk)
-                read += len(chunk)
-                if progress is not None and total > 0:
-                    progress(min(read / total, 0.99), f"Downloading {info.display_name}...")
-        if info.sha256 and digest.hexdigest().lower() != info.sha256.lower():
-            raise SpeechError("The downloaded model failed its integrity check. Try again.")
-        os.replace(temp_path, target)
-    except SpeechError:
-        temp_path.unlink(missing_ok=True)
-        raise
-    except Exception as exc:  # noqa: BLE001 - surface a clean message, clean up the partial file
-        temp_path.unlink(missing_ok=True)
-        from quill.core.speech.hf_auth import RATE_LIMIT_HELP, looks_rate_limited
+        model_mirrors.fetch_mirror_file(
+            mirror, target, progress=progress, label=f"Downloading {info.display_name}..."
+        )
+    except ReleaseAssetError as exc:
+        raise WhisperModelDownloadNetworkError(
+            f"The model download failed: check your connection and retry. ({exc})"
+        ) from exc
 
-        if looks_rate_limited(exc):
-            raise SpeechError(RATE_LIMIT_HELP) from exc
-        raise SpeechError(f"The model download failed: {exc}") from exc
+
+def _manual_install_message(info: SpeechModelInfo, target: Path) -> str:
+    """Guidance for a model too large to auto-download (only ``large-v3`` today)."""
+    return (
+        f"The '{info.display_name}' model is too large to download automatically "
+        f"(about {info.approximate_size_mb} MB, over the hosting size limit). "
+        f"To use it, obtain the file '{target.name}' from the whisper.cpp model "
+        f"distribution and place it in:\n  {target.parent}\n"
+        "Smaller models (Tiny through Medium) download automatically."
+    )
+
+
+def _make_progress_tqdm(info: SpeechModelInfo, progress: ProgressCallback) -> type | None:
+    """Build a tqdm subclass forwarding Hugging Face byte progress to *progress*.
+
+    Mirrors :func:`quill.core.speech.providers.fasterwhisper._make_progress_tqdm`
+    for this provider's single-file downloads.
+    """
+    try:
+        from tqdm.auto import tqdm as _BaseTqdm  # type: ignore[import-untyped]
+    except Exception:  # noqa: BLE001 - no tqdm means we simply skip byte progress
+        return None
+
+    total_bytes = max(1, int(info.approximate_size_mb) * 1024 * 1024)
+    shared = {"done": 0}
+
+    class _ProgressTqdm(_BaseTqdm):  # type: ignore[misc, valid-type]
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            # QUILL's bundled quill.exe is a windowed pythonw.exe with no
+            # console, so sys.stderr is None there -- tqdm's own default
+            # write target for its bar rendering. We report progress
+            # ourselves via progress() below and never need tqdm's own bar,
+            # so give it a real sink instead of crashing on "'NoneType'
+            # object has no attribute 'write'" (the whisper.cpp download
+            # failure this guards against).
+            kwargs.setdefault("file", io.StringIO())
+            super().__init__(*args, **kwargs)  # type: ignore[no-untyped-call]
+
+        def update(self, n: float | None = 1) -> bool | None:
+            shared["done"] += int(n or 0)
+            fraction = 0.02 + 0.95 * min(shared["done"] / total_bytes, 1.0)
+            progress(min(fraction, 0.99), f"Downloading {info.display_name}...")
+            return super().update(n)  # type: ignore[no-any-return]
+
+    return _ProgressTqdm

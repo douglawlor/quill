@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,6 +21,66 @@ PROFILE_AUTHOR_STUDENT = "author_or_student"
 PROFILE_DEVELOPER_POWER_TEXT = "developer_power_text"
 PROFILE_ACCESSIBILITY_PROFESSIONAL = "accessibility_professional"
 PROFILE_FULL_QUILL = "full_quill"
+PROFILE_QUILLLITE = "quilllite"
+
+#: What the QUILL Lite profile takes away, written as a subtraction so a feature
+#: added to QUILL later is *on* here until somebody decides otherwise -- the same
+#: direction QUILL Lite's own profiles are written in, and the safe one: a new
+#: feature silently missing is a bug nobody can see, while a new feature
+#: unexpectedly present is one press of Customize Features away.
+#:
+#: **Off, not hidden.** Everything here is reachable from Customize Features and
+#: from the command palette; what the profile changes is what the menus show.
+#: Somebody who chose "the small one" and then wants one thing back should be
+#: able to find it, and a hidden feature cannot be found by looking.
+#:
+#: The list is what QUILL Lite genuinely does not have: the AI surfaces, the
+#: companion apps, extensions, remote and publishing paths, the notebook, and
+#: the reading and dictation stack. Editing, files, spelling, formatting,
+#: navigation, the clipboard, recovery and help all stay, because QUILL Lite has
+#: every one of them.
+#: ``core.bundled_quillins`` is deliberately NOT here: it is ``locked_on``,
+#: because the bundled extensions carry commands QUILL itself relies on. What
+#: QUILL Lite does not have is the Quillins *menu*, which is
+#: ``future.quillins_menu`` and is off below.
+_QUILLLITE_OFF: tuple[str, ...] = (
+    "core.analysis",
+    "core.braille",
+    "core.bw_insights",
+    "core.bw_providers",
+    "core.bw_transcription",
+    "core.bw_whisperer",
+    "core.developer_console",
+    "core.developer_console.typescript",
+    "core.dictation",
+    "core.emmet",
+    "core.github_remote",
+    "core.glow",
+    "core.hygiene",
+    "core.intellisense",
+    "core.library",
+    "core.macros",
+    "core.markdown_profiles",
+    "core.notebook",
+    "core.notes",
+    "core.ocr",
+    "core.podcasts",
+    "core.radio",
+    "core.read_aloud",
+    "core.remote",
+    "core.shell",
+    "core.third_party_plugins",
+    "core.voice_commands",
+    "core.watch_folder",
+    "future.ai",
+    "future.ai_menu_top_level",
+    "future.cleanup",
+    "future.publishing",
+    "future.publishing_read",
+    "future.quillins_menu",
+    "future.spotify",
+    "future.youtube_oauth",
+)
 
 
 @dataclass(slots=True)
@@ -29,6 +89,17 @@ class FeatureProfile:
     name: str | LazyStr
     description: str | LazyStr
     states: dict[str, str] = field(default_factory=dict)
+    #: Settings the profile's NAME promises, applied when it is activated.
+    #:
+    #: QUILL Lite's profiles have carried these since they shipped, and for a
+    #: reason worth repeating here: a profile named after another program is a
+    #: statement about what the thing you type in *is*, not merely about which
+    #: menus exist. A "Notepad" profile that removed the Format menu and still
+    #: made a rich text document on Ctrl+N would keep the letter of its name and
+    #: break its promise -- and the user would find out one document later, at
+    #: the Save As dialog, offering a format they thought they had turned off.
+    #: Empty for every profile that is a statement about menus alone.
+    settings: tuple[tuple[str, object], ...] = ()
 
 
 PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
@@ -81,25 +152,33 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             # Student, Developer and Power Text, Full Quill); off by default
             # here, but any user can still enable it individually.
             "future.publishing": FEATURE_STATE_OFF,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     PROFILE_WRITER: FeatureProfile(
         id=PROFILE_WRITER,
         name=lazy_gettext("Casual Writer"),
         description=lazy_gettext(
-            "Everyday writing, formatting, and cleanup with guided power features. "
-            "For papers, citations, and a table of contents, try the Author or "
-            "Student profile instead."
+            "A focused 'just write' setup — everyday writing, formatting, and "
+            "printing, without the power surfaces. AI, GLOW review, remote files, "
+            "document analysis, watch folders, notebooks, and developer tools are "
+            "off (turn any on from Profiles and Features). For papers, citations, "
+            "and a table of contents, try the Author or Student profile instead."
         ),
         states={
+            # #890: an unlisted feature defaults to ON (see state_for), so a true
+            # "just write, format, print, send" identity has to name every power
+            # surface it wants OFF -- otherwise GLOW, remote files, the developer
+            # console, notebooks, and more are silently on. Accessibility I/O
+            # (read aloud, voice commands, dictation, OCR, and braille, which is
+            # left at its ON default) stays available on purpose: "just write"
+            # must never mean "less accessible."
             "core.search.regex": FEATURE_STATE_QUIET,
             "core.format": FEATURE_STATE_ON,
             "core.macros": FEATURE_STATE_QUIET,
             "core.links": FEATURE_STATE_ON,
             "core.read_aloud": FEATURE_STATE_QUIET,
             "core.voice_commands": FEATURE_STATE_ON,
-            "core.watch_folder": FEATURE_STATE_ON,
-            "core.analysis": FEATURE_STATE_ON,
             "core.shell": FEATURE_STATE_QUIET,
             "core.keymap": FEATURE_STATE_QUIET,
             "core.ocr": FEATURE_STATE_QUIET,
@@ -107,10 +186,24 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "core.text_encoding": FEATURE_STATE_QUIET,
             "future.character_inspector": FEATURE_STATE_QUIET,
             "future.cleanup": FEATURE_STATE_QUIET,
-            "future.ai": FEATURE_STATE_QUIET,
-            # Writer is one of the writer-tier-and-above profiles with
-            # publishing access (see PROFILE_ESSENTIAL's comment above).
+            # Explicitly off: not part of "write, format, print, send". Each stays
+            # individually re-enableable from Profiles and Features / the palette.
+            "core.watch_folder": FEATURE_STATE_OFF,
+            "core.analysis": FEATURE_STATE_OFF,
+            "core.glow": FEATURE_STATE_OFF,
+            "core.remote": FEATURE_STATE_OFF,
+            "core.github_remote": FEATURE_STATE_OFF,
+            "core.developer_console": FEATURE_STATE_OFF,
+            "core.developer_console.typescript": FEATURE_STATE_OFF,
+            "core.emmet": FEATURE_STATE_OFF,
+            "core.intellisense": FEATURE_STATE_OFF,
+            "core.notebook": FEATURE_STATE_OFF,
+            "future.ai": FEATURE_STATE_OFF,
+            "future.ai_menu_top_level": FEATURE_STATE_OFF,
+            # Writer is one of the writer-tier-and-above profiles with publishing
+            # ("send") access (see PROFILE_ESSENTIAL's comment above).
             "future.publishing": FEATURE_STATE_ON,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     PROFILE_AUTHOR_STUDENT: FeatureProfile(
@@ -143,6 +236,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             # Author or Student is one of the writer-tier-and-above profiles
             # with publishing access (see PROFILE_ESSENTIAL's comment above).
             "future.publishing": FEATURE_STATE_ON,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     "reader_and_student": FeatureProfile(
@@ -165,6 +259,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "future.character_inspector": FEATURE_STATE_OFF,
             "future.cleanup": FEATURE_STATE_OFF,
             "future.publishing": FEATURE_STATE_OFF,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     "office_and_admin": FeatureProfile(
@@ -187,6 +282,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "future.character_inspector": FEATURE_STATE_QUIET,
             "future.cleanup": FEATURE_STATE_QUIET,
             "future.publishing": FEATURE_STATE_OFF,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     PROFILE_DEVELOPER_POWER_TEXT: FeatureProfile(
@@ -213,6 +309,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             # profiles with publishing access (see PROFILE_ESSENTIAL's
             # comment above).
             "future.publishing": FEATURE_STATE_ON,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     "low_vision": FeatureProfile(
@@ -237,6 +334,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "future.character_inspector": FEATURE_STATE_QUIET,
             "future.cleanup": FEATURE_STATE_QUIET,
             "future.publishing": FEATURE_STATE_OFF,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     "braille_screen_reader_power_user": FeatureProfile(
@@ -261,6 +359,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "future.character_inspector": FEATURE_STATE_QUIET,
             "future.cleanup": FEATURE_STATE_QUIET,
             "future.publishing": FEATURE_STATE_OFF,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     PROFILE_ACCESSIBILITY_PROFESSIONAL: FeatureProfile(
@@ -283,6 +382,7 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
             "future.character_inspector": FEATURE_STATE_QUIET,
             "future.cleanup": FEATURE_STATE_QUIET,
             "future.publishing": FEATURE_STATE_OFF,
+            "future.publishing_read": FEATURE_STATE_OFF,
         },
     ),
     PROFILE_FULL_QUILL: FeatureProfile(
@@ -290,6 +390,19 @@ PROFILE_DEFINITIONS: dict[str, FeatureProfile] = {
         name=lazy_gettext("Full Quill"),
         description=lazy_gettext("Everything visible, including advanced and experimental paths."),
         states={feature_id: FEATURE_STATE_ON for feature_id in FEATURE_DEFINITIONS},
+    ),
+    PROFILE_QUILLLITE: FeatureProfile(
+        id=PROFILE_QUILLLITE,
+        name=lazy_gettext("QUILL Lite"),
+        description=lazy_gettext(
+            "QUILL with QUILL Lite's nine menus and nothing else: a plain-text "
+            "editor with rich text, spelling, the line tools and the clipboard, "
+            "and none of the writing environment around them."
+        ),
+        states=dict.fromkeys(_QUILLLITE_OFF, FEATURE_STATE_OFF),
+        # The half a list of menus cannot say: QUILL Lite makes a plain text
+        # document on Ctrl+N, so this profile does too (bad.md P2.4).
+        settings=(("default_new_document_format", "txt"),),
     ),
 }
 
@@ -359,6 +472,27 @@ def feature_for_command(command_id: str) -> str:
     return "core.app"
 
 
+def transitive_dependencies(feature_id: str) -> frozenset[str]:
+    """Every feature ``feature_id`` (transitively) depends on. Cycle-safe.
+
+    Used by the remote kill switch so that locking a feature also locks
+    everything that cannot work without it: a feature is effectively locked
+    when it, or any feature in this set, is locked.
+    """
+    seen: set[str] = set()
+    stack = [feature_id]
+    while stack:
+        current = stack.pop()
+        definition = FEATURE_DEFINITIONS.get(current)
+        if definition is None:
+            continue
+        for dependency in definition.dependencies:
+            if dependency not in seen:
+                seen.add(dependency)
+                stack.append(dependency)
+    return frozenset(seen)
+
+
 def find_feature(feature_name: str) -> FeatureDefinition | None:
     key = feature_name.strip().lower()
     feature_id = FEATURE_ALIASES.get(key)
@@ -392,6 +526,22 @@ class FeatureManager:
     previous_profile_id: str | None = None
     overrides: dict[str, str] = field(default_factory=dict)
     show_quiet_features: bool = True
+    #: Feature ids proven by a redeemed, signed unlock code
+    #: (:mod:`quill.core.unlock_codes`). Populated at load time and refreshed
+    #: after a successful redemption; an unlocked id escapes its definition's
+    #: ``locked_off`` gate -- that override is the entire point of a code.
+    unlocked_feature_ids: frozenset[str] = frozenset()
+
+    @staticmethod
+    def _load_unlocked_feature_ids() -> frozenset[str]:
+        try:
+            from quill.core.unlock_codes import UnlockCodeStore
+        except Exception:  # noqa: BLE001 - the signing extra (PyNaCl) is optional
+            return frozenset()
+        try:
+            return UnlockCodeStore.load().unlocked_feature_ids()
+        except Exception:  # noqa: BLE001 - a bad store must never block startup
+            return frozenset()
 
     @classmethod
     def load(cls, *, persistent: bool = True) -> FeatureManager:
@@ -413,7 +563,22 @@ class FeatureManager:
             previous_profile_id=previous_profile_id,
             overrides=overrides,
             show_quiet_features=show_quiet_features,
+            unlocked_feature_ids=cls._load_unlocked_feature_ids(),
         )
+
+    def grant_product_features(self, feature_ids: Iterable[str]) -> None:
+        """Mark the features a companion app *is* as enabled in this process.
+
+        The release gate (``FeatureDefinition.released=False``, #1340) exists
+        to keep unreleased features out of public *QUILL* builds. A standalone
+        app built around one of those features -- Quill Radio and
+        ``core.radio`` -- must not gate itself off: doing so silently killed
+        the recording scheduler, missed-recording reports, the wake task, and
+        every palette command in public builds. In-memory only: ``save()``
+        never persists this, and safety locks (``feature_lock``) still apply
+        on top.
+        """
+        self.unlocked_feature_ids = frozenset(self.unlocked_feature_ids | set(feature_ids))
 
     def save(self) -> None:
         write_json_atomic(
@@ -454,7 +619,13 @@ class FeatureManager:
             return FEATURE_STATE_OFF
         if definition.locked_on:
             return FEATURE_STATE_ON
-        if definition.locked_off:
+        if definition.is_locked_off:
+            # ``is_locked_off`` covers both a permanently locked feature and one
+            # that is merely unreleased in this build (see FeatureDefinition).
+            # A redeemed, signature-verified unlock code is the one sanctioned
+            # way past locked_off (Help > Redeem Unlock Code...).
+            if feature_id in self.unlocked_feature_ids:
+                return FEATURE_STATE_ON
             return FEATURE_STATE_OFF
         if feature_id in self.overrides:
             return self.overrides[feature_id]

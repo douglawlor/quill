@@ -21,8 +21,11 @@ from dataclasses import dataclass, field
 from quill.ui.dialog_contract import (
     apply_listbox_activation,
     apply_modal_ids,
+    set_accessible_name,
     show_message_box,
 )
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 # Output formats in the order they appear in the format Choice.
 _FORMAT_CHOICES = ("mp3", "m4b", "wav")
@@ -49,6 +52,9 @@ class TranslatedSpeechExportDialog:
 
         self._wx = wx
         self._result: TranslatedSpeechRequest | None = None
+        # The "Open in Audio Studio" button sets this rather than ``_result``
+        # so the runner can branch on a single public flag.
+        self.open_studio_requested: bool = False
         # Ordered (lang_code, engine, voice_id, display_label).
         self._targets: list[tuple[str, str, str, str]] = []
 
@@ -57,7 +63,7 @@ class TranslatedSpeechExportDialog:
             title="Export to Translated Speech Audio",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(560, 460))
+        self.dialog.SetMinSize(dip_size(self.dialog, 560, 460))
         root = wx.BoxSizer(wx.VERTICAL)
 
         def label(text: str) -> None:
@@ -71,6 +77,7 @@ class TranslatedSpeechExportDialog:
             self.dialog,
             choices=["MP3 (with chapter markers)", "M4B audiobook (native chapters)", "WAV"],
         )
+        set_accessible_name(self._format, "Output format")
         self._format.SetSelection(0)
         root.Add(self._format, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
@@ -85,6 +92,7 @@ class TranslatedSpeechExportDialog:
         self._lang.Bind(wx.EVT_CHOICE, lambda _e: self._reload_voices())
         self._voice = wx.Choice(self.dialog, choices=[])
         self._voice.SetName("Translation voice")
+        set_spoken_name(self._voice, "Translation voice")
         add = wx.Button(self.dialog, label="A&dd")
         add.Bind(wx.EVT_BUTTON, lambda _e: self._on_add())
         add_row.Add(self._lang, 1, wx.EXPAND | wx.RIGHT, 6)
@@ -94,6 +102,7 @@ class TranslatedSpeechExportDialog:
 
         self._list = wx.ListBox(self.dialog, style=wx.LB_SINGLE)
         self._list.SetName("Languages to export")
+        set_spoken_name(self._list, "Languages to export")
         apply_listbox_activation(self._list, lambda _e: self._lang.SetFocus())
         root.Add(self._list, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
         rm_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -106,6 +115,7 @@ class TranslatedSpeechExportDialog:
         self._provider = wx.Choice(
             self.dialog, choices=["AI provider (cloud)", "LibreTranslate (local)"]
         )
+        set_accessible_name(self._provider, "Translate with")
         self._provider.SetSelection(0)
         rm_row.Add(self._provider, 0, wx.LEFT, 6)
         root.Add(rm_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
@@ -114,9 +124,16 @@ class TranslatedSpeechExportDialog:
         btn_row = wx.BoxSizer(wx.HORIZONTAL)
         ok = wx.Button(self.dialog, id=wx.ID_OK, label="&Export")
         cancel = wx.Button(self.dialog, id=wx.ID_CANCEL)
+        open_studio = wx.Button(self.dialog, label="Open in Audio &Studio")
+        open_studio.SetToolTip(
+            "Close this dialog and open the same document in the Audio Studio wizard, "
+            "where you can build a chaptered audiobook and publish it."
+        )
+        open_studio.Bind(wx.EVT_BUTTON, self._on_open_studio)
         ok.Bind(wx.EVT_BUTTON, self._on_ok)
         btn_row.AddStretchSpacer()
         btn_row.Add(ok, 0, wx.RIGHT, 6)
+        btn_row.Add(open_studio, 0, wx.RIGHT, 6)
         btn_row.Add(cancel, 0)
         root.Add(btn_row, 0, wx.EXPAND | wx.ALL, 10)
 
@@ -188,6 +205,13 @@ class TranslatedSpeechExportDialog:
         )
         evt.Skip()  # let ID_OK close the dialog
 
+    def _on_open_studio(self, _evt: object) -> None:
+        # Close the dialog and signal the runner to route to the Audio Studio.
+        # The button is always reachable — no target list required — so the
+        # cross-link works even from an empty dialog.
+        self.open_studio_requested = True
+        self.dialog.EndModal(self._wx.ID_CANCEL)
+
     # ------------------------------------------------------------------ public
 
     def show(
@@ -195,5 +219,8 @@ class TranslatedSpeechExportDialog:
     ) -> TranslatedSpeechRequest | None:
         code = show_modal_dialog(self.dialog, "Export to Translated Speech Audio")
         result = self._result if code == self._wx.ID_OK else None
+        # The "Open in Audio Studio" button routes through EndModal(ID_CANCEL) but
+        # sets ``open_studio_requested = True`` so the runner can branch on it.
+        # The dialog itself is destroyed here, regardless of how the modal closed.
         self.dialog.Destroy()
         return result

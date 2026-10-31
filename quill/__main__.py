@@ -7,18 +7,25 @@ import types
 from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from quill import __version__
+from quill.core.ai.key_migration import consolidate_provider_keys_quietly
 from quill.core.data_location import (
     apply_pending_data_location_migration,
     apply_pending_legacy_import,
 )
 from quill.core.features import reset_feature_profile_store
 from quill.core.paths import app_data_dir, ensure_app_directories
+from quill.core.prompt_migration import consolidate_prompts_quietly
 from quill.core.settings import load_settings as _load_settings
 from quill.core.startup_maintenance import run_pending_startup_maintenance
 from quill.stability.diagnostics import dump_all_thread_stacks, setup_fault_handler
 from quill.stability.logging_config import configure_logging
+
+#: ffmpeg powers speech audio export when present; the editor runs without it.
+#: Optional-component contract: app-profiles.json.
+OPTIONAL_COMPONENTS: tuple[str, ...] = ("ffmpeg",)
 
 
 # Indirection so the excepthook helpers can be monkeypatched in tests
@@ -31,32 +38,18 @@ def quill_main_load_settings() -> object:
 
 
 def _propagate_portable_environment() -> None:
-    """Set QUILL_APP_ROOT and QUILL_PORTABLE when running from a portable bundle.
+    """Mirror a verified portable bundle into the environment.
 
-    The portable bundle's primary entry point is ``quill.exe`` at the bundle
-    root, next to a ``data/`` folder -- the evidence rules in
-    :func:`quill.core.storage_mode._resolve_app_root` apply here too. When
-    the host process can resolve a verified portable anchor, mirror the
-    fact into the env so the legacy ``QUILL_APP_ROOT`` consumers (braille
-    pack, bundled tool paths, read-aloud assets, AI key DPAPI fallback)
-    keep working without each doing its own walk-up from ``sys.executable``.
-
-    Skipped when the env vars are already set -- the launcher or a test
-    harness may have set them deliberately.
+    Moved to :func:`quill.core.paths.propagate_portable_environment` so every
+    app's ``main()`` shares it; kept under this name for QUILL's own caller.
     """
-    from quill.core.storage_mode import _resolve_app_root
+    from quill.core.paths import propagate_portable_environment
 
-    if os.environ.get("QUILL_APP_ROOT") or os.environ.get("QUILL_PORTABLE"):
-        return
-    anchor = _resolve_app_root()
-    if anchor is None:
-        return
-    os.environ["QUILL_APP_ROOT"] = str(anchor)
-    os.environ["QUILL_PORTABLE"] = "1"
+    propagate_portable_environment()
 
 
 def _install_excepthook() -> None:
-    """Install sys.excepthook so unhandled crashes offer a submit dialog (#622).
+    """Install sys.excepthook so unhandled crashes offer a report dialog (#622).
 
     Without this, a crash in the windowed build just silently closes QUILL —
     a blank screen with no feedback for blind users (finding #51). The
@@ -67,13 +60,13 @@ def _install_excepthook() -> None:
     enabled (default True during the beta phase), the handler instead
     schedules :class:`quill.ui.crash_report_dialog.CrashReportDialog` on
     the UI thread via :func:`wx.CallAfter`. The dialog shows a redacted
-    preview of the report the user is about to send and returns the
-    user's choice; this handler then either submits via
-    :func:`quill.core.issue_submit.submit_crash_issue`, copies the
-    report to the clipboard, or leaves the local crash file untouched.
+    preview of the report and returns the user's choice; this handler
+    then opens the user's mail program with the report addressed to
+    support (:func:`_act_on_crash_choice`), copies it to the clipboard,
+    or leaves the local crash file untouched. Nothing goes to GitHub.
 
     Every step is wrapped in ``try/except``: a misbehaving dialog or
-    network failure must never prevent the local traceback file from
+    mail handoff must never prevent the local traceback file from
     being saved and the standard interpreter traceback from firing.
     """
     import datetime
@@ -202,41 +195,16 @@ def _try_offer_crash_submit(
     # QUILL has had a moment to settle.
     def _run_on_ui() -> None:
         try:
-            from quill.core.feedback_token import effective_github_token
-            from quill.core.issue_submit import submit_crash_issue
-            from quill.ui.crash_report_dialog import (
-                CrashReportDialog,
-                merge_user_context_into_body,
-            )
+            from quill.ui.crash_report_dialog import CrashReportDialog
 
-            parent = _find_main_frame_window()
-            dialog = CrashReportDialog(parent, payload=payload)
+            dialog = CrashReportDialog(_find_main_frame_window(), payload=payload)
             try:
                 result = dialog.show()
             except Exception:  # noqa: BLE001
                 # Dialog construction or modal loop blew up; leave
-                # the local crash file in place and do not submit.
+                # the local crash file in place and do not send.
                 return
-
-            if result.act == "cancel":
-                return
-            merged = merge_user_context_into_body(payload.body, result)
-            if result.act == "copy":
-                _copy_to_clipboard(merged)
-                return
-            # act == "send"
-            token = effective_github_token()
-            if not token:
-                # No token: copy to clipboard and surface a status.
-                _copy_to_clipboard(merged)
-                return
-            submit_crash_issue(
-                summary=payload.summary,
-                message=merged,
-                app_version=__version__,
-                github_token=token,
-                metadata=payload.metadata,
-            )
+            _act_on_crash_choice(payload, result)
         except Exception:  # noqa: BLE001
             pass
 
@@ -245,6 +213,24 @@ def _try_offer_crash_submit(
         return True
     except Exception:  # noqa: BLE001
         return False
+
+
+def _act_on_crash_choice(payload: Any, result: Any, host: Any = None) -> str:
+    """Carry out the crash dialog's choice: email support, copy, or nothing.
+
+    The work is :func:`quill.ui.crash_report_mail.act_on_crash_choice`; this
+    passes it this module's best-effort clipboard, notice and window lookup.
+    """
+    from quill.ui.crash_report_mail import act_on_crash_choice
+
+    return act_on_crash_choice(
+        payload,
+        result,
+        host,
+        copy=_copy_to_clipboard,
+        notify=_notify_crash_action,
+        find_window=_find_main_frame_window,
+    )
 
 
 def _show_native_fallback(
@@ -336,20 +322,43 @@ def _find_main_frame_window() -> object | None:
     return real_frame if real_frame is not None else top
 
 
-def _copy_to_clipboard(text: str) -> None:
-    """Copy ``text`` to the clipboard via wx (best-effort)."""
+def _notify_crash_action(message: str) -> None:
+    """Tell the user the outcome of their crash-report choice (best-effort).
+
+    Runs in the excepthook path where wx may be unstable, so it uses the native
+    ``MessageBoxW`` (same floor as :func:`_show_native_fallback`) rather than a wx
+    dialog. Non-fatal: any failure is swallowed. Its purpose is that pressing
+    Copy is never silent for a screen-reader user.
+    """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, message, "QUILL — Crash Report", 0x40)
+            return
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        print(message, file=sys.stderr)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _copy_to_clipboard(text: str) -> bool:
+    """Copy ``text`` to the clipboard via wx (best-effort). True when it landed."""
     try:
         import wx  # type: ignore[import-not-found]
 
         clipboard = wx.TheClipboard  # type: ignore[attr-defined]
         if not clipboard.Open():
-            return
+            return False
         try:
             clipboard.SetData(wx.TextDataObject(text))  # type: ignore[attr-defined]
         finally:
             clipboard.Close()
+        return True
     except Exception:  # noqa: BLE001
-        pass
+        return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,9 +371,40 @@ class LaunchRequest:
 
 
 def main() -> int:
-    parsed = _parse_cli_arguments(sys.argv[1:])
+    from quill.core.net import configure_ssl_trust
+
+    configure_ssl_trust()
+
+    # Headless `quill convert ...` subcommand: route to the wx-free converter CLI
+    # before the GUI argument parse (which treats leading tokens as files to open).
+    if sys.argv[1:2] == ["convert"]:
+        from quill.core.audio.convert_cli import run_cli
+
+        return run_cli(sys.argv[2:])
+    # `quill --notes list|check|clear FILE`: notes written into a Markdown or
+    # HTML file, for a script or an AI assistant. wx-free, nothing opens.
+    if sys.argv[1:2] in (["--notes"], ["notes"]):
+        from quill.core.inline_notes_cli import run as run_notes
+
+        return run_notes(sys.argv[2:])
+
+    # Windows started QUILL *as* Notepad (Tools > Open QUILL Instead of
+    # Notepad): turn Notepad's command line into QUILL's, exactly as QUILL Lite does.
+    from quill.core.windows_editor import translate_notepad_argv
+
+    parsed = _parse_cli_arguments(translate_notepad_argv(sys.argv[1:]))
     if parsed.version:
         print(__version__)
+        return 0
+
+    # Explorer "Convert with Quill" verb (#1255 §4.7): hand the selected file to
+    # the standalone Quill Converter app and exit, instead of opening the full
+    # editor. Done before the single-instance/UI bootstrap so a running QUILL is
+    # never disturbed -- the converter is its own single-instance app.
+    if str(getattr(parsed, "action", "") or "").strip().lower() == "convert" and parsed.paths:
+        from quill.core.app_launcher import launch_app
+
+        launch_app("converter", extra_args=tuple(parsed.paths))
         return 0
 
     # #615: apply a pending data-location move (Preferences > General >
@@ -376,10 +416,21 @@ def main() -> int:
     apply_pending_legacy_import()
     _propagate_portable_environment()
     ensure_app_directories()
+    consolidate_provider_keys_quietly()  # one provider truth (PRD 7): migrate keys
+    consolidate_prompts_quietly()  # one prompt store (AI Library): merge legacy prompts
     # One-time, epoch-gated cleanup of stale diagnostic clutter (old logs/crash
     # reports) so upgraders start fresh. Runs before configure_logging opens the
     # active log file, and only touches regenerable diagnostics -- never user work.
     run_pending_startup_maintenance()
+    # Hold refs on usable shared components so a family uninstall cannot GC them.
+    from quill.core import components
+
+    components.register_running_app("quill", OPTIONAL_COMPONENTS)
+    # Release channels, Phase 0: note which data formats this build writes,
+    # before its first save, so "is it safe to go back?" has a history later.
+    from quill.core.data_format_ledger import record_running_build
+
+    record_running_build("quill", __version__)
     # Add any on-demand-installed speech engine packs (e.g. Faster Whisper) to
     # sys.path so the speech registry can find them this session (#669 follow-up).
     try:
@@ -387,6 +438,22 @@ def main() -> int:
 
         activate_engine_packs()
     except Exception:  # noqa: BLE001 - an optional engine must never break startup
+        pass
+    # Add any on-demand-installed AI SDK packs (Copilot/Claude/OpenAI Agents) to
+    # sys.path so the harness registry can find them this session (Phase 6/10).
+    try:
+        from quill.core.ai.sdk_install import activate_ai_packs
+
+        activate_ai_packs()
+    except Exception:  # noqa: BLE001 - an optional pack must never break startup
+        pass
+    # Add an on-demand-installed PDF/Office text-extraction pack to sys.path
+    # (#909's own optional-extra fix).
+    try:
+        from quill.core.pdf_ocr_install import activate_pdf_ocr_pack
+
+        activate_pdf_ocr_pack()
+    except Exception:  # noqa: BLE001 - an optional pack must never break startup
         pass
     log_listener = configure_logging(app_data_dir() / "logs")
     setup_fault_handler()
@@ -397,7 +464,10 @@ def main() -> int:
         bootstrap_bundled_publishing_providers()
 
         try:
+            _t_import_main_frame = time.perf_counter()
             from quill.ui.main_frame import run_app
+
+            _import_main_frame_seconds = time.perf_counter() - _t_import_main_frame
         except ModuleNotFoundError as exc:
             if exc.name == "wx":
                 print("wxPython is required to run the UI. Install with: pip install -e .[ui]")
@@ -440,7 +510,14 @@ def main() -> int:
                 _wait_for_primary_instance_shutdown()
             return 0
         try:
-            run_app(launch_requests, safe_mode=safe_mode, diagnostics_mode=diagnostics_mode)
+            run_app(
+                launch_requests,
+                safe_mode=safe_mode,
+                diagnostics_mode=diagnostics_mode,
+                cold_import_seconds=_import_main_frame_seconds,
+                persona_name=parsed.persona,
+                document_kind=parsed.document_kind,
+            )
         finally:
             release_primary_instance()
     finally:
@@ -514,6 +591,32 @@ def _parse_cli_arguments(arguments: list[str]) -> Namespace:
         default=None,
         help="Open two files in compare mode. Example: --diff old.kt new.kt",
     )
+    parser.add_argument(
+        "--persona",
+        default=None,
+        metavar="NAME",
+        help="Launch directly into a saved Work Persona (Tools > Work Personas...).",
+    )
+    # QUILL Lite's two, and the reason A7 was not the one-liner it looked: QUILL
+    # had no "start a document in this kind" seam at all until 2026-09-17
+    # (bad.md P2.16, P1.13). Mutually exclusive, because "--rich --plain" has no
+    # sensible answer and argparse can say so better than we can.
+    kind = parser.add_mutually_exclusive_group()
+    kind.add_argument(
+        "--rich",
+        dest="document_kind",
+        action="store_const",
+        const="rtf",
+        help="Start with a new rich text document.",
+    )
+    kind.add_argument(
+        "--plain",
+        dest="document_kind",
+        action="store_const",
+        const="plain",
+        help="Start with a new plain text document.",
+    )
+    parser.set_defaults(document_kind=None)
     return parser.parse_args(arguments)
 
 

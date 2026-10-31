@@ -22,7 +22,18 @@ def _assistant_tools_source() -> str:
 
 
 def _menu_source() -> str:
-    return Path("quill/ui/main_frame_menu.py").read_text(encoding="utf-8")
+    """The menu bar's source, both halves of it.
+
+    The AI menu's two halves moved into ``main_frame_ai_menu.py`` on 2026-09-23,
+    when QUILL's own free AI became the front door and the provider-and-agent
+    surface went behind Show advanced AI features (GATE-11 extraction). Reading
+    only the original module would have quietly stopped checking the AI rows
+    rather than failing, which is the worse of the two outcomes.
+    """
+    return "".join(
+        Path(rel).read_text(encoding="utf-8")
+        for rel in ("quill/ui/main_frame_menu.py", "quill/ui/main_frame_ai_menu.py")
+    )
 
 
 def _connection_dialog_source() -> str:
@@ -55,16 +66,8 @@ def test_connection_dialog_shows_plain_storage_hint() -> None:
     assert "provider_api_key_storage_hint()" in body
 
 
-# --- #124: Prompt Studio can be closed with Escape ---------------------------
-
-
-def test_prompt_studio_has_cancel_close_button() -> None:
-    source = _assistant_tools_source()
-    start = source.index("class PromptStudioDialog")
-    end = source.index("\nclass ", start + 1)
-    body = source[start:end]
-    assert 'wx.Button(self.dialog, id=wx.ID_CANCEL, label="Close")' in body
-    assert "escape_id=wx.ID_CANCEL" in body
+# Prompt Studio was retired into the unified AI Library; its Escape-close test is
+# removed with the dialog.
 
 
 # --- AI menu consolidation: Model/Connection merged into the AI Hub ----------

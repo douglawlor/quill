@@ -13,6 +13,7 @@ from __future__ import annotations
 from quill.tools.dialog_inventory import (
     SURFACES,
     load_snapshot,
+    platform_map,
     scan_dialog_surfaces,
     surface_map,
 )
@@ -59,7 +60,34 @@ def test_registry_is_not_empty() -> None:
 
 
 def test_scan_is_deterministic() -> None:
-    """Two scans return identical, sorted output (stable keys, no flakiness)."""
-    first = [surface.key for surface in scan_dialog_surfaces()]
-    second = [surface.key for surface in scan_dialog_surfaces()]
+    """Two scans return identical, sorted output (stable keys, no flakiness).
+
+    Both scans run inside one ``source_cache.scope()``, which is what the
+    re-entrant scope is for: a bare pair of calls parses the whole package
+    twice, took ~31 seconds against pytest's 30-second timeout, and failed by
+    the clock rather than by the assertion. A gate that times out sometimes is
+    one people learn to re-run rather than believe.
+    """
+    from quill.tools.source_cache import scope
+
+    with scope():
+        first = [surface.key for surface in scan_dialog_surfaces()]
+        second = [surface.key for surface in scan_dialog_surfaces()]
     assert first == second == sorted(first)
+
+
+def test_every_surface_has_a_sanctioned_platform_tag() -> None:
+    """The platform tag is a lower bound: only ``""`` or ``"darwin"`` ever appear.
+
+    A Mac-only surface (one inside a ``sys.platform == "darwin"`` branch) is
+    tagged ``"darwin"`` so a reviewer knows it cannot be exercised on the Windows
+    dev box; every other surface is ``""``. No other tag is sanctioned, and a
+    scanner regression that emitted anything else would fail here.
+    """
+    platforms = platform_map(scan_dialog_surfaces())
+    unsanctioned = sorted(
+        f"{key} -> {tag!r}" for key, tag in platforms.items() if tag not in ("", "darwin")
+    )
+    assert not unsanctioned, "Platform tags must be '' or 'darwin'. Unsanctioned: " + ", ".join(
+        unsanctioned
+    )

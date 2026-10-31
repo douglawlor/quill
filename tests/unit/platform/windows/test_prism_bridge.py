@@ -17,7 +17,7 @@ def _disable_ao2_fallback(monkeypatch):
     """
     monkeypatch.setattr(
         "quill.platform.windows.prism_bridge._ao2_live_screen_reader",
-        lambda: (None, None),
+        lambda: (None, None, None),
     )
 
 
@@ -122,11 +122,15 @@ def test_announcement_engine_uses_system_speech_when_prism_is_missing(monkeypatc
     assert engine.state().active_backend == "speech"
 
 
-def test_force_speech_bypasses_screen_reader_suppression(monkeypatch) -> None:
-    # The QUILL key prefix/browse-mode chord has no focus or control change for
-    # a screen reader to pick up on its own, so callers narrating that
-    # internal-only state pass force_speech=True to still get spoken even
-    # while JAWS/NVDA/Narrator is running and no Prism backend is active.
+def test_live_screen_reader_always_wins_over_the_sapi_self_voice(monkeypatch) -> None:
+    # #966 (Narrator double-speech): this SAPI branch is only reachable when no
+    # speech bridge could be acquired — with NVDA/JAWS live, Prism or
+    # accessible_output2 handle announcements (including force_speech
+    # interrupts) before this point, so a detected-but-unbridged reader here is
+    # Narrator. The old force_speech bypass made QUILL's SAPI voice talk right
+    # over One Core; a running reader now suppresses the self-voice
+    # unconditionally, force_speech included. force_speech still speaks (and
+    # still matters) when no reader is running at all.
     voice = _FakeVoice()
     monkeypatch.setattr("quill.platform.windows.prism_bridge.sys.platform", "win32")
     monkeypatch.setattr("quill.platform.windows.prism_bridge._build_tts_voice", lambda: voice)
@@ -147,6 +151,16 @@ def test_force_speech_bypasses_screen_reader_suppression(monkeypatch) -> None:
     prism_bridge.flush_tts_for_tests()
     assert voice.messages == []
 
+    # Even force_speech must not double-talk over Narrator (#966).
+    assert engine.announce("QUILL key", force_speech=True) is None
+    prism_bridge.flush_tts_for_tests()
+    assert voice.messages == []
+
+    # With no reader running, force_speech (and routine announcements) speak.
+    monkeypatch.setattr(
+        "quill.platform.windows.prism_bridge._screen_reader_active",
+        lambda: False,
+    )
     assert engine.announce("QUILL key", force_speech=True) is None
     prism_bridge.flush_tts_for_tests()
     assert voice.messages == ["QUILL key"]
@@ -238,7 +252,7 @@ def test_falls_back_to_accessible_output2_when_prism_has_no_live_backend(monkeyp
     speaker = _FakeAO2Speaker()
     monkeypatch.setattr(
         "quill.platform.windows.prism_bridge._ao2_live_screen_reader",
-        lambda: (speaker, "JAWS"),
+        lambda: (speaker, "JAWS", speaker),
     )
 
     engine = AnnouncementEngine("auto")
@@ -262,6 +276,13 @@ def test_macos_announce_error_logged(monkeypatch, caplog) -> None:
     import logging
 
     monkeypatch.setattr("quill.platform.windows.prism_bridge.sys.platform", "darwin")
+    # VoiceOver is running, so the darwin branch routes to the VoiceOver path
+    # whose failure is the subject of this test (not the VoiceOver-off self-voice path).
+    monkeypatch.setattr(
+        "quill.platform.windows.prism_bridge._macos_screen_reader_active",
+        lambda: True,
+        raising=False,
+    )
     monkeypatch.setattr(
         "quill.platform.windows.prism_bridge.import_module",
         lambda _name: (_ for _ in ()).throw(ImportError),
@@ -282,3 +303,64 @@ def test_macos_announce_error_logged(monkeypatch, caplog) -> None:
 
     assert result is None
     assert any("VoiceOver" in r.message for r in caplog.records)
+
+
+def test_exactly_one_leg_ever_delivers_a_message(monkeypatch) -> None:
+    """First answer wins, and nothing downstream also speaks (magic2 audit).
+
+    EdSharp's ``Say.cs`` rule, imported 2026-08-27: the chain (Prism ->
+    accessible_output2 -> UIA notification -> SAPI self-voice -> status bar)
+    stops at the first leg that answers, so a message is never delivered
+    twice. This pins single delivery with counters on every leg at once --
+    the individual fallback tests each prove their own leg works; this one
+    proves the *others stay silent* when an earlier leg answers.
+    """
+    deliveries: list[str] = []
+
+    backend = _FakeBackend(runtime=True)
+    original_speak = backend.speak
+
+    def counting_speak(message: str, interrupt: bool = False) -> None:
+        deliveries.append("prism")
+        original_speak(message, interrupt)
+
+    backend.speak = counting_speak  # type: ignore[method-assign]
+    prism_module = types.SimpleNamespace(Context=lambda: _FakeContext(backend))
+    monkeypatch.setattr(
+        "quill.platform.windows.prism_bridge.import_module",
+        lambda name: prism_module if name == "prism" else None,
+    )
+
+    class _CountingAO2:
+        def speak(self, message: str, interrupt: bool = False) -> None:
+            deliveries.append("ao2")
+
+    monkeypatch.setattr(
+        "quill.platform.windows.prism_bridge._ao2_live_screen_reader",
+        lambda: (_CountingAO2(), "JAWS", _CountingAO2()),
+    )
+    monkeypatch.setattr(
+        "quill.platform.windows.narrator_announce.announce",
+        lambda message, important=False: deliveries.append("uia") or True,
+    )
+    monkeypatch.setattr(
+        "quill.platform.windows.prism_bridge._enqueue_tts",
+        lambda message: deliveries.append("sapi"),
+    )
+
+    # With Prism live, every other leg -- ao2, UIA, SAPI -- must stay silent.
+    engine = AnnouncementEngine("auto")
+    assert engine.state().active_backend == "prism"
+    assert engine.announce("hello") is None
+    assert deliveries == ["prism"]
+
+    # With only ao2 live, UIA and SAPI must stay silent.
+    deliveries.clear()
+    monkeypatch.setattr(
+        "quill.platform.windows.prism_bridge.import_module",
+        lambda _name: (_ for _ in ()).throw(ImportError),
+    )
+    engine = AnnouncementEngine("auto")
+    assert engine.state().active_backend == "accessible_output2"
+    assert engine.announce("hello") is None
+    assert deliveries == ["ao2"]

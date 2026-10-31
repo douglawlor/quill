@@ -40,6 +40,99 @@ HTML_EXTENSIONS: tuple[str, ...] = (".html", ".htm", ".xhtml")
 #: Everything QUILL can open as a document, for the "Open in Quill" verb.
 OPENABLE_EXTENSIONS: tuple[str, ...] = TEXT_EXTENSIONS + MARKUP_EXTENSIONS + HTML_EXTENSIONS
 
+#: Audio + video containers the converter can take as input (the "Convert with
+#: Quill" verb). Kept in step with ``core.audio.formats`` AUDIO/VIDEO_EXTENSIONS;
+#: hardcoded here (like the image/pdf groups above) so this module stays free of
+#: heavier imports. ``tests/.../test_shell_verbs`` asserts the two agree.
+#: One deliberate gap: ``.ts`` is left off the Explorer verb because on most
+#: developers' machines it is a TypeScript file, not an MPEG transport stream;
+#: Add Files and a folder scan still take it.
+MEDIA_EXTENSIONS: tuple[str, ...] = (
+    # Audio.
+    ".aa3",
+    ".aac",
+    ".ac3",
+    ".aif",
+    ".aifc",
+    ".aiff",
+    ".alac",
+    ".amr",
+    ".ape",
+    ".au",
+    ".awb",
+    ".bwf",
+    ".caf",
+    ".dff",
+    ".dsf",
+    ".dts",
+    ".eac3",
+    ".ec3",
+    ".flac",
+    ".gsm",
+    ".it",
+    ".m4a",
+    ".m4b",
+    ".m4r",
+    ".mka",
+    ".mlp",
+    ".mod",
+    ".mp1",
+    ".mp2",
+    ".mp3",
+    ".mpa",
+    ".mpc",
+    ".oga",
+    ".ogg",
+    ".oma",
+    ".opus",
+    ".ra",
+    ".rf64",
+    ".s3m",
+    ".shn",
+    ".snd",
+    ".spx",
+    ".tak",
+    ".thd",
+    ".tta",
+    ".voc",
+    ".w64",
+    ".wav",
+    ".weba",
+    ".wma",
+    ".wv",
+    ".xm",
+    # Video.
+    ".3g2",
+    ".3gp",
+    ".asf",
+    ".avi",
+    ".divx",
+    ".dv",
+    ".dvr-ms",
+    ".f4v",
+    ".flv",
+    ".m2t",
+    ".m2ts",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp4",
+    ".mpe",
+    ".mpeg",
+    ".mpg",
+    ".mts",
+    ".mxf",
+    ".nut",
+    ".ogv",
+    ".qt",
+    ".rm",
+    ".rmvb",
+    ".vob",
+    ".webm",
+    ".wmv",
+    ".wtv",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ShellVerb:
@@ -112,6 +205,14 @@ _SHELL_VERBS: tuple[ShellVerb, ...] = (
         description="Open the file in Quill and start reading it aloud.",
         feature_id="read_aloud",
     ),
+    ShellVerb(
+        verb_id="convert",
+        label="Convert with Quill",
+        action="convert",
+        extensions=MEDIA_EXTENSIONS,
+        settings_key="shell_verb_convert",
+        description="Open the file in Quill Converter to change its audio format.",
+    ),
 )
 
 
@@ -150,10 +251,16 @@ def enabled_verbs(
     """
     if not master_enabled:
         return []
+    from quill.core.app_launcher import is_app_released
+
     pool = tuple(verbs) if verbs is not None else _SHELL_VERBS
     result: list[ShellVerb] = []
     for verb in pool:
         if verb.requires_ai and not assistant_enabled:
+            continue
+        # The "Convert with Quill" verb launches the gated Quill Converter app;
+        # never register it in a public build (RELEASED_APPS).
+        if verb.action == "convert" and not is_app_released("converter"):
             continue
         if not bool(getattr(settings_values, verb.settings_key, False)):
             continue
@@ -173,6 +280,7 @@ __all__ = [
     "HTML_EXTENSIONS",
     "IMAGE_EXTENSIONS",
     "MARKUP_EXTENSIONS",
+    "MEDIA_EXTENSIONS",
     "OPENABLE_EXTENSIONS",
     "PDF_EXTENSIONS",
     "TEXT_EXTENSIONS",

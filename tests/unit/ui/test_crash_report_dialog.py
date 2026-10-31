@@ -12,6 +12,8 @@ from __future__ import annotations
 import pytest  # type: ignore[import-not-found]  # pytest.importorskip below
 import wx  # type: ignore[import-not-found]  # pytest.importorskip below
 
+from tests.wx_session import shared_wx_app
+
 pytest.importorskip("wx")  # noqa: E402
 
 from pathlib import Path  # noqa: E402
@@ -33,7 +35,7 @@ from quill.ui.crash_report_dialog import (  # noqa: E402
 
 @pytest.fixture(scope="module")
 def wx_app():
-    app = wx.App()
+    app = shared_wx_app()
     yield app
     app.Destroy()
 
@@ -73,7 +75,7 @@ def test_dialog_controls_have_accessible_names(wx_app, tmp_path):
             assert dialog._what_ctrl.GetName() == "What were you doing"
             assert dialog._trigger_ctrl.GetName() == "Triggering command"
             assert dialog._expect_ctrl.GetName() == "Expected behaviour"
-            assert dialog._btn_send.GetName() == "Send report"
+            assert dialog._btn_send.GetName() == "Email support"
             assert dialog._btn_copy.GetName() == "Copy to clipboard"
             assert dialog._btn_cancel.GetName() == "Don't send"
         finally:

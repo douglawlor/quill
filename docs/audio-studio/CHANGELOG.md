@@ -1,0 +1,113 @@
+# Changelog
+
+All notable changes to QUILL Audio Studio are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## Unreleased
+
+- **Auphonic never overwrites a file, and handles long recordings.** Results that arrive when a file of the same name is already in the folder are saved beside it as "name (2).mp3" instead of replacing it, a cancelled download leaves no half-written file, and a name Auphonic sends can never place a file outside the folder. Uploads and downloads now stream a piece at a time instead of holding the whole recording in memory. The Auphonic token you store here is now also the one Quill Converter's new Process with Auphonic uses, so it is entered once for both.
+
+- **Where Audio Studio's own sounds play, and Alt+Shift+M to turn them off.** **Studio > Preferences > App Sounds Play On...** offers System default, None (no sounds), or any sound card or headset by name. After a change one sound plays on the new card, so you hear where it went. If that card is unplugged the sounds play on the system default until it is back, and Audio Studio says so once. **Alt+Shift+M** turns Audio Studio's sounds off and back on where they were, and **Studio > App Sounds** shows a check mark while they are on. Each QUILL app keeps its own choice; "Share these choices with my other Quill apps" keeps them in step. Your screen reader is never moved. Asked for on QUILLVille by Rick Lewis.
+
+### Changed
+
+- **Two downloads, nothing else** (2026-10-11). QUILL Audio Studio now comes as the installer and the portable zip. The small Lite installer and the Companion zip are gone. If you used the Lite installer, take the installer; if you used the Companion zip, take the portable zip. Check for Updates already offers the right one.
+
+### Added
+
+- **Copy Sections** (Voices > Copy Sections..., or the Command Palette). Cutting
+  one piece out of an audio file has worked for a long time; what was missing is
+  the *workflow*, and the workflow is the feature. Play the file, **Mark Start**
+  where a piece begins and **Mark End** where it stops, **Preview Marked** to
+  hear exactly what you selected before committing to it, and **Add to List**.
+  Then go and find the next piece and add that too.
+
+  That collecting is why this exists rather than a Save-As with two numbers in
+  it. Pulling four quotes out of a two-hour interview, or the six songs somebody
+  actually wants out of a four-hour broadcast recording, is *one* task -- and an
+  editor that offers "trim" without "and another one" makes you do it six times
+  and stitch the results yourself.
+
+  **Save as New File...** writes everything collected, in the order the list
+  shows (Move Up and Move Down change it). **Add to an Existing File...** puts
+  them on the end of a file that already exists, which is the point of
+  collecting across several sources.
+
+  **The original is never modified**, ever. Marks are numbers; saving writes
+  somewhere else entirely. There is no undo for a destructive edit of the only
+  copy of a recording, so there is no destructive edit -- and a save that fails
+  part way through leaves the destination exactly as it was rather than half
+  written.
+
+  There is deliberately **no waveform**, and that is not an apology: a waveform
+  is a picture of the audio for people who can see it, and the same job is done
+  here by listening to the marked range, which is the more reliable check for
+  everybody. Every row of the list is a whole sentence -- "1. The good bit, from
+  4 minutes 12 seconds to 5 minutes 30 seconds, 1 minute 18 seconds long" --
+  rather than columns to arrow across, and every position is spoken in words
+  rather than as a timecode.
+
+### Changed
+
+- **Generate Captions (Offline) moved to its own module**
+  (`ui/audio_studio/captions_command.py`) so the app shell stayed inside its
+  size budget. No behaviour change.
+
+## [2.0.0] - built, not yet released
+
+QUILL Studio 2.0.0 is the next Studio release after Audio Studio 1.0.0. The previously unpublished 2.2.0 build is renumbered to 2.0.0 for the QUILL Studio rename. Shared-runtime compatibility does not require matching the other apps' version numbers.
+
+This version is built but not yet published: Audio Studio is not offered in the QuillVille menu, and there is no 2.0.0 download page. Everything below is in the build.
+
+### Added
+
+- **QUILL Audio Studio has its own icon.** It used to ship a byte-identical copy of Quill Radio's broadcast-wave icon, carried over when the standalone shell was scaffolded, so two products wore one face in the taskbar, in Alt+Tab and in the tray. Audio Studio's icon is now a three-bar waveform on a slate tile -- the same rounded shape and amber accent as the rest of the QuillVille family, with its own silhouette and its own colour. The waveform was re-cut once before shipping: at 16x16 five bars merged into a solid slab, so there are three, with real gaps between them, which is what makes a waveform read as bars rather than as a block.
+
+- **The QuillVille Runtime -- install Python once, and every Quill app starts instantly.** Every QuillVille app (QUILL, Quill Radio, Quill Weather, and QUILL Audio Studio) now shares one Python runtime, the QuillVille Runtime, installed once per user and reused by all of them. Install it a single time and every app you add afterward launches immediately. The runtime is reference-counted: it is removed only when the last app that needs it is uninstalled. Alongside the existing full portable and full installer builds, two new lightweight editions arrive that ride the shared runtime:
+  - **Companion edition** (`QUILL-Audio-Studio-Companion-<version>.zip`, about 2 to 3 MB) -- just the app and its docs. The first time you launch it, if the QuillVille Runtime is not already installed, it offers to download and install it (about 230 MB, once) with a fully accessible progress bar; after that, this app and every other QuillVille app start instantly.
+  - **Thin installer** (the `-Lite` setup) -- a tiny installer that downloads the shared runtime only if it is not already present, then installs the app.
+  - The **full portable** edition is now named `QUILL-Audio-Studio-Portable-Lean-<version>.zip` (about 675 MB): fully self-contained, runs from a USB stick with no installation and no internet, bundling a genuine unmodified copy of Python plus the offline speech and text-to-speech engines (whisper.cpp, DECtalk, eSpeak-NG, Piper, and neural Kokoro). The **full installer** (`QUILL-Audio-Studio-Setup-Shared-<version>.exe`) installs the shared runtime, if it is not already present, plus the app.
+- **Accessible runtime downloads.** Whenever the QuillVille Runtime is downloaded -- by an installer or by an app's own first launch -- it shows a fully accessible progress bar that works with NVDA, JAWS, and Narrator, announcing progress as a percentage.
+- **Update in one click -- Audio Studio installs it and restarts itself.** When an update is available, choose Download, then **Install and restart now**: Audio Studio applies the update (extracting the new portable files over your folder, or running the installer silently) and relaunches automatically, keeping all your settings and data. No more closing the app, unzipping, and swapping folders by hand. Shared across every Quill app.
+- **A status bar you can read, and a running job you can follow from the tray.** The status bar is now arrow-navigable: press **F6** to move focus into it, Left and Right to move between cells, Enter to act on one, Escape or a second F6 to leave. Its cells are Activity, Progress, Sleep timer, Your books, and Time, so "what is going on right now" is always one key away instead of something you have to guess at. The Progress cell carries a live narration or build run -- percentage, files, and the current step -- and the same text is written to the system-tray tooltip, so a long run stays reviewable with the window minimized. **View > Show Status Bar** turns it on or off, and the choice is remembered.
+- **Convert Audio, right in the Studio.** **Voices > Convert Audio...** builds a queue of files and folders and converts them between formats -- MP3, M4A/M4B, Opus, Ogg, FLAC, WAV, AAC and more -- pulling the audio track out of video files (MP4, MKV, MOV, WebM and the rest) along the way. It uses the ffmpeg the Studio already bundles, so nothing new to install, nothing leaves your machine, and it works in Safe Mode. Ten presets cover the usual jobs (Just convert, MP3 at three bitrates, Podcast, Audiobook M4B, Voice memo, Web voice Opus, Archival FLAC, and Hearing-aid mono); the queue only ever offers formats your ffmpeg can actually encode, so a batch cannot die half way for a missing encoder; conversion runs off the UI thread with several workers, a real Cancel, and a spoken summary that **names the files that failed** instead of quietly claiming success.
+- **Advanced processing for a conversion.** The converter's Advanced panel adds loudness normalization (Audiobook/ACX at -20 LUFS or Podcast/streaming at -16 LUFS), gain, a high-pass filter, silence trimming, pitch-preserving tempo, a compressor, a night-mode leveler, fade in and fade out, and a safety limiter. Everything is off or neutral by default, so a plain conversion stays a plain conversion.
+- **Convert from a link.** **Voices > Convert from URL...** takes a YouTube link (and the many other sites yt-dlp supports), downloads the audio, and drops it straight into the converter. The downloader is never bundled: it installs on demand after a one-time consent and rights notice. Unavailable in Safe Mode.
+- **Announcements now reach your braille display.** Reported by a braille user: messages the Studio speaks never appeared in braille. The diagnosis was blunter than the report -- nothing had ever been sent to a braille display at all. Braille is now routed at the same point as speech, so every message is covered at once. Three rules govern it: braille never costs speech (an unplugged display, a reader that rejects the call, a bridge without the capability all degrade to "spoke but did not braille", never to silence); nothing is truncated, because clipping would drop the end of the very thing you asked for; and an identical message inside two seconds does not steal the display twice, since a flash message replaces whatever is under your fingers. A burst of different messages no longer flickers past faster than cell one can be read -- the first message of a quiet period writes instantly, and anything landing within the next 150 milliseconds settles to the newest rather than each shoving the last aside, with errors exempt and always written through at once.
+- **Every announcement channel in one place.** Speech, braille, sound, and the status line are now delivered by one shared announcement service, the same one QUILL uses, so a message the Studio makes reaches every channel you rely on instead of only the ones that happened to be wired. Announcements are also recorded, so a message that passed while you were reading something else is not simply gone. New shared accessibility settings control the braille style (the full spoken string, or the compact position-first form), how long an identical braille message is held back, whether an error sticks on the display instead of flashing past, whether the companion apps play sound cues, whether a cue stands in for speech while Quiet Mode is on, and which severities interrupt speech. They live in the store the Studio shares with QUILL, so setting them in QUILL's Preferences applies here too.
+
+### Changed
+
+- **Fewer antivirus false positives.** The app's launcher is now a genuine, tiny native program, and the bundled Python is the official unmodified build. Earlier versions used a renamed and modified copy of Python's `pythonw.exe` as the launcher, which some antivirus tools flagged as a false positive. That pattern is completely gone, so the Quill apps are far less likely to be flagged.
+- **Audio Studio is now built straight from QUILL's own source.** The app used to be assembled from a copy of QUILL's audio code kept in a separate repository and re-synced by hand. It is now built directly from the QUILL package, so the Studio and QUILL's built-in Audio Studio can never drift apart and a fix upstream is in the next Studio build with nothing to copy across. Nothing changes for you except that the two stay in step.
+- **Updates come from one place, per app.** **Help > Check for Updates...** now looks at the shared QUILL project releases and picks out Audio Studio's own download for the flavor you run, so each Quill app updates on its own schedule without needing a repository of its own. An update to Quill Radio is never mistaken for an update to the Studio.
+- **Piper voices download from the project's own mirror.** All 39 Piper voices are now served from the project's signed component mirror rather than a third-party model host, so voice downloads no longer depend on an outside service being up or reachable from your network.
+- **Shared components are counted, not guessed.** Audio Studio declares the components it needs (ffmpeg) when it starts, and the shared store keeps a count per component, so uninstalling one Quill app can never take away something another app still needs.
+- **A smaller download.** The build now leaves out the large libraries the Studio never loads, so the installer and the portable zip are meaningfully lighter without giving anything up.
+- **A choice at install time.** The installer offers Full, Compact (program only, no bundled documentation), and Custom setups; the shared runtime and the app itself are always installed, and only the packaged documentation is optional.
+
+### Fixed
+
+- **Kokoro narration no longer stops mid-run on a portable copy.** A long, dense passage could overrun the neural model's input window; the Studio then fell back to a heavyweight code path that a portable copy does not carry, and reported "Kokoro voices need one more component" for a component you had already installed -- 29 chapters into a run. The Studio now re-splits that one passage at safe boundaries and carries on, so a portable narration completes; the per-passage size limit is capped below the model's window everywhere it is used, including translated editions; and when a passage genuinely cannot be synthesized the message names the real cause and where to find the report instead of pointing at a download you do not need.
+- **A conversion's progress reaches the tray.** Converter progress is reported through the same channel as a narration run, so it appears in the status bar's Progress cell and the tray tooltip rather than only inside the dialog.
+
+## [1.0.0] - 2026-07-18
+
+First release: the QUILL editor's Audio Studio as a self-contained standalone app for Windows and macOS, screen-reader-first throughout.
+
+### Added
+
+- Standalone app frame (`quillas.apps.studio`): home window with the three journey buttons and a "Your books" library, menu bar, status bar with spoken 25/50/75 percent run milestones, system tray (Open Audio Studio, Resume last book), Ctrl+Shift+P command palette, and in-app update checks against this repo's GitHub releases.
+- The Audio Studio wizard with three journeys: Narrate Documents (source/filters, engine + voice with previews, round-robin rotation, voice casting rules, translated editions, chapter shaping with title preview, output and diagnostics, book details with Open Library / MusicBrainz lookup, plain-sentence summary), Build From Recordings (folder of audio to one chaptered master, library mode, silence trimming, pre-build chapter review), and Edit a Book.
+- The Chapter Workbench: chapter-aware player (mpv engine with wx.media fallback, resume positions, pitch-preserved speed, "Where am I?"), split at playhead, set start to playhead, merge, rename, restore, silence-based chapter proposals, AI-proposed chapter titles (local transcription, text-only to the configured AI, reviewable), ACX check, chapter list import/export in five formats, split into per-chapter files, in-place MP3 saves and lossless M4B Save As.
+- The listening layer: the home-window "Your books" library is a tree (Favorites, In Progress, Recently Played, Inbox, plus your own folders) that populates as you open books, with a keyboard-complete context menu (Open, Reveal in Folder, Favorite, Move to Folder, New Folder, Remove) built on `quillas/ui/audio_studio/library_tree.py` over `quillas/core/audio_studio/library.py`; Resume on launch (Studio menu, opt-in) that reopens the most recently played book at its saved position, silently skipping if the file is gone; a Recently Played submenu (Studio menu); media keys while a Workbench is open (Play/Pause, Stop, Next chapter, Previous chapter route to the active player, unregistered on exit); per-book volume and mute (each book remembers its own level and mute state, Ctrl+M toggles mute); a Sleep Timer (Book Tools menu) that stops playback after N minutes or at the end of the current chapter, with a cancellable watcher; and a Play Queue (Book Tools menu) that auto-advances to the next book when the current one finishes and the Workbench is closed. `open_book_in_workbench` threads optional host callbacks (`on_player_ready`, `on_finished`, `on_volume`, `on_mute`, `on_closed`) to the player so the shell drives media keys, per-book prefs, history, and queue auto-advance.
+- Voice engines with on-demand downloads: Windows SAPI 5, DECtalk, Piper, Kokoro, eSpeak-NG, macOS say; ElevenLabs (installs on demand) and OpenAI/Gemini/ElevenLabs cloud voices with user-supplied keys. Speech Hub, Manage Speech Models, Pronunciation Dictionaries, Download Optional Components (with Test/Remove), and Get FFmpeg in the Voices menu. A "Generating preview, please wait" spoken cue for slow live previews (on by default).
+- AI menu with the Set Up AI wizard (cloud provider with your own key, or local via Ollama) powering AI chapter titles, translated editions, and cloud narration voices.
+- Book Tools menu: Publish a Finished Book (local RSS feed, folder show feed with accessible show notes, SFTP upload with Credential Manager storage, Auphonic mastering), Make a Podcast Feed From a Folder, ACX Compliance Check with plain-language recommendations, plus Sleep Timer, Play Queue, and Mute Playback.
+- `.quilljob` job files: save an exact run from the summary page; re-run it from Studio > Open Job File or the wizard's first page.
+- Preferences (Ctrl+Comma): automatic update checks, Alt+F4-to-tray (opt-in), spoken run milestones, and the close-window policy (Ask when work is running / Exit / Minimize to Tray), stored app-locally so shared QUILL settings stay untouched.
+- Save-a-diagnostics-bundle offer after a component-install failure: a redacted zip support can read.
+- Safe Mode (`QUILL_SAFE_MODE=1` or `--safe-mode`): disables AI, publishing, and component downloads.
+- Shared data store with QUILL, Quill Radio, and QUILL Cast (`%APPDATA%\Quill`), with full portable mode via a `data` folder next to the exe containing a `storage-mode.json` marker (`{"mode": "portable"}`).
+- Packaging: PyInstaller onedir build (`quill-audio-studio.spec`, `launcher.py`), Inno Setup installer (`installer/quill-audio-studio.iss`), portable zip, bundled ffmpeg and mpv; vendoring tooling (`scripts/vendor_from_quill.py`, `scripts/vendor_tests.py`) to re-sync from the QUILL monorepo; vendored unit test suite.

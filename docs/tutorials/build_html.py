@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Publish the tutorials as accessible HTML under docs/site/tutorials/.
+
+Converts every ``docs/tutorials/*.md`` with pandoc (standalone, ``lang=en``),
+rewrites inter-tutorial ``.md`` links to ``.html``, and points the index's
+user-guide and podcast references at their site homes.
+
+Usage::
+
+    python docs/tutorials/build_html.py
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parent.parent
+SITE_DIR = REPO_ROOT / "docs" / "site" / "tutorials"
+
+
+def main() -> int:
+    pandoc = shutil.which("pandoc")
+    if not pandoc:
+        raise SystemExit("pandoc is required to build the tutorial pages.")
+    SITE_DIR.mkdir(parents=True, exist_ok=True)
+    sources = sorted(HERE.glob("*.md"))
+    for source in sources:
+        target = SITE_DIR / (
+            "index.html" if source.name == "README.md" else source.with_suffix(".html").name
+        )
+        # Title from the document's own H1, not the filename: a screen reader
+        # announces the title on every tab switch, and "09-internet-radio" is
+        # read as a hyphenated slug.
+        h1 = next(
+            (
+                match.group(1)
+                for line in source.read_text(encoding="utf-8").splitlines()
+                if (match := re.match(r"^#\s+(.+?)\s*$", line))
+            ),
+            source.stem,
+        )
+        html = subprocess.run(
+            [
+                pandoc,
+                str(source),
+                "--standalone",
+                "--from",
+                "gfm",
+                "--to",
+                "html5",
+                "--css",
+                "/assets/style.css",
+                "--metadata",
+                "lang=en",
+                "--metadata",
+                f"pagetitle=QUILL Tutorials - {h1}",
+            ],
+            capture_output=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout
+        # Site chrome: a small landmark nav so every tutorial links home, to
+        # the tutorial index, and to the podcast that teaches the same ground.
+        #
+        # And a skip link with something to skip to. Pandoc's standalone output
+        # puts the document straight into <body> with no <main>, so these pages
+        # had no main landmark at all and no way past the nav (2.4.1) -- the one
+        # page family on the site with neither. tabindex="-1" is the load-bearing
+        # half: <main> is not focusable without it, so a skip link pointing at it
+        # moves focus nowhere and the next Tab lands back in the nav the reader
+        # just asked to skip. style.css styles the ring (main[tabindex="-1"]).
+        nav = (
+            '<a class="skip-link" href="#main">Skip to main content</a>'
+            '<header class="site"><div class="wrap">'
+            '<nav class="site" aria-label="Primary"><ul>'
+            '<li><a href="/index.html">QUILL home</a></li>'
+            '<li><a href="index.html">All tutorials</a></li>'
+            '<li><a href="/podcast/index.html">The QUILL Cast</a></li>'
+            '<li><a href="/docs/userguide.html">User guide</a></li>'
+            "</ul></nav></div></header>"
+            '\n<main id="main" tabindex="-1"><div class="wrap">'
+        )
+        html = html.replace("<body>", "<body>\n" + nav, 1)
+        html = html.replace("</body>", "</div></main>\n</body>", 1)
+        # Inter-tutorial links: point at the sibling HTML pages.
+        html = re.sub(r'href="(\d\d-[^"]+)\.md"', r'href="\1.html"', html)
+        html = html.replace('href="README.md"', 'href="index.html"')
+        # Repo-relative references that exist elsewhere on the site.
+        html = html.replace('href="../user%20guide/userguide.md"', 'href="../docs.html"').replace(
+            'href="../podcast/README.md"', 'href="../podcast/index.html"'
+        )
+        # LF explicitly: the committed pages are LF and core.autocrlf is off,
+        # so the platform default (CRLF here) would rewrite every line.
+        target.write_text(html, encoding="utf-8", newline="\n")
+        print(f"wrote {target.relative_to(REPO_ROOT)}")
+    print(f"{len(sources)} tutorial pages published.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

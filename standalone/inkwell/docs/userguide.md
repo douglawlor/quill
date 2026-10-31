@@ -1,0 +1,844 @@
+# Quill Inkwell User Guide
+
+Quill Inkwell expands abbreviations in every Windows application. Type a short
+word, press space, and Inkwell replaces it with whatever you saved: a phrase, an
+email address, a signature, a paragraph of boilerplate, a template with the
+caret already in the right place.
+
+It is part of the QUILL family and free, and its abbreviations are the same
+abbreviations QUILL's editor expands. There is one library, shared.
+
+## Table of contents
+
+1. [How expansion works](#1-how-expansion-works)
+2. [First launch](#2-first-launch)
+3. [The tray, and why the window closes to it](#3-the-tray-and-why-the-window-closes-to-it)
+4. [Creating abbreviations](#4-creating-abbreviations)
+5. [Per-abbreviation settings](#5-per-abbreviation-settings)
+6. [Variables](#6-variables)
+6a. [Fields: expansions that ask you something](#6a-fields-expansions-that-ask-you-something)
+7. [Case follows your typing](#7-case-follows-your-typing)
+8. [Categories](#8-categories)
+9. [Quick Insert, and expanding on demand](#9-quick-insert-and-expanding-on-demand)
+10. [Sharing one library with QUILL](#10-sharing-one-library-with-quill)
+10a. [Where it works](#10a-where-it-works)
+10b. [Inside QUILL itself](#10b-inside-quill-itself)
+11. [Where expansion refuses to run](#11-where-expansion-refuses-to-run)
+12. [Typing versus pasting](#12-typing-versus-pasting)
+13. [Import and export](#13-import-and-export)
+14. [Settings reference](#14-settings-reference)
+15. [Keyboard reference](#15-keyboard-reference)
+16. [Portable mode](#16-portable-mode)
+17. [Safe Mode](#17-safe-mode)
+18. [Privacy](#18-privacy)
+19. [Troubleshooting](#19-troubleshooting)
+20. [Dictate Anywhere](#20-dictate-anywhere)
+
+## 1. How expansion works
+
+While Inkwell is running it watches for typing so that it can recognise the end
+of a word. It keeps a short rolling window of recent characters -- at most 64 --
+and nothing else.
+
+When you type a character that ends a word (a space, Enter, Tab, or one of
+`. , ; : ! ? ) ] } " '`), Inkwell checks the word you just finished against your
+abbreviations. If one matches, and that entry accepts the character you typed,
+Inkwell:
+
+1. Sends backspaces to erase the abbreviation.
+2. Types the expansion.
+3. Moves the caret, if the expansion contains a `${cursor}` marker.
+4. Speaks or plays a sound, if that entry asks for it.
+
+The character you typed stays where it is. `btw ` keeps the space; `btw.` keeps
+the full stop.
+
+Nothing goes near the clipboard during an ordinary expansion.
+
+## 2. First launch
+
+Inkwell opens its window, shows the abbreviations you already have -- including
+everything QUILL knows about -- and starts watching for typing. A handful of
+common shorthand entries (`btw`, `imo`, `asap`, and so on) come built in so
+there is something to try immediately.
+
+If Windows refuses the keyboard hook, Inkwell says so in a dialog rather than
+sitting there looking like it works. See [Troubleshooting](#19-troubleshooting).
+
+## 3. The tray, and why the window closes to it
+
+Expansion is a background service. Closing the window keeps it running and tucks
+Inkwell into the notification area; the tray icon's menu reopens it, offers Quick
+Insert, and can turn expansion off.
+
+**What to look for.** Quill Inkwell's icon is a gold nib dipped into a white
+inkwell, on a terracotta-orange tile. If you have used an earlier build, this is
+new: Inkwell used to share Quill Radio's blue broadcast-wave icon, so on a
+desktop with more than one QuillVille app installed several of them looked
+identical. Every app in the family now has its own: they all share the same
+rounded tile shape and the same gold accent, but each has its own colour and its
+own picture.
+
+Turn off **Options > Close button keeps expanding** if you would rather the close
+button really exit. **Options > Start Quill Inkwell with Windows** starts it
+hidden at login, which is how most people run it.
+
+**A key to bring the window back from anywhere.** **File > Show and Hide
+Key...** (Ctrl+Alt+Shift+H) lets you choose one key that shows or hides the
+Inkwell window from any program. There is no key until you choose one. Type the
+key you want, or leave the box empty for none. If another QuillVille app already
+uses it, Inkwell tells you whose it is and lets you try another. If you used an
+earlier version, Ctrl+Alt+Shift+I did this; other QuillVille apps use that key,
+so it is off now, and Inkwell tells you once after you update.
+
+**Two more keys that work from anywhere.** Quick Insert and Expand the Word I
+Just Typed (section 9) can each have a key that works in any program. Choose
+them the same way, in the File menu:
+
+1. Press **Ctrl+Alt+Shift+K** for **File > Quick Insert Key...**, or
+   **Ctrl+Alt+Shift+E** for **File > Expand Word Key...**.
+2. Type the key you want, for example Ctrl+Alt+PageUp, or leave the box
+   empty for none.
+3. Press Enter. Inkwell says the key back. If it is already a shortcut in a
+   QuillVille app, or another program already holds it, Inkwell says so and the
+   old key stays.
+
+A key has to include Ctrl or Alt, and it cannot be one Inkwell already uses for
+something else. Neither key exists until you choose it. If you used an earlier
+version, Quick Insert was Ctrl+Alt+Shift+K and Expand Word was Ctrl+Alt+Shift+X
+from anywhere; QuillVille apps use both for their own commands, so they are off
+now, and Inkwell tells you once after you update.
+
+### Opening the other QuillVille apps
+
+The **QuillVille** menu (Alt+Q) in Inkwell's window opens the other released
+apps in the family. Each row has its own letter, so Alt+Q and then one letter
+opens an app with nothing held down:
+
+- **Open QUILL**: Alt+Q, then Q (or Ctrl+Alt+Shift+F7)
+- **Open Quill Radio**: Alt+Q, then R (or Ctrl+Alt+Shift+F8)
+- **Open Quill Weather**: Alt+Q, then W (or Ctrl+Alt+Shift+F9)
+- **Open Quill Converter**: Alt+Q, then V (or Ctrl+Alt+Shift+F10)
+- **Open QUILL Transcribe**: Alt+Q, then T (or Ctrl+Alt+Shift+F11). QUILL
+  Transcribe, released on 1 November 2026, types what you say into any
+  program; section 20 explains how it and Dictate Anywhere share the work.
+
+The tray icon's menu has a shorter list: **Open QUILL**, **Open Quill Radio**,
+**Open Quill Weather** and **Open QUILL Transcribe**. For example, with
+Inkwell's window closed to the tray, right-click its icon (or press the
+Applications key on it) and choose Open QUILL Transcribe. If an app is not on
+your computer yet, Inkwell offers to download it, and nothing is downloaded
+until you say yes.
+
+## 4. Creating abbreviations
+
+**Abbreviations > Manage Abbreviations...** (Ctrl+M) is the full list: search it,
+filter it by category, and add, edit, enable, disable, or delete entries.
+
+**Searching the list.** Type in the search box and the list keeps only the
+abbreviations whose short form, expansion or description holds what you typed.
+The words can come in any order: `address home` finds an expansion that says
+"my home address". The category filter beside it narrows the list further.
+When the search changes, the selection stays on the abbreviation you were on
+if it is still in the list, rather than jumping to whichever one now sits in
+its row.
+
+**Large lists.** The list reads its rows only as you reach them, so a library
+of ten thousand abbreviations opens and filters as quickly as one of ten
+(before October 2026, ten thousand took over three seconds to fill, and again
+after every key typed in the search box). Typing the start of an abbreviation
+while you are in the list moves to it, as in any Windows list; the screen
+reader reads the row and its position, such as "abbr42, 43 of 10000", as
+before.
+
+**Abbreviations > New from Clipboard...** (Ctrl+Shift+N) is the fast path. Copy
+a block of text anywhere, press Ctrl+Shift+N, and Inkwell opens a new entry with
+that text already filled in as the expansion -- you only supply the trigger.
+
+An abbreviation can be anything you can type without a space: `addr`, `sig`,
+`@@`, `;;date`. Longer abbreviations always win over shorter ones, so `addr`
+cannot be swallowed by `ad`.
+
+## 5. Per-abbreviation settings
+
+Every entry decides these for itself, in the edit dialog:
+
+| Setting | What it does |
+| --- | --- |
+| Enabled | Off keeps the entry without expanding it. |
+| Case sensitive | On means only the exact spelling matches. |
+| Category | Free text; groups the list and Quick Insert. |
+| Expand after | A space or punctuation, a space only, punctuation only, or never. |
+| Speak | Nothing, the abbreviation, or the expanded text. |
+| Sound | Follow the global setting, always play, or never play. |
+| Add a trailing space after punctuation | Adds one space after the punctuation that fired it. |
+
+Two of these are worth explaining properly.
+
+**Expand after = Never** means the entry never fires on its own; it is reachable
+only from Quick Insert. That is the right home for a long expansion, or for one
+you would not want appearing by accident.
+
+**Add a trailing space after punctuation** only applies to punctuation triggers,
+because a space trigger already leaves a space and doubling it reads badly. With
+it on, `co.` becomes `Company, ` rather than `Company ,`.
+
+## 6. Variables
+
+Anywhere in an expansion:
+
+| Variable | Becomes |
+| --- | --- |
+| `${date}` | The date, long form (June 15, 2026) |
+| `${time}` | The time (2:45 PM) |
+| `${datetime}` | Both |
+| `${day}` | Day of the month |
+| `${month}` | Month name |
+| `${year}` | Four-digit year |
+| `${username}` | Your Windows user name |
+| `${clipboard}` | Whatever text is on the clipboard right now |
+| `${cursor}` | Nothing -- but the caret lands here afterwards |
+
+`${clipboard}` is read at the moment the expansion fires and is never stored.
+
+## 6a. Fields: expansions that ask you something
+
+A signature is the same every time. A letter opening, a bug report, a booking
+confirmation is not -- it is the same except for a name, a date, a reference. Put
+a field in the expansion and Inkwell asks for it before typing:
+
+```
+Dear ${field:Name},
+
+Thank you for your message about ${field:Subject}. I will reply by
+${field:Reply by=the end of the week}.
+
+Kind regards to ${field:Name}.
+```
+
+- `${field:Label}` asks for a value with that label.
+- `${field:Label=something}` offers a starting value you can accept or replace.
+- The **same label used twice is asked once** and filled everywhere, so the name
+  in the greeting also lands in the sign-off.
+
+A small form appears with one labelled box per field, in the order the template
+asks for them. Tab moves between them, Enter moves to the next one, Enter on the
+last accepts, and Escape cancels -- and cancelling leaves whatever you typed
+exactly as it was, because nothing is erased until you accept.
+
+`${cursor}` still works alongside fields: the caret lands where the template put
+it, after the answers are in.
+
+## 7. Case follows your typing
+
+For an entry that is not case sensitive, the case you type carries over:
+
+- `btw` gives the expansion exactly as you wrote it.
+- `Btw` capitalises each word.
+- `BTW` shouts the whole thing.
+
+## 8. Categories
+
+A category is free text -- Work, Personal, Email, Forms, whatever suits. The
+manager's category filter narrows the list to one at a time, and entries with no
+category are listed under Uncategorised. Nothing about a category changes how an
+entry expands; it exists to keep a long list navigable.
+
+## 9. Quick Insert, and expanding on demand
+
+**Ctrl+K** in the window, or from anywhere the key you chose in **File > Quick
+Insert Key...** (section 3), opens a type-to-filter picker over every enabled abbreviation, ordered with the ones you
+use most at the top. Type a few letters, arrow down, press Enter, and the
+expansion is typed into whatever window you were working in.
+
+Quick Insert is the only way to reach an entry whose trigger mode is Never, and
+the easiest way to use an abbreviation you have not memorised yet.
+
+Inkwell's window also has a **Quick Insert...** button, beside **Manage
+Abbreviations...** (Alt+M). Its letter is I: press Alt+I to open Quick Insert
+from the window. Until 2026-10-17 the button used Alt+Q, which is also the
+**QuillVille** menu, and when a button and a menu share a letter Windows
+presses the button, so Alt+Q opened Quick Insert and "Alt+Q, then Q" in
+section 3 opened Quick Insert and typed a Q into its filter instead of opening
+QUILL. Now Alt+Q always opens the QuillVille menu. For example, in Inkwell's
+window press Alt+I, type "sig", and press Enter to type your signature into
+the program you were in; or press Alt+Q, then R, to open Quill Radio.
+
+**Expand the word I just typed** -- the key you chose in **File > Expand Word
+Key...** from anywhere, or **Ctrl+Alt+E** in the Abbreviations menu -- expands the word before the cursor without waiting for a
+space or punctuation. Use it mid-word, at the end of a line where you do not want
+a trailing space, or for an abbreviation you have set never to expand on its own.
+
+**Taking one back.** If an abbreviation expands when you did not want it, press
+**Backspace immediately afterwards** and Inkwell puts your original abbreviation
+back. The offer lasts a few seconds and only in the window where it expanded --
+after that, or after any other keystroke, Backspace does what it always does.
+
+## 10. Sharing one library with QUILL
+
+Inkwell and QUILL use the same `abbreviations.json` in the same data folder. Add
+an abbreviation in QUILL's own Abbreviation Manager and it expands system-wide
+within moments; add one here and QUILL's editor knows it. Inkwell re-reads the
+file whenever it changes on disk, so neither app needs restarting.
+
+This is also why an installed Inkwell keeps its data in `%APPDATA%\Quill` rather
+than a folder of its own.
+
+## 10a. Where it works
+
+Expansion runs wherever you can type or edit: browsers, mail, chat, forms,
+office applications, code editors, terminals, and dialog boxes. Two limits are
+worth knowing about, because both look like faults and neither is one.
+
+**Somewhere you cannot type.** Before replacing anything, Inkwell checks that
+the thing with focus actually accepts text. Typing into a list that is doing
+type-ahead, or a page where Backspace means "go back", would be worse than not
+expanding at all. Where it cannot tell, it goes ahead -- a missed expansion is
+the more annoying failure.
+
+**An application running as administrator.** Windows does not let a normal
+program see keys typed into an elevated one, so nothing expands there. Inkwell
+says so the first time focus lands in such a window. If you need expansion in
+it, start Inkwell as administrator too.
+
+## 10b. Inside QUILL itself
+
+QUILL expands your abbreviations in its own editor, from the document, without
+synthesising a single keystroke -- which is faster and safer than anything a
+system-wide expander can do. So Inkwell deliberately keeps out of QUILL's editor
+window and lets it do the work. Same abbreviations, same settings, same results;
+only the mechanism differs, and you should never be able to tell.
+
+## 11. Where expansion refuses to run
+
+Typing into the wrong window is worse than not expanding at all, so Inkwell
+refuses outright in:
+
+- Password managers (1Password, Bitwarden, KeePass and KeePassXC, LastPass,
+  Dashlane, Keeper, NordPass, RoboForm, Enpass).
+- The Windows sign-in and lock screens, the credential prompt, and the UAC
+  dialog.
+- Any window whose title suggests a credential prompt -- sign in, log on,
+  password, passcode, authenticate, unlock, Windows Security.
+
+**Options > Excluded Applications...** adds your own, one program file name per
+line (`notepad.exe`). The decision is made from the foreground window alone --
+its program, its class, and its title. Nothing is ever decided from what you
+typed.
+
+## 12. Typing versus pasting
+
+By default an expansion is typed, as synthesised keystrokes. That is the right
+default: it never touches your clipboard.
+
+A few applications -- some rich editors, some terminals -- drop fast synthetic
+keystrokes. For those, turn on **Options > Insert by pasting**. Inkwell then puts
+the expansion on the clipboard, pastes it, and puts your previous clipboard
+contents back. It is a fallback precisely because borrowing the clipboard is
+rude, and it always restores.
+
+This can also be set **per application**, which is usually what you want: one
+stubborn program should not mean every other program has its clipboard borrowed.
+List the program's file name under `paste_processes` in `inkwell.json` beside the
+abbreviation library, and only that program uses the clipboard route.
+
+## 13. Import and export
+
+The manager's **Import...** and **Export...** buttons read and write the shared
+library as JSON. Export is the honest backup of everything, including every
+per-entry setting; import merges entries in.
+
+## 14. Settings reference
+
+Inkwell's own preferences live in `inkwell.json` beside the library:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| Expand in other applications | On | The master switch (Ctrl+Shift+E). |
+| Insert by pasting | Off | Use the clipboard route (section 12). |
+| Announce every expansion | Off | A spoken confirmation on top of per-entry speech. |
+| Excluded applications | Empty | Your additions to the permanent list. |
+| Start with Windows | Off | Starts hidden in the tray at login. |
+| Start minimized to the tray | Off | Opens hidden. |
+| Close button keeps expanding | On | Close hides to the tray instead of exiting. |
+| Show and hide key | None | A key that shows or hides the window from anywhere (File > Show and Hide Key). |
+| Quick Insert key | None | A key that opens Quick Insert from anywhere (File > Quick Insert Key). |
+| Expand Word key | None | A key that expands the word just typed, from anywhere (File > Expand Word Key). |
+| Dictate Anywhere key | None | A key that starts and stops dictation in any program (File > Dictate Anywhere Key, section 20). |
+| Dictation settings | The editors' own, with the read-back as a tone | Inkwell's copy of your dictation settings (Dictation > Dictation Settings). |
+
+Abbreviations themselves are not listed here: they are shared, and they live in
+QUILL's `abbreviations.json`.
+
+## 14a. Where Inkwell's own sounds play
+
+Quill Inkwell makes short sounds of its own, such as the one that confirms an expansion. You choose where they play, and you can turn them off.
+
+- **Alt+Shift+M** turns Quill Inkwell's sounds off. Press it again and they come back, on the same sound card as before. You hear a short sound as they go off, and another where they now play when they come back on, and both are spoken too. **Options > App Sounds** has a check mark that shows whether they are on.
+- The **App Sounds Play On...** button in **Options > Preferences...** (Ctrl+,) lets you pick where they play:
+  - **System default**. This is where it starts. The sounds go where Windows sends sound.
+  - **None (no sounds)**. Quill Inkwell makes no sounds at all. Everything it tells you is still spoken.
+  - **Any sound card or headset in the list.** The sounds get a device of their own.
+
+After you choose, one sound plays on the new device, so you know straight away where it went.
+
+If the device you chose is unplugged or asleep, you still hear every sound, on the system default, and Quill Inkwell tells you once. When the device comes back, the sounds go back to it by themselves.
+
+This changes Quill Inkwell only. Your other QUILL apps keep their own choice, unless you have checked "Share these choices with my other Quill apps", which copies a change here to the others that share. Your screen reader is never moved.
+
+## 15. Keyboard reference
+
+| Action | Keys |
+| --- | --- |
+| Show or hide Inkwell | The key you chose (none at first) |
+| Choose that key | Ctrl+Alt+Shift+H |
+| Quick Insert from anywhere | The key you chose (none at first) |
+| Choose that key | Ctrl+Alt+Shift+K |
+| Expand the word I just typed, from anywhere | The key you chose (none at first) |
+| Choose that key | Ctrl+Alt+Shift+E |
+| Dictate Anywhere, from anywhere | The key you chose (none at first) |
+| Choose that key | Ctrl+Alt+Shift+D |
+| Dictate Anywhere, from Inkwell's window | Ctrl+D |
+| Dictation Settings | Ctrl+Alt+D |
+| Take back the expansion that just fired | Backspace, immediately |
+| Manage abbreviations | Ctrl+M |
+| Quick Insert | Ctrl+K |
+| New abbreviation from the clipboard | Ctrl+Shift+N |
+| Turn expansion on or off | Ctrl+Shift+E |
+| Minimize to the tray | Ctrl+W |
+
+Every dialog follows QUILL's dialog conventions: Escape cancels, Enter activates
+the default button, every control has a name your screen reader announces, and
+focus starts where the work does.
+
+## 16. Portable mode
+
+The portable zip carries a `data` folder next to `QuillInkwell.exe`. When that
+folder is present, the abbreviation library and settings live on the stick, and a
+portable QUILL sitting beside it shares them. Remove the stick and nothing is
+left behind on the machine.
+
+## 17. Safe Mode
+
+With `QUILL_SAFE_MODE=1` set, Inkwell starts without installing the keyboard
+hook at all and says so. The manager still works, so you can edit abbreviations;
+nothing is watched and nothing is typed. Dictate Anywhere is off in Safe Mode
+too: pressing its key tells you so, and the microphone is never opened.
+
+## 18. Privacy
+
+Inkwell has to notice typing to recognise an abbreviation. Here is exactly what
+that means:
+
+- **Bounded.** At most 64 characters are held at once, in memory only.
+- **Never stored.** Nothing is written to disk, added to a log, or sent
+  anywhere. There is no network code in the expansion path.
+- **Cleared constantly.** The buffer empties after every expansion, on Escape,
+  on any arrow key, Home, End, Page Up or Down, Insert, Delete, or function key,
+  on any Ctrl or Alt combination, whenever focus moves to another window, and
+  whenever expansion is paused.
+- **Content-blind.** No rule anywhere looks at what you typed to decide whether
+  to keep it. The check that suppresses expansion looks only at which window has
+  focus, which is why it cannot be fooled by an unusual password field.
+- **Its own output is ignored.** Inkwell marks the keystrokes it synthesises and
+  skips them, so an expansion can never feed itself. Keystrokes from dictation
+  software and on-screen keyboards are *not* skipped -- those users get
+  expansion like everyone else.
+- **Switchable.** Ctrl+Shift+E stops it, the tray menu stops it, and Safe Mode
+  never starts it.
+- **Self-repairing, not self-extending.** Windows silently removes a keyboard
+  hook that responds too slowly, so Inkwell quietly re-installs its own every few
+  minutes. That refresh changes nothing about what is watched or kept.
+
+## 19. Troubleshooting
+
+**Nothing expands anywhere.** Check Ctrl+Shift+E is on, and that the window in
+front is not one of the excluded ones (section 11). If Inkwell warned at startup
+that Windows refused the keyboard hook, see the next item.
+
+**Nothing expands in one particular application.** If Inkwell announced that the
+application runs as administrator, that is the reason (section 10a). Otherwise the
+application may not report itself as editable, or may be dropping the typed
+keystrokes -- press your Expand Word key there to expand on demand (choose one
+in File > Expand Word Key if you have not), and if that works
+but ordinary typing does not, add the program to the per-application paste list
+(section 12).
+
+**"Expansion unavailable" at startup.** Windows refused the low-level keyboard
+hook. Almost always this means the application you are typing into runs at a
+higher privilege level than Inkwell -- Windows does not let a normal program see
+keys sent to an elevated one. Start Inkwell the same way you start that
+application.
+
+**It expands in QUILL but not elsewhere, or the reverse.** They share a library
+but not a switch: QUILL's editor expansion has its own setting, and Inkwell's
+Ctrl+Shift+E governs everywhere else.
+
+**A new abbreviation is not recognised.** Both apps re-read the file when it
+changes; if one was mid-edit when the other saved, close the manager and try
+again.
+
+**Some text arrives scrambled or truncated in one particular app.** Turn on
+Options > Insert by pasting (section 12).
+
+**An abbreviation fires when I do not want it.** Set that entry's *Expand after*
+to Never; Quick Insert can still reach it.
+
+**Text looks blurry, or a window is the wrong size.** Quill Inkwell scales itself for each monitor. Text stays sharp at 125, 150 or 200
+percent, and when you move a window to a monitor with different scaling;
+windows and list columns keep their proportions. If a window looks wrong at
+your scaling, you can turn this off to see whether it is the cause. Search
+Windows for "Edit environment variables for your account", add a variable
+named `QUILL_DPI_UNAWARE` with the value `1`, and start Quill Inkwell again.
+Windows then stretches it the old way, so text is blurrier. Delete the
+variable to put scaling back, and tell support what you saw.
+
+## 20. Dictate Anywhere
+
+Dictate Anywhere lets you talk instead of type in any program: your email, a web
+page, a chat window, a form. It offers the same speech engines as QUILL and
+QUILL Lite, though Inkwell's installer does not carry the built-in ones (see
+"Which speech engine Dictate Anywhere uses" at the end of this section, and
+read it before you start on a computer that has only Inkwell). It uses the
+same words you have taught QUILL in My Words and Phrases (and QUILL
+Lite's, once it is set to use the shared word list), and the same voice
+commands. Inkwell is its home because Inkwell is already running quietly in
+the background, typing into other programs for you.
+
+**Choosing your key.** Nothing listens until you choose a key.
+
+1. In Inkwell, press **Ctrl+Alt+Shift+D** for **File > Dictate Anywhere Key...**.
+2. Type the key you want, or leave the box empty for none. The key has to
+   include Ctrl or Alt.
+3. Press Enter. Inkwell says the key back. If a QuillVille app or another
+   program already uses it, Inkwell tells you and the old key stays.
+
+**Dictating.**
+
+1. Go to the program you want to write in, and put the cursor where the words
+   should go.
+2. Press your Dictate Anywhere key, speak, and pause. Each phrase is typed at the
+   cursor.
+3. Press the key again, or say "stop dictation", to stop.
+
+You can also start and stop it from Inkwell's own **Dictation** menu:
+**Dictate Anywhere** (Ctrl+D) is a check item, so the menu tells you whether it
+is on. To start it from QUILL or QUILL Lite, open **More Dictation Settings** in
+the editor and press **Dictate in Other Programs...**. The editor hands its
+dictation settings to Inkwell and starts it, and if you have not chosen a key
+yet, the key chooser opens for you.
+
+**Your settings.** Inkwell keeps its own copy of your dictation settings, so it
+works even when no editor is open. When **Share dictation settings with every
+QuillVille program** is checked (Alt+Q, in More Dictation Settings), that copy follows what
+you save in QUILL, QUILL Lite or QUILL Transcribe, picked up the next time you
+start Dictate Anywhere or open Dictation Settings, and what you save here
+reaches them. The read-back, every permission to send your speech, and your
+Dictate Anywhere key stay Inkwell's own. The first time Inkwell takes the
+family's settings, its own are saved as `before-sharing-inkwell.json` in
+`%LOCALAPPDATA%\QuillVille\Dictation`; if the shared copy cannot be saved,
+Inkwell says so. Your word list lives in that folder too, copied there from
+QUILL's data folder the first time it is needed, with the old file left as a
+backup. Change them in **Dictation > Dictation
+Settings...** (Ctrl+Alt+D), which is the same window the editors use. One
+difference: the read-back after each phrase starts as a tone rather than the
+words, because your screen reader can already read out what is typed, and hearing
+everything twice gets tiring. You can change that in the same window.
+
+**Correcting yourself as you talk.** Check **Fix it when I correct myself,
+like Thursday, no, Friday** (Alt+X) in Dictation Settings, and when you say
+"no", "I mean", "sorry" or "scratch that word" between two days, two months,
+two numbers or two names from My Words and Phrases, only the second is typed:
+"meet on Thursday, no, Friday" types "meet on Friday", and "call me at 5,
+sorry, 6" types "call me at 6". Anything else, such as "no, I don't think so",
+is typed as you said it. It happens on this computer, before anything is typed,
+and it is off until you turn it on. **Dictation style** (Alt+Y) sets it and
+**Remove filler words** together: **Verbatim** turns both off and **Clean**
+turns both on. Choosing a style here changes only those two boxes.
+
+**Polishing with AI belongs to Review Dictation.** QUILL, QUILL Lite and QUILL
+Transcribe can send a phrase you dictated to the AI to tidy its punctuation,
+capital letters and small slips, but only inside their **Review Dictation**
+window, where you read the result before anything is inserted. Inkwell types
+straight into another program and has no Review Dictation window, so Inkwell's
+**More Dictation Settings** does not show the **Allow polishing my dictation
+with AI** box, and its **Dictation style** list has no **Polished** row. Your
+choice is not lost: if you turned polishing on in QUILL and share dictation
+settings with every QuillVille program, it stays on there, and saving Inkwell's
+Dictation Settings (even after choosing Verbatim or Clean) leaves it exactly as
+it was. For example, turn on polishing in QUILL's More Dictation Settings
+(Alt+G), then open Inkwell's **Dictation > Dictation Settings...** (Ctrl+Alt+D),
+choose **Clean** and press OK: QUILL's Review Dictation still offers Polish
+afterwards. To change polishing, open Dictation Settings in one of those three
+programs.
+
+**Sending dictation to review first belongs there too.** In QUILL, QUILL Lite
+and QUILL Transcribe, **Send dictation to review first** (Alt+V in their More
+Dictation Settings) sends every phrase to Review Dictation instead of typing it,
+so you can read and change it before pressing Control Enter. Inkwell has no
+Review Dictation window, so its More Dictation Settings does not show that box
+either, and Dictate Anywhere always types each phrase straight into the program
+you are in. Your choice is kept in the same way as polishing: if you share
+dictation settings with the family and turned review first on in QUILL,
+pressing OK in Inkwell's Dictation Settings, with any style chosen, leaves it on
+for QUILL. For example, turn on **Send dictation to review first** in QUILL,
+open Inkwell's **Dictation > Dictation Settings...** (Ctrl+Alt+D), choose
+**Verbatim**, press OK, and dictate into your email: the words are typed into
+the email as usual, and back in QUILL your phrases still go to Review Dictation
+first. The limit is that Inkwell cannot turn review first on or off; do that in
+one of the three programs that have Review Dictation. In Inkwell, Alt+V in More
+Dictation Settings does nothing now.
+
+**What works in another program.** Spoken punctuation, spelling, "caps on", "all
+caps on" and "no space on", switching between English and Spanish, and "scratch
+that". "Scratch that" erases the phrase that was just typed, but only while you
+are still in the same window, so it can never erase anything you typed yourself.
+Your snippets, abbreviations and clips work too, because they only insert:
+"insert snippet" and its name, "insert abbreviation" and its name, and "paste
+clip" and a number, each typed as one phrase that "scratch that" takes back
+whole. A snippet's blanks are asked for first: you hear each blank's name,
+like "Title?", and say the answer; for a choice, say one of the options or
+"choose two"; say skip, scratch that to go back one, or cancel to type
+nothing. The cursor stays at the end, and "read that" reads back all of what
+was typed. "What can I say" lists only what works here.
+
+**Spelling an address with pauses.** While spelling, each phrase joins the
+letters you spelled just before it, with no space, so you can pause as often as
+you like: "start spelling", "juliet oscar", "at sign echo x-ray", "dot charlie
+oscar", "stop spelling" types *jo@ex.co*. Say "space" for a space. A whole word
+such as "smith" is not a letter and is left out, so spell it. If the focus
+moves between phrases, the next letters start fresh.
+
+**Correcting the words dictation typed.** Inkwell remembers the words it typed
+since the focus last moved, and can change those, by taking them back with
+Backspace and typing the corrected words. "Correct that" and "choose one" to
+"choose three" (with Moonshine, Whisper or a downloaded model, the other
+built-in engine listens to your last phrase again and offers its answer as
+choice two), "capitalize that", "all caps that", "no caps that", "replace
+Tuesday with Wednesday" (only inside the phrase you dictated last), "change
+that to" and the new words, "delete last sentence" and "delete previous
+paragraph". For example, after "see you on Tuesday at noon", "QUILL replace
+Tuesday with Wednesday" leaves "see you on Wednesday at noon". A correction is
+refused, with one sentence and nothing sent, when the focus has moved, when you
+have typed, clicked or moved the mouse since dictation typed (the cursor may
+have moved), or, for the commands that retype words, in Word or Outlook, which
+change words as they are typed; "scratch that" and the delete commands still
+work there.
+
+**What does not.** Anything that needs to read the other program's text:
+"select" and "go to", "correct" and a word, "copy all" and "show clips". Inkwell
+cannot see that text, so it tells you: "That works in QUILL's own documents. In
+another program, say the words again, or scratch that."
+
+**The command word.** Say QUILL before a command, "QUILL scratch that", and it
+is always taken as a command; whatever follows QUILL is never typed. If it is
+not a command, you hear "Not a command", and "QUILL type that" types it after
+all. "literal QUILL" types the word itself. "QUILL command mode" takes commands
+without the word until you say "dictation mode", or for eight seconds with no
+command, when a falling tone says it has ended. In **More Dictation Settings**
+(from Dictation Settings) you can change the word (Alt+C), make commands work
+only after it (strict mode, Alt+E; off unless you turn it on), and choose how
+long command mode waits (Alt+D). It is the same in QUILL, QUILL Lite and QUILL
+Transcribe.
+
+**Where it will not type.** Inkwell refuses, and tells you why, in:
+
+- A password field: "That is a password field, so nothing is typed there."
+- A program running as administrator when Inkwell is not, because Windows will
+  not let Inkwell type into it.
+- QUILL's and QUILL Lite's own windows. Press Ctrl+F11 there instead; the editors
+  dictate into their own documents directly.
+- Inkwell's own window. Switch to the program you want to dictate into first.
+- A program on your list of programs dictation never types into: "Dictation
+  does not type into KeePass. Move to another program." The list starts with
+  the common password managers and the Windows sign-in, lock and administrator
+  prompts. Change it with **Programs Dictation Never Types Into...** (Alt+N) in
+  More Dictation Settings. Programs are matched by file name, never by a
+  window title.
+
+**It stays in the field you started in.** If the focus moves to another field
+or program while you dictate, Inkwell says "Dictation paused" and holds what
+you say instead of typing it somewhere else. The **Dictation** menu then has
+**Resume** (Ctrl+R) to go back to the first field, **Resume in This Field**
+(Ctrl+Shift+R) to write where you are now, and **Discard Held Words**
+(Ctrl+Shift+D). They are greyed out until something is held, and the tray menu
+has the same three while dictation is paused. Chosen from Inkwell's own window
+or tray, Resume in This Field waits for you to switch to another program;
+choose it again to cancel, and your words stay held.
+
+**With QUILL Transcribe.** QUILL Transcribe is the QuillVille app made just for
+dictating into other programs. Only one of the two dictates at a time. While
+QUILL Transcribe is running, pressing your Dictate Anywhere key passes the press
+to QUILL Transcribe, and it does the dictating; Inkwell's status line says so.
+When QUILL Transcribe is not running, Inkwell dictates as described here. If
+QUILL or QUILL Lite's **Dictate in Other Programs...** finds QUILL Transcribe
+running, it hands your settings to QUILL Transcribe instead of Inkwell.
+QUILL Transcribe is released on 1 November 2026. To open it from Inkwell,
+press Alt+Q, then T, or Ctrl+Alt+Shift+F11 (see "Opening the other QuillVille
+apps" in section 3).
+
+**Safe Mode.** With Safe Mode on, Dictate Anywhere is off.
+
+**Privacy.** Your speech is handled exactly as it is in the editors: on this
+computer with Windows speech recognition and the built-in or downloaded
+models, and sent to a company only if you chose OpenAI or a speech provider
+yourself and said yes when asked. Nothing you say is recorded or kept, and
+words held while dictation is paused are kept in memory only, so they are gone
+if Inkwell closes.
+
+**Spanish.** Say "switch to Spanish" while dictating, or choose Spanish as the
+**Dictation language** in Dictation Settings. Commands stay in English for now:
+say "QUILL scratch that" in Spanish dictation too. The engine has to know
+Spanish: Windows speech recognition needs Spanish installed in Windows.
+
+### Which speech engine Dictate Anywhere uses
+
+The **Speech engine** list in **Dictation > Dictation Settings...**
+(Ctrl+Alt+D) is the same list QUILL, QUILL Lite and QUILL Transcribe show:
+
+- **Moonshine** (the default) and **Whisper**, the built-in models: quick,
+  punctuate for you, and keep your speech on this computer.
+- **Windows speech recognition**: Windows' own recogniser. It needs nothing
+  extra and works in any speech language installed in Windows, but it does not
+  punctuate by itself (say "comma" and "period"), and it often mishears a voice
+  it has not been trained on.
+- **Windows voice typing (Windows+H)**: Windows' own panel. If you prefer it,
+  press Windows+H yourself; none of Inkwell's commands apply to it.
+- **Models you downloaded**, each with "(downloaded)" and its tier:
+  Lightweight, Balanced or High accuracy.
+- **OpenAI (your own key; sends your speech to OpenAI)**, listed only when an
+  OpenAI key is saved.
+- **Speech providers** you have set up, each labelled, for example, "Deepgram
+  (your own account; sends your speech to Deepgram)".
+
+**What Inkwell's installer leaves out.** Inkwell is small because its
+installer does not include the built-in Moonshine and Whisper models, nor the
+speech part that runs them. That speech part also listens for the pauses
+between your phrases, so it is needed for downloaded models, OpenAI and the
+speech providers too. On a computer where only Inkwell is installed, choosing
+any of those and pressing your key says: "The built-in speech engines are not
+included in this copy of QUILL. Choose Windows speech recognition in Dictation
+Settings." Having QUILL or QUILL Lite installed as well does not change this,
+because Inkwell looks for the speech part only beside itself.
+
+**On a computer with only Inkwell, you have two choices:**
+
+1. **Use Windows speech recognition.** Press Ctrl+Alt+D, choose **Windows
+   speech recognition** in the **Speech engine** list, and press OK. Remember
+   to say the punctuation.
+2. **Install QUILL Transcribe** (released on 1 November 2026; Alt+Q, then T
+   offers to download it). Its installer carries the built-in models and the
+   speech part. While QUILL Transcribe is running, it does the dictating
+   whenever you press your Dictate Anywhere key, with its own model, so you
+   get Moonshine, Whisper, downloaded models, OpenAI or a provider, whichever
+   QUILL Transcribe uses. Check **Start QUILL Transcribe when I sign in to
+   Windows** in its setup so it is always there. If QUILL Transcribe is not
+   running, Inkwell dictates by itself again, with the limits above.
+
+**Better Accuracy: Speech Models...** (Alt+B) in Inkwell's Dictation Settings
+opens the shared Speech Models window, where larger models download on
+request after a question naming the size and licence. The models are saved in
+`%LOCALAPPDATA%\QuillVille\Dictation\models`, shared with QUILL, QUILL Lite and
+QUILL Transcribe, so a model downloaded from any of them is downloaded once.
+Inkwell itself can run them only where the speech part is present; on an
+Inkwell-only computer, download them for QUILL Transcribe to use. The window's
+**What matters most** (Alt+W), **Recommendation** (Alt+C) and **Show
+Recommended Model** (Alt+S) suggest a model for this computer; Dictation
+Settings shows the same advice on its **Recommended for this computer** line.
+It is advice only and never changes your engine.
+
+**Speech providers.** **Speech Providers...** (Alt+V), in the same Dictation
+Settings window, sets up a speech company you already have an account with:
+Microsoft Azure AI Speech, Google Cloud Speech-to-Text (Chirp 3), Amazon
+Transcribe, Deepgram, AssemblyAI, Speechmatics, ElevenLabs Scribe, Gladia,
+Rev.ai, Groq, Mistral Voxtral or IBM Watson Speech to Text. Choose the company
+in the **Providers** list, fill in its fields (F1 on a field says where to
+find it), press **Test Connection** (Alt+T), which never sends speech, then
+**Save** (Alt+S). Keys go to Windows Credential Manager at once, never into a
+settings file or a log. Then choose the company in the Speech engine list.
+OpenAI works the same way, with the key from **More Dictation Settings > Add or
+Change OpenAI Key...** (Alt+K).
+
+**Consent.** The first time you choose OpenAI or a provider, Inkwell tells you
+what is sent and to whom, and asks. **No is the default**, and with No nothing
+is sent. What is sent is your speech while you dictate, and your My Words and
+Phrases as hints where the company accepts them. The company bills your own
+account; QUILL's free AI never carries your speech. While one of them has your
+speech, Inkwell's tray icon name ends "Speech goes to" and the company. Safe
+Mode refuses them, as it refuses all of Dictate Anywhere.
+
+**An example.** Alex has only Quill Inkwell, and wants to dictate emails.
+
+1. Alex presses Ctrl+Alt+D, chooses **Windows speech recognition** in the
+   Speech engine list, and presses OK.
+2. In Outlook, Alex presses the Dictate Anywhere key and says "thanks for the
+   notes period". "Thanks for the notes." is typed.
+3. Alex wants punctuation without saying it, so presses Alt+Q, then T, to
+   download QUILL Transcribe, and checks **Start QUILL Transcribe when I sign
+   in to Windows** in its setup.
+4. Back in Outlook, the same Dictate Anywhere key now reaches QUILL
+   Transcribe, which dictates with the built-in Moonshine and punctuates for
+   Alex. Inkwell's status line says "Dictate Anywhere passed to QUILL
+   Transcribe."
+
+QUILL Transcribe's user guide has the full guide to choosing a model, with
+every model's size, languages and tier.
+
+## Finding a setting or a command
+
+Quill Inkwell keeps its options in its menus, so there is no settings window to search.
+Instead, **Help > Find a Setting or Command** (**Ctrl+Alt+Shift+S**) searches
+every menu at once.
+
+1. Press **Ctrl+Alt+Shift+S**.
+2. Type part of what you are looking for, such as "announce". The list
+   below narrows as you type, and each row says which menu the command is in.
+   An option also says whether it is on or off.
+3. Press **Down** to move into the list, and **Enter** on the one you want.
+
+Enter does exactly what choosing that row from its menu would do. For an
+option, it switches it and tells you whether it is now on or off. Escape
+closes the window without doing anything.
+
+## What's New
+
+**Help > What's New** (**Ctrl+Shift+F1**) opens Inkwell's changelog in your
+browser: what changed in the version you have, grouped by subject. Every
+QuillVille app has the same door on the same key.
+
+## Licences and notices
+
+Quill Inkwell is free and released under the MIT License. It also includes software,
+data and sounds from other projects, each under its own licence.
+
+To read them, open the Help menu, choose About Quill Inkwell, and then choose the
+Licences and Notices button. The list opens as a plain text file, with one
+heading for each component: what it is, its licence, who holds the copyright
+and what the licence asks of us. The full licence texts are at the end.
+
+The same file, THIRD-PARTY-NOTICES.txt, and Quill Inkwell's own licence, LICENSE.txt,
+are also in the folder where Quill Inkwell is installed or unpacked, so you can open
+them without starting the app.
+
+## Getting help
+
+Support is run by **Community Access**, and the address is
+**support@community-access.org**. A person reads it, and replies come back by
+email.
+
+The quickest way there is **Help > Get Help from Support...** (Ctrl+Alt+F2),
+which every app in the family answers with the same form: what kind of message
+this is, a subject, what happened, and -- if you want an answer -- an email
+address to reply to. What you expected and how to reproduce it are optional,
+and worth more than anything else when you can give them.
+
+Press Send and your **own mail program opens with the whole message already
+written**, addressed to support, with Quill Inkwell's name and version and your Windows
+version filled in at the bottom. Nothing is sent until you send it there, so you
+can read it over, add anything, or change your mind.
+
+If this machine has no mail program set up -- webmail only, say -- the app puts
+the whole message on your clipboard and tells you the address, so nothing you
+typed is lost. And writing to **support@community-access.org** yourself always
+works just as well: there is no form you have to use. Say which app you were
+using and what happened.

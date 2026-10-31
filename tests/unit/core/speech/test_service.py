@@ -43,9 +43,29 @@ class _Provider:
         ]
 
 
+class _CloudProvider:
+    """Shape of a cloud (Quillin-registered) provider: no downloadable models,
+    since it's API-based -- the Dictation (Online) tab's "current" provider."""
+
+    id = "cloud-stt"
+
+    def list_supported_models(self) -> list[SpeechModelInfo]:
+        return []
+
+    def list_installed_models(self) -> list[InstalledSpeechModel]:
+        return []
+
+
 def test_default_registry_has_whispercpp() -> None:
     registry = service.default_registry()
     assert registry.get(service.DEFAULT_PROVIDER_ID) is not None
+
+
+def test_describe_models_is_empty_for_a_modelless_cloud_provider() -> None:
+    # Regression guard: Dictation (Online) reuses describe_models() for
+    # whichever cloud provider is "current" there; a provider with no models
+    # must produce an empty row list, not crash the hub.
+    assert service.describe_models(_CloudProvider()) == []
 
 
 def test_describe_models_marks_installed_and_sizes() -> None:
@@ -103,6 +123,19 @@ def test_describe_models_marks_recommended_and_gpu_note() -> None:
     assert by_id["large-v3"].recommended is False
     assert "No GPU detected" in by_id["large-v3"].gpu_note
     assert "No GPU detected" in by_id["large-v3"].label
+
+
+def test_describe_models_names_each_tier_and_says_why_it_recommends() -> None:
+    """D-22 in Manage Speech Models: the same tier words as dictation, and a
+    reason on the recommended row, as text in the row itself."""
+    rows = service.describe_models(_Provider(installed=[]), total_ram_gb=8.0, has_gpu=False)
+    by_id = {r.id: r for r in rows}
+    assert ", Balanced —" in by_id["small"].label
+    assert ", High accuracy —" in by_id["large-v3"].label
+    assert (
+        "Recommended for your computer: Your computer: 8.0 GB RAM and no GPU (uses the CPU). "
+        "So a mid-sized model fits" in by_id["small"].label
+    )
 
 
 def test_enough_disk_for() -> None:

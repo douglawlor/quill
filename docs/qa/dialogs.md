@@ -1,0 +1,474 @@
+# QUILL dialog regression checklist
+
+This is the master manual regression checklist for every user-facing dialog in
+QUILL. Use it to verify that each dialog opens, is fully keyboard and
+screen-reader operable, has a working Escape and an explicit default, and
+returns focus to the editor on close.
+
+How to use this file:
+
+- Work through a section, open each dialog with the listed keyboard command (or
+  menu path when there is no default key), and confirm it behaves.
+- Check the checkbox when a dialog passes a full pass on the current build.
+- When a dialog fails, leave it unchecked and file or reference an issue next to
+  it.
+- Keep this file up to date: whenever a dialog is added, removed, or rebound,
+  update the matching row in the same change. See the contributor rule in
+  `.github/copilot-instructions.md` ("Keep dialogs.md current").
+
+This manual checklist is the human companion to the machine-enforced dialog
+registry. The authoritative, source-of-truth inventory of every dialog *surface*
+is generated from code by `quill/tools/dialog_inventory.py` and committed as
+`tests/unit/ui/fixtures/dialog_inventory.json`; the A11Y-4 banned-pattern gate
+and `tests/unit/ui/test_dialog_inventory.py` fail the build if any dialog is
+unregistered, unclassified, or on a bespoke surface. Regenerate the snapshot with
+`python -m quill.tools.dialog_inventory --write` whenever you add, move, or
+remove a dialog. See "Dialog Excellence Mandates" in the copilot instructions.
+
+What "passes" means for every dialog (the A11Y-4 contract):
+
+1. It opens from the listed command or menu path.
+2. Tab and Shift+Tab reach every control in a sensible order.
+3. A screen reader announces the dialog title and each control.
+4. Enter activates the default action; Escape (and the close button) cancels.
+5. On close, focus returns to the editor.
+6. The dialog does not trap, freeze, or go silent.
+
+Automated companion tests and the manual QA plan:
+
+- **Announcement and SR detection tests** — `tests/accessibility/test_accessibility_suite.py`
+  and `tests/accessibility/test_announcement_grammar.py` cover screen-reader announcement
+  capture, SR detection, and announcement grammar. Run with `pytest tests/accessibility/ -q`.
+- **Manual QA procedure** — `docs/QUILL-PRD.md` §6 ("Dialog estate pass")
+  describes the full human-executed pass against this checklist, including the SR coverage
+  matrix (NVDA full, JAWS spot, Narrator sanity) and the A11Y-4 sign-off criteria.
+
+Legend: "QUILL key" is the prefix chord, default `Ctrl+Shift+Grave` (backtick).
+"via menu" means there is no default keybinding; reach it through the named menu
+or the command palette (`Ctrl+Shift+P`).
+
+## A. File: open, save, and session
+
+- [ ] Open File: `Ctrl+O`
+- [ ] Save File: `Ctrl+S`
+- [ ] Save As: `Ctrl+Shift+S`
+- [ ] Reload in matching view (after Save As changes the format): native Yes/No prompt, shown after `Ctrl+Shift+S` when `save_as_surface_sync` is "Ask each time"
+- [ ] Page Setup: via File menu
+- [ ] Print: `Ctrl+P`
+- [ ] Restore Backup: via File menu
+- [ ] Choose Encoding: via File menu
+- [ ] File Format (encoding and line endings in one window): `Ctrl+Alt+E`
+  - [ ] A file in a format neither list offers (UTF-16 big-endian, single-CR line
+        endings) starts on a **keep as is** row and stays there, so Enter cannot
+        convert a file that was only opened to read
+  - [ ] Neither list is applied until the next save, and the window says so
+  - [ ] QUILL Lite's own copy of this window is **Tools > File Encoding and Line
+        Endings...** on the same key
+- [ ] File Changed on Disk: **no menu path** -- shown when another program writes to
+      the file you have open (save the same file from Notepad to raise it)
+  - [ ] Three buttons: **Reload from Disk** (default, focused on open), **Keep
+        Mine** (also Escape), **Open Disk Version in a New Tab**
+  - [ ] The message says what each answer costs, and says something different when
+        the buffer has unsaved edits
+  - [ ] **Do not ask me again for .<ext> files** checkbox: remembers Reload or Keep
+        Mine for that format only, and is never remembered for the New Tab answer
+  - [ ] Nothing is reloaded silently, with or without unsaved edits
+- [ ] Forget Remembered File-Change Answers: `Ctrl+Shift+F11`, or File menu
+  - [ ] Says how many formats were forgotten, and says so rather than nothing when
+        there were none. The only way back from the checkbox above
+- [ ] Open from URL: via File menu
+- [ ] Open from Remote...: QUILL key, then `Shift+O` (issues #154, #155, #156, #157)
+  - [ ] Site list (saved FTP, SFTP, WebDAV, S3 sites) and directory browser
+  - [ ] New site / Edit site / Delete site buttons
+  - [ ] Open button enabled only when a file is selected
+- [ ] Save to Remote...: QUILL key, then `W` (issues #154, #155, #156, #157)
+  - [ ] Site list and remote directory browser
+  - [ ] Save button enabled only when a target file is selected
+- [ ] Save Copy to Remote...: via File menu
+- [ ] Manage Remote Sites...: QUILL key, then `Shift+M` (issues #154, #155, #156, #157)
+  - [ ] Add / Edit / Delete saved sites
+  - [ ] Site editor sub-dialog with protocol-specific fields (FTP, SFTP, WebDAV, S3)
+  - [ ] Site editor Save button disabled until the required fields are filled
+- [ ] Save Session: via File menu
+- [ ] Open Session: via File menu
+- [ ] Reopen Last Session: `Alt+Shift+F12`, or File menu. Also appears at launch
+      when it matters -- three or more remembered documents, or any whose file has
+      moved or gone
+  - [ ] The list is a check list: Space checks a row, openable rows start checked,
+        and a row whose file has gone says so and cannot be checked
+  - [ ] Six answers work: Open Checked, Open All, Not Now (also Escape), Forget
+        Checked, Clear the List, Never Ask Again
+  - [ ] **Forget touches no file.** After Forget Checked and after Clear the List,
+        every file named in the list is still on disk
+  - [ ] Forget and Clear are saved even when nothing is opened -- reopen the window
+        and the forgotten rows are still gone
+  - [ ] Never Ask Again names the setting it changed
+  - [ ] The count is spoken afterwards: "Reopened all 3 documents", "Reopened 1 of
+        2", "Forgot 2 documents. 1 still remembered."
+
+### A.1. Edit over SSH (issue #139)
+
+- [ ] SSH Quick Connect: File > Open over SSH > Quick Connect... (no default key; command palette `Ctrl+Shift+P`)
+  - [ ] Host / port / username / authentication / password / key file path / start directory
+  - [ ] Private key file field has a Browse button and a tooltip explaining supported formats (OpenSSH, PEM, PuTTY .ppk)
+- [ ] SSH Site Manager: File > Open over SSH > Site Manager... (no default key; command palette)
+  - [ ] Saved-sites list with New / Edit / Delete / Connect / Close
+  - [ ] Site editor sub-dialog: friendly name, host, port, username, authentication, private key file path, default directory
+  - [ ] Site editor Save button disabled until the required fields are filled
+  - [ ] Private key file field has a Browse button and a tooltip explaining supported formats
+
+## B. Application settings
+
+- [ ] Preferences hub (multi-page book control): `Ctrl+,`; verify Find a setting,
+  Control+F return, matching categories, Enter navigation without acceptance,
+  and Escape clear-then-close. Search indexes existing native controls only;
+  unopened nested dialogs and web forms are not a global index.
+  - [ ] Category selector navigable by arrow keys with first-letter type-ahead, first category selected on open
+  - [ ] Each category page opens its area with its `Open ...` button
+  - [ ] Default document folder chooser in QUILL and QUILL Lite opens a native
+        folder picker; clearing the field restores the Documents default
+- [ ] Settings (tabbed, registry-driven): `Ctrl+,` then `Open General`
+- [ ] Export settings to `.qsf` (button within Settings)
+- [ ] Import settings from `.qsf` (button within Settings)
+- [ ] Reset to Factory Defaults (button within Settings)
+- [ ] Export profile to `.qpf` (button within Settings)
+- [ ] Import profile from `.qpf` (button within Settings)
+- [ ] Customize Menus (Menu Editor, three tabs): Tools > Customize > Customize Menus... (`app.menu_editor`)
+  - [ ] Top-Level Menus tab: reorder, rename, show/hide, and reset top-level menus
+  - [ ] Menu Items tab: select a menu, then reorder, rename, show/hide its items
+  - [ ] Context Menu tab: reorder, rename, show/hide context menu items
+  - [ ] Rename Menu/Item (text entry, nested): Rename... button within any tab
+- [ ] GLOW Accessibility settings (accessible web form): Preferences (`Ctrl+,`) > GLOW Accessibility
+- [ ] Command Palette: `Ctrl+Shift+P`
+
+## C. Navigate
+
+- [ ] Go To Line: `Ctrl+G`
+- [ ] Go To Page: `Ctrl+Shift+G`
+- [ ] Outline Navigator: `Ctrl+Shift+O`
+- [ ] Heading Organizer: QUILL key, then `O`
+- [ ] Set Bookmark: via Navigate menu
+- [ ] Go To Bookmark: via Navigate menu
+- [ ] List Bookmarks: `Alt+Shift+B`
+
+## D. Tools: text analysis
+
+- [ ] Word Count: `Ctrl+Shift+W`
+- [ ] Dictionary Status: via Tools menu
+- [ ] Spell Check: `F7`
+- [ ] Misspelling List: `Alt+Shift+L`
+- [ ] Thesaurus: `Shift+F7`
+- [ ] Spelling Announcements (how a misspelling is said, and when):
+      `Ctrl+Alt+Shift+F6`, or by name in the command palette. No menu row;
+      QUILL Lite's copy is **Tools > Spelling > Announcements**
+  - [ ] The twelve settings are the same twelve in both editors, in one file
+  - [ ] In the F7 review, arrowing the suggestion list says each suggestion and
+        then spells it -- interruptibly, as a second utterance
+- [ ] Look Up (definitions/synonyms, with Add to Dictionary): editor context menu (`Shift+F10`) > Look Up
+
+## E. Tools: accessibility
+
+- [ ] Validate Contrast: via Tools menu
+- [ ] Link Inventory and Alt-Text: via Tools menu
+
+## F. Tools: document intake
+
+- [ ] Document Intake Report: `Ctrl+Shift+I`
+- [ ] Review Extraction Quality: via Tools menu
+- [ ] Report Bad Extraction: via Tools menu
+
+## G. Tools: read aloud and OCR
+
+- [ ] Read Aloud Voice Settings: via Tools menu
+- [ ] Read Aloud Settings: via Tools menu
+- [ ] Generate Speech Audio: via Tools menu
+- [ ] OCR Image: via Tools menu
+- [ ] OCR Clipboard Image: via Tools menu
+- [ ] OCR Screen Capture: via Tools menu
+- [ ] OCR Screen Capture target chooser (nested in OCR Screen Capture): whole screen or active window
+- [ ] OCR Review (nested in OCR Image, OCR Clipboard Image, OCR Screen Capture): appears after OCR completes
+
+## H. Tools: sticky notes
+
+- [ ] New Sticky Note: QUILL key, then `N`
+- [ ] Manage Sticky Notes: via Tools menu
+
+## I. Tools: formats and external tools
+
+- [ ] External Tools and Formats: via Tools menu
+- [ ] Pandoc Conversion Wizard: via Tools menu
+
+## J. Tools: compare documents
+
+- [ ] Compare with File: via Tools menu
+- [ ] Compare Open Documents: via Tools menu
+- [ ] Compare Difference List: via Tools menu
+- [ ] Compare Options: via Tools menu
+
+## J2. Tools: Quillins (extensions)
+
+The Quillins Manager always opens, even when third-party Quillins are disabled
+(SEC-8 `core.third_party_plugins` is locked off for 1.0); it then reports that
+state and lists any installed Quillins read-only.
+
+- [ ] Quillins Manager (list, details, Enable/Disable/Reload/Remove): Tools > Quillins > Manage Quillins... (`tools.quillins_manager`)
+
+## K. Tools: keyboard
+
+- [ ] Keymap Editor: via Tools menu
+- [ ] Edit Keybinding (text entry, nested in Keymap Editor): Edit Keybinding... button or double-click within Keymap Editor
+- [ ] Export Keymap: via Tools menu
+- [ ] Import Keymap: via Tools menu
+
+## L. Tools: appearance and behavior
+
+- [ ] Status Bar Layout: via Tools menu
+- [ ] Export and Back Up (share/backup export): Tools > Customize > Export and Back Up... (via menu)
+- [ ] Save export (file picker, nested in Export and Back Up): Save button within Export and Back Up
+- [ ] Import or Restore (share/backup import): Tools > Customize > Import or Restore... (via menu)
+- [ ] Open profile or backup (file picker, nested in Import or Restore): opens before the Import or Restore preview
+
+## M. Tools: watch folder
+
+- [ ] Watch Folder Profiles: Tools > Dictation and Watch Folder > Watch Folder Profiles... (`tools.watch_folder_settings`)
+- [ ] Watch Queue Monitor: Tools > Dictation and Watch Folder > Watch Folder Queue... (`tools.watch_folder_status`)
+
+## N. Tools: notifications
+
+- [ ] Notifications: via Tools menu
+
+## O. Tools: formatting
+
+- [ ] Insert Link: `Ctrl+K` (shared accessible web form: display text + URL)
+- [ ] List Manager: QUILL key, then `L`
+- [ ] YAML Structure Editor: via Tools menu
+
+## O2. Tools: the other editor
+
+- [ ] Bring My QUILL Lite Settings: `Alt+Shift+F11`, or Tools > Customize and Support
+  - [ ] Describes the plan **before** applying it: how many settings, how many
+        rebound keys, which stores are merged, and what is being left behind
+  - [ ] Answering No leaves QUILL's own settings alone and says so
+  - [ ] Answering Yes reports what it brought, that QUILL Lite now reads the shared
+        stores from QUILL, and that a restart shows every change
+  - [ ] Says so plainly when QUILL Lite has never been run on this computer, or has
+        nothing to bring
+  - [ ] Nothing already in QUILL is replaced -- QUILL wins every collision
+
+## P. Tools: macros
+
+- [ ] Manage Macros: via Tools menu
+
+## Q. Tools: AI and assistant
+
+- [ ] AI Model and Connection: via Tools menu
+- [ ] AI Connection Settings: via Tools menu
+- [ ] Forget API Key (confirmation): via Tools > AI Assistant
+- [ ] Ask Quill Chat: via Tools menu
+- [ ] Train Writing Style: via Tools menu
+- [ ] Writing Assistant: via Tools menu
+- [ ] Prompt Studio: via Tools menu
+- [ ] Agent Center: via Tools menu
+- [ ] Accessibility Tune-Up: via Tools > AI Assistant (Tools > AI Assistant > Accessibility Tune-Up...)
+- [ ] AI Hub: via Tools menu
+- [ ] Set Up GitHub Copilot: via AI menu (AI > Set Up GitHub Copilot...), or by choosing GitHub Copilot in the AI engine switcher when its SDK is not installed
+- [ ] Validate Agents: via AI menu (AI > Validate Agents...). Lints built-in agents by default; Choose Folder/File to validate your own
+
+## R. Tools: QUILL Whisperer (speech)
+
+- [ ] Announcement Backend: via Tools menu
+- [ ] Dictation Microphone: Tools > Speech > Dictation Microphone...
+- [ ] QUILL Whisperer Model Manager: via Tools menu
+- [ ] QUILL Whisperer Model Status: via Tools menu
+- [ ] QUILL Whisperer Provider Center: via Tools menu
+- [ ] QUILL Whisperer Provider Selection: via Tools menu
+- [ ] QUILL Whisperer Readiness Check: via Tools menu
+- [ ] QUILL Whisperer Capability Matrix: via Tools menu
+- [ ] QUILL Whisperer Download Queue: via Tools menu
+- [ ] Transcribe Audio or Video (Offline): Tools > Speech > Transcribe Audio or
+      Video (Offline)...; choose transcript format, then choose an audio/video file
+- [ ] Generate Captions (Offline): Tools > Speech > Generate Captions (Offline)...
+      or Audio Studio > Generate Captions (Offline)...; choose an audio/video file,
+      caption format, and output file
+
+## R2. Publishing
+
+- [ ] Publishing Connections: File > Publish > Publishing Connections...
+- [ ] Verify Current Publishing Connection: File > Publish > Verify Current Publishing Connection
+- [ ] Browse Published Content: File > Publish > Browse Published Content...
+- [ ] Edit Publishing Connection: from Publishing Connections
+- [ ] Schedule Publish: File > Publish > Schedule Publish...
+
+## S. Help: features and profile
+
+- [ ] Switch Feature Profile: `Alt+Shift+P`
+  - [ ] Choosing the **QUILL Lite** profile offers to bring a QUILL Lite setup over
+        (native Yes/No), once only, and applies the settings the profile's own name
+        promises -- a plain document model, not just a smaller menu bar
+- [ ] Feature Profile Health Check: via Help menu
+- [ ] Manage Individual Features: via Help menu (Help > Feature Profiles > Manage Individual Features...)
+- [ ] Why Don't I See a Feature?: via Help menu
+- [ ] Profiles and Features: via Help menu
+
+## T. Help: startup and support
+
+- [ ] Startup Wizard: via Help menu
+  - [ ] GLOW Accessibility Onboarding (accessible web form, from Startup Wizard sequence)
+- [ ] About Quill: via Help menu
+- [ ] What Can I Do Here?: via Help menu
+- [ ] Save Diagnostics: via Help menu
+- [ ] Get Help from Support: via Help menu
+- [ ] QUILL Whisperer About: via Help menu
+
+## U. Selection and QUILL key
+
+- [ ] Selection Actions: QUILL key, then `A` (with text selected)
+
+## V. Nested and secondary dialogs
+
+These open only from inside another dialog or flow. Test each by reaching its
+parent first.
+
+- [ ] Cast Notes Reader find prompt: Search in the Notes Reader window
+- [ ] Add or Edit Watch Profile (from Watch Folder Profiles)
+- [ ] Browse for folder (from Add or Edit Watch Profile)
+- [ ] Watch profile dry-run preview (from Add or Edit Watch Profile, Preview (dry run) button)
+- [ ] Select font for HTML headings (from Heading Organizer)
+- [ ] Rename list item (from List Manager)
+- [ ] New list item (from List Manager)
+- [ ] Confirm list deletion (from List Manager)
+- [ ] New macro name (from Manage Macros)
+- [ ] Confirm profile option (from Profiles and Features)
+- [ ] Rename profile (from Profiles and Features)
+- [ ] Select profile template (from Profiles and Features)
+- [ ] Export profile (from Profiles and Features)
+- [ ] Import profile (from Profiles and Features)
+- [ ] Review AI Changes (from Ask Quill Chat, when approving an AI replacement that differs from the selection)
+- [ ] Add custom prompt (from Prompt Studio)
+- [ ] Run Python (from Tools, Python sandbox)
+- [ ] Confirm download model (from AI Model Settings)
+- [ ] Browse sticky note import and export (from Sticky Notes)
+- [ ] Add sticky note from document (from Sticky Notes)
+- [ ] Spell check ignore and learn (from Spell Check)
+- [ ] Confirm item deletion (from YAML Structure Editor)
+- [ ] Regex Helper (from Tools)
+- [ ] Update downloaded (from Check for Updates, after a successful download)
+- [ ] Remove Quillin confirm (from Quillins Manager, Remove... button)
+- [ ] Quillin permission request (from running a third-party Quillin that requests a consent-gated capability: fs.read, fs.write, or net)
+- [ ] Site editor sub-dialog (from Manage Remote Sites, New site... or Edit site... button)
+
+## W. Power Tools and recirculated editor conveniences
+
+Editor power-tool conveniences (EDS-1..20). These commands carry no default
+keybinding; reach each from its conventional menu home (or the command palette,
+`Ctrl+Shift+P`). As of the menu reorg (menus.md §3.7) these commands were
+recirculated out of the former power-tools monolith into their natural
+menus; the cohesive editor-behavior remainder lives under **Tools > Power
+Tools**. Only the commands that present a dialog are listed here; the remaining
+power-tool commands act directly on the document and announce their result.
+
+- [ ] Insert Special Character (codepoint prompt): Insert > Insert Special Character
+- [ ] Insert File Content (file picker): Insert > Insert File Content
+- [ ] Number Lines (start prompt): Format > Transform Lines > Number Lines
+- [ ] Hard-Wrap Lines (width prompt): Format > Transform Lines > Hard-Wrap Lines
+- [ ] Count Matches (regex prompt): Search > Count Matches
+- [ ] Extract Matches (regex prompt): Search > Extract Matches
+- [ ] Go to Percent (percentage prompt): Navigate > Go to Percent
+- [ ] Infer Indentation (adopt-unit confirm): Tools > Power Tools > Infer Indentation
+- [ ] Rename Current File (name prompt): File > Rename Current File
+- [ ] Delete Current File (delete confirm): File > Delete Current File
+
+## X. Notebook (Workspace) dialogs
+
+Multi-document workspace commands (§10.4 Milestone 2). All custom surfaces are
+`hardened_custom` per the dialog contract.
+
+- [ ] New Notebook (name prompt + file-save picker): File > Notebook > New Notebook
+- [ ] New Notebook from Folder (folder picker + name prompt + file-save picker):
+  File > Notebook > New from Folder
+- [ ] Open Notebook (file-open picker filtered to `.quillnotebook`):
+  File > Notebook > Open Notebook
+- [ ] Save Snapshot (name prompt): File > Notebook > Save Snapshot
+- [ ] Manage Snapshots (list with Rename / Delete buttons): `hardened_custom`
+  (wires `apply_modal_ids`): File > Notebook > Manage Snapshots
+- [ ] Go to Entry in Notebook (tree navigator — `_show_tree_navigator`):
+  Navigate > Notebook > Go to Entry...
+- [ ] Go to Heading in Notebook (tree navigator — `_show_tree_navigator`):
+  Navigate > Notebook > Go to Heading...
+
+## Y. Startup-only dialogs
+
+These appear only during a specific startup condition. Test by reproducing the
+trigger.
+
+- [ ] Crash Recovery (after an unclean exit)
+- [ ] Untrusted Location Warning (opening a file from an untrusted folder)
+- [ ] Safe Mode banner / status-bar indicator (when `QUILL_SAFE_MODE=1` is set
+  on the environment, or `quill --safe-mode` is passed): the status bar shows
+  "Safe Mode — plugins, AI, and network disabled" and a one-shot announcement
+  fires on first show. Verified manually by setting the env var before launch
+  and confirming the AI / assistant surfaces and watch-folder network calls
+  short-circuit per `quill/stability/safe_mode.py`. Cross-reference: the
+  pre-release review's N-10 / H-SAFE-1 fixes.
+
+## Z. QUILL Radio station websites
+
+- [ ] Add Station Website confirmation: main Website button when the playing
+  station (or selected favorite) has no valid website
+- [ ] Edit Station Website (native text-entry dialog): Browse/Search Stations
+  station context menu > Edit Website, or Manage Favorites > station context
+  menu > Edit Website; also follows Add Station Website confirmation
+  - Enter an address with or without `https://`; only HTTP(S) addresses save
+  - Blank removes the local override and restores the provider's address
+
+## Z2. Podcast storage
+
+- [ ] Podcast download storage report: via QUILL's Command Palette
+  (`Ctrl+Shift+P`) > Podcasts: Downloads...; Cast's same-named command opens
+  its Downloads place instead. Verify initial list focus, All/Unheard column values,
+  selected-podcast retention, filter-hidden counts, saved column layouts,
+  keyboard navigation across virtual rows, and Close/Escape focus return.
+  - [ ] Remove This Podcast's Downloads confirmation (from the storage report):
+    No is the default; queued, part-played, pinned, and active downloads stay.
+
+Companion main-window check (not a dialog):
+
+- [ ] Cast View > Downloads (`Ctrl+D`) with an isolated large catalogue:
+  verify All/Unheard rows, live episode actions, and keyboard responsiveness
+  while counts and rows are loading. Switch places before completion; the
+  superseded result must not change the place or restore an old selection.
+  Move focus between the loading pane, heading and row-publication steps;
+  a pending explicit opening must not reclaim focus after that movement.
+  Places count updates and unchanged status-bar refreshes must not move focus
+  or repeat control announcements. Cancel midway through a status refresh;
+  changed cells must still be laid out. Close during early opening, partial
+  capture, worker processing and publication; detached-input cleanup must
+  finish off-thread without delaying close or touching the destroyed window.
+
+## Z3. Cast episode actions
+
+- [ ] Mark All as Played confirmation: Cast Episode > Mark All as Played
+  (`Alt+Shift+E`). Verify the named podcast and count, the safe default,
+  cancellation without changes, and focus return. `Ctrl+Shift+E` must open
+  New Folder instead, never this bulk action.
+
+## Maintenance note
+
+This checklist was generated from a full source scrub of `quill/ui/` (chiefly
+`quill/ui/main_frame.py`, plus `palette.py`, `assistant_panel.py`,
+`assistant_tools.py`, `ai_model_panel.py`, `train_style_dialog.py`, `sticky_notes.py`,
+`preview_dialog.py`, and `web_form.py`) and the bindings in
+`quill/core/keymap.py`. When you add or change a dialog, update the matching row
+here in the same change so this file stays a faithful, complete map.
+
+## Cross-references
+
+- **Safe Mode** — see `quill/stability/safe_mode.py` (env-var contract is
+  `QUILL_SAFE_MODE=1`) and `quill/stability/__init__.py` (`SafeModeConfig`,
+  `build_safe_mode_config`). When safe mode is active, the AI assistant
+  surfaces in section Q, the QUILL Whisperer surfaces in section R, the
+  watch-folder network calls in section M, and the Agent Center all
+  short-circuit. Manual verification: launch with `set QUILL_SAFE_MODE=1`
+  (cmd) / `$env:QUILL_SAFE_MODE=1` (PowerShell) / `--safe-mode` (CLI flag);
+  confirm the status-bar banner and the AI/assistant menu items are
+  disabled.

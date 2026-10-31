@@ -1,0 +1,231 @@
+"""Rich, configurable sorting for podcast episodes and shows.
+
+Pure functions -- no mutation, no I/O -- so the UI layer can call them
+directly on whatever list it already has in hand. wx-free, strict-typed.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Collection, Iterable
+from dataclasses import dataclass
+from email.utils import parsedate_to_datetime
+from functools import lru_cache
+from heapq import nlargest, nsmallest
+from typing import TYPE_CHECKING, Any
+
+from quill.core.podcasts.models import PodcastEpisode, PodcastShow
+
+if TYPE_CHECKING:
+    from quill.core.podcasts.subscriptions import PodcastLibrary
+
+EPISODE_SORT_MODES = (
+    "date_newest",
+    "date_oldest",
+    "title_az",
+    "title_za",
+    "duration_longest",
+    "duration_shortest",
+    "unplayed_first",
+    # The publisher's own numbering. Serial fiction is meant to be heard in
+    # order and its published dates are the least reliable thing about it --
+    # bulk-imported, re-stamped on a feed rebuild, or simply absent -- so where
+    # a publisher numbered their episodes that numbering is the only dependable
+    # order there is. Unnumbered episodes fall to the end rather than to the
+    # front, because an episode the feed did not number is not episode zero.
+    "season_episode",
+)
+
+SHOW_SORT_MODES = ("title_az", "title_za", "unheard_first", "recently_updated", "custom")
+
+
+@dataclass(frozen=True, slots=True)
+class _DescendingKey:
+    value: Any
+
+    def __lt__(self, other: _DescendingKey) -> bool:
+        return bool(other.value < self.value)
+
+
+@lru_cache(maxsize=16_384)
+def _parse_published(published: str) -> float:
+    """Best-effort RFC 2822 (typical RSS pubDate) parse to a sortable epoch
+    timestamp; unparseable or empty dates sort as the oldest possible."""
+    if not published:
+        return 0.0
+    try:
+        return parsedate_to_datetime(published).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _episode_sort_key(mode: str) -> tuple[Callable[[PodcastEpisode], Any], bool]:
+    """(key function, reverse) for *mode* -- shared by :func:`sort_episodes`
+    and :func:`sort_pairs` so a cross-show view sorts identically to a
+    single show's own episode list."""
+    if mode == "date_oldest":
+        return (lambda e: _parse_published(e.published), False)
+    if mode == "title_az":
+        return (lambda e: e.title.casefold(), False)
+    if mode == "title_za":
+        return (lambda e: e.title.casefold(), True)
+    if mode == "season_episode":
+        return (
+            lambda e: (
+                not e.is_numbered,  # False sorts first, so numbered episodes lead
+                e.season or 0,
+                e.episode_number or 0,
+                _parse_published(e.published),
+            ),
+            False,
+        )
+    if mode == "duration_longest":
+        return (lambda e: e.duration_seconds, True)
+    if mode == "duration_shortest":
+        return (lambda e: e.duration_seconds, False)
+    if mode == "unplayed_first":
+        return (lambda e: (e.played, -_parse_published(e.published)), False)
+    # "date_newest" and any unrecognized mode.
+    return (lambda e: _parse_published(e.published), True)
+
+
+def sort_episodes(
+    episodes: list[PodcastEpisode], mode: str, *, limit: int | None = None
+) -> list[PodcastEpisode]:
+    """Return a new list of *episodes* sorted by *mode* (unknown modes fall
+    back to ``date_newest``)."""
+    key, reverse = _episode_sort_key(mode)
+    if limit is not None:
+        if limit < 0:
+            raise ValueError("Episode sort limit cannot be negative")
+        return (nlargest if reverse else nsmallest)(limit, episodes, key=key)
+    return sorted(episodes, key=key, reverse=reverse)
+
+
+def sort_pairs(
+    library: PodcastLibrary,
+    pairs: Iterable[tuple[PodcastShow, PodcastEpisode]],
+    *,
+    view_mode: str,
+    limit: int | None = None,
+) -> list[tuple[PodcastShow, PodcastEpisode]]:
+    """Sort/group cross-show ``(show, episode)`` pairs for a virtual view
+    (Inbox, New Episodes, Continue Listening, Favorites) or an Inbox folder,
+    per *view_mode* (``PodcastSettings.episode_list_view_mode``):
+
+    - ``"flat"``: one stream across every show, sorted by the library's
+      global ``episode_sort_mode`` only. Per-show sort overrides do not
+      apply here -- there is no single well-defined order once different
+      shows compare by different keys.
+    - ``"grouped"``/``"folders"``: pairs grouped contiguously by show (shows
+      ordered by title); each show's own episodes sorted by *that show's*
+      effective sort mode (its own override, or the library default) --
+      read one podcast's backlog at a time, oldest-to-newest or
+      newest-to-oldest, independently per podcast. ``"folders"`` presents
+      this same grouping as real tree nodes instead of a flat list (see
+      manager_phase4.py); the grouping/sorting itself is identical.
+    """
+    if limit is not None and limit < 0:
+        raise ValueError("Episode sort limit cannot be negative")
+    if view_mode == "flat":
+        key, reverse = _episode_sort_key(library.settings.episode_sort_mode)
+        if limit is not None:
+            return (nlargest if reverse else nsmallest)(limit, pairs, key=lambda pair: key(pair[1]))
+        return sorted(pairs, key=lambda pair: key(pair[1]), reverse=reverse)
+    if limit is not None:
+        show_keys: dict[str, tuple[str, int, Callable[[PodcastEpisode], Any], bool]] = {}
+
+        def grouped_key(pair: tuple[PodcastShow, PodcastEpisode]) -> tuple[str, int, Any]:
+            show, episode = pair
+            entry = show_keys.get(show.id)
+            if entry is None:
+                key, reverse = _episode_sort_key(library.effective_settings(show).episode_sort_mode)
+                entry = (show.title.casefold(), len(show_keys), key, reverse)
+                show_keys[show.id] = entry
+            title, order, key, reverse = entry
+            value = key(episode)
+            return title, order, _DescendingKey(value) if reverse else value
+
+        return nsmallest(limit, pairs, key=grouped_key)
+    by_show: dict[str, list[tuple[PodcastShow, PodcastEpisode]]] = {}
+    show_by_id: dict[str, PodcastShow] = {}
+    for show, episode in pairs:
+        by_show.setdefault(show.id, []).append((show, episode))
+        show_by_id[show.id] = show
+    result: list[tuple[PodcastShow, PodcastEpisode]] = []
+    for show_id in sorted(by_show, key=lambda sid: show_by_id[sid].title.casefold()):
+        if limit is not None and len(result) >= limit:
+            break
+        show = show_by_id[show_id]
+        key, reverse = _episode_sort_key(library.effective_settings(show).episode_sort_mode)
+        if limit is None:
+            result.extend(sorted(by_show[show_id], key=lambda pair: key(pair[1]), reverse=reverse))
+        else:
+            result.extend(
+                (nlargest if reverse else nsmallest)(
+                    limit - len(result), by_show[show_id], key=lambda pair: key(pair[1])
+                )
+            )
+    return result
+
+
+def _most_recent_episode_timestamp(show: PodcastShow) -> float:
+    if not show.episodes:
+        return 0.0
+    return max(_parse_published(e.published) for e in show.episodes)
+
+
+def unheard_count(show: PodcastShow, *, exclude_audio: Collection[str] = ()) -> int:
+    """Unplayed episodes in *show* -- shared by tree labels, sorting, and the
+    Status page's podcast rows (status_report.py).
+
+    *exclude_audio* subtracts episodes by audio URL without touching their
+    stored state. Quill Radio passes its own finished-listen records here
+    (radio_listens.finished_audio_urls): an episode heard to the end in Radio
+    is finished *now*, but the shared library only learns that at Quill
+    Cast's next merge -- the handoff exists so Radio never writes the
+    library. Until then the badge would call a finished episode unheard,
+    which reads as the listen having been lost. Cast passes nothing and is
+    unchanged.
+    """
+    return sum(1 for e in show.episodes if not e.played and e.audio_url not in exclude_audio)
+
+
+def unheard_count_for_folder(
+    library: PodcastLibrary, folder_id: str, *, exclude_audio: Collection[str] = ()
+) -> int:
+    """Unplayed episodes in every show under *folder_id*, subfolders included.
+
+    One implementation for every folder badge -- Quill Cast's manager tree and
+    Quill Radio's Subscriptions branch -- so the two apps can never disagree
+    about what a folder's number means.
+    """
+    total = sum(
+        unheard_count(show, exclude_audio=exclude_audio)
+        for show in library.shows
+        if show.folder_id == folder_id
+    )
+    for child in library.folders:
+        if child.parent_folder_id == folder_id:
+            total += unheard_count_for_folder(library, child.id, exclude_audio=exclude_audio)
+    return total
+
+
+# Backward-compat private alias (pre-Phase-4 internal name).
+_unheard_count = unheard_count
+
+
+def sort_shows(shows: list[PodcastShow], mode: str) -> list[PodcastShow]:
+    """Return a new list of *shows* sorted by *mode* (unknown modes fall back
+    to ``title_az``)."""
+    if mode == "custom":
+        # The list's own order IS the custom order: Move Up/Down reorders
+        # ``PodcastLibrary.shows`` in place and the JSON store preserves it.
+        return list(shows)
+    if mode == "title_za":
+        return sorted(shows, key=lambda s: s.title.casefold(), reverse=True)
+    if mode == "unheard_first":
+        return sorted(shows, key=lambda s: (-_unheard_count(s), s.title.casefold()))
+    if mode == "recently_updated":
+        return sorted(shows, key=lambda s: _most_recent_episode_timestamp(s), reverse=True)
+    # "title_az" and any unrecognized mode.
+    return sorted(shows, key=lambda s: s.title.casefold())

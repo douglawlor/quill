@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from quill.ui.dpi import dip_size
+
 
 class _Ref:
     """Slim bundle that tracks one rendered setting control."""
@@ -228,7 +230,7 @@ def build_quillin_pref_dialog(
     import wx as _wx
 
     from quill.core import quillin_settings
-    from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
+    from quill.ui.dialog_contract import apply_modal_ids, focus_primary_control, show_modal_dialog
 
     wx = _wx
     page_dicts = manifest.contributes.preferences
@@ -243,7 +245,7 @@ def build_quillin_pref_dialog(
         title=f"{title} Settings",
         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
     )
-    dialog.SetSize((520, 560))
+    dialog.SetSize(dip_size(dialog, 520, 560))
     root = wx.BoxSizer(wx.VERTICAL)
     tabs = sorted(page.get("tabs", []), key=lambda t: t.get("order", 0))
     refs: list[_Ref] = []
@@ -279,6 +281,10 @@ def build_quillin_pref_dialog(
 
     dialog.SetSizer(root)
     apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+    # Land focus on the first field of the visible tab, not the tab strip or the
+    # default Save button (shown via the module-level show_modal_dialog, which
+    # has no MainFrame focus seam).
+    focus_primary_control(dialog)
 
     try:
         if show_modal_dialog(dialog, f"{title} Settings") == wx.ID_OK:

@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 _ZERO_SHA = "0000000000000000000000000000000000000000"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _normalize_path(path: str) -> str:
@@ -29,13 +30,40 @@ def _git_changed_paths(*, base_ref: str | None, head_ref: str | None) -> set[str
 
 
 def _is_docs_markdown(source_path: Path) -> bool:
-    """True for any Markdown file anywhere under the top-level ``docs/`` tree.
+    """True for Markdown under the top-level ``docs/`` tree or a standalone app's.
 
-    The check is recursive: subdirectories such as ``docs/qa`` and
-    ``docs/engineering`` are covered, not just direct ``docs/*.md`` children.
+    Two roots are covered:
+
+    * ``docs/**`` -- the top-level tree, rendered by ``release_readiness.py``.
+    * ``standalone/<app>/docs/**`` -- each standalone app's bundled docs,
+      rendered by that app's ``scripts/render_docs.ps1`` and staged into the
+      shipped build for its Help menu.
+
+    Both checks are recursive, so subdirectories such as ``docs/qa`` and
+    ``docs/engineering`` are covered, not just direct ``*.md`` children. The
+    standalone root was previously unguarded, which let every app's rendered
+    HTML and EPUB drift out of sync with its Markdown source.
     """
+    if source_path.suffix.lower() != ".md":
+        return False
     parts = source_path.parts
-    return bool(parts) and parts[0] == "docs" and source_path.suffix.lower() == ".md"
+    if parts[:1] == ("docs",):
+        return True
+    return len(parts) >= 4 and parts[0] == "standalone" and parts[2] == "docs"
+
+
+def _is_git_ignored(path: str) -> bool:
+    result = subprocess.run(
+        ["git", "check-ignore", "--quiet", "--", path],
+        cwd=_REPO_ROOT,
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode not in (0, 1):
+        raise subprocess.CalledProcessError(
+            result.returncode, result.args, result.stdout, result.stderr
+        )
+    return result.returncode == 0
 
 
 def _validate_docs_artifacts(changed_paths: set[str]) -> list[str]:
@@ -52,7 +80,9 @@ def _validate_docs_artifacts(changed_paths: set[str]) -> list[str]:
             source_path.with_suffix(".html").as_posix(),
             source_path.with_suffix(".epub").as_posix(),
         }
-        missing = sorted(path for path in expected if path not in changed_paths)
+        missing = sorted(
+            path for path in expected if path not in changed_paths and not _is_git_ignored(path)
+        )
         if missing:
             missing_text = ", ".join(missing)
             errors.append(f"{source} changed without regenerated artifacts: {missing_text}")

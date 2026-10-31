@@ -8,7 +8,12 @@ semantics are unchanged.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+from quill.core.app_launcher import is_dev_build
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +28,20 @@ class FeatureDefinition:
     locked_on: bool = False
     locked_off: bool = False
     category: str = ""
+    #: False for a feature that is built but held back from the public
+    #: release: locked off in a public build, normal in a developer build
+    #: (``QUILL_DEV_BUILD=1``) -- the same one switch that reveals the gated
+    #: companion apps (``app_launcher.RELEASED_APPS``). Use ``locked_off``
+    #: instead for a feature that is off in *every* build.
+    released: bool = True
+
+    @property
+    def is_locked_off(self) -> bool:
+        """Locked off in *this* build: permanently, or merely unreleased.
+
+        The question every caller wants; read this, not the raw field.
+        """
+        return self.locked_off or not (self.released or is_dev_build())
 
 
 FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
@@ -40,17 +59,10 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
             "copy tray",
             "tray",
             "clipboard tray",
-            "abbreviations",
-            "abbreviation",
-            "text expansion",
-            "expand",
-            "snippet",
-            "snippets",
-            "shorthand",
         ),
         description=(
-            "Core editing commands including the Copy Tray (multi-slot clipboard), "
-            "abbreviation expansion, and text transformation tools."
+            "Core editing commands including the Copy Tray (multi-slot clipboard) "
+            "and text transformation tools."
         ),
         category="core",
         dependencies=("core.app",),
@@ -59,11 +71,17 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
         "core.abbreviations",
         "Abbreviations and Snippet Packs",
         aliases=(
+            "abbreviation",
+            "abbreviations",
             "abbreviation expansion",
-            "text shortcuts",
-            "snippet packs",
-            "typed shortcuts",
             "text expansion",
+            "text shortcuts",
+            "typed shortcuts",
+            "snippet",
+            "snippets",
+            "snippet packs",
+            "expand",
+            "shorthand",
         ),
         description=(
             "Typed abbreviation expansion, the Manage Abbreviations dialog, "
@@ -137,31 +155,22 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
     "core.voice_commands": FeatureDefinition(
         "core.voice_commands",
         "Voice Commands",
-        description="Interprets Windows dictation phrases as Quill commands.",
-        category="accessibility",
-        dependencies=("core.dictation",),
-        # Hey QUILL is gated behind an internal flag for now; remove locked_off
-        # to re-enable. Tied to the now-removed Windows dictation path.
-        locked_off=True,
-    ),
-    "core.rich_text_lens": FeatureDefinition(
-        "core.rich_text_lens",
-        "Rich Text Lens",
         description=(
-            "Native wxPython rich-text editing surface for .rtf files. Locked off "
-            "pending fuller screen-reader testing; RTF files continue to open as "
-            "plain text in the meantime. Remove locked_off to re-enable."
+            "Push-to-talk voice commands over the offline speech stack: press "
+            "Voice Command (Offline), speak one command (like 'save file'), and "
+            "QUILL runs it. Bounded by the agent safe-tool allowlist; off by "
+            "default and always off in Safe Mode. Hey QUILL Phase 1."
         ),
-        category="editor",
-        locked_off=True,
+        category="accessibility",
+        dependencies=("core.editor",),
     ),
     "core.bw_whisperer": FeatureDefinition(
         "core.bw_whisperer",
-        "BITS Whisperer",
+        "QUILL Whisperer",
         description=(
-            "Master flag for the BITS Whisperer transcription suite. Disabled for "
+            "Master flag for the QUILL Whisperer transcription suite. Disabled for "
             "QUILL 1.0 (deferred to 2.0) until it reaches feature parity; gating "
-            "this off hides the entire BITS Whisperer menu and its sub-features."
+            "this off hides the entire QUILL Whisperer menu and its sub-features."
         ),
         category="accessibility",
         dependencies=("core.dictation",),
@@ -169,21 +178,21 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
     ),
     "core.bw_transcription": FeatureDefinition(
         "core.bw_transcription",
-        "BITS Whisperer Transcription Rollout",
-        description="Phased BITS Whisperer speech-model and dictation rollout surface.",
+        "QUILL Whisperer Transcription Rollout",
+        description="Phased QUILL Whisperer speech-model and dictation rollout surface.",
         category="accessibility",
         dependencies=("core.dictation", "core.bw_whisperer"),
     ),
     "core.bw_providers": FeatureDefinition(
         "core.bw_providers",
-        "BITS Whisperer Provider Onboarding",
+        "QUILL Whisperer Provider Onboarding",
         description="Guided provider planning and readiness checks for phased rollout.",
         category="accessibility",
         dependencies=("core.bw_transcription",),
     ),
     "core.bw_insights": FeatureDefinition(
         "core.bw_insights",
-        "BITS Whisperer Rollout Insights",
+        "QUILL Whisperer Rollout Insights",
         description="Readiness checks, capability matrix, and rollout diagnostics surfaces.",
         category="accessibility",
         dependencies=("core.bw_transcription",),
@@ -204,12 +213,13 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
         "GLOW Accessibility",
         category="accessibility",
         dependencies=("core.editor",),
-        locked_off=True,
         description=(
-            "GLOW document accessibility audit, fix, and engine updates. Hidden "
-            "for now while the feature is finished; remove locked_off to re-enable. "
-            "Does not affect Report a Bug or diagnostics, which read the GLOW "
-            "engine version independently."
+            "GLOW (Guided Layout and Output Workflow) document accessibility "
+            "audit, fix, and engine updates: in-editor deterministic review for "
+            "plain text, Markdown, and HTML, plus structured-document audit and "
+            "fix (DOCX, PPTX, XLSX, PDF, EPUB) through the optional shared "
+            "engine. Support messages and diagnostics read the GLOW engine "
+            "version independently of this flag."
         ),
     ),
     "core.trust": FeatureDefinition(
@@ -265,6 +275,45 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
         description="Inline sticky notes attached to document positions.",
         dependencies=("core.editor",),
         category="core",
+    ),
+    "core.radio": FeatureDefinition(
+        "core.radio",
+        "Internet Radio",
+        aliases=("internet radio", "radio", "radio browser", "acb media"),
+        description=(
+            "Browse and play internet radio stations (RadioBrowser search, "
+            "bundled ACB Media stations, custom stations, and the website "
+            "link finder), with a status bar mini-player and system tray "
+            "controls."
+        ),
+        category="core",
+        released=False,  # dev-build-only in the editor; radio -> standalone Quill Radio app
+    ),
+    "core.podcasts": FeatureDefinition(
+        "core.podcasts",
+        "Podcasts",
+        aliases=("podcasts", "podcast manager", "opml"),
+        description=(
+            "Subscribe to podcasts (iTunes search, feed URL, or OPML import), "
+            "download or stream episodes with pause/resume, organize shows "
+            "into nested folders, and play through a shared player with a "
+            "status bar mini-player and system tray controls."
+        ),
+        category="core",
+        # Dev-build-only in the editor until the Quill Cast app ships.
+        released=False,
+    ),
+    "core.library": FeatureDefinition(
+        "core.library",
+        "Book Library",
+        aliases=("books", "library", "gutenberg", "ebooks", "opds", "read book"),
+        description=(
+            "Search free, accessible book libraries -- Project Gutenberg via the "
+            "Gutendex API and Standard Ebooks / Feedbooks via OPDS -- and open a "
+            "chosen title (plain text or EPUB) directly in QUILL's reader."
+        ),
+        category="core",
+        released=False,  # dev-build-only in the editor; Book Library is moving to QUILL Social
     ),
     "core.notebook": FeatureDefinition(
         "core.notebook",
@@ -388,14 +437,14 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
     ),
     "core.emmet": FeatureDefinition(
         "core.emmet",
-        "Abbreviation Expansion",
+        "Emmet Markup Expansion",
         aliases=(
             "emmet",
-            "abbreviation",
             "expand abbreviation",
             "zen coding",
             "html shorthand",
             "css shorthand",
+            "markup abbreviation",
         ),
         description=(
             "Expands compact HTML/CSS markup abbreviations (child/sibling/climb-up "
@@ -433,6 +482,75 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
         category="future",
         locked_off=True,
     ),
+    "future.publishing_read": FeatureDefinition(
+        "future.publishing_read",
+        "Publishing (Read-Only)",
+        aliases=(
+            "publishing read",
+            "read only publishing",
+            "open from wordpress",
+            "import from wordpress",
+        ),
+        description=(
+            "Read-only publishing: add a site account, browse its posts and "
+            "pages, and open one into the editor. Sending content back to the "
+            "site (create, update, publish, schedule) stays under the separate "
+            "Publishing feature, which remains locked off until it is approved. "
+            "Available by default only in the Full Quill profile; off by default "
+            "elsewhere, but any user can turn it on individually via Manage "
+            "Individual Features."
+        ),
+        maturity="advanced",
+        privacy="network after confirmation",
+        category="future",
+    ),
+    "future.youtube_oauth": FeatureDefinition(
+        "future.youtube_oauth",
+        "Connect YouTube Account",
+        aliases=(
+            "youtube oauth",
+            "youtube sign in",
+            "connect youtube account",
+            "youtube subscriptions live",
+        ),
+        description=(
+            "Sign in with a Google account (OAuth) to import the account's real "
+            "YouTube subscriptions once, live, instead of exporting a Takeout "
+            "CSV. Read-only: it can only list what the account follows, never "
+            "watch history, and never touches playback -- videos still play "
+            "through QUILL's existing YouTube station support. Requires this "
+            "build's Google OAuth client (tools/generate_youtube_oauth_client.py) "
+            "and Google's own consent-screen verification (or the signed-in "
+            "account being listed as a test user) before sign-in will work. "
+            "Refused in Safe Mode."
+        ),
+        maturity="experimental",
+        privacy="network after confirmation",
+        category="future",
+        # Held back from public builds until the Cloud Console verification
+        # above is complete; reachable in a developer build for test-user
+        # sign-in (see the module docstring in core/radio/youtube_oauth.py).
+        released=False,
+    ),
+    "future.spotify": FeatureDefinition(
+        "future.spotify",
+        "Spotify",
+        aliases=("spotify", "spotify connect", "spotify premium"),
+        description=(
+            "Connect a Spotify account to search and browse shows, episodes, and "
+            "music and play them through QUILL's hidden Web Playback engine "
+            "(Spotify Premium required). Sign-in uses OAuth PKCE; playback streams "
+            "DRM audio inside an embedded WebView. Experimental: it needs a paid "
+            "Spotify Premium account, your own Spotify Client ID, and the Edge "
+            "WebView2 runtime, and Spotify audio is copy-protected so a Spotify "
+            "selection can never be recorded. Reaching Spotify's servers stays "
+            "behind a one-time network-access consent and is refused in Safe Mode."
+        ),
+        maturity="experimental",
+        privacy="network after confirmation",
+        category="future",
+        dependencies=("core.app",),
+    ),
     "future.ai_menu_top_level": FeatureDefinition(
         "future.ai_menu_top_level",
         "AI Top-Level Menu",
@@ -461,6 +579,24 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
         category="future",
         dependencies=("core.app",),
         locked_off=True,
+    ),
+    "future.quillins_menu": FeatureDefinition(
+        "future.quillins_menu",
+        "Quillins Menu",
+        aliases=("quillins menu", "extensions menu"),
+        description=(
+            "The top-level Quillins menu in the companion apps (Quill Radio, "
+            "QUILL Cast). Held back from the public build for now: it shows only "
+            "in a developer build (QUILL_DEV_BUILD=1). This hides the menu only "
+            "-- the Quillin host is untouched, bundled Quillins still load, and "
+            "anything they contribute to other menus still works, so nothing "
+            "stops functioning when it is hidden."
+        ),
+        maturity="advanced",
+        privacy="local only",
+        category="future",
+        dependencies=("core.app",),
+        released=False,
     ),
     "core.bundled_quillins": FeatureDefinition(
         "core.bundled_quillins",
@@ -507,9 +643,27 @@ FEATURE_DEFINITIONS: dict[str, FeatureDefinition] = {
 }
 
 
+#: The ``released=False`` roster, derived so it can never drift from the
+#: definitions. Locked off in a public build; ``QUILL_DEV_BUILD=1`` restores it.
+UNRELEASED_FEATURE_IDS: frozenset[str] = frozenset(
+    feature_id for feature_id, definition in FEATURE_DEFINITIONS.items() if not definition.released
+)
+
 FEATURE_ALIASES: dict[str, str] = {}
 for _feature in FEATURE_DEFINITIONS.values():
-    FEATURE_ALIASES[_feature.id.lower()] = _feature.id
-    FEATURE_ALIASES[_feature.name.lower()] = _feature.id
-    for _alias in _feature.aliases:
-        FEATURE_ALIASES[_alias.lower()] = _feature.id
+    for _alias in (_feature.id, _feature.name, *_feature.aliases):
+        _key = _alias.lower()
+        _existing = FEATURE_ALIASES.get(_key)
+        if _existing is not None and _existing != _feature.id:
+            # A term that legitimately points at two features (e.g. "abbreviation"
+            # -> both the editor and Emmet). Previously the later definition
+            # silently overwrote the earlier one, making resolution depend on
+            # definition order with no signal. Log it so the ambiguity is visible;
+            # last-writer-wins behaviour is preserved to avoid a lookup change.
+            logger.warning(
+                "Feature alias %r maps to both %s and %s (last wins).",
+                _key,
+                _existing,
+                _feature.id,
+            )
+        FEATURE_ALIASES[_key] = _feature.id

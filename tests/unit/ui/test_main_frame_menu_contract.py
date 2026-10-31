@@ -11,6 +11,9 @@ def _menu_source() -> str:
         + "\n"
         + (ui / "main_frame_menu.py").read_text(encoding="utf-8")
         + "\n"
+        # EVT_MENU bindings were split out of _build_menu (CQ-1).
+        + (ui / "main_frame_menu_bindings.py").read_text(encoding="utf-8")
+        + "\n"
         + (ui / "main_frame_ssh.py").read_text(encoding="utf-8")
         + "\n"
         + (ui / "main_frame_github.py").read_text(encoding="utf-8")
@@ -24,6 +27,8 @@ def _menu_source() -> str:
         + (ui / "main_frame_braille_phase3.py").read_text(encoding="utf-8")
         + "\n"
         + (ui / "main_frame_power_tools_menu.py").read_text(encoding="utf-8")
+        + "\n"
+        + (ui / "main_frame_windows_dictation.py").read_text(encoding="utf-8")
     )
 
 
@@ -64,7 +69,7 @@ def test_menu_item_ids_have_menu_bindings() -> None:
 def test_top_level_menu_append_order_is_conventional() -> None:
     # MENU-REORDER (menus.md Phase 1): top-level menus are attached in one place
     # in the conventional Windows order: File, Edit, View, Insert, Format,
-    # Navigate, Search, (AI), Tools, Window, Help.
+    # Navigate, (AI), Tools, Window, Help.
     source = _menu_source()
 
     # Accept both i18n-wrapped _("...") and bare string forms.
@@ -81,18 +86,18 @@ def test_top_level_menu_append_order_is_conventional() -> None:
     insert_index = _find_menu("insert", "&Insert")
     format_index = _find_menu("format", "F&ormat")
     navigate_index = _find_menu("navigate", "&Navigate")
-    search_index = _find_menu("search", "&Search")
     tools_index = _find_menu("tools", "&Tools")
+    # Search left the menu bar on 2026-09-17 and is Edit > Search Tools (bad.md
+    # M1, P1.20): Word has no Search menu, and this one held two rows to walk
+    # past on the way to Tools. "Search" is still the contribution parent, so a
+    # Quillin declaring it still lands in the submenu.
+    assert "menu_bar.Append(search_menu" not in source
+    # "S&earch Tools" since the 2026-09-18 mnemonic sweep (bad.md H5): Edit's
+    # "&Selection" submenu already held S, and Windows does not press a
+    # duplicated letter -- it cycles focus between the two and waits.
+    assert 'edit_menu.AppendSubMenu(search_menu, _("S&earch Tools"))' in source
 
-    assert (
-        edit_index
-        < view_index
-        < insert_index
-        < format_index
-        < navigate_index
-        < search_index
-        < tools_index
-    )
+    assert edit_index < view_index < insert_index < format_index < navigate_index < tools_index
 
 
 def test_update_toggle_is_in_help_menu_not_view_menu() -> None:
@@ -132,8 +137,17 @@ def test_find_group_lives_in_edit_not_search() -> None:
     ):
         assert re.search(rf"edit_menu\.Append\(\s*{re.escape(fid)}\b", source), fid
         assert not re.search(rf"search_menu\.Append\(\s*{re.escape(fid)}\b", source), fid
-    assert re.search(r"search_menu\.Append\(\s*self\._id_search_in_files\b", source)
-    assert re.search(r"search_menu\.Append\(\s*self\._id_replace_in_files\b", source)
+    # Search in Files and Replace Across Files moved from Edit > Search Tools to
+    # Edit itself on 2026-10-16, under Find in Open Documents, where QUILL Lite
+    # has them too; and Find's feature gates them, not regular expressions'.
+    assert not re.search(r"search_menu\.Append\(\s*self\._id_search_in_files\b", source)
+    assert not re.search(r"search_menu\.Append\(\s*self\._id_replace_in_files\b", source)
+    mixin = (
+        Path(__file__).resolve().parents[3] / "quill" / "ui" / "main_frame_open_documents.py"
+    ).read_text(encoding="utf-8")
+    assert re.search(r"edit_menu\.Append\(\s*self\._id_search_in_files\b", mixin)
+    assert re.search(r"edit_menu\.Append\(\s*self\._id_replace_in_files\b", mixin)
+    assert '_feature_enabled("core.search")' in mixin
 
 
 def test_insert_link_is_not_duplicated_in_edit_menu() -> None:
@@ -150,7 +164,11 @@ def test_insert_link_is_not_duplicated_in_edit_menu() -> None:
 def test_publishing_actions_live_in_file_menu_not_top_level_publishing_menu() -> None:
     source = _menu_source()
     assert 'menu_bar.Append(publishing_menu, "P&ublishing")' not in source
-    assert 'file_menu.AppendSubMenu(self._publishing_file_menu, _("P&ublish"))' in source
+    # No mnemonic since the 2026-09-18 sweep (bad.md H5): the File menu claims
+    # twenty-one of twenty-six letters and every letter in "Publish" was taken.
+    # GATE-14's rule decides it -- a duplicate advertises a key that may not
+    # work, while silence is merely silent and Tab still arrives.
+    assert 'file_menu.AppendSubMenu(self._publishing_file_menu, _("Publish"))' in source
     assert (
         "self._publishing_file_menu.Append(\n                self._id_publishing_connections,"
         in source
@@ -200,21 +218,37 @@ def test_publishing_actions_live_in_file_menu_not_top_level_publishing_menu() ->
     assert "lambda _e: self._compare_publishing_remote_item()" in source
 
 
-def test_publishing_menu_is_gated_behind_its_locked_off_feature_flag() -> None:
-    # The publishing-providers-framework branch is locked off
-    # (future.publishing, quill/core/feature_catalog.py) so it never reaches
-    # a public release until the gate is deliberately lifted. The whole
-    # Publish submenu must be omitted from menu construction, not just
-    # hidden from the Command Palette -- mirroring the existing core.glow
-    # gating pattern (menu ids stay unconditional; only .Append() is gated).
+def test_publishing_menu_is_split_into_read_and_locked_send_halves() -> None:
+    # The Publish submenu is gated in two independent halves so the read-only
+    # inbound tools can ship while the content-send half stays locked off:
+    #   - future.publishing_read (not locked): connections, verify, browse.
+    #   - future.publishing (locked off, quill/core/feature_catalog.py): the
+    #     create/update/publish/schedule send commands.
+    # Construction (not just Command Palette filtering) must honor the split,
+    # mirroring the core.glow pattern (ids stay unconditional; only .Append()
+    # is gated).
     source = _menu_source()
+    assert 'publishing_read_enabled = self._feature_enabled("future.publishing_read")' in source
+    assert 'publishing_send_enabled = self._feature_enabled("future.publishing")' in source
     assert (
-        'if self._feature_enabled("future.publishing"):\n'
+        "if publishing_read_enabled or publishing_send_enabled:\n"
         "            self._publishing_file_menu = wx.Menu()" in source
     )
+    # Inbound items are gated by the read flag; send items by the locked flag.
     assert (
+        "if publishing_read_enabled:\n"
+        "            self._publishing_file_menu.Append(\n"
+        "                self._id_publishing_connections," in source
+    )
+    assert (
+        "if publishing_send_enabled:\n"
+        "            self._publishing_file_menu.Append(\n"
+        "                self._id_publishing_create_draft," in source
+    )
+    assert (
+        "        if publishing_read_enabled or publishing_send_enabled:\n"
         "            file_menu.AppendSeparator()\n"
-        '            file_menu.AppendSubMenu(self._publishing_file_menu, _("P&ublish"))' in source
+        '            file_menu.AppendSubMenu(self._publishing_file_menu, _("Publish"))' in source
     )
 
 
@@ -242,8 +276,10 @@ def test_macos_help_menu_is_marked_as_system_help_menu() -> None:
     source = _menu_source()
     # The platform gate is required so the call only runs on macOS
     # (a Windows build that touches the wx method with the wrong
-    # signature should be a no-op, not a startup crash).
-    assert 'platform.system() == "Darwin"' in source, (
+    # signature should be a no-op, not a startup crash). sys.platform,
+    # not platform.system(): the stdlib platform module is shadowed by
+    # quill/platform when the package dir lands on sys.path.
+    assert 'sys.platform == "darwin"' in source, (
         "#613: SetHelpMenu must be gated on the macOS platform check"
     )
     # Either the modern SetHelpMenu API or the classic

@@ -1,0 +1,235 @@
+"""The shared Help-menu items every listening app grew on 2026-08-24.
+
+Recent Problems, Quiet Hours, Export / Import My Setup, and Bookmarks -- built
+once here and appended by both Quill Radio and QUILL Cast, because every one of
+them is a shared surface over a shared file and a second copy of the wiring is
+a second place for the two apps to drift apart.
+
+They sit together on Help rather than being scattered because they answer the
+same family of question: *why is this app talking to me, why is it not, and
+how do I take all of this with me?*
+
+* **Recent Problems** (11.5) -- where a transient announcement goes, so a feed
+  that failed while you were in another window is still findable an hour later.
+* **Quiet Hours** (11.9) -- the window in which the app stops speaking on its
+  own. Feeds are still checked; only the speech waits.
+* **Export / Import My Setup** (11.10) -- one file carrying subscriptions,
+  favorites, folders, places, settings and bookmarks. OPML moves subscriptions
+  and nothing else.
+* **Bookmarks** (4.4) -- everywhere you marked, in either app, in one list.
+  Its companion verb, Bookmark This Moment, belongs on each app's playback
+  menu instead: it is a thing you do while listening, not a thing you go and
+  look for.
+
+Every label goes through the host's ``_menu_label`` so it shows the key that
+is *actually* bound and follows the listener when they rebind it -- the house
+rule the menu-accelerator gate enforces.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def append_get_help_item(
+    host: Any,
+    help_menu: Any,
+    wx: Any,
+    *,
+    source_app: str,
+    app_version: str = "",
+) -> Any:
+    """Append **Get Help from Support...** and bind it. Returns its id ref.
+
+    Every app in the family calls this, including the ones with no shell of
+    their own (QuillBeacon, QUILL Lite): the label, the key and the flow are
+    written once so that asking for help is the same act everywhere, and so
+    the six apps that had no reporting item at all -- only an address in the
+    About box -- stop being the odd ones out.
+
+    The id is pinned here when the host can pin it; a menu id ref that is
+    garbage-collected can be reissued to a different item, and the symptom is
+    a random menu entry firing the wrong command.
+    """
+    from quill.core.support_message import SUPPORT_MENU_KEY
+    from quill.ui.support_dialog import open_support_message
+
+    item_id = wx.NewIdRef()
+    help_menu.Append(item_id, f"Get Help from &Support...\t{SUPPORT_MENU_KEY}")
+    frame = getattr(host, "frame", host)
+    frame.Bind(
+        wx.EVT_MENU,
+        lambda _e: open_support_message(host, source_app=source_app, app_version=app_version),
+        id=item_id,
+    )
+    keep = getattr(host, "_keep_menu_ids", None)
+    if callable(keep):
+        keep(item_id)
+    return item_id
+
+
+def unread_notices() -> int:
+    """How many notifications are unread. Never raises: an unreadable list is 0."""
+    try:
+        from quill.core.notifications import load_notifications, unread_count
+
+        return int(unread_count(load_notifications()))
+    except Exception:  # noqa: BLE001 - a count must never break a menu
+        return 0
+
+
+def notifications_label(host: Any, count: int | None = None) -> str:
+    """Help > Notifications, with the unread count when there is one."""
+    count = unread_notices() if count is None else count
+    title = f"&Notifications ({count} new)..." if count else "&Notifications..."
+    return str(host._menu_label(title, "app.notifications"))
+
+
+def _on_menu_open(host: Any, help_menu: Any, event: Any) -> None:
+    """Refresh the Notifications label when the Help menu opens."""
+    event.Skip()
+    if event.GetMenu() is not help_menu:
+        return
+    item_id = getattr(host, "_notices_menu_id", None)
+    if item_id is None:
+        return
+    try:
+        help_menu.SetLabel(int(item_id), notifications_label(host))
+    except Exception:  # noqa: BLE001 - a stale label is better than a crash
+        pass
+
+
+def append_support_items(host: Any, help_menu: Any, wx: Any) -> tuple[Any, ...]:
+    """Append the shared items to *help_menu*, bound to *host*.
+
+    Returns every id ref it created. The caller must pin them (``_keep_menu_ids``):
+    a menu id ref that is garbage-collected can be reissued to a different
+    item, and the symptom is a random menu entry firing the wrong command.
+    """
+    problems_id = wx.NewIdRef()
+    help_menu.Append(problems_id, host._menu_label("Recent &Problems...", "app.recent_problems"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.open_recent_problems(), id=problems_id)
+
+    # Activity is this session's results, problems or not, each with its
+    # next actions; Recent Problems is failures across restarts (qc.md F-10).
+    activity_id, repeat_id = wx.NewIdRef(), wx.NewIdRef()
+    help_menu.Append(activity_id, host._menu_label("Activit&y...", "app.activity"))
+    help_menu.Append(repeat_id, host._menu_label("Repeat Last Res&ult", "app.repeat_last_result"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.open_activity(), id=activity_id)
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.repeat_last_result(), id=repeat_id)
+
+    # Beside Recent Problems because they answer the same shape of question:
+    # that one is what went wrong, this is what you were told. Both are lists
+    # over a shared file, so either app can show you the other's news.
+    notices_id = wx.NewIdRef()
+    help_menu.Append(notices_id, notifications_label(host))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.open_notifications(), id=notices_id)
+    # The label carries the unread count, read again each time the Help menu
+    # opens, so news waiting is visible from the menu without opening the list.
+    host._notices_menu_id = notices_id
+    host.frame.Bind(wx.EVT_MENU_OPEN, lambda event: _on_menu_open(host, help_menu, event))
+
+    quiet_id = wx.NewIdRef()
+    help_menu.Append(quiet_id, host._menu_label("&Quiet Hours...", "app.quiet_hours"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.open_quiet_hours(), id=quiet_id)
+
+    bookmarks_id = wx.NewIdRef()
+    help_menu.Append(bookmarks_id, host._menu_label("&Bookmarks...", "app.bookmarks"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.open_bookmarks(), id=bookmarks_id)
+
+    export_id, import_id = wx.NewIdRef(), wx.NewIdRef()
+    help_menu.Append(export_id, host._menu_label("E&xport My Setup...", "app.export_setup"))
+    help_menu.Append(import_id, host._menu_label("&Import My Setup...", "app.import_setup"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.export_my_setup(), id=export_id)
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.import_my_setup(), id=import_id)
+
+    ids = (
+        problems_id,
+        activity_id,
+        repeat_id,
+        notices_id,
+        quiet_id,
+        bookmarks_id,
+        export_id,
+        import_id,
+    )
+    host._keep_menu_ids(*ids)
+    return ids
+
+
+def insert_edit_menu(host: object, menu_bar: object, wx: object, *, position: int = 1) -> object:
+    """Insert the &Edit menu: Undo Last Action (11.3), Undo History and,
+    where QUILL Transcribe is offered, Dictate Here (dict.md D-16).
+
+    Where Windows apps keep it, and where a listener will press Alt+E looking
+    for it. One step of undo is cheaper than a confirmation prompt on every
+    destructive verb and kinder than either; both apps have no editor, so
+    Ctrl+Z is free here in exactly the way it is not in QUILL.
+
+    Dictate Here is in Edit because neither app has a Tools menu and both
+    have this one: dictating is putting text into a field, which is what
+    Edit is for. Its key, Ctrl+F11, is the editors' Start Dictation.
+
+    Returns the id ref, which the caller must pin.
+    """
+    edit_menu = wx.Menu()
+    undo_id = wx.NewIdRef()
+    host._keep_menu_ids(undo_id)
+    edit_menu.Append(undo_id, host._menu_label("&Undo Last Action", "app.undo_last"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.undo_last_action(), id=undo_id)
+    history_id = wx.NewIdRef()
+    host._keep_menu_ids(history_id)
+    edit_menu.Append(history_id, host._menu_label("Undo &History...", "app.undo_history"))
+    host.frame.Bind(wx.EVT_MENU, lambda _e: host.open_undo_history(), id=history_id)
+    from quill.ui.dictate_here_ui import COMMAND_ID, dictate_here_available
+
+    if dictate_here_available() and callable(getattr(host, "dictate_here", None)):
+        edit_menu.AppendSeparator()
+        dictate_id = wx.NewIdRef()
+        host._keep_menu_ids(dictate_id)
+        edit_menu.Append(dictate_id, host._menu_label("&Dictate Here", COMMAND_ID))
+        host.frame.Bind(wx.EVT_MENU, lambda _e: host.dictate_here(), id=dictate_id)
+    menu_bar.Insert(position, edit_menu, _edit_label(menu_bar))
+    return undo_id
+
+
+def _edit_label(menu_bar: Any) -> str:
+    """ "&Edit", unless a menu already owns Alt+E (QUILL Cast's Episode).
+
+    Two top-level menus on one letter means Alt+E cycles between them instead
+    of opening either, so Edit yields to the next free letter, else none.
+    """
+    taken: set[str] = set()
+    try:
+        for index in range(menu_bar.GetMenuCount()):
+            label = str(menu_bar.GetMenuLabel(index))
+            if "&" in label:
+                taken.add(label.split("&", 1)[1][:1].lower())
+    except Exception:  # noqa: BLE001 - a bar that cannot be read keeps the usual label
+        return "&Edit"
+    # E, then I (T is QUILL Cast's Stop button and D is a Downloads menu).
+    for index, letter in ((0, "e"), (2, "i"), (3, "t")):
+        if letter not in taken:
+            return "Edit"[:index] + "&" + "Edit"[index:]
+    return "Edit"
+
+
+def wire_support_surfaces(host: Any, menu_bar: Any, help_menu: Any, wx: Any) -> None:
+    """Both halves at once: the &Edit menu, and the shared Help items.
+
+    The one call an app frame makes. Keeping it one call is the point -- the
+    four surfaces arrive together, are shared between the apps, and a frame
+    that wired three of them would be a frame with a missing key nobody
+    noticed until somebody pressed it.
+
+    **Edit goes at index 1, not at the end** (2026-08-25). This used to pass
+    ``position=menu_bar.GetMenuCount()``, which put Edit wherever the frame
+    happened to have got to -- in Quill Radio that was between Community and
+    QuillVille, in QUILL Cast between Quillins and Help. Both are places no
+    Windows app has ever kept Edit, and a menu found by counting Alt+Right
+    presses is a menu whose position is the whole of its discoverability.
+    Index 1 is immediately after the app's own first menu (Station in Radio,
+    Subscriptions in Cast), which is where File/Edit sits everywhere else.
+    """
+    insert_edit_menu(host, menu_bar, wx)
+    append_support_items(host, help_menu, wx)

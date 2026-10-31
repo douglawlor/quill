@@ -8,12 +8,24 @@ import pytest
 
 from quill.core.shell_verbs import default_shell_verbs
 from scripts.build_windows_distribution import (
+    DEFAULT_BUNDLED_WHISPER_MODEL_ID,
+    FASTER_WHISPER_WHEELHOUSE_REQUIREMENTS,
+    KOKORO_WHEELHOUSE_REQUIREMENTS,
+    MP3_WHEELHOUSE_REQUIREMENTS,
+    SHERPA_WHEELHOUSE_REQUIREMENTS,
+    VOSK_WHEELHOUSE_REQUIREMENTS,
+    _assert_no_retired_credential,
+    _prune_embedded_runtime,
+    _speech_asset_manifest,
+    _stage_pip_wheelhouse,
+    _stage_whisper_model,
     build_inno_setup_script,
     build_shell_verb_registry_lines,
     build_windows_distribution,
     bundled_runtime_dependencies,
     compile_inno_setup_installer,
     find_inno_setup_compiler,
+    inno_setup_search_roots,
 )
 
 # build/version.toml is the local-only (gitignored) canonical release-identity
@@ -21,6 +33,72 @@ from scripts.build_windows_distribution import (
 # is only meaningful when that source is present (local dev and release builds);
 # CI checkouts do not have it.
 _VERSION_TOML = Path(__file__).resolve().parents[3] / "build" / "version.toml"
+
+
+@pytest.mark.parametrize("tool_id", ["speech/unrecognized", "../outside", "speech\\piper"])
+def test_bundled_tools_reject_unsupported_ids(tmp_path: Path, tool_id: str) -> None:
+    from scripts.build_windows_distribution import _stage_bundled_tools
+
+    source = tmp_path / "source"
+    source.mkdir()
+    with pytest.raises(RuntimeError, match="Unsupported bundled tool IDs"):
+        _stage_bundled_tools(tmp_path / "portable", {tool_id: source})
+    assert not (tmp_path / "portable" / "tools").exists()
+
+
+@pytest.fixture(autouse=True)
+def _no_model_downloads(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Keep the network out of the packaging tests.
+
+    ``build_windows_distribution`` stages the Vosk model on **every** build --
+    the deliberate contract that stops podcast chapters answering "none found"
+    the first time somebody asks (see ``_stage_vosk_model``). That makes a plain
+    call to it reach out for 40 MB, which is not something a unit test may do:
+    it turns a layout assertion into a five-minute download that fails on any
+    machine that is offline.
+
+    Stubbed here rather than made conditional in the build script, because the
+    behaviour is correct and it is the test that must not perform it.
+    ``test_a_plain_build_still_stages_the_vosk_model`` keeps the contract itself
+    covered, so this stub cannot quietly become the reason nobody notices the
+    staging was dropped.
+    """
+    staged: list[Path] = []
+
+    def _fake_stage(portable_dir: Path, model_id: str = "") -> bool:
+        staged.append(portable_dir)
+        return True
+
+    monkeypatch.setattr("scripts.build_windows_distribution._stage_vosk_model", _fake_stage)
+    return staged
+
+
+def test_a_plain_build_still_stages_the_vosk_model(
+    tmp_path: Path, _no_model_downloads: list[Path]
+) -> None:
+    """Not only the Offline Edition -- every build.
+
+    The whole argument for spending 40 MB on the small Vosk model is that a
+    chapter feature which needs a download before it can answer is one nobody
+    ever meets. That only holds if the plain build stages it, so the plain build
+    is what this asserts.
+    """
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        """
+[project]
+name = "quill"
+version = "3.0.0"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    build_windows_distribution(pyproject, tmp_path / "dist")
+
+    assert _no_model_downloads == [tmp_path / "dist" / "portable"], (
+        "a plain (non-offline) build must still stage the Vosk model; without it "
+        "the first request for podcast chapters answers 'none found'."
+    )
 
 
 # Builds a full portable distribution (file copies + installer-script generation),
@@ -94,16 +172,39 @@ version = "2.4.6"
     # legacy run-quill.cmd launcher.
     assert manifest["portableEntry"].endswith("quill.exe")
     assert manifest.get("portableLauncher") is None
-    assert sorted(manifest["bundledTools"]) == [
-        "pandoc",
-        "speech/dectalk",
-        "speech/espeak-ng",
-        "speech/piper",
+    # Nothing auto-stages any more (PRD 10.2.x footprint unbundle): Pandoc, Piper,
+    # Node.js, the braille pack, whisper.cpp, Kokoro, DECtalk, and eSpeak-NG all
+    # download on demand, so a default build bundles no optional tools.
+    assert sorted(manifest["bundledTools"]) == []
+    # manifest["docs"] is str(path.relative_to(portable_dir)), which uses the
+    # BUILD HOST's os.sep -- always backslash in the real shipped product
+    # (this script only ever really runs on windows-latest CI), but this test
+    # also runs as a plain unit test on macOS CI, where the host is POSIX.
+    # Every shipped document, each with its HTML and EPUB beside it (2026-10-15).
+    assert manifest["docs"] == [
+        str(Path("docs") / name)
+        for name in (
+            "userguide.md",
+            "tutorials.md",
+            "keyboard-reference.md",
+            "f1-help-reference.md",
+            "release1.0.0.md",
+            "CHANGELOG.md",
+        )
     ]
-    assert manifest["docs"] == [r"docs\userguide.md"]
-    assert manifest["speechAssets"]["dectalk"]["downloadable"] is True
+    assert manifest["speechAssets"]["dectalk"]["downloadable"] is False
     assert manifest["speechAssets"]["espeak"]["downloadable"] is True
     assert manifest["speechAssets"]["piper"]["downloadable"] is True
+    # DECtalk and eSpeak-NG are unbundled (PRD 10.2.4): not staged by default,
+    # downloaded on demand from QUILL's verified assets-v1 release instead.
+    assert manifest["speechAssets"]["dectalk"]["bundled"] is False
+    assert (portable_dir / "tools" / "speech" / "dectalk").exists() is False
+    assert manifest["speechAssets"]["espeak"]["bundled"] is False
+    assert (portable_dir / "tools" / "speech" / "espeak-ng").exists() is False
+    # whisper.cpp is unbundled (PRD 10.2.4): not staged by default (no --whisper-dir
+    # here), downloaded on demand from QUILL's verified release asset instead.
+    assert manifest["speechAssets"]["whispercpp"]["bundled"] is False
+    assert (portable_dir / "tools" / "speech" / "whispercpp").exists() is False
     # Kokoro is always STAGED at the portable bundle root (kokoro-models/), the
     # location the runtime resolves a bundled copy from; the installer gates the
     # copy behind the optional speechkokoro component (asserted separately).
@@ -142,73 +243,83 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     # The dead "aiassistant" component (no [Files] payload) was removed; the
     # Writing Assistant ships with the core bundle, not as a toggle.
     assert "aiassistant" not in script
-    assert (
-        'Name: "pandoc"; Description: "Install bundled Pandoc for document conversion";' in script
-    )
-    assert 'Name: "speechdectalk"; Description: "Install bundled DECtalk runtime";' in script
-    # All DECtalk voices ship together under a single component checkbox — no
-    # per-voice sub-components and no voice-selection wizard page.
-    assert 'Name: "speechdectalk\\voices"' not in script
+    # PRD 10.2.x footprint unbundle: NO optional components remain. Pandoc,
+    # Piper, Node.js, the braille pack, whisper.cpp, Kokoro, DECtalk, and
+    # eSpeak-NG all download on demand, so the installer has no [Types] or
+    # [Components] section and no component/setup-type selection page at all.
+    assert "\n[Types]\n" not in script
+    assert "\n[Components]\n" not in script
+    assert "WizardIsComponentSelected" not in script
+    assert "wpSelectComponents" not in script
+    assert "ShouldSkipPage" not in script
+    # No component definitions or [Files] gates for any optional tool.
+    for _name in (
+        "pandoc",
+        "speechpiper",
+        "nodejs",
+        "braillepack",
+        "speechdectalk",
+        "speechespeak",
+        "speechwhisper",
+        "speechkokoro",
+        "speechopenvoice",
+    ):
+        assert f'Name: "{_name}";' not in script
+        assert f"Components: {_name}" not in script
+    # No per-voice DECtalk sub-components or voice-selection wizard page ever.
     assert "DecTalkVoicePage" not in script
     assert "ShouldInstallAllVoices" not in script
     assert "ShouldInstallPaulVoice" not in script
-    assert 'Name: "speechespeak"; Description: "Install bundled eSpeak-NG runtime";' in script
-    assert 'Name: "speechpiper"; Description: "Install bundled Piper neural TTS runtime";' in script
-    # The offline whisper.cpp speech engine ships as its own optional component
-    # (#617), gated payload under tools\speech\whispercpp, surfaced under
-    # Tools > Speech > Whisperer.
-    assert 'Name: "speechwhisper"; Description: "Install the offline speech engine' in script
-    assert "(Tools > Speech > Whisperer)" in script
-    # Kokoro is an optional component (Types: full custom): Full installs ship it,
-    # Custom installs can drop ~120 MB and download it later. It is excluded from
-    # the unconditional copy and gated behind its own [Files] entry.
-    assert 'Name: "speechkokoro"; Description: "Install bundled Kokoro neural TTS voices' in script
-    assert 'Source: "..\\portable\\kokoro-models\\*"; DestDir: "{app}\\kokoro-models";' in script
-    assert "Components: speechkokoro" in script
-    assert "speechopenvoice" not in script
-    assert (
-        'Excludes: "docs\\QUILL-PRD.md,tools\\pandoc\\*,tools\\speech\\dectalk\\*,tools\\speech\\espeak-ng\\*,tools\\speech\\piper\\*,tools\\speech\\whispercpp\\*,tools\\nodejs\\*,vendor\\braille-pack\\*,kokoro-models\\*,_tool-download\\*,_speech-download\\*"'
-        in script
-    )
-    assert 'Source: "..\\portable\\tools\\pandoc\\*"; DestDir: "{app}\\tools\\pandoc";' in script
-    assert "Components: pandoc" in script
-    assert (
-        'Source: "..\\portable\\tools\\speech\\dectalk\\*"; DestDir: "{app}\\tools\\speech\\dectalk";'
-        in script
-    )
-    # Single DECtalk entry: no voices exclusion, no per-voice Check: functions.
-    assert 'Excludes: "voices\\*"' not in script
-    assert "Components: speechdectalk" in script
-    assert "Check: ShouldInstallAllVoices()" not in script
-    assert "Check: ShouldInstallPaulVoice()" not in script
-    assert (
-        'Source: "..\\portable\\tools\\speech\\espeak-ng\\*"; DestDir: "{app}\\tools\\speech\\espeak-ng";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\piper\\*"; DestDir: "{app}\\tools\\speech\\piper";'
-        in script
-    )
-    assert (
-        'Source: "..\\portable\\tools\\speech\\whispercpp\\*";'
-        ' DestDir: "{app}\\tools\\speech\\whispercpp";' in script
-    )
-    assert "Components: speechdectalk" in script
-    assert "Components: speechespeak" in script
-    assert "Components: speechpiper" in script
-    assert "Components: speechwhisper" in script
+    # No [Files] Source/DestDir entries for any unbundled component.
+    for _dest in (
+        "{app}\\tools\\pandoc",
+        "{app}\\tools\\speech\\piper",
+        "{app}\\tools\\speech\\dectalk",
+        "{app}\\tools\\speech\\espeak-ng",
+        "{app}\\tools\\speech\\whispercpp",
+        "{app}\\tools\\nodejs",
+        "{app}\\vendor\\braille-pack",
+        "{app}\\kokoro-models",
+    ):
+        assert f'DestDir: "{_dest}"' not in script
+    # Node.js is no longer offered via winget at install time; the app installs
+    # it on demand (quill/core/node_install.py) if a Node Quillin needs it.
+    assert "OpenJS.NodeJS" not in script
+    assert "winget install --id OpenJS" not in script
+    # The core bundle still ships, with the optional tools excluded from it so a
+    # locally staged dev copy never leaks into the installer. Checked by
+    # membership (not a fixed order) since --bundle-offline reorders the same
+    # always-excluded terms ahead of the optional-component terms it can lift.
+    excludes_line = next(line for line in script.splitlines() if line.startswith("Source:"))
+    for term in (
+        "docs\\QUILL-PRD.md",
+        "tools\\pandoc\\*",
+        "tools\\speech\\dectalk\\*",
+        "tools\\speech\\espeak-ng\\*",
+        "tools\\speech\\piper\\*",
+        "tools\\speech\\whispercpp\\*",
+        "tools\\nodejs\\*",
+        "vendor\\braille-pack\\*",
+        "kokoro-models\\*",
+        "_tool-download\\*",
+        "_speech-download\\*",
+        "*\\__pycache__\\*",
+    ):
+        assert term in excludes_line, f"{term!r} missing from default (non-offline) Excludes"
     assert "User Guide" in script
     assert "userguide.html" in script
     assert 'Parameters: "-m quill"' in script
-    # Bundled-launcher resolution (issue #615): the hoisted quill.exe at the
-    # bundle root is preferred, falling back to python\quill.exe then plain
-    # pythonw.exe, via the BundledLauncherPath/HasBundledLauncher [Code]
-    # functions.
+    # Bundled-launcher resolution: the embedded runtime is flattened into {app},
+    # so quill.exe sits next to its own python313.dll/_pth and self-runs (the
+    # sitecustomize hook). BundledLauncherPath resolves {app}\quill.exe, then
+    # {app}\pythonw.exe -- never a nested python\ path (the orphan that broke
+    # portable launch, #722).
     assert "function BundledLauncherPath(Param: String): String;" in script
     assert "function HasBundledLauncher(): Boolean;" in script
     assert "{app}\\quill.exe" in script
-    assert "{app}\\python\\quill.exe" in script
-    assert "{app}\\python\\pythonw.exe" in script
+    assert "{app}\\pythonw.exe" in script
+    assert "{app}\\python\\quill.exe" not in script
+    assert "{app}\\python\\pythonw.exe" not in script
     assert "{code:BundledLauncherPath}" in script
     assert "Check: HasBundledLauncher" in script
     assert "Check: not HasBundledLauncher" in script
@@ -226,10 +337,77 @@ def test_build_inno_setup_script_mentions_portable_bundle() -> None:
     assert "StaleShortcut" in script
     assert "CurStep = ssInstall" in script
     # File-association registry entries use HKCU only (never overwrite defaults).
+    # The always-on text-editor block is HKA (HKCU unless an administrator
+    # installs); the only HKLM in the script is the uninstall step that takes
+    # QUILL's own Notepad Debugger value back out.
     assert "HKCU" in script
-    assert "HKLM" not in script
+    assert "Root: HKLM" not in script
+    assert "HKLM" not in script.split("// -- Uninstall: put Notepad back", 1)[0]
     # The script parses as plain ASCII text (catches stray bad characters).
     script.encode("ascii")
+
+
+def test_bundle_offline_lifts_optional_component_excludes() -> None:
+    """--bundle-offline includes locally staged optional components in the .exe.
+
+    Without the flag (the default/regular installer), any optional component
+    staged via --pandoc-dir/--espeak-dir/--whisper-dir/--kokoro-dir/
+    --braille-pack-dir is still stripped from the compiled .exe -- only the
+    portable ZIP output carries it. This is what makes an "Offline Edition"
+    installer genuinely different from the regular one instead of a same-payload
+    duplicate under a misleading name.
+    """
+    online = build_inno_setup_script("0.9.0", bundle_offline_components=False)
+    offline = build_inno_setup_script("0.9.0", bundle_offline_components=True)
+
+    online_excludes = next(line for line in online.splitlines() if line.startswith("Source:"))
+    offline_excludes = next(line for line in offline.splitlines() if line.startswith("Source:"))
+
+    optional_component_terms = (
+        "tools\\pandoc\\*",
+        "tools\\speech\\espeak-ng\\*",
+        "tools\\speech\\whispercpp\\*",
+        "vendor\\braille-pack\\*",
+        "kokoro-models\\*",
+        # Not speech-models-bundled\\* wholesale: the Vosk chapter model inside
+        # it ships in every build (chapters have to answer on first launch), so
+        # only the Offline-Edition members of that folder are excluded.
+        "speech-models-bundled\\whispercpp\\*",
+        "speech-models-bundled\\piper\\*",
+        "wheels\\kokoro\\*",
+        "wheels\\faster-whisper\\*",
+        "wheels\\vosk\\*",
+        "wheels\\mp3\\*",
+    )
+    for term in optional_component_terms:
+        assert term in online_excludes, f"{term!r} must be excluded from the regular installer"
+        assert term not in offline_excludes, f"{term!r} must NOT be excluded from --bundle-offline"
+    # Piper has no build-time staging mechanism at all (no --piper-dir flag, no
+    # wheelhouse) -- unlike the other five, --bundle-offline cannot lift this one
+    # because there is nothing it could ever include. It stays excluded either way.
+    assert "tools\\speech\\piper\\*" in online_excludes
+    assert "tools\\speech\\piper\\*" in offline_excludes
+    assert "tools\\speech\\dectalk\\*" in online_excludes
+    assert "tools\\speech\\dectalk\\*" in offline_excludes
+
+    # The Vosk chapter model is the one bundled speech asset a regular installer
+    # keeps. Cast infers chapters from a transcript and most podcasts publish
+    # none, so an engine that has to be downloaded first means the feature's
+    # first answer is always "no chapters could be found".
+    assert "speech-models-bundled\\vosk" not in online_excludes
+
+    # Node.js has no --nodejs-dir staging flag on this script (it is not part of
+    # the offline-speech/braille bundle) and the build-artifact/dev-only entries
+    # are meaningless to ship either way, so both stay excluded regardless.
+    for always_excluded in (
+        "docs\\QUILL-PRD.md",
+        "tools\\nodejs\\*",
+        "_tool-download\\*",
+        "_speech-download\\*",
+        "*\\__pycache__\\*",
+    ):
+        assert always_excluded in online_excludes
+        assert always_excluded in offline_excludes
 
 
 def test_installer_clean_replaces_first_party_package_for_safe_upgrades() -> None:
@@ -239,22 +417,21 @@ def test_installer_clean_replaces_first_party_package_for_safe_upgrades() -> Non
     # the proven cause of version-skew ImportError/AttributeError crashes) plus
     # stray __pycache__, so every install is a self-consistent copy of our code.
     script = build_inno_setup_script("9.9.9")
-    # Anchor on the section headers (the [Components] comments also mention the
-    # word "[Files]"), so we locate real sections, not prose.
+    # Anchor on the real section headers, not prose that mentions them.
     assert "\n[InstallDelete]\n" in script
     files_at = script.index("\n[Files]\n")
     install_delete_at = script.index("\n[InstallDelete]\n")
     # The InstallDelete section runs before [Files] re-lays the payload.
     assert install_delete_at < files_at
     install_delete = script[install_delete_at:files_at]
-    assert (
-        'Type: filesandordirs; Name: "{app}\\python\\Lib\\site-packages\\quill"' in install_delete
-    )
+    assert 'Type: filesandordirs; Name: "{app}\\Lib\\site-packages\\quill"' in install_delete
     assert 'Type: filesandordirs; Name: "{app}\\__pycache__"' in install_delete
-    # Speed/safety boundary: at INSTALL time we must NOT wipe the whole embedded
-    # runtime (slow, no safety gain) -- only the first-party package. (The
-    # [UninstallDelete] section may still remove {app}\python on uninstall.)
-    assert 'Name: "{app}\\python"' not in install_delete
+    # The live flat runtime at {app} root is overwritten in place by [Files]
+    # (ignoreversion), not wiped -- re-extracting it every upgrade is slow for no
+    # safety gain. But installing the flat build OVER a pre-flatten (nested)
+    # install must remove the stale {app}\python runtime tree, or it lingers
+    # forever as orphaned cruft. It holds no user data, so the wipe is safe.
+    assert 'Type: filesandordirs; Name: "{app}\\python"' in install_delete
 
 
 def test_installer_preserves_user_config_and_never_touches_the_data_dir() -> None:
@@ -312,23 +489,143 @@ def test_uninstaller_custom_data_guard_refuses_broad_targets() -> None:
         assert constant in guard
 
 
-def test_bundled_launcher_prefers_runtime_dir_over_orphaned_root() -> None:
-    # The hoisted {app}\quill.exe at the bundle root is orphaned from the embedded
-    # runtime (python313.dll / _pth / .pyd modules live in python\), so launching
-    # it binds to a system Python or fails outright on a clean machine -- which
-    # broke the Start Menu / Desktop shortcuts. BundledLauncherPath must prefer the
-    # working python\quill.exe (next to the runtime), then python\pythonw.exe, and
-    # use the root quill.exe only as a last-resort fallback.
+def test_bundled_launcher_resolves_flat_self_running_quill_exe() -> None:
+    # Regression guard for #722. The embedded runtime is flattened into {app}:
+    # python313.dll / _pth / .pyd modules sit next to {app}\quill.exe, so it loads
+    # its own interpreter and the sitecustomize hook self-runs QUILL. A NESTED
+    # python\ layout orphaned the bundle-root quill.exe (it could not load the
+    # interpreter) and broke launch. BundledLauncherPath must resolve the flat
+    # {app}\quill.exe first, then {app}\pythonw.exe, and reference no python\ path.
     script = build_inno_setup_script("9.9.9")
     code = script[script.index("\n[Code]\n") :]
     fn = code[code.index("function BundledLauncherPath") :]
     fn = fn[: fn.index("\nend;")]
-    i_python_quill = fn.index("{app}\\python\\quill.exe")
-    i_python_pythonw = fn.index("{app}\\python\\pythonw.exe")
-    i_root_quill = fn.index("{app}\\quill.exe")  # distinct from the python\ paths
-    assert i_python_quill < i_python_pythonw < i_root_quill, (
-        "BundledLauncherPath must prefer python\\quill.exe over the orphaned root quill.exe"
+    assert "{app}\\python\\" not in fn, "launcher resolution must not use a nested python\\ path"
+    i_root_quill = fn.index("{app}\\quill.exe")
+    i_root_pythonw = fn.index("{app}\\pythonw.exe")
+    assert i_root_quill < i_root_pythonw, (
+        "BundledLauncherPath must prefer the flat {app}\\quill.exe self-runner"
     )
+
+
+def test_installer_script_has_no_nested_python_launcher_path() -> None:
+    # Strong, whole-script regression guard for #722: with the runtime flattened
+    # into {app}, no generated installer line may reference a nested {app}\python\
+    # path again (that nesting is what orphaned the bundle-root quill.exe).
+    script = build_inno_setup_script("9.9.9")
+    assert "{app}\\python\\" not in script
+
+
+def test_self_run_sitecustomize_launches_quill_for_a_bare_exe() -> None:
+    # The generated sitecustomize.py makes the portable quill.exe a self-running
+    # launcher: no "-m quill", no console window, no .cmd flash. It must (a) only
+    # act when the executable is quill.exe, (b) start QUILL via quill.__main__:main
+    # on a bare double-click, and (c) leave python.exe / pip / "quill.exe -m quill"
+    # untouched (the -m case has argv[0] == quill's __main__.py).
+    from scripts.build_windows_distribution import _self_run_sitecustomize_source
+
+    src = _self_run_sitecustomize_source()
+    assert 'os.path.basename(sys.executable).lower() == "quill.exe"' in src
+    assert "len(sys.argv) <= 1" in src
+    assert "from quill.__main__ import main" in src
+    assert "main()" in src
+    assert '"__main__.py"' in src, "must skip the `quill.exe -m quill` path"
+    # It must be importable, valid Python.
+    compile(src, "sitecustomize.py", "exec")
+
+
+def test_self_run_sitecustomize_opens_file_associations() -> None:
+    # #729-adjacent (file association): setting quill.exe as the default app for a
+    # document type makes the OS run `quill.exe "<doc>"`. Because quill.exe is a
+    # renamed pythonw.exe, that path arrives as sys.argv[0] and Python would try
+    # to run the document as a script. The hook must instead forward the document
+    # to QUILL as a file to open.
+    from scripts.build_windows_distribution import _self_run_sitecustomize_source
+
+    src = _self_run_sitecustomize_source()
+    assert "_associated_file" in src, "must detect an OS-passed document path"
+    assert "os.path.isfile" in src, "only an existing file is treated as a document"
+    assert 'sys.argv = ["quill", *paths]' in src, (
+        "the document must be forwarded to QUILL via argv so __main__ opens it"
+    )
+
+
+def test_portable_bundle_flattens_runtime_to_root(tmp_path: Path, monkeypatch) -> None:
+    # Regression guard for #722: the embedded runtime must be flattened into the
+    # bundle root so the bundle-root quill.exe sits next to python313.dll/_pth and
+    # self-runs. No nested python\ subdir may remain, and the portable-evidence
+    # contract (quill.exe + data/ at the root) must hold.
+    import scripts.build_windows_distribution as bwd
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "quill"\nversion = "1.2.3"\n', encoding="utf-8")
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "version.toml").write_text(
+        'base_version = "1.2.3"\n'
+        'channel = "stable"\n'
+        "prerelease_number = 0\n"
+        'product_name = "QUILL for All"\n'
+        'publisher = "Community Access"\n',
+        encoding="utf-8",
+    )
+    fake_kokoro = tmp_path / "kokoro-src"
+    fake_kokoro.mkdir()
+    (fake_kokoro / "kokoro-v1.0.int8.onnx").write_text("m", encoding="utf-8")
+    (fake_kokoro / "voices-v1.0.bin").write_text("v", encoding="utf-8")
+    # Fake every bundled tool dir so the offline test never downloads anything.
+    tool_dirs = {}
+    for tool_id, exe in {
+        "pandoc": "pandoc.exe",
+        "speech/espeak-ng": "espeak-ng.exe",
+        "speech/piper": "piper.exe",
+        "speech/whispercpp": "whisper-cli.exe",
+    }.items():
+        d = tmp_path / tool_id.replace("/", "_")
+        d.mkdir()
+        (d / exe).write_text("bin", encoding="utf-8")
+        tool_dirs[tool_id] = d
+
+    # Stand in for the heavy embedded-python staging (download + pip): create a
+    # python\ dir with representative runtime files, including the stamped
+    # quill.exe and the self-run sitecustomize.py, so the test exercises the
+    # flatten move rather than the network path.
+    def fake_bundle_embedded_python(target_dir: Path, **_kwargs: object) -> Path:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for name in (
+            "quill.exe",
+            "pythonw.exe",
+            "python.exe",
+            "python313.dll",
+            "python313.zip",
+            "python313._pth",
+            "sitecustomize.py",
+        ):
+            (target_dir / name).write_text(name, encoding="utf-8")
+        (target_dir / "Lib" / "site-packages" / "quill").mkdir(parents=True)
+        (target_dir / "Lib" / "site-packages" / "quill" / "__main__.py").write_text(
+            "x", encoding="utf-8"
+        )
+        return target_dir
+
+    monkeypatch.setattr(bwd, "bundle_embedded_python", fake_bundle_embedded_python)
+
+    bwd.build_windows_distribution(
+        pyproject,
+        tmp_path / "dist",
+        bundle_python=True,
+        bundled_tool_dirs=tool_dirs,
+        kokoro_dir=fake_kokoro,
+    )
+
+    portable = tmp_path / "dist" / "portable"
+    assert not (portable / "python").exists(), "runtime must be flattened; no python\\ subdir"
+    assert (portable / "quill.exe").is_file()
+    assert (portable / "sitecustomize.py").is_file()
+    assert (portable / "python313.dll").is_file()
+    assert (portable / "python313._pth").is_file()
+    assert (portable / "Lib" / "site-packages" / "quill" / "__main__.py").is_file()
+    # Portable-evidence contract: quill.exe + a sibling data/ at the bundle root.
+    assert (portable / "data").is_dir()
 
 
 def test_shell_verb_registry_lines_cover_every_verb_and_extension() -> None:
@@ -348,11 +645,12 @@ def test_shell_verb_registry_lines_cover_every_verb_and_extension() -> None:
 
 
 def test_shell_verb_registry_lines_are_optin_and_uninstall_clean() -> None:
-    # Every verb key is gated behind the opt-in shellverbs task and tagged
-    # uninsdeletekey so a full uninstall removes the context-menu entries.
+    # Every verb key is gated behind the opt-in "Send to Quill" checkbox and
+    # tagged uninsdeletekey so a full uninstall removes the context-menu entries.
     lines = build_shell_verb_registry_lines()
     assert lines, "expected at least one generated verb registry line"
-    assert all("Tasks: shellverbs" in line for line in lines)
+    assert all("Check: WantsShellVerbs" in line for line in lines)
+    assert not any("Tasks:" in line for line in lines)
     # The verb root keys (not the MUIVerb/command values) carry uninsdeletekey.
     root_key_lines = [line for line in lines if 'ValueName: ""' in line and "\\command" not in line]
     assert root_key_lines
@@ -360,21 +658,23 @@ def test_shell_verb_registry_lines_are_optin_and_uninstall_clean() -> None:
 
 
 def test_shell_verb_command_launches_quill_exe_with_action() -> None:
-    # The launch command routes through quill.exe (AppExeName), which is the
-    # hoisted launcher at the bundle root -- a stamped copy of pythonw.exe
-    # that runs `python -m quill` with %1 passed in as the file to act on.
+    # The launch command routes through quill.exe (AppExeName), a stamped copy of
+    # pythonw.exe. It MUST pass "-m quill" before "--action" so pythonw runs QUILL
+    # with the verb + file as arguments; without it pythonw rejects "--action" as
+    # an unknown option (or tries to run %1 as a script). See the launcher contract.
     lines = build_shell_verb_registry_lines()
     command_lines = [line for line in lines if "\\command" in line]
     assert command_lines
     for line in command_lines:
-        assert 'ValueData: """{app}\\{#AppExeName}"" --action ' in line
+        assert 'ValueData: """{app}\\{#AppExeName}"" -m quill --action ' in line
         assert '""%1"""' in line
 
 
 def test_inno_setup_script_includes_shell_verb_task_and_registry() -> None:
     # SHELL-3 is wired end-to-end into the generated installer script.
     script = build_inno_setup_script("9.9.9")
-    assert 'Name: "shellverbs"; Description: "Add ""Send to Quill"" actions' in script
+    assert "'Add \"&Send to Quill\" to the file right-click menu'" in script
+    assert "function WantsShellVerbs(): Boolean;" in script
     assert 'Send to Quill" file right-click verbs (SHELL-3)' in script
     # Spot-check one concrete verb/extension pair made it into the [Registry].
     assert 'Subkey: "Software\\Classes\\SystemFileAssociations\\.png\\shell\\Quill.ocr"' in script
@@ -445,8 +745,15 @@ version = "3.0.0"
         (tmp_path / "dist" / "portable" / "manifest.json").read_text(encoding="utf-8")
     )
     assert "pandoc" in manifest["bundledTools"]
-    assert "speech/piper" in manifest["bundledTools"]
-    assert manifest["speechAssets"]["dectalk"]["bundled"] is True
+    # Piper is no longer auto-staged (PRD 10.2.x unbundle): only explicitly
+    # passed tool dirs are bundled, so a pandoc-only build bundles pandoc alone.
+    assert "speech/piper" not in manifest["bundledTools"]
+    # DECtalk and eSpeak-NG are unbundled (PRD 10.2.4): not staged by default, so
+    # not marked bundled, but still flagged downloadable for on-demand acquisition.
+    assert manifest["speechAssets"]["dectalk"]["bundled"] is False
+    assert manifest["speechAssets"]["dectalk"]["downloadable"] is False
+    assert manifest["speechAssets"]["espeak"]["bundled"] is False
+    assert manifest["speechAssets"]["espeak"]["downloadable"] is True
     # Kokoro is staged to the bundle root, not tools/, and not via bundledTools.
     assert manifest["speechAssets"]["kokoro"]["bundled"] is True
     assert (tmp_path / "dist" / "portable" / "kokoro-models" / "voices-v1.0.bin").exists()
@@ -455,21 +762,137 @@ version = "3.0.0"
 
 
 def test_find_inno_setup_compiler_checks_common_locations(monkeypatch, tmp_path: Path) -> None:
-    compiler = tmp_path / "ISCC.exe"
+    """A Program Files install is found when it is not on PATH.
+
+    Uses a real directory tree rather than stubbing ``Path``: the lookup builds
+    each candidate as ``root / "Inno Setup 7" / "ISCC.exe"``, so a stub keyed on
+    the string passed to ``Path()`` never saw the final path and silently
+    stopped exercising anything.
+    """
+    program_files = tmp_path / "Program Files"
+    compiler = program_files / "Inno Setup 7" / "ISCC.exe"
+    compiler.parent.mkdir(parents=True)
     compiler.write_text("binary", encoding="utf-8")
+
     monkeypatch.setattr("scripts.build_windows_distribution.shutil.which", lambda _name: None)
-    monkeypatch.setattr(
-        "scripts.build_windows_distribution.Path.exists",
-        lambda self: self == compiler,
-    )
-    monkeypatch.setattr(
-        "scripts.build_windows_distribution.Path",
-        lambda value: compiler if "Inno Setup" in str(value) else Path(value),
-    )
+    monkeypatch.setenv("ProgramFiles", str(program_files))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "no-such-x86"))
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "no-such-appdata"))
 
-    discovered = find_inno_setup_compiler()
+    assert find_inno_setup_compiler() == compiler
 
-    assert discovered == compiler
+
+def test_find_inno_setup_compiler_finds_a_per_user_install(monkeypatch, tmp_path: Path) -> None:
+    """Inno Setup installed "for me only" lives under %LOCALAPPDATA%\\Programs.
+
+    That is what you get without administrator rights, so a build machine set up
+    by a non-admin has it nowhere else. Searching only Program Files made the
+    build fail with "Install Inno Setup" on a machine that had it.
+    """
+    local_app_data = tmp_path / "AppData" / "Local"
+    compiler = local_app_data / "Programs" / "Inno Setup 7" / "ISCC.exe"
+    compiler.parent.mkdir(parents=True)
+    compiler.write_text("binary", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.build_windows_distribution.shutil.which", lambda _name: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+    # Point the Program Files roots somewhere empty so only the per-user copy exists.
+    for var in ("ProgramFiles(x86)", "ProgramFiles", "ProgramW6432"):
+        monkeypatch.setenv(var, str(tmp_path / "no-such-program-files"))
+
+    assert find_inno_setup_compiler() == compiler
+
+
+def test_find_inno_setup_compiler_ignores_inno_setup_6(monkeypatch, tmp_path: Path) -> None:
+    """Inno Setup 7 only: a machine with just version 6 finds no compiler.
+
+    quill.iss uses the v7-only ``SetupArchitecture`` directive, so a v6
+    compiler would fail part-way with an error that reads like a script fault.
+    Returning None makes the caller say "Inno Setup 7 not found" instead --
+    whether v6 sits in Program Files or is the ISCC on PATH.
+    """
+    program_files = tmp_path / "Program Files"
+    old = program_files / "Inno Setup 6" / "ISCC.exe"
+    old.parent.mkdir(parents=True)
+    old.write_text("binary", encoding="utf-8")
+
+    monkeypatch.setattr("scripts.build_windows_distribution.shutil.which", lambda _name: str(old))
+    monkeypatch.setenv("ProgramFiles", str(program_files))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "no-such-x86"))
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "no-such-appdata"))
+
+    assert find_inno_setup_compiler() is None
+
+
+def test_find_inno_setup_compiler_accepts_an_unversioned_iscc_on_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """An ISCC on PATH outside any "Inno Setup <n>" folder is still used."""
+    tools = tmp_path / "tools" / "inno"
+    tools.mkdir(parents=True)
+    compiler = tools / "ISCC.exe"
+    compiler.write_text("binary", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "scripts.build_windows_distribution.shutil.which", lambda _name: str(compiler)
+    )
+    for var in ("ProgramFiles(x86)", "ProgramFiles", "ProgramW6432"):
+        monkeypatch.setenv(var, str(tmp_path / "no-such-program-files"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "no-such-appdata"))
+
+    assert find_inno_setup_compiler() == compiler
+
+
+def test_generated_installer_uses_native_checkboxes_not_tasks() -> None:
+    """Every former task and postinstall entry is a TNewCheckBox, default off.
+
+    [Tasks] and postinstall [Run] entries render in a custom-drawn check list
+    box that screen readers announce as "not checked" whatever its state.
+    """
+    script = build_inno_setup_script("9.9.9")
+    assert "\n[Tasks]\n" not in script
+    assert "\n[Run]\n" not in script
+    assert not re.search(r"(?m)^[^;].*Flags:.*\bpostinstall\b", script)
+    assert not re.search(r"(?m)^[^;].*\bTasks:", script)
+    assert "WizardIsTaskSelected" not in script
+    sections, code = script.split("\n[Code]\n", 1)
+    for name in ("WantsFileAssoc", "WantsShellVerbs", "WantsCompanionIcons", "WantsAddToPath"):
+        assert f"function {name}(): Boolean;" in code
+    # Three gate [Icons]/[Registry] entries; Add to PATH is acted on in [Code].
+    for name in ("WantsFileAssoc", "WantsShellVerbs", "WantsCompanionIcons"):
+        assert f"Check: {name}" in sections
+    # Every default stays off, as the unchecked tasks and run entries were.
+    assert "Checked := True" not in code
+    assert code.count("Result.Checked := False;") == 2
+    # Silent installs never launch anything (the entries were skipifsilent).
+    assert "WizardSilent" in code
+    # Launch keeps the bundled-launcher split and its "-m quill" parameter.
+    assert "ExecAsOriginalUser(BundledLauncherPath(''), '-m quill'" in code
+    assert "if WantsAddToPath() then" in code
+    assert "Check: WantsCompanionIcons and HasBundledLauncher" in script
+    assert "Check: WantsCompanionIcons and not HasBundledLauncher" in script
+
+
+def test_inno_setup_search_roots_are_unique_and_env_first(monkeypatch, tmp_path: Path) -> None:
+    """Environment-derived roots come first and repeats collapse.
+
+    The hardcoded ``C:\\Program Files`` literals usually duplicate what the
+    environment already gave us; searching the same directory twice is just
+    wasted stat calls, and on a non-English or non-C: Windows the literals are
+    the wrong answer anyway.
+    """
+    monkeypatch.setenv("ProgramFiles", r"C:\Program Files")
+    monkeypatch.setenv("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    monkeypatch.delenv("ProgramW6432", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    roots = inno_setup_search_roots()
+
+    lowered = [str(r).lower() for r in roots]
+    assert len(lowered) == len(set(lowered)), f"duplicate roots: {roots}"
+    assert str(tmp_path / "Programs") in [str(r) for r in roots]
 
 
 def test_compile_inno_setup_installer_runs_compiler(monkeypatch, tmp_path: Path) -> None:
@@ -523,6 +946,54 @@ def test_compile_inno_setup_installer_accepts_inno_output_folder(
     assert built == installer_exe
 
 
+def test_prune_keeps_babel_but_removes_true_build_only_packages(tmp_path: Path) -> None:
+    """babel must survive the prune; genuinely build-only packages are removed.
+
+    babel looks build-only (we compile translations with it; QUILL's own i18n
+    uses stdlib ``gettext``), but ``kokoro-onnx`` imports it transitively at
+    runtime (``kokoro_onnx -> phonemizer -> segments -> csvw -> babel.numbers``).
+    Pruning it broke Kokoro's onnx path on a clean build (#881), so this guards
+    that babel stays while a real build-only package like ``setuptools`` is still
+    removed and a runtime package like ``wx`` is untouched.
+    """
+    site_packages = tmp_path / "site-packages"
+    site_packages.mkdir()
+    (site_packages / "babel").mkdir()
+    (site_packages / "babel" / "numbers.py").write_text("x = 1", encoding="utf-8")
+    (site_packages / "Babel-2.18.0.dist-info").mkdir()
+    (site_packages / "Babel-2.18.0.dist-info" / "RECORD").write_text("", encoding="utf-8")
+    (site_packages / "setuptools").mkdir()  # genuinely build-only -> pruned
+    (site_packages / "setuptools" / "__init__.py").write_text("x = 1", encoding="utf-8")
+    (site_packages / "wx").mkdir()
+    (site_packages / "wx" / "__init__.py").write_text("core = 1", encoding="utf-8")
+
+    _prune_embedded_runtime(site_packages)
+
+    assert (site_packages / "babel").exists()  # kokoro-onnx needs it at runtime (#881)
+    assert (site_packages / "Babel-2.18.0.dist-info").exists()
+    assert not (site_packages / "setuptools").exists()  # build-only, pruned
+    assert (site_packages / "wx").exists()  # runtime package untouched
+
+
+def test_quill_own_modules_never_import_babel() -> None:
+    """QUILL's own i18n uses stdlib gettext, not babel (babel now ships only for
+    kokoro-onnx's transitive use). This documents that QUILL doesn't add a direct
+    babel dependency of its own.
+    """
+    repo_root = Path(__file__).resolve().parents[3]
+    runtime_dirs = ["core", "ui", "io", "platform", "stability", "plugins"]
+    offenders: list[str] = []
+    for sub in runtime_dirs:
+        base = repo_root / "quill" / sub
+        if not base.exists():
+            continue
+        for path in base.rglob("*.py"):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if re.search(r"^\s*(import babel|from babel\b)", text, re.MULTILINE):
+                offenders.append(str(path.relative_to(repo_root)))
+    assert offenders == [], f"runtime modules import babel: {offenders}"
+
+
 def test_bundled_runtime_dependencies_uses_runtime_groups(tmp_path: Path) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(
@@ -543,6 +1014,35 @@ dev = ["pytest>=8.2"]
     dependencies = bundled_runtime_dependencies(pyproject)
 
     assert dependencies == ["alpha>=1.0", "wxPython>=4.2.2", "pyttsx3>=2.99", "pyenchant>=3.2"]
+
+
+def test_shipped_build_bundles_pdf_and_spreadsheet_readers() -> None:
+    # #1279: a packaged install must be able to read PDF text and .xlsx sheets out
+    # of the box -- without pdfplumber/pypdf quill/io/pdf.py has no reader at all,
+    # and without openpyxl _format_spreadsheet cannot open a workbook.
+    from scripts.build_windows_distribution import DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+
+    assert "office-text" in DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+    repo_root = Path(__file__).resolve().parents[3]
+    bundled = bundled_runtime_dependencies(repo_root / "pyproject.toml")
+    assert any(item.startswith("pdfplumber") for item in bundled)
+    assert any(item.startswith("pypdf") for item in bundled)
+    assert any(item.startswith("openpyxl") for item in bundled)
+    # Word reads through python-docx, which must stay a base dependency.
+    assert any(item.startswith("python-docx") for item in bundled)
+
+
+def test_shipped_build_does_not_bundle_the_markitdown_pack() -> None:
+    # #1279: markitdown pulls magika -> onnxruntime + numpy, and pandas for its
+    # spreadsheet converters (~150 MB installed). It stays a one-click download,
+    # so an accidental re-add of the pdf-ocr group fails here rather than in a
+    # release build nobody weighed.
+    from scripts.build_windows_distribution import DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+
+    assert "pdf-ocr" not in DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+    repo_root = Path(__file__).resolve().parents[3]
+    bundled = bundled_runtime_dependencies(repo_root / "pyproject.toml")
+    assert not any(item.startswith("markitdown") for item in bundled)
 
 
 def test_build_identity_reads_canonical_version_toml(tmp_path: Path) -> None:
@@ -593,3 +1093,344 @@ def test_build_inno_setup_script_uses_identity_defaults(tmp_path: Path) -> None:
     assert "Blind Information Technology Solutions" not in script
     assert '#define AppName "Quill"' not in script
     assert "OutputBaseFilename=Quill-for-All-Setup-0.7.0 Beta 1" in script
+
+
+def test_file_association_launches_root_quill_exe_next_to_python_dll() -> None:
+    """Regression guard for #740 (python313.dll missing on Explorer 'Open with').
+
+    The runtime is flattened so quill.exe sits at {app} next to its own
+    python313.dll. Launching a file from Explorer must therefore invoke that
+    ROOT launcher (not a nested ``python`` sub-path and not something CWD-dependent),
+    so the Windows loader finds the DLL on an external launch — the exact case
+    the report failed on before the flatten. If a future change points the
+    association at a nested launcher, the missing-DLL error returns; this locks
+    the invariant in.
+    """
+    script = build_inno_setup_script("9.9.9")
+
+    # The launcher the association points at is the flattened root quill.exe.
+    assert '#define AppExeName "quill.exe"' in script
+
+    # The "Open with" command and every shell-verb open command invoke the ROOT
+    # launcher ({app}\quill.exe), which is co-located with python313.dll.
+    assert r"Applications\{#AppExeName}\shell\open\command" in script
+    assert r'"{app}\{#AppExeName}"" -m quill' in script
+
+    # No file-launch command may target a NESTED launcher path — that layout
+    # (quill.exe not beside python313.dll) is what broke external launch.
+    assert r"{app}\python\{#AppExeName}" not in script
+    assert r"{app}\python\quill.exe" not in script
+    assert r"{app}\python\pythonw.exe" not in script
+
+
+def test_kokoro_is_not_bundled_and_installs_on_demand() -> None:
+    """Kokoro (kokoro-onnx + onnxruntime + phonemizer + babel) is large and
+    optional. It installs on demand via install_kokoro_onnx() into an engine-pack;
+    bundling it re-bloats the installer. Guard that it stays out of the bundled
+    dependency groups (the footprint fix behind #881)."""
+    from scripts.build_windows_distribution import DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+
+    assert "kokoro" not in DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+    # The engines users actually need offline stay bundled.
+    assert "speech" in DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+    assert "ui" in DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+
+
+@pytest.mark.parametrize(
+    ("name", "requirements"),
+    [
+        ("kokoro", KOKORO_WHEELHOUSE_REQUIREMENTS),
+        ("faster-whisper", FASTER_WHISPER_WHEELHOUSE_REQUIREMENTS),
+        ("vosk", VOSK_WHEELHOUSE_REQUIREMENTS),
+        ("mp3", MP3_WHEELHOUSE_REQUIREMENTS),
+        ("nemotron", SHERPA_WHEELHOUSE_REQUIREMENTS),
+    ],
+)
+def test_stage_pip_wheelhouse_runs_pip_download(
+    monkeypatch, tmp_path: Path, name: str, requirements: tuple[str, ...]
+) -> None:
+    """--bundle-offline stages an on-demand engine's pip package tree as local
+    wheels, using the *same* interpreter that will later install them (so wheel
+    tags match) -- the fix for the Offline Edition still needing PyPI to
+    actually use Kokoro, Faster Whisper, Vosk, or MP3 support."""
+    captured: dict = {}
+
+    def fake_run(command, *, check):
+        captured["command"] = list(command)
+        assert check is True
+        # Simulate pip download actually producing a wheel.
+        target = Path(command[command.index("--dest") + 1])
+        (target / "fake_wheel-0.1-py3-none-any.whl").write_bytes(b"fake wheel")
+
+    monkeypatch.setattr("scripts.build_windows_distribution.subprocess.run", fake_run)
+    portable_dir = tmp_path / "portable"
+    python_exe = tmp_path / "python.exe"
+    result = _stage_pip_wheelhouse(portable_dir, python_exe, name, requirements)
+
+    assert result is True
+    cmd = captured["command"]
+    assert cmd[0] == str(python_exe)
+    assert cmd[1:4] == ["-m", "pip", "download"]
+    assert "--only-binary=:all:" in cmd
+    for req in requirements:
+        assert req in cmd
+    assert list((portable_dir / "wheels" / name).glob("*.whl"))
+
+
+def test_stage_pip_wheelhouse_reuses_already_staged(monkeypatch, tmp_path: Path) -> None:
+    portable_dir = tmp_path / "portable"
+    target = portable_dir / "wheels" / "kokoro"
+    target.mkdir(parents=True)
+    (target / "existing-0.1-py3-none-any.whl").write_bytes(b"x")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("pip download should not run when already staged")
+
+    monkeypatch.setattr("scripts.build_windows_distribution.subprocess.run", fail_if_called)
+    assert (
+        _stage_pip_wheelhouse(
+            portable_dir, tmp_path / "python.exe", "kokoro", KOKORO_WHEELHOUSE_REQUIREMENTS
+        )
+        is True
+    )
+
+
+def test_stage_pip_wheelhouse_passes_find_links_beside_pypi(monkeypatch, tmp_path: Path) -> None:
+    """The Offline Edition's Kokoro wheelhouse can only resolve kokoro-onnx on
+    3.14 from the patched wheel in vendor/wheels, so that folder is offered as
+    --find-links -- without --no-index, since PyPI still supplies the rest."""
+    captured: dict = {}
+
+    def fake_run(command, *, check):
+        captured["command"] = list(command)
+        target = Path(command[command.index("--dest") + 1])
+        (target / "fake_wheel-0.1-py3-none-any.whl").write_bytes(b"fake wheel")
+
+    monkeypatch.setattr("scripts.build_windows_distribution.subprocess.run", fake_run)
+    vendor = tmp_path / "vendor" / "wheels"
+    _stage_pip_wheelhouse(
+        tmp_path / "portable",
+        tmp_path / "python.exe",
+        "kokoro",
+        KOKORO_WHEELHOUSE_REQUIREMENTS,
+        find_links=(vendor,),
+    )
+    cmd = captured["command"]
+    assert cmd[cmd.index("--find-links") + 1] == str(vendor)
+    assert "--no-index" not in cmd
+    assert "kokoro-onnx>=0.6.1" in cmd
+
+
+def test_stage_patched_wheels_copies_the_kokoro_wheel(tmp_path: Path) -> None:
+    """Every bundled-Python build ships the patched kokoro-onnx wheel under
+    wheels\\patched, where engine_install._patched_wheels_dir looks for it, and
+    the installer's Excludes leave that folder in."""
+    from scripts.build_windows_distribution import _stage_patched_wheels
+
+    vendor = tmp_path / "src" / "vendor" / "wheels"
+    vendor.mkdir(parents=True)
+    (vendor / "kokoro_onnx-0.6.1-py3-none-any.whl").write_bytes(b"x")
+    (vendor / "quill_social-0.3.0-py3-none-any.whl").write_bytes(b"x")
+    portable_dir = tmp_path / "portable"
+    staged = _stage_patched_wheels(portable_dir, tmp_path / "src")
+    assert [p.name for p in staged] == ["kokoro_onnx-0.6.1-py3-none-any.whl"]
+    assert (portable_dir / "wheels" / "patched" / staged[0].name).is_file()
+
+
+def test_the_repo_carries_the_patched_kokoro_wheel() -> None:
+    """dev-builds installs [runtime] with --find-links vendor/wheels; without
+    this wheel in git, kokoro-onnx>=0.6.1 has no match on 3.14 at all."""
+    repo = Path(__file__).resolve().parents[3]
+    assert list((repo / "vendor" / "wheels").glob("kokoro_onnx-0.6.1-*.whl"))
+
+
+def test_speech_asset_manifest_reports_wheelhouse_presence(tmp_path: Path) -> None:
+    portable_dir = tmp_path / "portable"
+    portable_dir.mkdir()
+    manifest = _speech_asset_manifest(portable_dir, [])
+    assert manifest["kokoro_wheelhouse"]["bundled"] is False
+
+    wheel_dir = portable_dir / "wheels" / "kokoro"
+    wheel_dir.mkdir(parents=True)
+    (wheel_dir / "soundfile-0.14.0-py3-none-any.whl").write_bytes(b"x")
+    manifest = _speech_asset_manifest(portable_dir, [])
+    assert manifest["kokoro_wheelhouse"]["bundled"] is True
+    assert manifest["kokoro_wheelhouse"]["path"] == str(wheel_dir)
+
+
+def test_speech_asset_manifest_reports_whisper_model_presence(tmp_path: Path) -> None:
+    portable_dir = tmp_path / "portable"
+    portable_dir.mkdir()
+    manifest = _speech_asset_manifest(portable_dir, [])
+    assert manifest["whispercpp_model"]["bundled"] is False
+
+    model_dir = portable_dir / "speech-models-bundled" / "whispercpp"
+    model_dir.mkdir(parents=True)
+    model_path = model_dir / f"ggml-{DEFAULT_BUNDLED_WHISPER_MODEL_ID}.bin"
+    model_path.write_bytes(b"x")
+    manifest = _speech_asset_manifest(portable_dir, [])
+    assert manifest["whispercpp_model"]["bundled"] is True
+    assert manifest["whispercpp_model"]["path"] == str(model_path)
+
+
+def test_stage_whisper_model_downloads_and_verifies(monkeypatch, tmp_path: Path) -> None:
+    """--bundle-offline auto-fetches the default whisper.cpp GGML model (no
+    --whisper-dir needed, unlike the engine binary) so the Offline Edition's
+    required default transcription engine has something to transcribe with
+    immediately after install."""
+    captured: dict = {}
+
+    def fake_download(url, target, expected_sha256):
+        captured["url"] = url
+        captured["target"] = target
+        captured["sha256"] = expected_sha256
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"fake ggml model")
+
+    monkeypatch.setattr(
+        "scripts.build_windows_distribution._download_with_verification", fake_download
+    )
+    portable_dir = tmp_path / "portable"
+    result = _stage_whisper_model(portable_dir)
+
+    assert result is True
+    target = (
+        portable_dir
+        / "speech-models-bundled"
+        / "whispercpp"
+        / f"ggml-{DEFAULT_BUNDLED_WHISPER_MODEL_ID}.bin"
+    )
+    assert target.is_file()
+    assert captured["target"] == target
+    assert captured["sha256"]
+    assert "huggingface.co" in captured["url"]
+    assert DEFAULT_BUNDLED_WHISPER_MODEL_ID in captured["url"] or "ggml-tiny.bin" in captured["url"]
+
+
+def test_stage_piper_offline_stages_engine_and_starter_voice(monkeypatch, tmp_path: Path) -> None:
+    """--bundle-offline auto-stages Piper's SHA-pinned engine zip plus a
+    starter voice pair, closing the last tracked speech gap in the Offline
+    Edition (Piper previously always needed the internet on first use)."""
+    from quill.core.speech.piper_install import PIPER_DOWNLOAD_SHA256
+    from scripts.build_windows_distribution import _stage_piper_offline
+
+    calls: list[tuple[str, Path, str | None]] = []
+
+    def fake_download(url, target, expected_sha256):
+        calls.append((url, target, expected_sha256))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"fake payload")
+
+    monkeypatch.setattr(
+        "scripts.build_windows_distribution._download_with_verification", fake_download
+    )
+    portable_dir = tmp_path / "portable"
+    assert _stage_piper_offline(portable_dir) is True
+
+    root = portable_dir / "speech-models-bundled" / "piper"
+    assert (root / "piper_windows_amd64.zip").is_file()
+    assert (root / "voices" / "en_US-lessac-medium.onnx").is_file()
+    assert (root / "voices" / "en_US-lessac-medium.onnx.json").is_file()
+    # The engine zip is verified against the runtime's own pinned hash; the
+    # voice URLs are the exact HuggingFace paths the runtime download uses.
+    assert calls[0][2] == PIPER_DOWNLOAD_SHA256
+    assert all("huggingface.co/rhasspy/piper-voices" in url for url, _t, _s in calls[1:])
+    # Already-staged files are reused (no re-download on a second run).
+    calls.clear()
+    assert _stage_piper_offline(portable_dir) is True
+    assert calls == []
+
+
+def test_stage_whisper_model_reuses_already_staged(monkeypatch, tmp_path: Path) -> None:
+    portable_dir = tmp_path / "portable"
+    target = (
+        portable_dir
+        / "speech-models-bundled"
+        / "whispercpp"
+        / f"ggml-{DEFAULT_BUNDLED_WHISPER_MODEL_ID}.bin"
+    )
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"already here")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("download should not run when already staged")
+
+    monkeypatch.setattr(
+        "scripts.build_windows_distribution._download_with_verification", fail_if_called
+    )
+    assert _stage_whisper_model(portable_dir) is True
+
+
+def test_dev_cache_ignore_excludes_local_tool_caches_but_keeps_real_source(
+    tmp_path: Path,
+) -> None:
+    """A contributor's local mypy/pytest/ruff caches (or stray __pycache__)
+    must never leak into a shipped build via the quill/ source copy -- they're
+    only present because tools happened to run on this machine, and a mypy
+    cache alone can be tens of MB of pure bloat for an end user."""
+    from scripts.build_windows_distribution import _DEV_CACHE_IGNORE
+
+    source = tmp_path / "quill"
+    (source / "core").mkdir(parents=True)
+    (source / "core" / "settings.py").write_text("x = 1\n", encoding="utf-8")
+    (source / "__pycache__").mkdir()
+    (source / "__pycache__" / "settings.cpython-313.pyc").write_bytes(b"\x00")
+    (source / "io" / ".mypy_cache" / "3.13").mkdir(parents=True)
+    (source / "io" / ".mypy_cache" / "3.13" / "settings.data.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (source / ".pytest_cache").mkdir()
+    (source / ".ruff_cache").mkdir()
+
+    dest = tmp_path / "copied"
+    import shutil
+
+    shutil.copytree(source, dest, ignore=_DEV_CACHE_IGNORE)
+
+    assert (dest / "core" / "settings.py").exists()
+    assert not (dest / "__pycache__").exists()
+    assert not (dest / "io" / ".mypy_cache").exists()
+    assert not (dest / ".pytest_cache").exists()
+    assert not (dest / ".ruff_cache").exists()
+
+
+# ---------------------------------------------------------------------------
+# Retired bug-report credential (owner decision 2026-09-26: feedback is
+# email-only, and no build may ship the old GitHub token or feedback_hub).
+# ---------------------------------------------------------------------------
+
+
+def test_quill_copy_never_carries_a_stale_feedback_token(tmp_path: Path) -> None:
+    """The file is gitignored, so an older build's copy can sit unseen in a
+    checkout; the quill/ copy into the runtime must drop it."""
+    import shutil
+
+    from scripts.build_windows_distribution import _quill_copy_ignore
+
+    source = tmp_path / "quill"
+    source.mkdir()
+    (source / "__init__.py").write_text("", encoding="utf-8")
+    (source / "_feedback_token.py").write_text('BUNDLED_TOKEN = "x"\n', encoding="utf-8")
+    dest = tmp_path / "copied"
+    shutil.copytree(source, dest, ignore=_quill_copy_ignore)
+    assert (dest / "__init__.py").exists()
+    assert not (dest / "_feedback_token.py").exists()
+
+
+def test_build_refuses_a_payload_with_the_retired_credential(tmp_path: Path) -> None:
+    site = tmp_path / "python" / "Lib" / "site-packages"
+    (site / "feedback_hub").mkdir(parents=True)
+    (site / "feedback_hub" / "__init__.py").write_text("", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="feedback_hub"):
+        _assert_no_retired_credential(tmp_path)
+
+
+def test_build_accepts_a_clean_payload(tmp_path: Path) -> None:
+    (tmp_path / "python" / "Lib" / "site-packages" / "quill").mkdir(parents=True)
+    _assert_no_retired_credential(tmp_path)  # must not raise
+
+
+def test_default_bundle_groups_no_longer_pull_feedback_hub() -> None:
+    from scripts.build_windows_distribution import DEFAULT_BUNDLED_DEPENDENCY_GROUPS
+
+    assert "feedback" not in DEFAULT_BUNDLED_DEPENDENCY_GROUPS

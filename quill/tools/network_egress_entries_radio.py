@@ -1,0 +1,537 @@
+"""Quill Radio's reviewed outbound call sites.
+
+Split from :mod:`quill.tools.network_egress_entries` under GATE-11 -- extract,
+never rebaseline -- and it is a real seam: Radio reaches more networks than
+anything else in the family (station directories, stream resolvers, YouTube,
+song metadata, the ACB schedule), so it is the block that grows, and it grows
+for reasons that have nothing to do with the editor's or Cast's.
+
+The review *is* the entry. Each string records what is sent, what comes back,
+what triggers it, and what Safe Mode does -- so a reader can tell whether a
+call site is still doing what somebody once agreed it could.
+"""
+
+from __future__ import annotations
+
+RADIO_EGRESS: dict[str, str] = {
+    "core/radio/youtube_oauth.py::_token_request": (
+        "Connect YouTube Account (future.youtube_oauth, locked off in public "
+        "builds): the OAuth authorization-code and refresh-token exchanges "
+        "against Google's token endpoint. Reached only from an explicit Connect "
+        "YouTube Account / background token refresh after that explicit sign-in; "
+        "sends QUILL's bundled OAuth client id/secret plus the listener's own "
+        "PKCE verifier or refresh token, never a listener credential typed "
+        "anywhere. HTTPS-only over a verified TLS context with a bounded "
+        "timeout. Refused in Safe Mode via refuse_in_safe_mode."
+    ),
+    "core/radio/youtube_oauth.py::revoke": (
+        "Disconnect YouTube Account (future.youtube_oauth, locked off in public "
+        "builds): POSTs the listener's own refresh token (or access token when "
+        "no refresh token is stored) as a form body to Google's OAuth revoke "
+        "endpoint, so QUILL's access is removed at Google and its 'Third-party "
+        "apps with account access' list reflects it at once. Nothing comes back "
+        "but a status: 200 revoked, 400 invalid_token already revoked. Reached "
+        "only from the explicit, confirmed Disconnect action, on a background "
+        "task; the local session is wiped whether or not Google answers, and a "
+        "failure tells the listener to finish at myaccount.google.com. The "
+        "token is never logged. HTTPS-only over a verified TLS context with a "
+        "bounded timeout."
+    ),
+    "core/radio/youtube_oauth_api.py::_authed_get": (
+        "The single egress site for the YouTube Data API v3 read-only calls "
+        "(subscriptions.list, playlists.list) behind Connect YouTube Account. "
+        "Sends only the listener's own bearer access token; returns the "
+        "channels/playlists the signed-in account already follows, which are "
+        "then added to the same ChannelStore the Takeout CSV import writes to. "
+        "Never resolves a video stream and never touches playback -- that stays "
+        "on the existing yt-dlp path below. Reached only after an explicit "
+        "Connect YouTube Account sign-in. HTTPS-only over a verified TLS "
+        "context with a bounded timeout. Refused in Safe Mode."
+    ),
+    "core/radio/youtube.py::_default_resolver": (
+        "Quill Radio's YouTube stations (#1268): asks yt-dlp for the audio stream "
+        "URL behind a YouTube page the listener saved as a station, so the player "
+        "and the recorder can treat it like any other stream. download=False -- "
+        "nothing is written to disk here; the media itself is streamed by the "
+        "player, or captured by ffmpeg for a recording the listener asked for. "
+        "Reached only for a station the listener explicitly added after accepting "
+        "the one-time consent + rights notice (RadioHistory.youtube_consented), "
+        "and only once yt-dlp has been installed on demand (never bundled). "
+        "Re-resolved on every play because YouTube's stream addresses expire; the "
+        "resolved URL is never persisted. Refused when QUILL_SAFE_MODE=1."
+    ),
+    "core/radio/youtube.py::_default_search_resolver": (
+        "Quill Radio's YouTube search source in Find Stations: runs a "
+        "'ytsearchN:<query>' through yt-dlp so YouTube videos appear alongside "
+        "the radio directories. Triggered ONLY by the listener typing a search "
+        "and only while the YouTube source is switched on -- Search Sources... "
+        "gates the fan-out itself, so a listener who turns YouTube off stops "
+        "this request happening at all rather than having its results discarded. "
+        "Refused in Safe Mode. Flat (extract_flat='in_playlist'), so the whole "
+        "result set is one request and no video's audio is resolved until it is "
+        "actually played. download=False: nothing is written to disk, and only "
+        "the query text is sent -- no account, credential, or identifier. Uses "
+        "yt-dlp's keyless extraction rather than the YouTube Data API, which "
+        "would require every listener to create a Google Cloud project and paste "
+        "an API key in front of a search box."
+    ),
+    "core/radio/youtube.py::_default_playlist_resolver": (
+        "Quill Radio's YouTube playlists: lists the videos in a playlist link the "
+        "listener pasted, so the playlist can be browsed. Deliberately a FLAT "
+        "listing (extract_flat='in_playlist'): it returns each entry's id and "
+        "title without visiting any video's page, so opening a fifty-video "
+        "playlist is one request rather than fifty -- far less traffic than the "
+        "listener implied by asking for a list -- and no video's audio is resolved "
+        "until it is actually played (that goes through _default_resolver above, "
+        "with its own re-resolve-on-every-play rule). download=False, so nothing "
+        "is written to disk. Reached only from an explicit paste of a playlist "
+        "link, after the same one-time consent + rights notice YouTube stations "
+        "already require, and only once yt-dlp has been installed on demand "
+        "(never bundled). Refused when QUILL_SAFE_MODE=1."
+    ),
+    "core/radio/acb_calendar.py::_fetch_ics": (
+        "Single egress site for the ACB Media programme schedule: one HTTPS "
+        "GET of ACB's My Calendar iCalendar export at acbmedia.org (their REST "
+        "API is off, so the ICS feed is the data path), parsed locally by "
+        "core/radio/ics.py with no dependency and no second request -- the feed "
+        "names channels by category and the stream addresses are already "
+        "bundled in core/radio/acb_media.py, so nothing is looked up. The "
+        "address is built by ics_url() and carries only a month, a following "
+        "month and ACB's own published category ids: no listener data, no "
+        "identifier, nothing that says who is asking. Reached when the listener "
+        "opens the ACB Media Schedule window, presses Refresh there or on the "
+        "Community menu, or presses What Is On Now (which reads the cache when "
+        "it is under an hour old); there is no background timer. A listener-"
+        "asked fetch adds Cache-Control and Pragma no-cache so an intermediary "
+        "cannot answer Refresh from an hour-old copy -- two request headers, no "
+        "extra data, and nothing about who is asking. Verified TLS context, "
+        "bounded timeout, and the response is read as text only. Safe Mode "
+        "answers from the cache and never fetches."
+    ),
+    "core/radio/youtube_requests.py::extract": (
+        "The single egress site for Quill Radio's newer YouTube features, all "
+        "through yt-dlp with nothing downloaded (skip_download, download=False): "
+        "Search YouTube... (YouTube's own results page, one flat request per "
+        "type -- videos, playlists, channels -- with the sp type filter), a "
+        "found channel's Live tab, My YouTube (:ytrec, :ytsubs, :ytwatchlater, "
+        ":ytfav, feed/channels, feed/playlists -- only while the listener has "
+        "turned on Use my YouTube sign-in in Preferences), Read Comments... "
+        "(getcomments, capped by max_comments at 100 per page and 1000 in all), "
+        "and Notify Me About New Videos (one flat listing of a followed "
+        "channel's five newest uploads, on the podcast-check schedule, only for "
+        "channels whose bell the listener turned on). Every call is behind the "
+        "one-time YouTube consent and refused in Safe Mode before yt-dlp is "
+        "imported. When sign-in is on, yt-dlp is given only a browser name "
+        "(cookiesfrombrowser) or a cookies.txt path (cookiefile); Quill never "
+        "reads, copies, stores or logs a cookie value, and redaction.py drops "
+        "cookie-shaped lines from logs and crash bundles. The same door also "
+        "answers the YouTube Video window (one video's description, live "
+        "status and premiere time), About This Channel (the channel page, "
+        "flat, one entry), a found channel's Shorts tab, My YouTube's History "
+        "(:ythis, sign-in only), and Search YouTube with Filters (YouTube's own "
+        "results page with a combined sp filter, or music.youtube.com's song "
+        "search) -- each only on the listener's explicit command."
+    ),
+    "core/radio/youtube_account_api.py::call": (
+        "The single egress site for acting on YouTube as the listener: the "
+        "YouTube Data API v3 write calls behind Reply / Add a Comment / Delete "
+        "My Comment (commentThreads.insert, comments.insert, comments.delete, "
+        "comments.list and channels.list mine=true to check ownership), the "
+        "Live Chat send box (videos.list liveStreamingDetails, "
+        "liveChatMessages.insert), Subscribe on YouTube (channels.list "
+        "forHandle, subscriptions.list/insert/delete), and the YouTube Video "
+        "window (videos.rate, videos.getRating, playlists.list/insert, "
+        "playlistItems.insert). Sends only the listener's own bearer token and "
+        "the text or ids they chose; each request follows one button press, "
+        "after Connect YouTube Account and the separate plain-language consent "
+        "for the youtube.force-ssl permission (youtube_write_scope). Never "
+        "retries: a 403 quotaExceeded becomes one spoken sentence. HTTPS-only "
+        "over a verified TLS context with a bounded timeout. Refused in Safe "
+        "Mode (the UI refuses before any request)."
+    ),
+    "core/radio/youtube_live_chat_reader.py::open_chat": (
+        "Quill Radio's Live Chat window: chat-downloader reads a live (or "
+        "replayed) YouTube chat's continuation feed from youtube.com, the same "
+        "public page a browser shows, for the one video the listener opened "
+        "Live Chat on. Read-only -- sending goes through the Data API site "
+        "above. Carries the listener's sign-in only when Use my YouTube sign-in "
+        "is on with a cookies.txt file (a path; no cookie value is held by "
+        "Quill). Runs on a daemon thread that stops when the window closes; at "
+        "most three polite reconnect attempts with growing waits, then one "
+        "spoken failure. Behind the one-time YouTube consent; refused in Safe "
+        "Mode before chat-downloader is imported."
+    ),
+    "core/radio/youtube_sponsorblock.py::fetch_segments": (
+        "Skip Sponsor Segments (off by default; turning it on in its dialog, "
+        "which states what is sent, is the consent): asks the public "
+        "SponsorBlock API (sponsor.ajay.app) for marked segments of the "
+        "YouTube video now playing. k-anonymous exactly as yt-dlp does it: the "
+        "request carries only the first four hex characters of a SHA-256 of "
+        "the video id plus the chosen categories -- never the video address, "
+        "and nothing about the listener. Once per video played. Verified TLS "
+        "context, bounded timeout; refused in Safe Mode."
+    ),
+    "core/radio/youtube_channels.py::_flat_entries": (
+        "Single egress site for following a YouTube channel with no Google "
+        "account: yt-dlp enumerates a channel's uploads and playlists FLATLY "
+        "(extract_flat), so a four-thousand-video channel costs one request "
+        "rather than four thousand stream resolutions. Reached only by adding a "
+        "channel or opening one of its folders, and paged with a More... node "
+        "so no level is unbounded. yt-dlp is never bundled -- it installs on "
+        "demand behind the existing one-time YouTube consent and rights notice, "
+        "and its absence is reported in words. A video's real stream is resolved "
+        "at play time by the existing youtube.py path, not here. Disabled in "
+        "Safe Mode via refuse_in_safe_mode."
+    ),
+    "core/radio/my_servers.py::_fetch": (
+        "Single egress site for servers the LISTENER adds by hand: Icecast's "
+        "status-json.xsl and SHOUTcast's /stat and /7.html, read to list what "
+        "that server is currently serving. Reached only by adding a server or "
+        "opening one; no credential is ever attached and nothing but a GET is "
+        "sent. NOTE, DELIBERATE EXCEPTION: this is the one site that accepts "
+        "plain http as well as https. A large share of small Icecast boxes are "
+        "http on a high port and always have been, and refusing them would "
+        "refuse the community stations, churches and reading services this "
+        "branch exists to reach. The address is one the user typed. Bounded "
+        "timeout and response size; disabled in Safe Mode."
+    ),
+    "core/radio/wikidata.py::_fetch": (
+        "Single egress site for Explore (Wikidata): one SPARQL query per browse "
+        "axis, returning call signs and the city/owner/network/format that "
+        "groups them. OFF BY DEFAULT and labelled as derived -- Wikidata "
+        "supplies only the organisation, and every playable stream still comes "
+        "from Radio Browser. Cached for a week because a SPARQL query per "
+        "expand would be unreasonable. Descriptive User-Agent (the endpoint "
+        "requires one), HTTPS-only over a verified TLS context with a bounded "
+        "timeout and size; disabled in Safe Mode."
+    ),
+    "core/radio/musicbrainz.py::_fetch": (
+        "Single egress site for song-history enrichment: release, year and "
+        "length for an artist/title pair Quill Radio already logged. STRICTLY "
+        "OPT-IN, never blocking playback, and degrading to nothing on any "
+        "failure. MusicBrainz's documented one-request-per-second limit is "
+        "enforced inside this module rather than trusted to callers, and their "
+        "required descriptive User-Agent is sent. Results cached for a month. "
+        "HTTPS-only over a verified TLS context; disabled in Safe Mode."
+    ),
+    "core/radio/acoustid.py::_post": (
+        "Single egress site for Identify This Song (xradio2.md 4.1): one POST "
+        "to AcoustID's lookup endpoint carrying the listener's own AcoustID "
+        "application key, a Chromaprint fingerprint computed locally by fpcalc "
+        "and its length in seconds -- never audio, never anything about the "
+        "listener or the station. Returns candidate recordings (title, "
+        "artists, MusicBrainz id, score). ONLY ON REQUEST: reached solely from "
+        "the explicit Identify This Song command, which is the consent; with no "
+        "key entered (the default) the command says so and nothing is sent. "
+        "HTTPS-only over a verified TLS context with a bounded timeout and "
+        "response size; disabled in Safe Mode via refuse_in_safe_mode."
+    ),
+    "core/radio/internet_archive.py::_fetch": (
+        "Single egress site for the Internet Archive browse branch: "
+        "advancedsearch.php for a collection's sub-collections and recordings, "
+        "and the item metadata endpoint for one item's files. Keyless. Reached "
+        "only by expanding an Archive folder or opening an item; results are "
+        "cached (core/radio/directory_cache.py) because the Archive's own "
+        "automated-access policy asks for caching, and that policy's other "
+        "requirements are honoured here too -- a descriptive User-Agent naming "
+        "the tool and version, one request at a time, and Retry-After respected "
+        "on HTTP 429 rather than retried blindly. HTTPS-only over a verified TLS "
+        "context with a bounded timeout and response size. Disabled in Safe Mode "
+        "via refuse_in_safe_mode."
+    ),
+    "core/radio/media_download.py::_fetch_to_file": (
+        "Saving a bounded recording to a file: a LibriVox or Gutenberg chapter, "
+        "a rights-safe Internet Archive item, a ccMixter upload, or a podcast "
+        "episode. Reached only when the listener chooses Download on a row, and "
+        "only after core/radio/downloadable.can_download has affirmatively "
+        "allowed that source -- an unknown source is refused rather than "
+        "guessed at, and a live stream is refused outright because there is no "
+        "file. Resumable via a Range header on a .part file, read in bounded "
+        "chunks so a cancel takes effect inside a file, capped at "
+        "MAX_FILE_BYTES, HTTPS/HTTP with a bounded timeout and a Quill Radio "
+        "User-Agent. No new hosts: every address comes from a directory the "
+        "browse tree already reached."
+    ),
+    "core/radio/audiopub.py::_fetch": (
+        "AudioPub (audiopub.site) community audio, Discover shelf only: one "
+        "GET to /quickfeed/api?page=N (50 randomized items) plus playback of "
+        "the audio URLs those rows carry. Reached only by expanding the "
+        "AudioPub branch; deliberately uncached (the server shuffles, and "
+        "uploaders keep the rights to their audio, so nothing is stored). "
+        "HTTPS-only over a verified TLS context with bounded timeout and "
+        "size. Disabled in Safe Mode."
+    ),
+    "core/radio/free_music.py::_fetch": (
+        "Single egress site for three keyless music directories: Audius "
+        "(trending and trending-by-genre; an app_name parameter identifies the "
+        "caller, there is no key or token), Mixcloud (categories and a "
+        "category's shows -- METADATA ONLY, Mode A: no stream URL is ever "
+        "extracted and playing a show opens it in the user's own browser), and "
+        "ccMixter (Creative Commons uploads, whose rows carry a direct audio URL "
+        "and an explicit licence). Reached only by expanding one of those "
+        "branches; cached via core/radio/directory_cache.py. HTTPS-only over a "
+        "verified TLS context with bounded timeout and size, and HTTPException "
+        "is caught alongside OSError because ccMixter emits an oversized HTTP "
+        "header at larger page sizes. Disabled in Safe Mode."
+    ),
+    "core/radio/gutendex.py::_fetch": (
+        "Single egress site for Project Gutenberg audiobooks via Gutendex, "
+        "keyless. Reached only by expanding that branch; cached for a week via "
+        "core/radio/directory_cache.py. A descriptive User-Agent is required "
+        "rather than polite -- Gutendex answers HTTP 403 to an anonymous "
+        "fetcher. HTTPS-only over a verified TLS context with a bounded timeout "
+        "and response size. Disabled in Safe Mode via refuse_in_safe_mode."
+    ),
+    "core/radio/link_finder.py::_http_get_text": (
+        "Single egress site for 'Find Streams from a Website...': fetches the "
+        "one page the user typed to look for a station's own stream link "
+        "(audio/source tags, playlist-shaped hrefs). Reached by the explicit "
+        "Scan button, which states the exact URL before fetching, AND -- "
+        "corrected 2026-09-23, this entry previously said 'only' -- "
+        "automatically by stream recovery when a station fails to play, which "
+        "fetches that station's own website with no prompt and no URL stated. "
+        "That path is gated by history.recover_from_website (on by default) and "
+        "runs once per station per session. "
+        "HTTPS-first over a verified TLS context, bounded timeout and "
+        "response size; on a certificate *hostname* failure only, _fetch_html "
+        "retries the www-toggled host (still fully verified) and then the "
+        "plain-http entry point so the server's own redirect can land on its "
+        "valid https home (the www.magic104.com case) -- verification is "
+        "never relaxed. Disabled in Safe Mode via "
+        "link_finder.refuse_in_safe_mode."
+    ),
+    "core/radio/triton.py::_fetch_api": (
+        "Follow-on egress for 'Find Streams from a Website...' when the scanned "
+        "page is a Triton Digital / StreamTheWorld web player (e.g. the "
+        "player.listenlive.co network). Such players compute their stream URL "
+        "in JavaScript, so it never appears in the page HTML; this resolves the "
+        "callsign the page advertises to a real playable mount through Triton's "
+        "JS-free provisioning API (playerservices.streamtheworld.com). One "
+        "HTTPS GET, for pages that look like Triton players "
+        "(triton.page_is_triton_player). Reached from the explicit Scan button "
+        "and -- corrected 2026-09-23, this entry previously said 'only' from it "
+        "-- automatically by stream recovery after a failed play, gated by "
+        "history.recover_from_website. "
+        "HTTPS-only over a verified TLS context, bounded timeout and response "
+        "size. Disabled in Safe Mode via triton.refuse_in_safe_mode."
+    ),
+    "core/radio/tunein.py::_fetch": (
+        "Single egress site for the TuneIn directory source (via RadioTime's "
+        "open OPML endpoints opml.radiotime.com): search, browse, and resolving "
+        "a station guide id to its playable stream. Reached only by explicit "
+        "user actions (a TuneIn search/browse in the station browser, or playing "
+        "a TuneIn result) -- never a background poll. No API key or auth; "
+        "partnerId=RadioTime is the web player's own public partner string. "
+        "Returns only what the user searched for / a page already advertises, "
+        "the same shape as the Triton provisioning API above. HTTPS-only over a "
+        "verified TLS context, bounded timeout and response size. Disabled in "
+        "Safe Mode via tunein.refuse_in_safe_mode. (Reverses the prior TuneIn "
+        "non-goal; approved 2026-07-17, PRD §5.84f.)"
+    ),
+    "core/radio/iheart.py::_fetch": (
+        "Single egress site for the iHeart directory source, reaching two "
+        "public iHeart endpoints, no API key or auth: (1) the XML sitemap "
+        "(www.iheart.com/sitemap.xml + its livestations sub-sitemap, two GETs "
+        "to refresh the station list) plus a lazy per-station page GET to "
+        "extract the stream the page already embeds (revma.ihrhls.com HLS or a "
+        "StreamTheWorld redirect); and (2) iHeart's free, "
+        "keyless JSON content API (us.api.iheart.com: GET /api/v3/search/all "
+        "with only the typed keywords for Search -- two GETs per search, ids "
+        "then one batch liveStations lookup, replacing the sitemap-filter "
+        "route on 2026-08-27; GET /content/genre for "
+        "the browsable genre list, GET /content/liveStations?genreId= for one "
+        "genre's live stations, each row already carrying its own stream URLs "
+        "so no per-station page fetch) -- used by the Browse Stations genre "
+        "tree. robots permits /sitemap/ and /live/. Reached only by an explicit "
+        "Refresh, browse-expand, or play action -- never a background poll, and "
+        "never a bulk crawl. HTTPS-only over a verified TLS context, bounded "
+        "timeout and response size. Disabled in Safe Mode via "
+        "iheart.refuse_in_safe_mode."
+    ),
+    "core/radio/m3u_catalog.py::_fetch": (
+        "Single egress site for the Community M3U catalog source: the public "
+        "junguler/m3u-radio-music-playlists GitHub repo -- one GET to "
+        "api.github.com for the genre listing (git tree) and one GET to "
+        "raw.githubusercontent.com for a chosen genre's .m3u playlist, parsed "
+        "into stations. No API key or auth. Reached only by an explicit browse "
+        "or Refresh action, never a background poll and never a bulk crawl (one "
+        "genre at a time); the ~1.7 GB repo is read on demand, never bundled or "
+        "redistributed. HTTPS-only over a verified TLS context, bounded timeout "
+        "and response size. Disabled in Safe Mode via m3u_catalog.refuse_in_safe_mode."
+    ),
+    "core/radio/xiph.py::_fetch": (
+        "Single egress site for the Xiph/Icecast public directory source "
+        "(dir.xiph.org, the long-running keyless Icecast yellow pages): one GET "
+        "for the /genres index and one GET for a /genres/<name> page, whose "
+        "station cards each advertise a directly-playable stream URL. No API key "
+        "or auth (the directory has no JSON/OPML API, so its public HTML is "
+        "read). Reached only by an explicit browse or Refresh action, never a "
+        "background poll and never a bulk crawl (one genre at a time). HTTPS-only "
+        "over a verified TLS context, bounded timeout and response size. Disabled "
+        "in Safe Mode via xiph.refuse_in_safe_mode."
+    ),
+    "core/radio/radio_browser.py::_http_json": (
+        "Single egress site for the Internet Radio feature: station search, "
+        "tag/country lists, and click-through vote registration against "
+        "radio-browser.info, a free, keyless, community-run station directory. "
+        "Reached by explicit user actions (search box submit, opening the "
+        "station browser, playing a station) AND by four automatic paths, which "
+        "this entry claimed it had none of until 2026-09-23: the startup "
+        "catalogue refresh (catalog_ui.refresh_on_startup, on by default, which "
+        "pages the whole working-station dump), the 24-hour refresh on the "
+        "minute tick (catalog_ui.maybe_refresh_on_tick), the Radio Reading "
+        "Services cache refresh (reading_services), and stream recovery after a "
+        "failed play (recovery.py). An entry that says 'never a background poll' "
+        "about a call with four of them is worse than no entry: it is the "
+        "sentence a reviewer trusts instead of reading the code. "
+        "Play reporting is now consented (history.share_play_counts, on by "
+        "default) and restricted to RadioBrowser's own station ids. "
+        "HTTPS-only over a verified TLS context with a bounded timeout. "
+        "Disabled in Safe Mode via radio_browser.refuse_in_safe_mode -- though "
+        "note the catalogue paths pass safe_mode=False and rely on the UI layer "
+        "checking Safe Mode before calling."
+    ),
+    "core/radio/wxindex_http.py::_default_fetch": (
+        "Single egress site for the NOAA Weather Radio (WeatherIndex) directory: "
+        "states, stations, search, and detail. HTTPS-only over a verified TLS "
+        "context with a bounded timeout. Disabled in Safe Mode via "
+        "`wxindex_http.refuse_in_safe_mode`."
+    ),
+    "core/radio/one_eighty_one.py::_fetch": (
+        "Single egress site for the 181.FM network (Browse Stations > 181.FM, "
+        "and its search): reads 181.FM's own site, www.181.fm, for the genre "
+        "table its published script carries -- the station list the site itself "
+        "plays from. 181.FM's support page permits its stream links in your own "
+        "player. Only www.181.fm is ever fetched; cached for a day, with a "
+        "checked-in snapshot when it cannot be read. Reached by opening the "
+        "branch or searching, never a background poll. HTTPS-only over a "
+        "verified TLS context, 15-second timeout, 4 MB cap. Disabled in Safe "
+        "Mode via one_eighty_one.refuse_in_safe_mode."
+    ),
+    "core/radio/laut_fm.py::_fetch": (
+        "Single egress site for laut.fm (Browse Stations > laut.fm, and its "
+        "search): laut.fm's documented, keyless public API at api.laut.fm "
+        "(https://docs.api.laut.fm/) -- the genre list (cached for a day), one "
+        "genre's stations, or a search. Reached by opening the branch or "
+        "searching, never a background poll. HTTPS-only over a verified TLS "
+        "context, 15-second timeout, 8 MB cap. Disabled in Safe Mode via "
+        "laut_fm.refuse_in_safe_mode."
+    ),
+    "core/radio/icy.py::read_stream_title": (
+        "What's Playing / announce-track-titles: one short side connection to "
+        "the SAME stream URL the user is already playing (no third party), "
+        "reading only the first ICY metadata block. Runs off-thread on a "
+        "playback-driven cadence or the explicit What's Playing command; "
+        "callers are blocked in Safe Mode with the rest of Internet Radio."
+    ),
+    "core/radio/shoutcast.py::_request": (
+        "Quill Radio's SHOUTcast directory source (2026-08-26): browses "
+        "directory.shoutcast.com -- its genre index (GET), one genre's stations "
+        "or the live Top 500 (form POST), or a search (form POST). The Winamp "
+        "yellow-pages API was retired after the 2014 Radionomy acquisition and "
+        "no key is obtainable by an open-source desktop app; these are the "
+        "keyless endpoints the directory's own site calls, and they were "
+        "verified against the live service before this source shipped. What "
+        "leaves the machine is a genre name or the listener's search text and "
+        "nothing else -- no account, no identifier, no listening history -- "
+        "under QUILL's ordinary descriptive User-Agent (an honest UA was tested "
+        "and works, so nothing here pretends to be a web browser). Reached only "
+        "by an explicit browse, search or refresh, and only while the SHOUTcast "
+        "browse/search source is switched on, so the toggles gate the egress "
+        "rather than filtering results that were fetched anyway. HTTPS-only "
+        "over a verified TLS context with a bounded timeout and a 2 MB cap. "
+        "The genre index is cached for a week, and may be pre-fetched once per "
+        "run by the browse warm-up (quill/ui/radio/browse_warmup.py) when "
+        "Browse Stations opens with this source switched on; the station lists "
+        "are never cached or warmed, because they carry live audience figures. "
+        "There is "
+        "deliberately no 'all stations' browse: the directory has no such "
+        "endpoint and synthesising one would mean 313 requests behind a single "
+        "tree node. Refused in Safe Mode via shoutcast.refuse_in_safe_mode."
+    ),
+    "core/radio/live365.py::_fetch": (
+        "Quill Radio's Live365 directory source (2026-08-26): one GET of "
+        "live365.com/sitemap-main.xml, the public XML sitemap Live365's own "
+        "robots.txt advertises, which lists every station page as "
+        "/station/<Name-Slug>-a<id>. The id in that path is the stream key, so "
+        "the whole directory (5,493 stations when measured) costs one request "
+        "and no per-station resolution. This is the same posture as the iHeart "
+        "source: a published sitemap, read as published. Live365's auth-gated "
+        "station API is still NOT used. Nothing is sent but the request itself "
+        "-- no query, no account, no identifier. Reached by opening the "
+        "Live365 branch, searching with that source on, refreshing, or the "
+        "once-per-run browse warm-up (quill/ui/radio/browse_warmup.py) that "
+        "pre-fetches it in the background when Browse Stations opens with this "
+        "source switched on -- a hidden source is never warmed. Cached for 24 "
+        "hours as (slug, id) pairs, so a day's use is one request. "
+        "HTTPS-only over a verified TLS context, bounded timeout, 4 MB cap that "
+        "detects rather than truncates. Refused in Safe Mode via "
+        "live365.refuse_in_safe_mode."
+    ),
+    "core/radio/radio_paradise.py::_fetch": (
+        "Quill Radio's Radio Paradise source (2026-08-26): one GET of "
+        "api.radioparadise.com/api/list_chan?list_type=json -- the station's own "
+        "keyless, public channel list (~8 KB): slug, title and current listener "
+        "count for each of its seven channels. Nothing is sent but the request; "
+        "no account, no key, no identifier. The stream addresses themselves are "
+        "a fixed naming pattern on stream.radioparadise.com and are built "
+        "locally, so browsing costs exactly this one request. Reached by "
+        "opening the Radio Paradise branch, searching with that source on, "
+        "refreshing, or the once-per-run browse warm-up "
+        "(quill/ui/radio/browse_warmup.py) when Browse Stations opens with "
+        "this source switched on; cached for six hours (the channel list is effectively "
+        "permanent, the listener counts inside it are what go stale). "
+        "HTTPS-only over a verified TLS context with a bounded timeout and a "
+        "1 MB cap. Refused in Safe Mode via radio_paradise.refuse_in_safe_mode."
+    ),
+    "core/radio/iptv.py::_fetch": (
+        "Quill Radio's Television source (2026-08-27): up to four GETs of the "
+        "iptv.org community catalog's published JSON files on "
+        "iptv-org.github.io (channels, streams, countries, categories) -- the "
+        "same posture as Radio Browser: an open, keyless index published to be "
+        "consumed. Nothing is sent but the requests; no query, no account, no "
+        "identifier. The join drops NSFW-flagged channels (family audience), "
+        "closed channels, channels with no stream, and streams that require a "
+        "disguised Referer or User-Agent (the player sends honest headers); "
+        "~9,900 playable channels remain, cached for 24 hours as compact rows, "
+        "so a day's browsing and searching is at most four requests -- usually "
+        "zero, because the browse warm-up may pre-fetch it once per run when "
+        "Browse Stations opens with the TV source switched on. Search is "
+        "in-memory over that cache. The optional XMLTV programme guide is a "
+        "LOCAL FILE the listener places (tv_guide.xml in the data folder) and "
+        "involves no network at all. AntennaWeb is deliberately a browser "
+        "link-out, not a fetch: it has no published API, and scraping an "
+        "undocumented commercial SPA is what this audit exists to refuse. "
+        "HTTPS-only over a verified TLS context, bounded timeouts, per-file "
+        "size caps that detect growth rather than truncating. Refused in Safe "
+        "Mode via iptv.refuse_in_safe_mode."
+    ),
+    "core/radio/station_status.py::_http_get_text": (
+        "What's Playing free fallback (#1111): reads the current track from the "
+        "station server's own Icecast/SHOUTcast status endpoint "
+        "(/status-json.xsl, /stats, /7.html) on the SAME host the user is "
+        "already streaming (no third party). Reached only when the ICY tap and "
+        "the player's in-band title both gave nothing; runs off-thread on the "
+        "same playback-driven cadence / What's Playing command as the ICY read, "
+        "reads one small bounded response, and is refused in Safe Mode via "
+        "read_server_now_playing's safe_mode guard."
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
+# ffmpeg subprocess egress (radio recording's pre-roll reference) — manually documented
+# ---------------------------------------------------------------------------
+# quill/core/radio/recording_preroll_guard.py::decode_opening
+#   When a recording of a live http(s) station starts, the pre-roll guard
+#   (xradio2 section 6.1) opens ONE further connection to the same station
+#   twenty seconds later and decodes its first 75 seconds to a loudness
+#   outline held in memory (nothing is written to disk or sent anywhere). It
+#   compares that with the recording's own opening to find the advert the
+#   station plays to every new connection and cut it from the file. Same
+#   station, same user action (Record, Record Station, a schedule the user
+#   set, a resume the user accepted) and same ffmpeg as the recording itself;
+#   never for HLS or YouTube, and never when the recording is not of an
+#   http(s) stream. Also used, with no network at all, on the recorded files.
+
+__all__ = ["RADIO_EGRESS"]

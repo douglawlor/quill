@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from quill.ui.dpi import dip, dip_size
+
 
 def show_about_quill_native(
     parent: Any,
@@ -16,15 +18,21 @@ def show_about_quill_native(
     about_info: Any,
     open_notices_fn: Callable[[], None],
     show_modal_dialog: Callable[[Any, str], int],
+    on_ready: Callable[[Any], None] | None = None,
 ) -> None:
     """Modal About Quill dialog backed by a ``wx.Notebook``.
 
-    Three tabs surface the version, dependencies, and links as navigable
-    controls so JAWS in Forms mode reads them as distinct elements rather
-    than a flattened blob (#260).
+    *on_ready* is handed the Overview text just before the dialog is shown; the
+    editor uses it to add this computer's QUILL AI support ID and usage, which
+    arrives from the server while the dialog is open.
+
+    Tabs (Overview, Golden Quills, Legal, Dependencies, Links) surface the
+    version, supporters, dependencies, and links as navigable controls so JAWS in
+    Forms mode reads them as distinct elements rather than a flattened blob (#260).
     """
     from quill.core.about_info import AboutInfo
-    from quill.ui.dialog_contract import apply_modal_ids
+    from quill.ui.dialog_contract import apply_modal_ids, focus_primary_control
+    from quill.ui.spoken_name import set_spoken_name
 
     assert isinstance(about_info, AboutInfo)
     dialog = wx.Dialog(
@@ -32,7 +40,7 @@ def show_about_quill_native(
         title=f"About {about_info.product_name}",
         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
     )
-    dialog.SetSize((760, 580))
+    dialog.SetSize(dip_size(dialog, 760, 580))
     sizer = wx.BoxSizer(wx.VERTICAL)
 
     notebook = wx.Notebook(dialog, name="About sections")
@@ -45,6 +53,11 @@ def show_about_quill_native(
         "",
         about_info.tagline,
         "",
+        # The way to reach a person, before the story: support is run by
+        # Community Access, and the address goes here because About is where
+        # everybody looks for it first (added 2026-08-27).
+        "Support: support@community-access.org",
+        "",
         about_info.glow_summary,
         "",
         *about_info.overview_paragraphs,
@@ -55,10 +68,14 @@ def show_about_quill_native(
         style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
         name="about_overview",
     )
-    overview_text.SetMinSize((-1, 320))
+    set_spoken_name(overview_text, "Overview")
+    overview_text.SetMinSize(dip_size(overview_text, -1, 320))
     ov_sizer.Add(overview_text, 1, wx.EXPAND | wx.ALL, 8)
     overview.SetSizer(ov_sizer)
     notebook.AddPage(overview, "Overview")
+
+    # --- Golden Quills tab (financial supporters) ---
+    _build_golden_quills_tab(notebook, wx, about_info)
 
     # --- Legal tab ---
     legal_panel = wx.Panel(notebook)
@@ -81,7 +98,7 @@ def show_about_quill_native(
         style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
         name="about_legal_text",
     )
-    legal_text.SetMinSize((-1, 240))
+    legal_text.SetMinSize(dip_size(legal_text, -1, 240))
     legal_sizer.Add(legal_text, 1, wx.EXPAND | wx.ALL, 8)
     legal_panel.SetSizer(legal_sizer)
     notebook.AddPage(legal_panel, "Legal")
@@ -167,7 +184,13 @@ def show_about_quill_native(
 
     dialog.SetSizer(sizer)
     apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
-    wx.CallAfter(notebook.SetFocus)
+    # Land focus on the first control of the visible tab, not the tab strip or
+    # the default Close button. This dialog is shown through the module-level
+    # show_modal_dialog (no MainFrame focus seam), so it applies the contract's
+    # notebook-aware focus routing itself.
+    focus_primary_control(dialog)
+    if on_ready is not None:
+        on_ready(overview_text)
     try:
         result = show_modal_dialog(dialog, f"About {about_info.product_name}")
     finally:
@@ -188,16 +211,97 @@ def _copy_support_to_clipboard(wx: Any, about_info: Any) -> None:
             wx.TheClipboard.Close()
 
 
+def _build_golden_quills_tab(notebook: Any, wx: Any, about_info: Any) -> None:
+    """A warm recognition tab for people who support QUILL financially.
+
+    QUILL is free; donating is entirely optional and never required to use any
+    feature. This tab simply says thank you, lists supporters in alphabetical
+    order, and offers an optional Donate button.
+    """
+    panel = wx.Panel(notebook)
+    sizer = wx.BoxSizer(wx.VERTICAL)
+
+    heading = wx.StaticText(
+        panel, label="Golden Quills — with heartfelt thanks", name="golden_quills_heading"
+    )
+    heading_font = heading.GetFont()
+    heading_font.SetPointSize(heading_font.GetPointSize() + 2)
+    heading.SetFont(heading_font.Bold())
+    sizer.Add(heading, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
+
+    intro = wx.TextCtrl(
+        panel,
+        value=(
+            "QUILL is free, and it always will be. The people below — our Golden "
+            "Quills — chose to support the project financially, and their generosity "
+            "helps keep QUILL independent, accessible, and moving forward. From all "
+            "of us: thank you.\n\n"
+            "Donating is completely optional and is NEVER required to use any part of "
+            "QUILL. Every feature is, and will remain, fully available to everyone. If "
+            "you would like to chip in, the Donate button below opens a PayPal page in "
+            "your browser; if not, please simply enjoy QUILL with our gratitude."
+        ),
+        style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
+        name="golden_quills_intro",
+    )
+    intro.SetMinSize(dip_size(intro, -1, 130))
+    sizer.Add(intro, 0, wx.EXPAND | wx.ALL, 10)
+
+    roll_label = wx.StaticText(panel, label="Our Golden Quills", name="golden_quills_roll_label")
+    roll_label.SetFont(roll_label.GetFont().Bold())
+    sizer.Add(roll_label, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
+    roll = wx.ListCtrl(
+        panel,
+        style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_NO_HEADER | wx.LC_HRULES,
+        name="golden_quills_list",
+    )
+    roll.AppendColumn("Supporter", width=dip(roll, 420))
+    names = list(getattr(about_info, "golden_quills", ()) or ())
+    if names:
+        for i, name in enumerate(names):
+            roll.InsertItem(i, name)
+    else:
+        roll.InsertItem(0, "Be the first — your name could appear here.")
+    sizer.Add(roll, 1, wx.EXPAND | wx.ALL, 10)
+
+    donate_url = str(getattr(about_info, "donate_url", "") or "")
+    note = wx.StaticText(
+        panel,
+        label="Optional — never required. QUILL stays free for everyone.",
+        name="golden_quills_optional_note",
+    )
+    sizer.Add(note, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+
+    if donate_url:
+        donate_btn = wx.Button(panel, label="Donate (optional)", name="golden_quills_donate")
+        donate_btn.SetToolTip(f"Open {donate_url} in your browser. Donating is optional.")
+
+        def _on_donate(_event: Any) -> None:
+            import webbrowser
+
+            webbrowser.open(donate_url)
+
+        donate_btn.Bind(wx.EVT_BUTTON, _on_donate)
+        sizer.Add(donate_btn, 0, wx.LEFT | wx.RIGHT | wx.TOP | wx.BOTTOM, 10)
+
+    panel.SetSizer(sizer)
+    notebook.AddPage(panel, "Golden Quills")
+
+
 def _build_dependency_list(parent: Any, wx: Any, rows: Any) -> Any:
+    from quill.ui.spoken_name import set_spoken_name
+
     list_ctrl = wx.ListCtrl(
         parent,
         style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES | wx.LC_HRULES,
         name="about_dependency_list",
     )
-    list_ctrl.AppendColumn("Dependency", width=200)
-    list_ctrl.AppendColumn("Version", width=140)
-    list_ctrl.AppendColumn("License", width=160)
-    list_ctrl.AppendColumn("Homepage", width=220)
+    set_spoken_name(list_ctrl, "Dependencies")
+    list_ctrl.AppendColumn("Dependency", width=dip(list_ctrl, 200))
+    list_ctrl.AppendColumn("Version", width=dip(list_ctrl, 140))
+    list_ctrl.AppendColumn("License", width=dip(list_ctrl, 160))
+    list_ctrl.AppendColumn("Homepage", width=dip(list_ctrl, 220))
     for i, row in enumerate(rows):
         list_ctrl.InsertItem(i, row.name)
         list_ctrl.SetItem(i, 1, row.version)
@@ -207,13 +311,16 @@ def _build_dependency_list(parent: Any, wx: Any, rows: Any) -> Any:
 
 
 def _build_link_list(parent: Any, wx: Any, links: Any) -> Any:
+    from quill.ui.spoken_name import set_spoken_name
+
     list_ctrl = wx.ListCtrl(
         parent,
         style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_HRULES,
         name="about_link_list",
     )
-    list_ctrl.AppendColumn("Name", width=260)
-    list_ctrl.AppendColumn("URL", width=420)
+    set_spoken_name(list_ctrl, "Links")
+    list_ctrl.AppendColumn("Name", width=dip(list_ctrl, 260))
+    list_ctrl.AppendColumn("URL", width=dip(list_ctrl, 420))
     for i, link in enumerate(links):
         list_ctrl.InsertItem(i, link.name)
         list_ctrl.SetItem(i, 1, link.url)
@@ -273,15 +380,16 @@ def show_whisperer_about_native(
     principles_rows: list[tuple[str, str]],
     show_modal_dialog: Callable[[Any, str], int],
 ) -> None:
-    """Modal About BITS Whisperer dialog with tabbed native ListCtrls."""
-    from quill.ui.dialog_contract import apply_modal_ids
+    """Modal About QUILL Whisperer dialog with tabbed native ListCtrls."""
+    from quill.ui.dialog_contract import apply_modal_ids, focus_primary_control
+    from quill.ui.spoken_name import set_spoken_name
 
     dialog = wx.Dialog(
         parent,
-        title="About BITS Whisperer",
+        title="About QUILL Whisperer",
         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
     )
-    dialog.SetSize((760, 540))
+    dialog.SetSize(dip_size(dialog, 760, 540))
     sizer = wx.BoxSizer(wx.VERTICAL)
     nb = wx.Notebook(dialog)
     nb.SetName("About sections")
@@ -292,10 +400,10 @@ def show_whisperer_about_native(
     ov_text = wx.TextCtrl(
         overview_panel,
         value=(
-            "The future is bright. BITS Whisperer patterns are being evaluated "
+            "The future is bright. QUILL Whisperer patterns are being evaluated "
             "for selective adoption inside Quill to improve accessibility, reliability, "
             "and creative flow.\n\n"
-            "Quill will progressively absorb proven ideas from BITS Whisperer in focused "
+            "Quill will progressively absorb proven ideas from QUILL Whisperer in focused "
             "phases, while preserving Quill's writing-first experience.\n\n"
             "Next steps:\n"
             "1. Use Startup Wizard to configure profile, AI, and speech foundation.\n"
@@ -305,6 +413,7 @@ def show_whisperer_about_native(
         style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2,
         name="whisperer_about_overview",
     )
+    set_spoken_name(ov_text, "Overview")
     ov_sizer.Add(ov_text, 1, wx.EXPAND | wx.ALL, 8)
     overview_panel.SetSizer(ov_sizer)
     nb.AddPage(overview_panel, "Overview")
@@ -317,10 +426,11 @@ def show_whisperer_about_native(
         style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES,
         name="whisperer_roadmap",
     )
-    roadmap_list.AppendColumn("Capability", width=180)
-    roadmap_list.AppendColumn("Whisperer Source", width=180)
-    roadmap_list.AppendColumn("Phase", width=70)
-    roadmap_list.AppendColumn("Quill Plan", width=240)
+    set_spoken_name(roadmap_list, "Roadmap")
+    roadmap_list.AppendColumn("Capability", width=dip(roadmap_list, 180))
+    roadmap_list.AppendColumn("Whisperer Source", width=dip(roadmap_list, 180))
+    roadmap_list.AppendColumn("Phase", width=dip(roadmap_list, 70))
+    roadmap_list.AppendColumn("Quill Plan", width=dip(roadmap_list, 240))
     for i, (cap, source, phase, notes) in enumerate(roadmap_rows):
         roadmap_list.InsertItem(i, cap)
         roadmap_list.SetItem(i, 1, source)
@@ -338,8 +448,9 @@ def show_whisperer_about_native(
         style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES,
         name="whisperer_principles",
     )
-    principles_list.AppendColumn("Principle", width=180)
-    principles_list.AppendColumn("How it applies", width=460)
+    set_spoken_name(principles_list, "Principles")
+    principles_list.AppendColumn("Principle", width=dip(principles_list, 180))
+    principles_list.AppendColumn("How it applies", width=dip(principles_list, 460))
     for i, (principle, detail) in enumerate(principles_rows):
         principles_list.InsertItem(i, principle)
         principles_list.SetItem(i, 1, detail)
@@ -356,8 +467,11 @@ def show_whisperer_about_native(
     sizer.Add(btn_sizer, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
     dialog.SetSizer(sizer)
     apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
+    # Land focus on the first control of the visible tab, not the tab strip or
+    # the default Close button (module-level show_modal_dialog, no MainFrame seam).
+    focus_primary_control(dialog)
     try:
-        show_modal_dialog(dialog, "About BITS Whisperer")
+        show_modal_dialog(dialog, "About QUILL Whisperer")
     finally:
         dialog.Destroy()
 
@@ -369,15 +483,16 @@ def show_bw_capability_matrix_native(
     snapshot: dict,
     show_modal_dialog: Callable[[Any, str], int],
 ) -> None:
-    """Modal BITS Whisperer Capability Matrix dialog with a native ListCtrl."""
+    """Modal QUILL Whisperer Capability Matrix dialog with a native ListCtrl."""
     from quill.ui.dialog_contract import apply_modal_ids
+    from quill.ui.spoken_name import set_spoken_name
 
     dialog = wx.Dialog(
         parent,
-        title="BITS Whisperer Capability Matrix",
+        title="QUILL Whisperer Capability Matrix",
         style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
     )
-    dialog.SetSize((760, 500))
+    dialog.SetSize(dip_size(dialog, 760, 500))
     sizer = wx.BoxSizer(wx.VERTICAL)
 
     cap_list = wx.ListCtrl(
@@ -385,10 +500,11 @@ def show_bw_capability_matrix_native(
         style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_VRULES,
         name="bw_capability_matrix",
     )
-    cap_list.AppendColumn("Capability", width=220)
-    cap_list.AppendColumn("Phase", width=80)
-    cap_list.AppendColumn("Status", width=90)
-    cap_list.AppendColumn("Notes", width=310)
+    set_spoken_name(cap_list, "Capability matrix")
+    cap_list.AppendColumn("Capability", width=dip(cap_list, 220))
+    cap_list.AppendColumn("Phase", width=dip(cap_list, 80))
+    cap_list.AppendColumn("Status", width=dip(cap_list, 90))
+    cap_list.AppendColumn("Notes", width=dip(cap_list, 310))
     for i, (name, phase, status, notes) in enumerate(capability_rows):
         cap_list.InsertItem(i, name)
         cap_list.SetItem(i, 1, phase)
@@ -410,7 +526,8 @@ def show_bw_capability_matrix_native(
         style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2,
         name="bw_snapshot",
     )
-    snap_ctrl.SetMinSize((-1, 90))
+    set_spoken_name(snap_ctrl, "Current configuration")
+    snap_ctrl.SetMinSize(dip_size(snap_ctrl, -1, 90))
     sizer.Add(snap_ctrl, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
 
     btn_sizer = wx.StdDialogButtonSizer()
@@ -423,6 +540,6 @@ def show_bw_capability_matrix_native(
     apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
     wx.CallAfter(cap_list.SetFocus)
     try:
-        show_modal_dialog(dialog, "BITS Whisperer Capability Matrix")
+        show_modal_dialog(dialog, "QUILL Whisperer Capability Matrix")
     finally:
         dialog.Destroy()

@@ -8,9 +8,18 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from quill.core.ai.endpoints import (
+    chat_endpoint as chat_endpoint,
+)
+from quill.core.ai.endpoints import (
+    gemini_model_id as gemini_model_id,
+)
+from quill.core.ai.endpoints import (
+    stream_chat_endpoint as stream_chat_endpoint,
+)
 from quill.core.ai.providers import (
     ModelRecommendation as ModelRecommendation,
 )
@@ -41,6 +50,7 @@ from quill.core.ai.providers import (
 from quill.core.ai.providers import (
     recommended_models_for_provider as recommended_models_for_provider,
 )
+from quill.core.ai.retry_ladder import wait_after_failure
 from quill.core.paths import app_data_dir
 from quill.core.storage import read_json, write_json_atomic
 from quill.platform.windows.credential_store import (
@@ -164,6 +174,14 @@ def missing_required_api_key(provider: str, host: str, api_key: str) -> bool:
     return not _is_local_host(hostname)
 
 
+def _api_key_required_message(provider: str) -> str:
+    """Shared 'no key set' sentence so verify and the chat paths can't drift."""
+    return (
+        f"An API key is required for {provider_display_name(provider)}. "
+        "Enter your key and try again."
+    )
+
+
 def verify_assistant_connection(
     settings: AssistantConnectionSettings,
     api_key: str,
@@ -174,30 +192,26 @@ def verify_assistant_connection(
     if provider == "off":
         return True, "AI provider is Off."
 
-    # L-5: surface the portable-install symptom before the network call so
-    # the user does not see a misleading "unauthorized" error from the
-    # provider. A saved key that cannot be unlocked on this Windows
-    # account means the network will never succeed.
-    if assistant_secret_unlock_failed():
-        return False, ASSISTANT_KEY_UNLOCK_FAILED_MESSAGE
-
-    # H-SAFE-1: refuse to even probe the network in safe mode. The user
-    # explicitly asked for offline operation; the verify surface is a
-    # network call and would lie about its outcome if it answered
-    # "verified" without actually checking.
+    # H-SAFE-1: refuse to even probe the network in safe mode -- the verify
+    # surface is a network call and would lie if it answered "verified"
+    # without checking. Ahead of the unlock check below, matching the other
+    # two entry points: re-entering a key changes nothing while Safe Mode is
+    # on, so naming Safe Mode is the answer a user can act on.
     if _safe_mode_active():
         return False, _safe_mode_blocked_message("Connection verification")
+
+    # L-5: a saved key that cannot be unlocked on this Windows account means
+    # the network will never succeed, so say so rather than letting the
+    # provider answer with a misleading "unauthorized".
+    if assistant_secret_unlock_failed():
+        return False, ASSISTANT_KEY_UNLOCK_FAILED_MESSAGE
 
     # A provider that requires a key cannot be verified without one. Some
     # listing endpoints (for example ollama.com/api/tags) answer 200 without
     # authentication, so without this guard verify would falsely report success
     # for a blank required key (#123).
     if missing_required_api_key(provider, settings.host, api_key):
-        return (
-            False,
-            f"An API key is required for {provider_display_name(provider)}. "
-            "Enter your key and try again.",
-        )
+        return False, _api_key_required_message(provider)
 
     models, error = list_assistant_models(settings, api_key, timeout_seconds=timeout_seconds)
     if error is None:
@@ -209,10 +223,6 @@ def verify_assistant_connection(
 
 # Error categories used to give callers cause-specific, screen-reader-friendly
 # messages instead of scanning formatted strings for substrings like "401".
-# Retryable categories are transient and benefit from a brief warm-up retry
-# (cloud cold starts, a local server still booting, rate limiting). Auth and
-# permission failures are never retried.
-_RETRYABLE_CATEGORIES = frozenset({"warming_up", "not_running", "rate_limited", "timeout"})
 
 # Highest-priority first. When several endpoints fail in one attempt we surface
 # the most actionable cause (an auth/permission problem outranks a transient one).
@@ -232,15 +242,13 @@ _CATEGORY_PRIORITY = (
 # finished warming up.
 _WARMING_UP_STATUS = frozenset({408, 425, 500, 502, 503, 504, 520, 522, 524})
 
-# Bounded warm-up backoff (seconds) between retry attempts.
-_RETRY_BACKOFF_SECONDS: tuple[float, ...] = (0.4, 1.0, 2.0)
-
 
 @dataclass(slots=True)
 class _FetchError:
     category: str
     message: str
     status_code: int | None = None
+    headers: object = None  # the reply's headers, for Retry-After (retry_ladder)
 
 
 def _category_for_status(code: int) -> str:
@@ -261,6 +269,7 @@ def _message_for_category(
     endpoint: str,
     status_code: int | None = None,
     reason: object | None = None,
+    detail: str | None = None,
 ) -> str:
     if category == "auth_invalid":
         return "Authentication failed. Check your API key."
@@ -274,12 +283,19 @@ def _message_for_category(
     if category == "warming_up":
         return "The AI provider is warming up. Try again in a moment."
     if category == "not_running":
-        return "The local AI server is not running. Start Ollama and try again."
+        return (
+            "QUILL can't reach a local AI server. If you use Ollama, start it "
+            "(run 'ollama serve') and try again. If you use a different local AI "
+            "such as LM Studio or GPT4All, choose the Custom provider in AI Hub "
+            "and enter its OpenAI-compatible endpoint."
+        )
     if category == "timeout":
         return "Connection timed out. Check host URL and network connection."
     if category == "bad_response":
         return f"Received an invalid response from {endpoint}."
     if category == "http_error" and status_code is not None:
+        if detail:
+            return f"HTTP {status_code} from {endpoint}: {detail}"
         return f"HTTP {status_code} from {endpoint}."
     if reason is not None:
         return f"Failed to reach {endpoint}: {reason}"
@@ -355,7 +371,7 @@ def list_assistant_models(
 
     last_error: _FetchError | None = None
     attempts = max(1, max_attempts)
-    for attempt in range(attempts):
+    for attempt in range(1, attempts + 1):
         attempt_errors: list[_FetchError] = []
         empty_success = False
         for endpoint in candidates:
@@ -379,11 +395,10 @@ def list_assistant_models(
             return [], None
 
         last_error = _most_significant_error(attempt_errors)
-        if last_error is None or last_error.category not in _RETRYABLE_CATEGORIES:
+        wait = None if last_error is None else _chat_retry_wait(last_error, attempt, attempts)
+        if wait is None:
             break
-        if attempt + 1 < attempts:
-            backoff = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]
-            time.sleep(backoff)
+        time.sleep(wait)
 
     if last_error is None:
         return [], "Could not reach AI endpoint."
@@ -422,6 +437,7 @@ def _fetch_models_from_endpoint(
             category,
             _message_for_category(category, endpoint=endpoint, status_code=exc.code),
             exc.code,
+            exc.headers,
         )
     except URLError as exc:
         category = _category_for_url_error(exc)
@@ -454,6 +470,39 @@ def _category_for_url_error(exc: URLError) -> str:
     if "timed out" in text:
         return "timeout"
     return "unreachable"
+
+
+def _detail_from_http_error(exc: HTTPError) -> str | None:
+    """Extract a human-facing error detail from an HTTPError response body.
+
+    Ollama returns ``{"error": "model ... does not support images"}``; OpenAI and
+    OpenAI-compatible servers return ``{"error": {"message": "..."}}``. Anything
+    we cannot parse is left as ``None`` so the caller falls back to the status
+    code alone. Best-effort: a read/parse failure never raises.
+    """
+    try:
+        raw = exc.read()
+    except Exception:  # noqa: BLE001 - best-effort body extraction
+        return None
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw.decode("utf-8", errors="replace"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    error = parsed.get("error")
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    if isinstance(error, dict):
+        message = error.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    message = parsed.get("message")
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+    return None
 
 
 def _extract_model_names(payload: object) -> list[str]:
@@ -496,7 +545,9 @@ def _extract_names_from_model_item(item: dict[str, object]) -> list[str]:
         str(item.get("id", "")).strip(),
         str(item.get("model", "")).strip(),
     )
-    primary = [v for v in id_candidates if v]
+    # Gemini's list names every model "models/<id>"; the id is what a person
+    # chooses and what every other provider's list already gives.
+    primary = [gemini_model_id(v) for v in id_candidates if v]
     if primary:
         return primary
     display = str(item.get("display_name", "")).strip()
@@ -616,7 +667,14 @@ def save_assistant_connection_settings(settings: AssistantConnectionSettings) ->
     write_json_atomic(assistant_connection_path(), payload)
 
 
-def load_assistant_api_key() -> str:
+def stored_assistant_api_key() -> str:
+    """The saved global assistant key, ignoring the environment.
+
+    Split out from :func:`load_assistant_api_key` so the key migration can
+    consolidate only values the user actually gave QUILL -- migrating an
+    ambient environment variable into the credential store would persist a
+    secret they never chose to save here.
+    """
     credential_secret = _load_api_key_from_credential_manager()
     if credential_secret:
         return credential_secret
@@ -644,6 +702,26 @@ def load_assistant_api_key() -> str:
         if path.exists():
             path.unlink()
     return decrypted
+
+
+def load_assistant_api_key() -> str:
+    """The key to USE for the active provider: stored first, environment second.
+
+    The environment fallback deliberately does NOT apply when the stored key
+    exists but could not be decrypted (``assistant_secret_unlock_failed()``):
+    silently succeeding with a different key there would mask the
+    wrong-Windows-user diagnosis L-5 exists to surface.
+    """
+    stored = stored_assistant_api_key()
+    if stored:
+        return stored
+    if assistant_secret_unlock_failed():
+        return ""
+    try:
+        provider = load_assistant_connection_settings().provider
+    except Exception:  # noqa: BLE001 - unreadable settings means "no active provider"
+        return ""
+    return environment_api_key(provider)
 
 
 def save_assistant_api_key(api_key: str) -> None:
@@ -704,9 +782,96 @@ def provider_credential_target(provider: str) -> str:
     return f"QUILL:assistant:{normalized}:api-key"
 
 
-def load_provider_api_key(provider: str) -> str:
-    """Return the stored key for *provider*, or "" if none."""
+#: Environment variables each cloud provider's own SDK/CLI conventionally uses.
+#: Deliberately an explicit table rather than a computed ``f"{PROVIDER}_API_KEY"``
+#: pattern: a computed name would make ``provider="off"`` read ``OFF_API_KEY``
+#: and a local Ollama install read ``OLLAMA_API_KEY``, inventing meaning for
+#: variables nobody set for QUILL. Mirrors ``ai.harness_credentials._ENV_VARS``.
+_PROVIDER_ENV_VARS: dict[str, tuple[str, ...]] = {
+    "openai": ("OPENAI_API_KEY",),
+    "claude": ("ANTHROPIC_API_KEY", "CLAUDE_API_KEY"),
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "openrouter": ("OPENROUTER_API_KEY",),
+    "ollama_cloud": ("OLLAMA_API_KEY",),
+}
+
+
+def environment_api_key(provider: str) -> str:
+    """The key for *provider* from the environment, or "" if none is set.
+
+    Only cloud providers are consulted -- a local Ollama needs no key, and
+    ``off`` is not a provider at all. The value is stripped: a shell profile
+    that exports a key with a trailing newline would otherwise produce a
+    confusing 401 rather than an obvious mistake.
+    """
+    normalized = provider.strip().lower()
+    if normalized not in _CLOUD_PROVIDERS:
+        return ""
+    for name in _PROVIDER_ENV_VARS.get(normalized, ()):
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def stored_provider_api_key(provider: str) -> str:
+    """The key QUILL has actually SAVED for *provider*, ignoring the environment.
+
+    Use this wherever an ambient environment key must not be mistaken for a
+    stored one: the Settings/AI Hub key fields (whose Save would otherwise
+    write an env-supplied key into the credential store) and the key
+    migration (which must never persist a value the user did not give us).
+    """
     return _cs_load(provider_credential_target(provider)) or ""
+
+
+def provider_api_key_source(provider: str) -> str:
+    """Where *provider*'s key comes from: ``"stored"``, ``"environment"``, or ``""``.
+
+    Lets the UI tell the user that a provider is configured by an environment
+    variable rather than by something they entered here -- otherwise a key
+    exported for unrelated work silently configures a cloud provider.
+    """
+    if stored_provider_api_key(provider):
+        return "stored"
+    if environment_api_key(provider):
+        return "environment"
+    return ""
+
+
+def load_provider_api_key(provider: str) -> str:
+    """Return the key to USE for *provider*: stored first, environment second.
+
+    The environment is a fallback, never an override -- a key entered in QUILL
+    always wins over an ambient one. Callers that need to distinguish the two
+    (UI prefill, migration) must use :func:`stored_provider_api_key`.
+    """
+    stored = stored_provider_api_key(provider)
+    if stored:
+        return stored
+    return environment_api_key(provider)
+
+
+def load_keyed_provider_api_key(provider: str) -> str:
+    """Return *provider*'s key for a direct call to that provider's API.
+
+    Prefers the per-provider stored key; falls back to the active assistant key
+    only when *provider* is the active provider. A feature that always calls one
+    specific provider (e.g. OpenAI Whisper transcription or OpenAI TTS) must use
+    this rather than :func:`load_assistant_api_key`, so it never sends another
+    provider's active key to OpenAI and gets a confusing 401.
+    """
+    target = provider.strip().lower()
+    key = load_provider_api_key(target)
+    if key:
+        return key
+    try:
+        conn = load_assistant_connection_settings()
+    except Exception:  # noqa: BLE001 - unreadable connection means "no active key"
+        return ""
+    if (conn.provider or "").strip().lower() == target:
+        return load_assistant_api_key() or ""
+    return ""
 
 
 def save_provider_api_key(provider: str, api_key: str) -> bool:
@@ -842,25 +1007,12 @@ _DEFAULT_MAX_TOKENS = 1024
 _OPENAI_COMPATIBLE = frozenset({"openai", "openrouter", "custom", "ollama_cloud"})
 
 
-def chat_endpoint(provider: str, host: str, model: str) -> str:
-    """Return the chat endpoint URL for a provider (pure; no network)."""
-    normalized = provider.strip().lower()
-    host = host.rstrip("/")
-    if normalized == "claude":
-        return f"{host}/v1/messages"
-    if normalized == "gemini":
-        return f"{host}/v1beta/models/{quote(model)}:generateContent"
-    if normalized == "ollama":
-        return f"{host}/api/chat"
-    return f"{host}/v1/chat/completions"
-
-
 def build_chat_body(
     provider: str,
     model: str,
     prompt: str,
     *,
-    max_tokens: int = _DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = _DEFAULT_MAX_TOKENS,
     stream: bool = False,
     system_prompt: str = "",
 ) -> dict[str, object]:
@@ -881,7 +1033,7 @@ def build_chat_body(
         # Claude requires an explicit max_tokens.
         body: dict[str, object] = {
             "model": model,
-            "max_tokens": max_tokens,
+            "max_tokens": _DEFAULT_MAX_TOKENS if max_tokens is None else max_tokens,
             "messages": [user_message],
         }
         if system_prompt:
@@ -910,18 +1062,18 @@ def build_chat_body(
             messages.append({"role": "system", "content": system_prompt})
         messages.append(user_message)
         return {"model": model, "messages": messages, "stream": stream}
-    # OpenAI-compatible: openai, openrouter, custom, ollama_cloud.
-    # OpenAI automatically caches prompt prefixes > 1024 tokens; sending the
-    # system prompt as a dedicated role="system" message keeps the cacheable
-    # prefix stable across requests.
+    # OpenAI-compatible: openai, openrouter, custom, ollama_cloud. A role="system"
+    # message keeps OpenAI's cached prompt prefix stable. OpenAI's newer models
+    # (GPT-6) refuse max_tokens; all of its chat models take max_completion_tokens.
     messages_oa: list[dict[str, str]] = []
     if system_prompt:
         messages_oa.append({"role": "system", "content": system_prompt})
     messages_oa.append(user_message)
-    body = {"model": model, "messages": messages_oa, "max_tokens": max_tokens}
-    if stream:
-        body["stream"] = True
-    return body
+    limit = "max_completion_tokens" if normalized == "openai" else "max_tokens"
+    body_oa: dict[str, object] = {"model": model, "messages": messages_oa}
+    body_oa.update({} if max_tokens is None else {limit: max_tokens})  # None: no ceiling
+    body_oa.update({"stream": True} if stream else {})
+    return body_oa
 
 
 def build_chat_headers(
@@ -993,7 +1145,17 @@ def parse_chat_response(provider: str, payload: object) -> str | None:
             message = first.get("message")
             if isinstance(message, dict):
                 text = str(message.get("content", "")).strip()
-                return text or None
+                if text:
+                    return text
+                # Reasoning models (e.g. gpt-oss on Ollama Cloud, some OpenRouter
+                # routes) put their output on a reasoning channel and leave
+                # `content` empty. Fall back to it so the answer is not lost and
+                # the request does not fail as an "invalid response".
+                for key in ("reasoning_content", "reasoning"):
+                    reasoning = message.get(key)
+                    if isinstance(reasoning, str) and reasoning.strip():
+                        return reasoning.strip()
+                return None
             text_value = first.get("text")
             if isinstance(text_value, str):
                 return text_value.strip() or None
@@ -1014,10 +1176,12 @@ def _post_chat(
             payload = json.loads(response.read().decode("utf-8", errors="replace"))
     except HTTPError as exc:
         category = _category_for_status(exc.code)
+        detail = _detail_from_http_error(exc)
         return None, _FetchError(
             category,
-            _message_for_category(category, endpoint=endpoint, status_code=exc.code),
+            _message_for_category(category, endpoint=endpoint, status_code=exc.code, detail=detail),
             exc.code,
+            exc.headers,
         )
     except URLError as exc:
         category = _category_for_url_error(exc)
@@ -1038,12 +1202,18 @@ def _post_chat(
     return text, None
 
 
+def _chat_retry_wait(error: _FetchError, attempt: int, attempts: int) -> float | None:
+    """The shared ladder for one failed chat (:mod:`quill.core.ai.retry_ladder`)."""
+    lost = error.category in ("not_running", "timeout")  # no answer: the warm-up retry
+    return wait_after_failure(error.status_code, error.headers, attempt, attempts, lost=lost)
+
+
 def generate_assistant_response(
     settings: AssistantConnectionSettings,
     api_key: str,
     prompt: str,
     *,
-    max_tokens: int = _DEFAULT_MAX_TOKENS,
+    max_tokens: int | None = _DEFAULT_MAX_TOKENS,
     timeout_seconds: float = 60.0,
     max_attempts: int = 3,
     system_prompt: str = "",
@@ -1071,7 +1241,13 @@ def generate_assistant_response(
         return None, "The AI provider is set to Off."
     if _safe_mode_active():
         return None, _safe_mode_blocked_message("AI generation")
+    # Mirror verify's pre-flight guards so a keyless chat call fails with an
+    # actionable message instead of a confusing provider 401 (L-5, #123).
+    if assistant_secret_unlock_failed() and api_key == "":
+        return None, ASSISTANT_KEY_UNLOCK_FAILED_MESSAGE
     host = (settings.host or "").strip().rstrip("/") or default_host_for_provider(provider)
+    if missing_required_api_key(provider, host, api_key):
+        return None, _api_key_required_message(provider)
     policy_error = _validate_endpoint_security(provider, host)
     if policy_error:
         return None, policy_error
@@ -1085,16 +1261,15 @@ def generate_assistant_response(
 
     last_error: _FetchError | None = None
     attempts = max(1, max_attempts)
-    for attempt in range(attempts):
+    for attempt in range(1, attempts + 1):
         text, error = _post_chat(endpoint, headers, body, provider, timeout_seconds=timeout_seconds)
         if error is None:
             return text, None
         last_error = error
-        if error.category not in _RETRYABLE_CATEGORIES:
+        wait = _chat_retry_wait(error, attempt, attempts)
+        if wait is None:
             break
-        if attempt + 1 < attempts:
-            backoff = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]
-            time.sleep(backoff)
+        time.sleep(wait)
 
     if last_error is None:
         return None, "Could not reach AI endpoint."
@@ -1145,20 +1320,6 @@ def test_chat(
 
 # Providers whose streaming wire format is newline-delimited JSON, not SSE.
 _NDJSON_STREAM_PROVIDERS = frozenset({"ollama"})
-
-
-def stream_chat_endpoint(provider: str, host: str, model: str) -> str:
-    """Return the streaming chat endpoint URL for a provider (pure; no network).
-
-    Identical to :func:`chat_endpoint` except for Gemini, which uses a distinct
-    ``:streamGenerateContent`` method with ``alt=sse`` so it returns Server-Sent
-    Events instead of one buffered JSON array.
-    """
-    normalized = provider.strip().lower()
-    if normalized == "gemini":
-        host = host.rstrip("/")
-        return f"{host}/v1beta/models/{quote(model)}:streamGenerateContent?alt=sse"
-    return chat_endpoint(provider, host, model)
 
 
 def parse_stream_event(provider: str, data: str) -> str | None:
@@ -1286,6 +1447,7 @@ def _post_chat_stream(
                 category,
                 _message_for_category(category, endpoint=endpoint, status_code=exc.code),
                 exc.code,
+                exc.headers,
             ),
             emitted,
         )
@@ -1338,7 +1500,13 @@ def generate_assistant_response_stream(
         return None, "The AI provider is set to Off."
     if _safe_mode_active():
         return None, _safe_mode_blocked_message("AI streaming")
+    # Same pre-flight guards as the blocking path so a keyless stream fails
+    # with an actionable message instead of a confusing provider 401 (L-5, #123).
+    if assistant_secret_unlock_failed() and api_key == "":
+        return None, ASSISTANT_KEY_UNLOCK_FAILED_MESSAGE
     host = (settings.host or "").strip().rstrip("/") or default_host_for_provider(provider)
+    if missing_required_api_key(provider, host, api_key):
+        return None, _api_key_required_message(provider)
     policy_error = _validate_endpoint_security(provider, host)
     if policy_error:
         return None, policy_error
@@ -1351,18 +1519,17 @@ def generate_assistant_response_stream(
 
     last_error: _FetchError | None = None
     attempts = max(1, max_attempts)
-    for attempt in range(attempts):
+    for attempt in range(1, attempts + 1):
         text, error, emitted = _post_chat_stream(
             endpoint, headers, body, provider, on_delta, timeout_seconds=timeout_seconds
         )
         if error is None:
             return text, None
         last_error = error
-        if emitted or error.category not in _RETRYABLE_CATEGORIES:
+        wait = None if emitted else _chat_retry_wait(error, attempt, attempts)
+        if wait is None:
             break
-        if attempt + 1 < attempts:
-            backoff = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]
-            time.sleep(backoff)
+        time.sleep(wait)
 
     if last_error is None:
         return None, "Could not reach AI endpoint."

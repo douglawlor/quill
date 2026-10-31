@@ -9,6 +9,8 @@ def _source() -> str:
         (ui / "main_frame.py").read_text(encoding="utf-8")
         + "\n"
         + (ui / "main_frame_menu.py").read_text(encoding="utf-8")
+        + "\n"
+        + (ui / "main_frame_menu_bindings.py").read_text(encoding="utf-8")
     )
 
 
@@ -75,7 +77,10 @@ def test_apply_ai_menu_enabled_gates_forget_key_on_presence(monkeypatch) -> None
     for name in (
         "_id_ai_hub",
         "_id_ask_quill_chat",
+        "_id_ask_quill_voice",
         "_id_ai_model",
+        "_id_ai_switch_engine",
+        "_id_ai_copilot_setup",
         "_id_ai_session_browser",
         "_id_ai_assistant",
         "_id_ai_prompt_studio",
@@ -88,6 +93,13 @@ def test_apply_ai_menu_enabled_gates_forget_key_on_presence(monkeypatch) -> None
         "_id_ai_continue_writing",
         "_id_ai_fix_grammar",
         "_id_train_style",
+        # The two hosted-AI rows that spend a request, added 2026-09-23 when
+        # QUILL's own free AI became the default AI. Usage, Connect and the
+        # Privacy Agreement are deliberately NOT in the group: the first two are
+        # about the account rather than uses of it, and the agreement is the door
+        # the feature is turned on through.
+        "_id_hosted_ai_assistant",
+        "_id_hosted_ai_ask_document",
     ):
         setattr(frame, name, object())
     frame.frame = SimpleNamespace(GetMenuBar=lambda: bar)

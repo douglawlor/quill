@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Transcribe -- Product Requirements</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-transcribe--product-requirements">QUILL Transcribe –
+Product Requirements</h1>
+<p><strong>Distribution licensing:</strong> Installed Transcribe
+editions use the QuillVille Runtime, which currently carries PyMuPDF
+1.28.2 under AGPL-3.0 through GLOW, although Transcribe does not expose
+GLOW. Release-specific source and legal review are required before the
+next public release; inspect portable builds separately. See the PyMuPDF
+distribution review and Licences and Notices.</p>
+<p>Version 1.0.0. Status: implemented; releases 1 November 2026 (first
+public release). In <code>RELEASED_APPS</code> from 2026-10-16, so every
+public QuillVille menu, tray menu and companion-install offer lists it,
+and Quill Cast’s and Quill Radio’s Edit &gt; Dictate Here shows in
+public builds. Its own QuillVille menu is five rows (QUILL, Quill Radio,
+Quill Weather, Quill Converter, Quill Inkwell on Ctrl+Alt+Shift+F7 to
+F11); it is last in <code>QUILLVILLE_APP_ORDER</code>, so no other app’s
+row changes key. A release blocker remains: the screen-reader pass in
+Outlook, Word, Notepad and the browsers
+(<code>docs/qa/screen-reader-checks-2026-10.md</code>).</p>
+<p>The full product requirements are in the repository at
+<code>docs/Product Requirement Documents and Specifications/quilltranscribe.md</code>.
+This page records what version 1.0 does with the decisions that document
+left open, and what waits for a later version.</p>
+<h2 id="decisions-taken-for-10">Decisions taken for 1.0</h2>
+<ol type="1">
+<li><p><strong>Name.</strong> QUILL Transcribe; product identifier
+<code>QuillTranscribe</code>; app key <code>transcribe</code>. Its icon
+is a text caret with words arriving at it.</p></li>
+<li><p><strong>One owner.</strong> Version 1.0 does not have a full
+service that QUILL, QUILL Lite and Inkwell talk to. It has one owner at
+a time instead: QUILL Transcribe holds an operating-system lock in the
+family data folder while it runs, and Quill Inkwell’s Dictate Anywhere
+key is passed to it. Inkwell takes the same lock only for the length of
+its own session, so the two never listen at once. Requests between them
+carry one word (toggle, start, stop or show) and never any words that
+were spoken.</p></li>
+<li><p><strong>Recordings.</strong> Transcribe a Recording is included.
+It is QUILL’s own command and pipeline, unchanged; QUILL Transcribe adds
+only a window to review the result and copy it, save it, or open it in
+QUILL.</p></li>
+<li><p><strong>Internet models.</strong> At 1.0.0, only OpenAI, which
+already had QUILL’s key storage, consent and network review. It is
+listed only when a key is saved and asks before anything is sent. Since
+2026-10-16 (dictation design record section 23, D-31 to D-37), Dictation
+Settings’ <strong>Speech Providers…</strong> adds twelve speech
+companies with the person’s own account (Azure, Google, Amazon,
+Deepgram, AssemblyAI, Speechmatics, ElevenLabs, Gladia, Rev.ai, Groq,
+Mistral, IBM Watson), each with its own consent question, keys in
+Windows Credential Manager, and none recommended. Choose Model (Ctrl+M)
+does not list them yet; Dictation Settings does. Local models stay the
+default.</p></li>
+<li><p><strong>Where it works.</strong> No list of supported programs is
+claimed yet. The list comes from testing with NVDA, JAWS and Narrator in
+Outlook, Word, Notepad and the three browsers.</p></li>
+<li><p><strong>One microphone</strong> (after 1.0.0, 2026-10-13). A
+second operating-system lock, separate from the owner lock, is held by
+whichever of QUILL, QUILL Lite, QUILL Transcribe and Inkwell has the
+microphone open, and only for as long as it is open. A second start is
+refused with the name of the program listening. It is separate because
+QUILL Transcribe holds the owner lock for as long as it runs, and the
+editors must still dictate while it waits in the tray. QUILL Lite’s
+window is claimed as QUILL’s is, so QUILL Transcribe does not type into
+it. QUILL’s Locked Dictation (Ctrl+F9) takes the same lock while it
+records.</p></li>
+<li><p><strong>The editors’ keys</strong> (after 1.0.0). A dictation
+command QUILL Transcribe shares with the editors answers the editors’
+chord (family rule 2), and the 1.0 key stays as a second key (rule 5).
+The editors’ dictation commands it does not have are listed, each with
+its reason, in <code>quill/core/transcribe/parity.py</code> (rule
+11).</p></li>
+<li><p><strong>The working tick</strong> (after 1.0.0). A soft tick once
+a second while a heard phrase takes more than a second to recognise, and
+one sentence after four seconds, once a session. On by default here, off
+in the editors. <em>What you hear after each phrase</em> caps it: words
+only gives the sentence and no tick, nothing gives neither.</p></li>
+<li><p><strong>Recent Phrases</strong> (after 1.0.0). The editors’
+window and code, on Shift+F11. Insert Again types into the program you
+go back to, through the same keystroke path and checks as dictation.
+Memory only for now.</p></li>
+<li><p><strong>In other programs</strong> (after 1.0.0). “insert
+snippet”, “insert abbreviation” and “paste clip” work, because they only
+insert. “What can I say” is a spoken sentence while dictating, and
+Dictation Commands lists exactly what works in other programs, with the
+person’s own phrases.</p></li>
+<li><p><strong>Never lose what was said</strong> (after 1.0.0, D-5).
+Words held while paused, and a phrase whose typing stopped part-way, are
+kept on disk, sealed with Windows DPAPI, until they are typed or
+discarded; Recent Phrases lists them after this run’s phrases, with
+Discard. A finished recording’s transcript can be typed into a field
+(Review Transcript’s Type into a Field). The text history is opt-in
+(Keep a dictation history: off, 1, 7 or 30 days), text only, clearable,
+and deleted when turned off.</p></li>
+<li><p><strong>Snippet blanks by voice</strong> (after 1.0.0, D-8).
+“QUILL insert snippet” asks for each blank and choice, then types the
+filled snippet as one phrase. “read that” reads the whole of the last
+insertion (D-18).</p></li>
+<li><p><strong>The wake phrase and holding the key</strong> (after
+1.0.0, 2026-10-15). Both are the editors’ settings, off by default. The
+wake phrase listens only while another program is in front, and never
+while QUILL Transcribe, QUILL, QUILL Lite or a program on the never-type
+list is; nothing heard is kept until the phrase is heard, and the state
+line and tray say “Listening for your wake phrase”. Holding follows the
+start and stop key itself, by asking Windows whether that one key is
+still down while a press is followed, with no keyboard hook. Because a
+system-wide key needs Ctrl or Alt, what is said while it is held is
+typed when it comes up.</p></li>
+<li><p><strong>Feedback where you work</strong> (after 1.0.0,
+2026-10-15). The words heard so far and the unspoken state changes go to
+a braille display only. Dictation Status is the editors’ Alt+F9.
+Dictation Status, Resume and Discard Held Words each have an optional
+system-wide key, empty until chosen, picked and checked like the
+others.</p></li>
+<li><p><strong>Correcting in other programs</strong> (after 1.0.0,
+2026-10-16, D-10). The correcting commands work on the words this
+session typed, and only those, as backspace-and-retype; the other
+program is never read. Each is refused with one sentence when the focus
+moved, when Windows saw a key or the mouse after dictation’s own typing
+(when, never which key), or, for the commands that retype, in Word and
+Outlook until the insertion harness shows they are safe. “Correct that”
+with a one-answer engine asks the other built-in engine for a second
+opinion (D-19), in memory only.</p></li>
+<li><p><strong>Correcting yourself, styles and polish</strong> (after
+1.0.0, 2026-10-16). The editors’ settings and code (dictation design
+record section 28): <strong>Fix it when I correct myself</strong> (off)
+fixes “Thursday, no, Friday” before anything is typed; <strong>Dictation
+style</strong> offers Polished only when the review could reach an AI;
+<strong>Allow polishing my dictation with AI when I ask</strong> (off)
+makes “QUILL polish that” backspace the last phrase into Review
+Dictation and send one fixed request there, after the review’s consent,
+never by itself. Learning a correction asks by voice (“QUILL yes”),
+never in a window, because a window would take the focus from the field;
+it follows “correct that” and “choose”, which work here on the session’s
+own words since decision 13.</p></li>
+<li><p><strong>Learning and profiles</strong> (after 1.0.0, 2026-10-16,
+D-25 and D-23). Practice Dictation is the one window of QUILL
+Transcribe’s own that dictation writes into: its field is an
+editor-style target written with one undo step a phrase, never
+keystrokes, and only after the same refusals as any start. Its
+recognition test scores with the benchmark’s own word-error count. Five
+lessons use the family’s Tutorials window. Seven named profiles
+(Standard, Email, Document, Markdown, Chat, Coding, Verbatim) overlay
+the dictation settings; switching is manual only (menu, tray, More
+Dictation Settings, or by voice), and Lock Profile stops voice
+switching. In another program, a formatting profile types nothing for a
+heading and says why, because the other program’s formatting cannot be
+applied by keystrokes QUILL Transcribe can trust.</p></li>
+<li><p><strong>One settings store, and Dictate Here</strong> (after
+1.0.0, 2026-10-16). “Share dictation settings with every QuillVille
+program” (dict.md D-13) replaces the one-way hand-off as the way
+settings move: <code>family_dictation.json</code> in
+<code>%LOCALAPPDATA%\QuillVille\Dictation</code>, written when Dictation
+Settings is saved anywhere and read here on the 800 ms clock, behind one
+check box that is on for a new install and off for one whose settings
+were changed. Keys, the tray, the working tick, strict mode, the
+read-back and every consent stay local. The word list moved to the same
+folder, copied with the old file kept. Quill Cast’s and Quill Radio’s
+Edit &gt; Dictate Here (D-16) send a <code>start</code> request, or
+launch QUILL Transcribe with <code>--tray --dictate-here</code>.
+Dictation design record, section 30.</p></li>
+<li><p><strong>Model advice from real speech</strong> (after 1.0.0,
+2026-10-22, D-22 and B-1). Met. The recommendation, tiers, speed factors
+and memory peaks come from the real-speech machine run recorded in
+<code>docs/qa/dictation-real-speech-benchmark-2026-10-22.md</code>
+(dictation design record, section 36), shared with QUILL and QUILL Lite
+through one engine and catalogue. English is ranked by the LibriVox
+held-out audiobooks: Parakeet Unified 3.2 percent of words wrong at 0.21
+per thread, so it is recommended on 8 GB with four cores; Parakeet TDT
+v3 (3.8, 0.11) on 8 GB with two cores. Spanish is ranked by the mean of
+FLEURS Spanish and the Spanish audiobooks, only from models measured in
+Spanish: Parakeet TDT v3 (4.4 and 7.3) on 8 GB, against the built-in
+Whisper’s 30.5 and 27.0, which stays the pick on 4 GB with Moonshine for
+English. The memory cap is 600 MB under 7 GB and 1.6 GB under 15 GB (it
+was 1 GB), and never more than is free less 500 MB. Tiers: Parakeet TDT
+v3, Parakeet Unified and Whisper base.en Lightweight; Nemotron Balanced.
+The advice’s note says the figures come from real recordings on one
+computer.</p></li>
+<li><p><strong>Removed models</strong> (after 1.0.0, 2026-10-22,
+dictation design record section 37, which replaces section 32.6’s
+deprecate-for-one-release policy). Met. Distil-Whisper small.en, Whisper
+small.en, Distil-Whisper medium.en, Whisper medium.en and Distil-Whisper
+large-v3 were each beaten by Parakeet Unified on the held-out audiobooks
+(5.9, 4.3, 6.3, 3.6 and 4.5 percent against 3.2), faster on one thread
+and in no more memory, and are removed from the shared catalogue in the
+same release
+(<code>quill/core/windows_dictation/removed_models.py</code>). Whisper
+base.en and every multilingual Whisper size stay. A saved choice of one
+becomes Parakeet Unified when that is already downloaded, otherwise the
+built-in model (<code>engines.coerce_engine</code>); nothing is
+downloaded. The change is recorded in the family’s shared dictation
+folder and said once, the next time dictation starts in any QuillVille
+program. Downloaded files are not deleted: the folders
+(<code>whisper-small.en-int8</code>,
+<code>whisper-distil-small.en-int8</code>,
+<code>whisper-medium.en-int8</code>,
+<code>whisper-distil-medium.en-int8</code>,
+<code>whisper-distil-large-v3-int8</code>) stay under
+<code>%LOCALAPPDATA%\QuillVille\Dictation\models</code> (portable:
+<code>data\dictation\models</code>) until the person deletes
+them.</p></li>
+<li><p><strong>Moonshine base and long phrases</strong> (after 1.0.0,
+2026-10-22, PR #1683). Met. It returned nothing for any phrase over
+about 8.5 seconds; long phrases are now heard in pieces of 8 seconds or
+less, cut at the quietest moment, and joined. Measured after the fix:
+5.9 percent on the held-out audiobooks.</p></li>
+<li><p><strong>Help &gt; What’s New</strong> (build 3, 2026-10-25). Met.
+The Help menu has <strong>What’s New</strong> on Ctrl+Shift+F1, the key
+every standalone QuillVille app gives it: QUILL Transcribe’s changelog
+(<code>docs/CHANGELOG</code>) opened as HTML in the browser through the
+family’s shared <code>quill/ui/whats_new.py</code>. A build with no
+changelog says so rather than doing nothing.</p></li>
+</ol>
+<p>Still to check by hand: speed, memory, screen-reader lag and battery
+on a real 4 GB Windows 10 computer with NVDA or JAWS running (B-8), and
+Whisper medium and large-v3-turbo, which were too slow to re-run and
+keep their earlier figures.</p>
+<h2 id="waiting-for-a-later-version">Waiting for a later version</h2>
+<ul>
+<li>Keeping audio for replay, which stays a separate opt-in that text
+history never implies.</li>
+<li>A profile chosen automatically by the program in front (needs the
+privacy review in the spec, section 7.6), and a word list per profile
+(D-21).</li>
+<li>A multi-page setup with Back on each step.</li>
+<li>Inkwell and the editors using QUILL Transcribe as a service rather
+than through the owner and microphone locks; Inkwell’s own Dictate
+Anywhere pausing when the focus moves, as QUILL Transcribe’s does.</li>
+<li>A published list of tested programs with results in it. The list,
+the test that fills it and the screen reader checks exist since
+2026-10-15 (the user guide’s “Programs it has been tested with”); every
+row is still untested.</li>
+</ul>
+</main>
+</body>
+</html>

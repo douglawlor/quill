@@ -1,0 +1,3893 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Keyboard Reference (default bindings)</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<!-- AUTO-GENERATED FILE. Do not hand-edit.
+    Generated by quill/tools/build_keymap_reference.py from
+    quill.core.keymap.DEFAULT_KEYMAP and quill.core.app_keymaps.APP_KEYMAPS.
+    To update: python -m quill.tools.build_keymap_reference --write -->
+
+<h1 id="quill-keyboard-reference-default-bindings">QUILL Keyboard
+Reference (default bindings)</h1>
+<p>Generated from the keymap the apps actually load, so this document
+cannot drift from the code. Bindings shown as
+<code>QUILL Key + &lt;key&gt;</code> are chords: press Ctrl+Shift+Grave,
+release, then the second key. Every binding here is a <em>default</em> –
+the in-app reference (Help &gt; Open Keyboard Reference) always shows
+your own customised keymap.</p>
+<p>Editor commands with default bindings: 516.</p>
+<h2 id="the-quill-editor">The QUILL editor</h2>
+<h3 id="files">Files</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Manage GitHub Accounts…</td>
+<td><code>file.github_manage_accounts</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Save to GitHub…</td>
+<td><code>file.github_save_back</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Import / Convert Document (OCR)</td>
+<td><code>file.import_convert</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Manage Remote Sites…</td>
+<td><code>file.manage_remote_sites</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open from Remote…</td>
+<td><code>file.open_from_remote</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open Remote GitHub File URL…</td>
+<td><code>file.open_github_file_url</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open GitHub Items…</td>
+<td><code>file.open_github_items</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open Remote GitHub Repository…</td>
+<td><code>file.open_github_repository</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open from URL…</td>
+<td><code>file.open_url</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Save to Remote</td>
+<td><code>file.save_to_remote</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+0</td>
+<td>Recent Documents</td>
+<td><code>file.recent_documents</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F12</td>
+<td>Reopen Last Session</td>
+<td><code>file.reopen_last_session</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+T</td>
+<td>New Rich Text Document</td>
+<td><code>file.new_rich_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+E</td>
+<td>File Format</td>
+<td><code>file.file_format</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+N</td>
+<td>New Plain Text Document</td>
+<td><code>file.new_plain_text_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+P</td>
+<td>Page Setup…</td>
+<td><code>file.page_setup</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+E</td>
+<td>Restore Previous Version…</td>
+<td><code>file.restore_previous_version</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+End</td>
+<td>HTML…</td>
+<td><code>file.export_html</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Enter</td>
+<td>Open from Clipboard</td>
+<td><code>file.open_from_clipboard</code></td>
+</tr>
+<tr>
+<td>Ctrl+N</td>
+<td>New</td>
+<td><code>file.new</code></td>
+</tr>
+<tr>
+<td>Ctrl+O or Ctrl+F12</td>
+<td>Open…</td>
+<td><code>file.open</code></td>
+</tr>
+<tr>
+<td>Ctrl+P or Ctrl+Shift+F12</td>
+<td>Print…</td>
+<td><code>file.print</code></td>
+</tr>
+<tr>
+<td>Ctrl+S</td>
+<td>Save</td>
+<td><code>file.save</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+0</td>
+<td>Forget Remembered File-Change Answers</td>
+<td><code>file.forget_external_change_answers</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+S or F12</td>
+<td>Save As…</td>
+<td><code>file.save_as</code></td>
+</tr>
+<tr>
+<td>Ctrl+W</td>
+<td>Close Document</td>
+<td><code>file.close_document</code></td>
+</tr>
+<tr>
+<td>QUILL Key + B</td>
+<td>Batch conversion</td>
+<td><code>file.batch_conversion</code></td>
+</tr>
+<tr>
+<td>QUILL Key + G</td>
+<td>Open From Favorite Folder…</td>
+<td><code>file.open_from_favorite_folder</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+F</td>
+<td>Add Current Folder to Favorites</td>
+<td><code>file.add_favorite_folder</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+X</td>
+<td>Remove Favorite Folder…</td>
+<td><code>file.remove_favorite_folder</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="editing">Editing</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Jump to Named Mark</td>
+<td><code>edit.jump_to_named_mark</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Search Copy Tray Slots</td>
+<td><code>edit.search_tray_slots</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Set Named Mark</td>
+<td><code>edit.set_named_mark</code></td>
+</tr>
+<tr>
+<td>Alt+.</td>
+<td>Insert Emoji…</td>
+<td><code>edit.insert_emoji</code></td>
+</tr>
+<tr>
+<td>Alt+F11</td>
+<td>Convert Indentation to Spaces</td>
+<td><code>edit.convert_indentation_to_spaces</code></td>
+</tr>
+<tr>
+<td>Alt+F12</td>
+<td>Convert Indentation to Tabs</td>
+<td><code>edit.convert_indentation_to_tabs</code></td>
+</tr>
+<tr>
+<td>Alt+F8</td>
+<td>Read All</td>
+<td><code>edit.read_all</code></td>
+</tr>
+<tr>
+<td>Alt+M</td>
+<td>List Marks</td>
+<td><code>edit.list_marks</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+.</td>
+<td>Unquote Lines</td>
+<td><code>edit.unquote_lines</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+C</td>
+<td>Copy With Source</td>
+<td><code>edit.copy_with_source</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F3</td>
+<td>Undo and Say What Changed</td>
+<td><code>edit.undo_and_say</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F5</td>
+<td>Select Section</td>
+<td><code>edit.select_section</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F8</td>
+<td>Go to Start of Selection</td>
+<td><code>edit.go_to_start_of_selection</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F9</td>
+<td>Toggle Extend Selection Mode</td>
+<td><code>edit.toggle_extend_selection_mode</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+U</td>
+<td>Open Review Buffer</td>
+<td><code>edit.open_review_buffer</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Y</td>
+<td>Copy to tray slot</td>
+<td><code>edit.copy_to_tray_slot</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Z</td>
+<td>Reverse Lines</td>
+<td><code>edit.reverse_lines</code></td>
+</tr>
+<tr>
+<td>Ctrl+.</td>
+<td>Word Prediction…</td>
+<td><code>edit.word_prediction</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+=</td>
+<td>Insert Equation…</td>
+<td><code>edit.insert_equation</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+D</td>
+<td>Remove Duplicate Lines</td>
+<td><code>edit.remove_duplicate_lines</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F8</td>
+<td>Toggle Selection Marker</td>
+<td><code>edit.toggle_selection_marker</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+M</td>
+<td>Keep selection in clip library</td>
+<td><code>edit.keep_selection_in_clip_library</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Q</td>
+<td>Duplicate Selection</td>
+<td><code>edit.duplicate_selection</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+R</td>
+<td>Trim Trailing Whitespace</td>
+<td><code>edit.trim_trailing_whitespace</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+S</td>
+<td>Sort Lines Ascending</td>
+<td><code>edit.sort_lines_ascending</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+-</td>
+<td>Paste from tray 11</td>
+<td><code>edit.paste_from_tray_11</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+0</td>
+<td>Paste from tray 10</td>
+<td><code>edit.paste_from_tray_10</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+1</td>
+<td>Paste from tray 1</td>
+<td><code>edit.paste_from_tray_1</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+2</td>
+<td>Paste from tray 2</td>
+<td><code>edit.paste_from_tray_2</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+3</td>
+<td>Paste from tray 3</td>
+<td><code>edit.paste_from_tray_3</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+4</td>
+<td>Paste from tray 4</td>
+<td><code>edit.paste_from_tray_4</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+5</td>
+<td>Paste from tray 5</td>
+<td><code>edit.paste_from_tray_5</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+6</td>
+<td>Paste from tray 6</td>
+<td><code>edit.paste_from_tray_6</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+7</td>
+<td>Paste from tray 7</td>
+<td><code>edit.paste_from_tray_7</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+8</td>
+<td>Paste from tray 8</td>
+<td><code>edit.paste_from_tray_8</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+9</td>
+<td>Paste from tray 9</td>
+<td><code>edit.paste_from_tray_9</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+=</td>
+<td>Paste from tray 12</td>
+<td><code>edit.paste_from_tray_12</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+B</td>
+<td>Select Block</td>
+<td><code>edit.select_block</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+M</td>
+<td>Open clip library</td>
+<td><code>edit.open_clip_library</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+S</td>
+<td>Sort Lines Descending</td>
+<td><code>edit.sort_lines_descending</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+T</td>
+<td>Normalize Whitespace</td>
+<td><code>edit.normalize_whitespace</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+X</td>
+<td>Shrink Selection</td>
+<td><code>edit.shrink_selection</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Y</td>
+<td>Clear all tray slots</td>
+<td><code>edit.clear_all_tray_slots</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Z</td>
+<td>Restore deletion</td>
+<td><code>edit.restore_deletion</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Space</td>
+<td>Select Token</td>
+<td><code>edit.select_chunk</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+V</td>
+<td>Open copy tray</td>
+<td><code>edit.open_copy_tray</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+X</td>
+<td>Exchange Point and Mark</td>
+<td><code>edit.exchange_point_mark</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Y</td>
+<td>Copy to Next Empty Tray Slot</td>
+<td><code>edit.copy_to_next_slot</code></td>
+</tr>
+<tr>
+<td>Ctrl+Enter</td>
+<td>Follow Link</td>
+<td><code>edit.follow_link</code></td>
+</tr>
+<tr>
+<td>Ctrl+F</td>
+<td>Find…</td>
+<td><code>edit.find</code></td>
+</tr>
+<tr>
+<td>Ctrl+F8</td>
+<td>Copy All</td>
+<td><code>edit.copy_all</code></td>
+</tr>
+<tr>
+<td>Ctrl+H</td>
+<td>Replace…</td>
+<td><code>edit.replace</code></td>
+</tr>
+<tr>
+<td>Ctrl+K</td>
+<td>Insert Link…</td>
+<td><code>edit.insert_link</code></td>
+</tr>
+<tr>
+<td>Ctrl+M</td>
+<td>Pop Mark</td>
+<td><code>edit.pop_mark</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+A</td>
+<td>Unselect All</td>
+<td><code>edit.unselect_all</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+E</td>
+<td>Select Line</td>
+<td><code>edit.select_line</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+End</td>
+<td>Select to End of Document</td>
+<td><code>edit.select_to_end_of_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F10</td>
+<td>Find in open documents</td>
+<td><code>edit.find_in_open_documents</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F3</td>
+<td>Find All Matches</td>
+<td><code>edit.find_all_matches</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F8</td>
+<td>Reselect</td>
+<td><code>edit.reselect</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+H</td>
+<td>Select Paragraph</td>
+<td><code>edit.select_paragraph</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Home</td>
+<td>Select to Start of Document</td>
+<td><code>edit.select_to_start_of_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+M</td>
+<td>Set Mark</td>
+<td><code>edit.set_mark</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Q</td>
+<td>Quote Lines</td>
+<td><code>edit.quote_lines</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+V</td>
+<td>Paste Text Only</td>
+<td><code>edit.paste_plain_text</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+W</td>
+<td>Select Word</td>
+<td><code>edit.select_word</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+X</td>
+<td>Expand Selection</td>
+<td><code>edit.expand_selection</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Y</td>
+<td>Say Selected</td>
+<td><code>edit.say_selected</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+[</td>
+<td>Toggle Fold</td>
+<td><code>edit.toggle_fold</code></td>
+</tr>
+<tr>
+<td>Ctrl+Space</td>
+<td>Select Sentence</td>
+<td><code>edit.select_sentence</code></td>
+</tr>
+<tr>
+<td>Ctrl+Y</td>
+<td>Redo</td>
+<td><code>edit.redo</code></td>
+</tr>
+<tr>
+<td>Ctrl+Z</td>
+<td>Undo</td>
+<td><code>edit.undo</code></td>
+</tr>
+<tr>
+<td>F3</td>
+<td>Find Next</td>
+<td><code>edit.find_next</code></td>
+</tr>
+<tr>
+<td>F5</td>
+<td>Insert Date and Time</td>
+<td><code>edit.insert_date_time</code></td>
+</tr>
+<tr>
+<td>F8 or Ctrl+;</td>
+<td>Start Selection</td>
+<td><code>edit.start_selection</code></td>
+</tr>
+<tr>
+<td>QUILL Key + C</td>
+<td>Copy Selection For Email</td>
+<td><code>edit.copy_selection_for_email</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+-</td>
+<td>Copy to tray 11</td>
+<td><code>edit.copy_to_tray_11</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+0</td>
+<td>Copy to tray 10</td>
+<td><code>edit.copy_to_tray_10</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+1</td>
+<td>Copy to tray 1</td>
+<td><code>edit.copy_to_tray_1</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+2</td>
+<td>Copy to tray 2</td>
+<td><code>edit.copy_to_tray_2</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+3</td>
+<td>Copy to tray 3</td>
+<td><code>edit.copy_to_tray_3</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+4</td>
+<td>Copy to tray 4</td>
+<td><code>edit.copy_to_tray_4</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+5</td>
+<td>Copy to tray 5</td>
+<td><code>edit.copy_to_tray_5</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+6</td>
+<td>Copy to tray 6</td>
+<td><code>edit.copy_to_tray_6</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+7</td>
+<td>Copy to tray 7</td>
+<td><code>edit.copy_to_tray_7</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+8</td>
+<td>Copy to tray 8</td>
+<td><code>edit.copy_to_tray_8</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+9</td>
+<td>Copy to tray 9</td>
+<td><code>edit.copy_to_tray_9</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+=</td>
+<td>Copy to tray 12</td>
+<td><code>edit.copy_to_tray_12</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+V</td>
+<td>Magic Paste</td>
+<td><code>edit.magic_paste</code></td>
+</tr>
+<tr>
+<td>QUILL Key + X</td>
+<td>Replace All…</td>
+<td><code>edit.replace_all</code></td>
+</tr>
+<tr>
+<td>Shift+End</td>
+<td>Select to End of Line</td>
+<td><code>edit.select_to_end_of_line</code></td>
+</tr>
+<tr>
+<td>Shift+F3</td>
+<td>Find Previous</td>
+<td><code>edit.find_previous</code></td>
+</tr>
+<tr>
+<td>Shift+F8 or Ctrl+’</td>
+<td>Complete Selection</td>
+<td><code>edit.complete_selection</code></td>
+</tr>
+<tr>
+<td>Shift+Home</td>
+<td>Select to Start of Line</td>
+<td><code>edit.select_to_start_of_line</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="formatting">Formatting</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Insert Block Quote</td>
+<td><code>format.blockquote</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Structured List Studio Settings</td>
+<td><code>format.list_studio_settings</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>New Abbreviation from Clipboard…</td>
+<td><code>format.new_abbreviation_from_clipboard</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Quick Insert…</td>
+<td><code>format.quick_insert</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+9</td>
+<td>Autocorrect entries</td>
+<td><code>format.autocorrect_entries</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+A</td>
+<td>Toggle Abbreviation Expansion</td>
+<td><code>format.toggle_abbreviation_expansion</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Down</td>
+<td>Move Section Down</td>
+<td><code>format.move_section_down</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F</td>
+<td>Switch Document Format</td>
+<td><code>format.switch_document_format</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Left</td>
+<td>Decrease Heading Level</td>
+<td><code>format.decrease_heading_level</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Right</td>
+<td>Increase Heading Level</td>
+<td><code>format.increase_heading_level</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Up</td>
+<td>Move Section Up</td>
+<td><code>format.move_section_up</code></td>
+</tr>
+<tr>
+<td>Ctrl+/</td>
+<td>Toggle Line Comment</td>
+<td><code>format.toggle_line_comment</code></td>
+</tr>
+<tr>
+<td>Ctrl+1</td>
+<td>Single Line Spacing</td>
+<td><code>format.line_spacing_single</code></td>
+</tr>
+<tr>
+<td>Ctrl+2</td>
+<td>Double Line Spacing</td>
+<td><code>format.line_spacing_double</code></td>
+</tr>
+<tr>
+<td>Ctrl+5</td>
+<td>One and a Half Line Spacing</td>
+<td><code>format.line_spacing_one_and_a_half</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+-</td>
+<td>Insert Horizontal Rule</td>
+<td><code>format.horizontal_rule</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+0</td>
+<td>Body Text</td>
+<td><code>format.body_text</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+1</td>
+<td>Insert Heading 1</td>
+<td><code>format.heading_1</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+2</td>
+<td>Insert Heading 2</td>
+<td><code>format.heading_2</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+3</td>
+<td>Insert Heading 3</td>
+<td><code>format.heading_3</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+4</td>
+<td>Insert Heading 4</td>
+<td><code>format.heading_4</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+5</td>
+<td>Insert Heading 5</td>
+<td><code>format.heading_5</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+6</td>
+<td>Insert Heading 6</td>
+<td><code>format.heading_6</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Enter</td>
+<td>Toggle Task Done</td>
+<td><code>format.toggle_task_done</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F</td>
+<td>Font…</td>
+<td><code>format.editor_font</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+I</td>
+<td>Insert Markdown Tag…</td>
+<td><code>format.insert_markdown_tag</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F5</td>
+<td>Move Section To</td>
+<td><code>format.move_section_to</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+I</td>
+<td>Toggle Tab Key Mode (Indent / Tab Character)</td>
+<td><code>format.toggle_tab_insert_mode</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+J</td>
+<td>Join Lines</td>
+<td><code>format.join_lines</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+L</td>
+<td>Structured List Studio</td>
+<td><code>format.list_studio</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+N</td>
+<td>Toggle Case</td>
+<td><code>format.toggle_case</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+U</td>
+<td>Sentence Case</td>
+<td><code>format.sentence_case</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+V</td>
+<td>Describe Indent Depth</td>
+<td><code>format.describe_indent_depth</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+T</td>
+<td>Insert Table</td>
+<td><code>format.insert_table</code></td>
+</tr>
+<tr>
+<td>Ctrl+B</td>
+<td>Bold</td>
+<td><code>format.bold</code></td>
+</tr>
+<tr>
+<td>Ctrl+D</td>
+<td>Duplicate Line</td>
+<td><code>format.duplicate_line</code></td>
+</tr>
+<tr>
+<td>Ctrl+E</td>
+<td>Centre</td>
+<td><code>format.align_center</code></td>
+</tr>
+<tr>
+<td>Ctrl+I</td>
+<td>Italic</td>
+<td><code>format.italic</code></td>
+</tr>
+<tr>
+<td>Ctrl+J</td>
+<td>Justify</td>
+<td><code>format.justify</code></td>
+</tr>
+<tr>
+<td>Ctrl+L</td>
+<td>Align Left</td>
+<td><code>format.align_left</code></td>
+</tr>
+<tr>
+<td>Ctrl+R</td>
+<td>Align Right</td>
+<td><code>format.align_right</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+,</td>
+<td>Shrink Font</td>
+<td><code>format.shrink_font</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+.</td>
+<td>Grow Font</td>
+<td><code>format.grow_font</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+/</td>
+<td>Toggle Block Comment</td>
+<td><code>format.toggle_block_comment</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+D</td>
+<td>Describe Formatting at Cursor</td>
+<td><code>format.describe_formatting</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Delete</td>
+<td>Delete Line</td>
+<td><code>format.delete_line</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Down</td>
+<td>Move Line Down</td>
+<td><code>format.move_line_down</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F</td>
+<td>Font for Selection…</td>
+<td><code>format.selection_font</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+K</td>
+<td>Lower Case</td>
+<td><code>format.lower_case</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+L</td>
+<td>Toggle Bullet List</td>
+<td><code>format.toggle_bullet_list</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+N</td>
+<td>Clear Formatting</td>
+<td><code>format.clear_formatting</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+T</td>
+<td>Title Case</td>
+<td><code>format.title_case</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+U</td>
+<td>Upper Case</td>
+<td><code>format.upper_case</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Up</td>
+<td>Move Line Up</td>
+<td><code>format.move_line_up</code></td>
+</tr>
+<tr>
+<td>Ctrl+[</td>
+<td>Outdent</td>
+<td><code>format.outdent</code></td>
+</tr>
+<tr>
+<td>Ctrl+]</td>
+<td>Indent</td>
+<td><code>format.indent</code></td>
+</tr>
+<tr>
+<td>QUILL Key + A</td>
+<td>Expand Abbreviation</td>
+<td><code>format.expand_abbreviation</code></td>
+</tr>
+<tr>
+<td>QUILL Key + H or Ctrl+Alt+O</td>
+<td>Insert HTML Tag…</td>
+<td><code>format.insert_html_tag</code></td>
+</tr>
+<tr>
+<td>QUILL Key + L</td>
+<td>List Manager</td>
+<td><code>format.list_manager</code></td>
+</tr>
+<tr>
+<td>QUILL Key + S</td>
+<td>Insert Snippet…</td>
+<td><code>format.insert_snippet</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+A or Ctrl+Alt+A</td>
+<td>Manage Abbreviations…</td>
+<td><code>format.manage_abbreviations</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+L</td>
+<td>Toggle Numbered List</td>
+<td><code>format.toggle_numbered_list</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+S</td>
+<td>Manage Snippets…</td>
+<td><code>format.manage_snippets</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="navigation">Navigation</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Go To Page…</td>
+<td><code>navigate.go_to_page</code></td>
+</tr>
+<tr>
+<td>Alt+Down</td>
+<td>Next Structure</td>
+<td><code>navigate.next_structure</code></td>
+</tr>
+<tr>
+<td>Alt+Left</td>
+<td>Back Location</td>
+<td><code>navigate.back_location</code></td>
+</tr>
+<tr>
+<td>Alt+PageDown</td>
+<td>Next Highlighted Passage</td>
+<td><code>navigate.next_highlight</code></td>
+</tr>
+<tr>
+<td>Alt+PageUp</td>
+<td>Previous Highlighted Passage</td>
+<td><code>navigate.previous_highlight</code></td>
+</tr>
+<tr>
+<td>Alt+Right</td>
+<td>Forward Location</td>
+<td><code>navigate.forward_location</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+G or Ctrl+Shift+F5</td>
+<td>List Bookmarks…</td>
+<td><code>navigate.list_bookmarks</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+O</td>
+<td>Heading Organizer…</td>
+<td><code>navigate.heading_organizer</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+[</td>
+<td>Previous Fold</td>
+<td><code>navigate.previous_fold</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+]</td>
+<td>Next Fold</td>
+<td><code>navigate.next_fold</code></td>
+</tr>
+<tr>
+<td>Alt+Up</td>
+<td>Previous Structure</td>
+<td><code>navigate.previous_structure</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+B</td>
+<td>Clear All Bookmarks</td>
+<td><code>navigate.clear_numbered_bookmarks</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F6</td>
+<td>Set Document Language…</td>
+<td><code>navigate.set_language</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+H</td>
+<td>Next Heading</td>
+<td><code>navigate.next_heading</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+J</td>
+<td>Set Temporary Bookmark</td>
+<td><code>navigate.set_temp_bookmark</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+A</td>
+<td>Go to Anything</td>
+<td><code>navigate.go_to_anything</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+H</td>
+<td>Previous Heading</td>
+<td><code>navigate.previous_heading</code></td>
+</tr>
+<tr>
+<td>Ctrl+F2</td>
+<td>List Highlighted Passages…</td>
+<td><code>navigate.list_highlights</code></td>
+</tr>
+<tr>
+<td>Ctrl+G</td>
+<td>Go to Line…</td>
+<td><code>navigate.go_to_line</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+1</td>
+<td>Set numbered bookmark 1</td>
+<td><code>navigate.set_numbered_bookmark_1</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+2</td>
+<td>Set numbered bookmark 2</td>
+<td><code>navigate.set_numbered_bookmark_2</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+3</td>
+<td>Set numbered bookmark 3</td>
+<td><code>navigate.set_numbered_bookmark_3</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+4</td>
+<td>Set numbered bookmark 4</td>
+<td><code>navigate.set_numbered_bookmark_4</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+5</td>
+<td>Set numbered bookmark 5</td>
+<td><code>navigate.set_numbered_bookmark_5</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+6</td>
+<td>Set numbered bookmark 6</td>
+<td><code>navigate.set_numbered_bookmark_6</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+7</td>
+<td>Set numbered bookmark 7</td>
+<td><code>navigate.set_numbered_bookmark_7</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+8</td>
+<td>Set numbered bookmark 8</td>
+<td><code>navigate.set_numbered_bookmark_8</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+9</td>
+<td>Set numbered bookmark 9</td>
+<td><code>navigate.set_numbered_bookmark_9</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+B</td>
+<td>Set Bookmark</td>
+<td><code>navigate.set_numbered_bookmark</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+J</td>
+<td>Go to Temporary Bookmark</td>
+<td><code>navigate.go_to_temp_bookmark</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+O or Ctrl+Alt+L</td>
+<td>Outline Navigator…</td>
+<td><code>navigate.outline_navigator</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Z</td>
+<td>Quick Nav (Landmarks)</td>
+<td><code>navigate.quick_nav</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+\</td>
+<td>Match Bracket</td>
+<td><code>navigate.match_bracket</code></td>
+</tr>
+<tr>
+<td>F2</td>
+<td>Next Bookmark</td>
+<td><code>navigate.next_bookmark</code></td>
+</tr>
+<tr>
+<td>F6</td>
+<td>Next Region</td>
+<td><code>navigate.next_region</code></td>
+</tr>
+<tr>
+<td>QUILL Key + F</td>
+<td>Speak Window Title</td>
+<td><code>navigate.speak_window_title</code></td>
+</tr>
+<tr>
+<td>QUILL Key + P</td>
+<td>Speak Full Path</td>
+<td><code>navigate.speak_full_path</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Q</td>
+<td>Speak Status Summary</td>
+<td><code>navigate.speak_status_summary</code></td>
+</tr>
+<tr>
+<td>Shift+F2</td>
+<td>Previous Bookmark</td>
+<td><code>navigate.previous_bookmark</code></td>
+</tr>
+<tr>
+<td>Shift+F6</td>
+<td>Previous Region</td>
+<td><code>navigate.previous_region</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="view">View</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Alt+F3</td>
+<td>Reveal Codes</td>
+<td><code>view.reveal_codes_toggle</code></td>
+</tr>
+<tr>
+<td>Alt+F6</td>
+<td>Focus Preview</td>
+<td><code>view.focus_preview</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+B</td>
+<td>Show Status Bar</td>
+<td><code>view.toggle_status_bar</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+D</td>
+<td>Toggle Dark Mode</td>
+<td><code>view.toggle_dark_mode</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+E</td>
+<td>Show Spoken Echo</td>
+<td><code>view.spoken_echo</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F1</td>
+<td>What Is This Document?</td>
+<td><code>view.describe_this_document</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F2</td>
+<td>What Changed?</td>
+<td><code>view.describe_last_change</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+V</td>
+<td>Preview</td>
+<td><code>view.preview</code></td>
+</tr>
+<tr>
+<td>Alt+Z</td>
+<td>Toggle Soft Wrap</td>
+<td><code>view.toggle_soft_wrap</code></td>
+</tr>
+<tr>
+<td>Ctrl+-</td>
+<td>Decrease Text Size</td>
+<td><code>view.text_size_down</code></td>
+</tr>
+<tr>
+<td>Ctrl+0</td>
+<td>Reset Text Size</td>
+<td><code>view.text_size_reset</code></td>
+</tr>
+<tr>
+<td>Ctrl+=</td>
+<td>Increase Text Size</td>
+<td><code>view.text_size_up</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F3</td>
+<td>Announce Headings</td>
+<td><code>view.toggle_heading_announcements</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F5</td>
+<td>Announce Lists</td>
+<td><code>view.toggle_list_announcements</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F7</td>
+<td>Toggle Spell Check As You Type</td>
+<td><code>view.toggle_spellcheck_as_you_type</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+W</td>
+<td>Toggle Overwrite Mode</td>
+<td><code>view.toggle_overwrite_mode</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+\</td>
+<td>Preview Side by Side</td>
+<td><code>view.split_preview</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+C</td>
+<td>Announce Contrast Ratio</td>
+<td><code>view.announce_contrast</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+T</td>
+<td>Toggle Tab Control</td>
+<td><code>view.toggle_tab_control</code></td>
+</tr>
+<tr>
+<td>QUILL Key + T</td>
+<td>Send to Tray</td>
+<td><code>view.send_to_tray</code></td>
+</tr>
+<tr>
+<td>QUILL Key + V</td>
+<td>Browser Preview</td>
+<td><code>view.browser_preview</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="tools">Tools</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Grammar and Style Check…</td>
+<td><code>tools.ai_grammar_style</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Spell Check…</td>
+<td><code>tools.ai_spell_check</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Spell Check Interactive…</td>
+<td><code>tools.ai_spell_check_interactive</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Switch AI Engine</td>
+<td><code>tools.ai_switch_engine</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>AI Thesaurus…</td>
+<td><code>tools.ai_thesaurus</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Translate Selection…</td>
+<td><code>tools.ai_translate_selection</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open CSV in Table Studio (Experimental)</td>
+<td><code>tools.csv_studio</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Table Studio (Experimental)</td>
+<td><code>tools.table_studio</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Voice Command (Offline)</td>
+<td><code>tools.voice_command</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Voice Conversation Mode</td>
+<td><code>tools.voice_conversation</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Speak Voice Status</td>
+<td><code>tools.voice_status</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Listen for Hey QUILL (Wake Word)</td>
+<td><code>tools.voice_wakeword</code></td>
+</tr>
+<tr>
+<td>Alt+F10</td>
+<td>Look Up Word…</td>
+<td><code>tools.look_up</code></td>
+</tr>
+<tr>
+<td>Alt+F2</td>
+<td>Use My Own AI Key…</td>
+<td><code>tools.hosted_ai_own_key</code></td>
+</tr>
+<tr>
+<td>Alt+F5</td>
+<td>Use My ChatGPT Subscription…</td>
+<td><code>tools.hosted_ai_chatgpt</code></td>
+</tr>
+<tr>
+<td>Alt+F9</td>
+<td>Dictation Status</td>
+<td><code>tools.dictation_status</code></td>
+</tr>
+<tr>
+<td>Alt+Q</td>
+<td>Ask Quill…</td>
+<td><code>tools.ask_quill_chat</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+’</td>
+<td>How to Say It</td>
+<td><code>tools.word_pronounce</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+,</td>
+<td>Where It Comes From</td>
+<td><code>tools.word_origin</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+-</td>
+<td>Opposites</td>
+<td><code>tools.word_opposites</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+;</td>
+<td>Dictionary Status…</td>
+<td><code>tools.dictionary_status</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+=</td>
+<td>Use It in a Sentence</td>
+<td><code>tools.word_examples</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F10</td>
+<td>Windows dictation words</td>
+<td><code>tools.windows_dictation_words</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F11</td>
+<td>Bring My QUILL Lite Settings</td>
+<td><code>tools.bring_from_quilllite</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F6</td>
+<td>Windows dictation settings</td>
+<td><code>tools.windows_dictation_settings</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F7</td>
+<td>Spell Check Word</td>
+<td><code>tools.spell_check_word_at_cursor</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+L</td>
+<td>Misspelling List…</td>
+<td><code>tools.misspelling_list</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+M</td>
+<td>App Sounds On or Off</td>
+<td><code>tools.sound_toggle</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Q</td>
+<td>Ask Quill by Voice…</td>
+<td><code>tools.ask_quill_conversation</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+R</td>
+<td>Misspelling List (Ranked by Frequency)…</td>
+<td><code>tools.misspelling_list_ranked</code></td>
+</tr>
+<tr>
+<td>Ctrl+6</td>
+<td>Ask AI a Question…</td>
+<td><code>tools.hosted_ai_chat_key</code></td>
+</tr>
+<tr>
+<td>Ctrl+7</td>
+<td>Free AI Prompt Library…</td>
+<td><code>tools.hosted_ai_prompt_library</code></td>
+</tr>
+<tr>
+<td>Ctrl+9</td>
+<td>Web Searches Left</td>
+<td><code>tools.hosted_ai_web_searches</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F10</td>
+<td>Manage Individual Features…</td>
+<td><code>tools.individual_feature_toggles</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F11</td>
+<td>Export and Back Up…</td>
+<td><code>tools.share_export</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F12</td>
+<td>Import or Restore…</td>
+<td><code>tools.share_import</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F9</td>
+<td>Add Word to Dictionary</td>
+<td><code>tools.add_word_to_dictionary</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+G</td>
+<td>Free AI Assistant…</td>
+<td><code>tools.hosted_ai_assistant</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+’</td>
+<td>Define in Context</td>
+<td><code>tools.word_define</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+,</td>
+<td>Previous Difference</td>
+<td><code>tools.compare_previous_difference</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+.</td>
+<td>Next Difference</td>
+<td><code>tools.compare_next_difference</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+/</td>
+<td>Is This the Right Word?</td>
+<td><code>tools.word_right</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+;</td>
+<td>Rhymes</td>
+<td><code>tools.word_rhymes</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+D</td>
+<td>Announce Current Difference</td>
+<td><code>tools.compare_announce_difference</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F</td>
+<td>Search in Files…</td>
+<td><code>tools.search_in_files</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F2</td>
+<td>Free AI Usage…</td>
+<td><code>tools.hosted_ai_usage</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F4</td>
+<td>Connect or Sign Out…</td>
+<td><code>tools.hosted_ai_sign_in</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F6</td>
+<td>Spelling Announcements</td>
+<td><code>tools.spelling_announcements</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+K</td>
+<td>Privacy Agreement…</td>
+<td><code>tools.hosted_ai_privacy</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+O</td>
+<td>Sound Scheme</td>
+<td><code>tools.sound_events</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+PageDown</td>
+<td>Windows dictation live transcript</td>
+<td><code>tools.windows_dictation_live_transcript</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+PageUp</td>
+<td>Windows dictation context</td>
+<td><code>tools.windows_dictation_context</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Space</td>
+<td>Keymap Editor…</td>
+<td><code>tools.keymap_editor</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+[</td>
+<td>Word Summary</td>
+<td><code>tools.word_summary</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+]</td>
+<td>Find the Word For…</td>
+<td><code>tools.find_word</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+U</td>
+<td>Check for Updates…</td>
+<td><code>tools.check_updates</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Z</td>
+<td>Ask About This Document…</td>
+<td><code>tools.hosted_ai_ask_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+F10</td>
+<td>Word Explorer…</td>
+<td><code>tools.word_explorer</code></td>
+</tr>
+<tr>
+<td>Ctrl+F11</td>
+<td>Windows dictation toggle</td>
+<td><code>tools.windows_dictation_toggle</code></td>
+</tr>
+<tr>
+<td>Ctrl+F3</td>
+<td>Tidy Dictated Text…</td>
+<td><code>tools.dictation_tidy</code></td>
+</tr>
+<tr>
+<td>Ctrl+F5</td>
+<td>Ask About an Image…</td>
+<td><code>tools.hosted_ai_image</code></td>
+</tr>
+<tr>
+<td>Ctrl+F7 or Alt+F7</td>
+<td>Next Misspelling</td>
+<td><code>tools.next_misspelling</code></td>
+</tr>
+<tr>
+<td>Ctrl+F9</td>
+<td>Locked Dictation (start/finish)</td>
+<td><code>tools.dictation_lock_toggle</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+’</td>
+<td>More Vivid Word</td>
+<td><code>tools.word_vivid</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+-</td>
+<td>Simpler Word</td>
+<td><code>tools.word_simpler</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+;</td>
+<td>Synonyms That Fit</td>
+<td><code>tools.word_synonyms</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+=</td>
+<td>More Formal Word</td>
+<td><code>tools.word_formal</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F11</td>
+<td>Windows dictation switch language</td>
+<td><code>tools.windows_dictation_switch_language</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F7</td>
+<td>Previous Misspelling</td>
+<td><code>tools.previous_misspelling</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F9</td>
+<td>Pause or Resume Dictation</td>
+<td><code>tools.dictation_pause</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+G</td>
+<td>Document Statistics…</td>
+<td><code>tools.word_count</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+R</td>
+<td>Replace Across Files…</td>
+<td><code>tools.replace_in_files</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+]</td>
+<td>List Folds…</td>
+<td><code>tools.list_folds</code></td>
+</tr>
+<tr>
+<td>Escape</td>
+<td>Stop Dictation (keep speech)</td>
+<td><code>tools.dictation_emergency_stop</code></td>
+</tr>
+<tr>
+<td>F11</td>
+<td>Windows dictation command</td>
+<td><code>tools.windows_dictation_command</code></td>
+</tr>
+<tr>
+<td>F7</td>
+<td>Spell Check…</td>
+<td><code>tools.spell_check_dialog</code></td>
+</tr>
+<tr>
+<td>QUILL Key + D</td>
+<td>Dictation</td>
+<td><code>tools.dictation_toggle</code></td>
+</tr>
+<tr>
+<td>QUILL Key + I</td>
+<td>Describe Image…</td>
+<td><code>tools.describe_image</code></td>
+</tr>
+<tr>
+<td>QUILL Key + R</td>
+<td>Read Aloud Start/Pause</td>
+<td><code>tools.read_aloud_start_pause</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+D</td>
+<td>Dictate (Offline)</td>
+<td><code>tools.speech_dictate</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+I</td>
+<td>Document Intake Report…</td>
+<td><code>tools.document_intake_report</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+N</td>
+<td>New Sticky Note…</td>
+<td><code>tools.sticky_note_capture</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+O</td>
+<td>Find recording chapters</td>
+<td><code>tools.find_recording_chapters</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+P</td>
+<td>Post to Mastodon…</td>
+<td><code>tools.post_to_mastodon</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+R</td>
+<td>Read Aloud Stop</td>
+<td><code>tools.read_aloud_stop</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Y</td>
+<td>Audiobook Batch Speech…</td>
+<td><code>tools.speech_batch_export</code></td>
+</tr>
+<tr>
+<td>Shift+Escape</td>
+<td>Cancel Dictation (discard)</td>
+<td><code>tools.dictation_cancel</code></td>
+</tr>
+<tr>
+<td>Shift+F11</td>
+<td>Windows dictation recent</td>
+<td><code>tools.windows_dictation_recent</code></td>
+</tr>
+<tr>
+<td>Shift+F4</td>
+<td>Windows dictation review</td>
+<td><code>tools.windows_dictation_review</code></td>
+</tr>
+<tr>
+<td>Shift+F5</td>
+<td>Windows dictation transcribe file</td>
+<td><code>tools.windows_dictation_transcribe_file</code></td>
+</tr>
+<tr>
+<td>Shift+F7</td>
+<td>Thesaurus…</td>
+<td><code>tools.thesaurus</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="windows-and-tabs">Windows and Tabs</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Alt+0</td>
+<td>Go to document 10</td>
+<td><code>window.go_to_document_10</code></td>
+</tr>
+<tr>
+<td>Alt+1</td>
+<td>Go to document 1</td>
+<td><code>window.go_to_document_1</code></td>
+</tr>
+<tr>
+<td>Alt+2</td>
+<td>Go to document 2</td>
+<td><code>window.go_to_document_2</code></td>
+</tr>
+<tr>
+<td>Alt+3</td>
+<td>Go to document 3</td>
+<td><code>window.go_to_document_3</code></td>
+</tr>
+<tr>
+<td>Alt+4</td>
+<td>Go to document 4</td>
+<td><code>window.go_to_document_4</code></td>
+</tr>
+<tr>
+<td>Alt+5</td>
+<td>Go to document 5</td>
+<td><code>window.go_to_document_5</code></td>
+</tr>
+<tr>
+<td>Alt+6</td>
+<td>Go to document 6</td>
+<td><code>window.go_to_document_6</code></td>
+</tr>
+<tr>
+<td>Alt+7</td>
+<td>Go to document 7</td>
+<td><code>window.go_to_document_7</code></td>
+</tr>
+<tr>
+<td>Alt+8</td>
+<td>Go to document 8</td>
+<td><code>window.go_to_document_8</code></td>
+</tr>
+<tr>
+<td>Alt+9</td>
+<td>Go to document 9</td>
+<td><code>window.go_to_document_9</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F4</td>
+<td>Close Other Documents</td>
+<td><code>window.close_other_documents</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Tab or Ctrl+Shift+F6</td>
+<td>Previous Document</td>
+<td><code>window.previous_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+T</td>
+<td>New Tab</td>
+<td><code>window.new_document_tab</code></td>
+</tr>
+<tr>
+<td>Ctrl+Tab or Ctrl+F6</td>
+<td>Next Document</td>
+<td><code>window.next_document</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="application">Application</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Announcement Self-Test…</td>
+<td><code>app.announcement_self_test</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open the Media Player</td>
+<td><code>app.open_media_player</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Repeat Last Announcement</td>
+<td><code>app.repeat_last_announcement</code></td>
+</tr>
+<tr>
+<td>Ctrl+,</td>
+<td>Preferences…</td>
+<td><code>app.preferences</code></td>
+</tr>
+<tr>
+<td>Ctrl+Q</td>
+<td>Exit</td>
+<td><code>app.exit</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+P</td>
+<td>Command Palette…</td>
+<td><code>app.command_palette</code></td>
+</tr>
+<tr>
+<td>F9</td>
+<td>Repeat Last Result</td>
+<td><code>app.repeat_last_result</code></td>
+</tr>
+<tr>
+<td>QUILL Key + O</td>
+<td>More Preferences…</td>
+<td><code>app.preferences_hub</code></td>
+</tr>
+<tr>
+<td>Shift+F9</td>
+<td>Activity…</td>
+<td><code>app.activity</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="help">Help</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Release Channel…</td>
+<td><code>help.release_channel</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>What’s New</td>
+<td><code>help.whats_new</code></td>
+</tr>
+<tr>
+<td>Alt+F1</td>
+<td>Why Is This Unavailable?</td>
+<td><code>help.why_unavailable</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+/ or Ctrl+F1</td>
+<td>Key Cheatsheet</td>
+<td><code>help.key_cheatsheet</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+P</td>
+<td>Switch Feature Profile…</td>
+<td><code>help.switch_feature_profile</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F1</td>
+<td>Tutorials…</td>
+<td><code>help.tutorials</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F2</td>
+<td>Get Help from Support…</td>
+<td><code>help.report_bug</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F1</td>
+<td>What Can I Do Here?</td>
+<td><code>help.what_can_i_do_here</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F1</td>
+<td>Open User Guide</td>
+<td><code>help.open_user_guide</code></td>
+</tr>
+<tr>
+<td>F1</td>
+<td>Help on This Control</td>
+<td><code>help.help_on_control</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+H</td>
+<td>Context Help: Current Mode Keys</td>
+<td><code>help.context_help</code></td>
+</tr>
+<tr>
+<td>Shift+F1</td>
+<td>About Quill</td>
+<td><code>help.about_quill</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="everything-else">Everything else</h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Browse Organization Repositories…</td>
+<td><code>github.browse_organization</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Change Default Branch…</td>
+<td><code>github.change_default_branch</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Change Repository Visibility…</td>
+<td><code>github.change_repository_visibility</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Commit Multiple Files…</td>
+<td><code>github.commit_multiple_files</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Configure Branch Protection…</td>
+<td><code>github.configure_branch_protection</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Explain a Command…</td>
+<td><code>github.copilot_explain</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Ask Copilot for a Command…</td>
+<td><code>github.copilot_suggest</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Create Codespace…</td>
+<td><code>github.create_codespace</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Create Release…</td>
+<td><code>github.create_release</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Create Repository…</td>
+<td><code>github.create_repository</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Delete Branch…</td>
+<td><code>github.delete_branch</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Dispatch Workflow…</td>
+<td><code>github.dispatch_workflow</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Fork Repository…</td>
+<td><code>github.fork_repository</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Codespaces…</td>
+<td><code>github.list_codespaces</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Rename Repository…</td>
+<td><code>github.rename_repository</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Notifications…</td>
+<td><code>github.view_notifications</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>GitHub: Security Alerts…</td>
+<td><code>github.view_security_alerts</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: End Bisect</td>
+<td><code>localgit.bisect_reset</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Start Bisect…</td>
+<td><code>localgit.bisect_start</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Who Wrote This Line…</td>
+<td><code>localgit.blame_at_cursor</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Interactive Rebase…</td>
+<td><code>localgit.interactive_rebase</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Manage Stashes…</td>
+<td><code>localgit.manage_stashes</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Abort Rebase</td>
+<td><code>localgit.rebase_abort</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Resolve Conflicts…</td>
+<td><code>localgit.resolve_conflicts</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Stash Changes…</td>
+<td><code>localgit.stash_changes</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Switch Branch…</td>
+<td><code>localgit.switch_branch</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Local Git: Uncommitted Changes…</td>
+<td><code>localgit.uncommitted_changes</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>My Notes in This Episode…</td>
+<td><code>podcasts.episode_notes</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Keep This Episode</td>
+<td><code>podcasts.keep_episode</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Player Information…</td>
+<td><code>podcasts.player_information</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Podcasts: Sound Enhancements…</td>
+<td><code>podcasts.sound_enhancements</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Non ascii jump to report</td>
+<td><code>power.non_ascii_jump_to_report</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Non ascii jump to source</td>
+<td><code>power.non_ascii_jump_to_source</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 1</td>
+<td><code>radio.play_favorite_1</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 10</td>
+<td><code>radio.play_favorite_10</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 2</td>
+<td><code>radio.play_favorite_2</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 3</td>
+<td><code>radio.play_favorite_3</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 4</td>
+<td><code>radio.play_favorite_4</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 5</td>
+<td><code>radio.play_favorite_5</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 6</td>
+<td><code>radio.play_favorite_6</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 7</td>
+<td><code>radio.play_favorite_7</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 8</td>
+<td><code>radio.play_favorite_8</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Play favorite 9</td>
+<td><code>radio.play_favorite_9</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Internet Radio: Sound Enhancements…</td>
+<td><code>radio.sound_enhancements</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Story Studio…</td>
+<td><code>story.open_studio</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Sync Folder with GitHub…</td>
+<td><code>sync.sync_folder</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Delete Column</td>
+<td><code>table.delete_column</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Delete Row</td>
+<td><code>table.delete_row</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Insert Column Right</td>
+<td><code>table.insert_column_right</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Insert Row Below</td>
+<td><code>table.insert_row_below</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Tidy Table</td>
+<td><code>table.tidy</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Show Backlinks</td>
+<td><code>vault.backlinks</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Complete Link or Tag…</td>
+<td><code>vault.complete</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Vault Explorer…</td>
+<td><code>vault.explorer</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Export Vault as Website…</td>
+<td><code>vault.export_site</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Follow Wikilink</td>
+<td><code>vault.follow_link</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Insert Link to Note…</td>
+<td><code>vault.insert_link</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Insert Template…</td>
+<td><code>vault.insert_template</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Note Neighborhood</td>
+<td><code>vault.neighborhood</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Next Daily Note</td>
+<td><code>vault.next_daily</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open Vault…</td>
+<td><code>vault.open</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Previous Daily Note</td>
+<td><code>vault.prev_daily</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Publish Note</td>
+<td><code>vault.publish_note</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Go to Note…</td>
+<td><code>vault.quick_switch</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Rename Note…</td>
+<td><code>vault.rename</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Resolve Embed Inline</td>
+<td><code>vault.resolve_embed</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Search Vault…</td>
+<td><code>vault.search</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Vault Settings…</td>
+<td><code>vault.settings</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Speak Embed at Cursor</td>
+<td><code>vault.speak_embed</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Sync Vault</td>
+<td><code>vault.sync</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Show Tags…</td>
+<td><code>vault.tags</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Open Today’s Note</td>
+<td><code>vault.today</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Unlinked Mentions</td>
+<td><code>vault.unlinked_mentions</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Announcement History</td>
+<td><code>verbosity.history</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Verbosity Preferences</td>
+<td><code>verbosity.preferences</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Speak Status Bar</td>
+<td><code>verbosity.speak_status</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>What Changed</td>
+<td><code>verbosity.what_changed</code></td>
+</tr>
+<tr>
+<td>(unbound by default)</td>
+<td>Where Am I</td>
+<td><code>verbosity.where_am_i</code></td>
+</tr>
+<tr>
+<td>’</td>
+<td>QUILL Quick Nav: Code Block</td>
+<td><code>quill.quick_nav.code_block</code></td>
+</tr>
+<tr>
+<td>A</td>
+<td>QUILL Quick Nav: Link</td>
+<td><code>quill.quick_nav.link</code></td>
+</tr>
+<tr>
+<td>Alt+End</td>
+<td>Table: Last Cell in Row</td>
+<td><code>table.row_end</code></td>
+</tr>
+<tr>
+<td>Alt+Home</td>
+<td>Table: First Cell in Row</td>
+<td><code>table.row_start</code></td>
+</tr>
+<tr>
+<td>Alt+I</td>
+<td>Document Summary</td>
+<td><code>document.summary</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Delete</td>
+<td>Delete Inline Note…</td>
+<td><code>notes.delete_inline_note</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+Enter</td>
+<td>List Inline Notes…</td>
+<td><code>notes.list_inline_notes</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+H</td>
+<td>Speak Inline Note (double to edit)</td>
+<td><code>notes.speak_inline_note</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+I</td>
+<td>Add Inline Note…</td>
+<td><code>notes.add_inline_note</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+J</td>
+<td>Next Inline Note</td>
+<td><code>notes.next_inline_note</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+K</td>
+<td>Previous Inline Note</td>
+<td><code>notes.previous_inline_note</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+N</td>
+<td>Number lines</td>
+<td><code>power.number_lines</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+S</td>
+<td>Toggle clipboard collector</td>
+<td><code>power.toggle_clipboard_collector</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+W</td>
+<td>Hard wrap lines</td>
+<td><code>power.hard_wrap_lines</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+X</td>
+<td>Delete lines containing</td>
+<td><code>power.delete_lines_containing</code></td>
+</tr>
+<tr>
+<td>B</td>
+<td>QUILL Quick Nav: Bookmark</td>
+<td><code>quill.quick_nav.bookmark</code></td>
+</tr>
+<tr>
+<td>C</td>
+<td>QUILL Quick Nav: Table of Contents</td>
+<td><code>quill.quick_nav.table_of_contents</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Backspace</td>
+<td>Toggle read only guard</td>
+<td><code>power.toggle_read_only_guard</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+C</td>
+<td>Describe character detail</td>
+<td><code>power.describe_character_detail</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Down</td>
+<td>Table: Cell Below</td>
+<td><code>table.cell_below</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+End</td>
+<td>Table: Last Cell</td>
+<td><code>table.last_cell</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Home</td>
+<td>Table: First Cell</td>
+<td><code>table.first_cell</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+K</td>
+<td>Remove blank lines</td>
+<td><code>power.remove_blank_lines</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Left</td>
+<td>Table: Previous Cell</td>
+<td><code>table.previous_cell</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Right</td>
+<td>Table: Next Cell</td>
+<td><code>table.next_cell</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Backspace</td>
+<td>Delete paragraph</td>
+<td><code>power.delete_paragraph</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Delete</td>
+<td>Delete to line end</td>
+<td><code>power.delete_to_line_end</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F3</td>
+<td>Count occurrences</td>
+<td><code>power.count_occurrences</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Up</td>
+<td>Table: Cell Above</td>
+<td><code>table.cell_above</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+W</td>
+<td>Compute line statistics</td>
+<td><code>power.compute_line_statistics</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Backspace</td>
+<td>Delete to line start</td>
+<td><code>power.delete_to_line_start</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+C</td>
+<td>Describe character</td>
+<td><code>power.describe_character</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Enter</td>
+<td>Trim blank lines</td>
+<td><code>power.trim_blank_lines</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F2</td>
+<td>Insert special character</td>
+<td><code>power.insert_special_character</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+I</td>
+<td>Insert image</td>
+<td><code>power.insert_image</code></td>
+</tr>
+<tr>
+<td>F</td>
+<td>QUILL Quick Nav: Page</td>
+<td><code>quill.quick_nav.page</code></td>
+</tr>
+<tr>
+<td>H</td>
+<td>QUILL Quick Nav: Heading</td>
+<td><code>quill.quick_nav.heading</code></td>
+</tr>
+<tr>
+<td>I</td>
+<td>QUILL Quick Nav: List Item</td>
+<td><code>quill.quick_nav.list_item</code></td>
+</tr>
+<tr>
+<td>L</td>
+<td>QUILL Quick Nav: List</td>
+<td><code>quill.quick_nav.list</code></td>
+</tr>
+<tr>
+<td>M</td>
+<td>QUILL Quick Nav: Misspelling</td>
+<td><code>quill.quick_nav.misspelling</code></td>
+</tr>
+<tr>
+<td>N</td>
+<td>QUILL Quick Nav: Inline Note</td>
+<td><code>quill.quick_nav.inline_note</code></td>
+</tr>
+<tr>
+<td>P</td>
+<td>QUILL Quick Nav: Paragraph</td>
+<td><code>quill.quick_nav.paragraph</code></td>
+</tr>
+<tr>
+<td>Q</td>
+<td>QUILL Quick Nav: Block Quote</td>
+<td><code>quill.quick_nav.block_quote</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 0</td>
+<td>Radio: Stop</td>
+<td><code>radio.stop</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 1</td>
+<td>Sound Enhancements…</td>
+<td><code>media.sound_enhancements</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 2</td>
+<td>Radio: Play/Pause</td>
+<td><code>radio.play_pause</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 3</td>
+<td>Play Favorite Station…</td>
+<td><code>radio.play_favorite</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 4</td>
+<td>Podcasts: Skip Back</td>
+<td><code>podcasts.skip_back</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 5</td>
+<td>Podcasts: Skip Forward</td>
+<td><code>podcasts.skip_forward</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 6</td>
+<td>Record Now / Stop Recording</td>
+<td><code>radio.record_toggle</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 7</td>
+<td>Podcasts: Stop</td>
+<td><code>podcasts.stop</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 8</td>
+<td>Podcasts: Play/Pause</td>
+<td><code>podcasts.play_pause</code></td>
+</tr>
+<tr>
+<td>QUILL Key + 9</td>
+<td>Radio: Mute/Unmute</td>
+<td><code>radio.mute_toggle</code></td>
+</tr>
+<tr>
+<td>QUILL Key + M</td>
+<td>Paste html as markdown</td>
+<td><code>power.paste_html_as_markdown</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+G or Ctrl+Alt+Shift+Home</td>
+<td>Snippet Gallery…</td>
+<td><code>power.open_snippet_gallery</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+M</td>
+<td>Toggle Meeting Mode</td>
+<td><code>verbosity.toggle_meeting</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+Q</td>
+<td>Toggle Quiet Mode</td>
+<td><code>verbosity.toggle_quiet</code></td>
+</tr>
+<tr>
+<td>QUILL Key + Shift+Z</td>
+<td>Undo Verbosity Change</td>
+<td><code>verbosity.undo</code></td>
+</tr>
+<tr>
+<td>S</td>
+<td>QUILL Quick Nav: Sentence</td>
+<td><code>quill.quick_nav.sentence</code></td>
+</tr>
+<tr>
+<td>Shift+Enter</td>
+<td>Insert line break</td>
+<td><code>power.insert_line_break</code></td>
+</tr>
+<tr>
+<td>T</td>
+<td>QUILL Quick Nav: Table</td>
+<td><code>quill.quick_nav.table</code></td>
+</tr>
+<tr>
+<td>TAB</td>
+<td>QUILL Quick Nav: Block</td>
+<td><code>quill.quick_nav.block</code></td>
+</tr>
+<tr>
+<td>[</td>
+<td>QUILL Quick Nav: Skip Backward Past Container</td>
+<td><code>quill.quick_nav.skip_backward</code></td>
+</tr>
+<tr>
+<td>]</td>
+<td>QUILL Quick Nav: Skip Forward Past Container</td>
+<td><code>quill.quick_nav.skip_forward</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="studio-app-keys">Studio (app keys)</h2>
+<p>App keys, not editor keys: these apply inside the app named above and
+never inside the QUILL editor.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ctrl+Alt+Shift+B</td>
+<td>Record marker</td>
+<td><code>studio.record_marker</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+C</td>
+<td>Camera check</td>
+<td><code>studio.camera_check</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Delete</td>
+<td>Record discard</td>
+<td><code>studio.record_discard</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+E</td>
+<td>Broadcast stop</td>
+<td><code>studio.broadcast_stop</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+End</td>
+<td>Record emergency stop</td>
+<td><code>studio.record_emergency_stop</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F4</td>
+<td>Capture selected</td>
+<td><code>studio.capture_selected</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F5</td>
+<td>Capture active</td>
+<td><code>studio.capture_active</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F6</td>
+<td>Capture desktop</td>
+<td><code>studio.capture_desktop</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+G</td>
+<td>Broadcast</td>
+<td><code>studio.broadcast</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+H</td>
+<td>Capture hotkeys</td>
+<td><code>studio.capture_hotkeys</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+I</td>
+<td>Inspect capture</td>
+<td><code>studio.inspect_capture</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+J</td>
+<td>Make picture</td>
+<td><code>studio.make_picture</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+K</td>
+<td>Ask ai video</td>
+<td><code>studio.ask_ai_video</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+L</td>
+<td>Record recover</td>
+<td><code>studio.record_recover</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+M</td>
+<td>Mixer</td>
+<td><code>studio.mixer</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+O</td>
+<td>Open capture</td>
+<td><code>studio.open_capture</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+P</td>
+<td>Record pause</td>
+<td><code>studio.record_pause</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+S</td>
+<td>Capture</td>
+<td><code>studio.capture</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+T</td>
+<td>Record status</td>
+<td><code>studio.record_status</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+U</td>
+<td>Record mute</td>
+<td><code>studio.record_mute</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+V</td>
+<td>Record demo</td>
+<td><code>studio.record_demo</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+W</td>
+<td>Record window</td>
+<td><code>studio.record_window</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+X</td>
+<td>Cancel capture</td>
+<td><code>studio.cancel_capture</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Y</td>
+<td>Picture video</td>
+<td><code>studio.picture_video</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Z</td>
+<td>Broadcast mute</td>
+<td><code>studio.broadcast_mute</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="quill-radio-app-keys">Quill Radio (app keys)</h2>
+<p>App keys, not editor keys: these apply inside the app named above and
+never inside the QUILL editor.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>(unbound by default)</td>
+<td>Sound Enhancements…</td>
+<td><code>media.sound_enhancements</code></td>
+</tr>
+<tr>
+<td>Alt+0</td>
+<td>Play favorite 10</td>
+<td><code>radio.play_favorite_10</code></td>
+</tr>
+<tr>
+<td>Alt+1</td>
+<td>Play favorite 1</td>
+<td><code>radio.play_favorite_1</code></td>
+</tr>
+<tr>
+<td>Alt+2</td>
+<td>Play favorite 2</td>
+<td><code>radio.play_favorite_2</code></td>
+</tr>
+<tr>
+<td>Alt+3</td>
+<td>Play favorite 3</td>
+<td><code>radio.play_favorite_3</code></td>
+</tr>
+<tr>
+<td>Alt+4</td>
+<td>Play favorite 4</td>
+<td><code>radio.play_favorite_4</code></td>
+</tr>
+<tr>
+<td>Alt+5</td>
+<td>Play favorite 5</td>
+<td><code>radio.play_favorite_5</code></td>
+</tr>
+<tr>
+<td>Alt+6</td>
+<td>Play favorite 6</td>
+<td><code>radio.play_favorite_6</code></td>
+</tr>
+<tr>
+<td>Alt+7</td>
+<td>Play favorite 7</td>
+<td><code>radio.play_favorite_7</code></td>
+</tr>
+<tr>
+<td>Alt+8</td>
+<td>Play favorite 8</td>
+<td><code>radio.play_favorite_8</code></td>
+</tr>
+<tr>
+<td>Alt+9</td>
+<td>Play favorite 9</td>
+<td><code>radio.play_favorite_9</code></td>
+</tr>
+<tr>
+<td>Alt+F5</td>
+<td>Use My ChatGPT Subscription…</td>
+<td><code>radio.chatgpt_account</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+B</td>
+<td>Background station</td>
+<td><code>radio.background_station</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+D</td>
+<td>Mirror output</td>
+<td><code>radio.mirror_output</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F</td>
+<td>Play Favorite Station…</td>
+<td><code>radio.play_favorite</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+I</td>
+<td>Station details</td>
+<td><code>radio.station_details</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+N</td>
+<td>Whats new</td>
+<td><code>radio.whats_new</code></td>
+</tr>
+<tr>
+<td>Ctrl+.</td>
+<td>Radio: Stop</td>
+<td><code>radio.stop</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+0</td>
+<td>Community Picks…</td>
+<td><code>radio.community_picks</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+9</td>
+<td>Suggest a Station or Podcast…</td>
+<td><code>radio.suggest_pick</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+A</td>
+<td>Bookmark This Moment</td>
+<td><code>app.bookmark_moment</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+B</td>
+<td>Internet Radio: Lyrics…</td>
+<td><code>radio.lyrics</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F1</td>
+<td>Internet Radio: Tutorials…</td>
+<td><code>radio.tutorials</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+H</td>
+<td>What Is On Now</td>
+<td><code>radio.on_now</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+I</td>
+<td>ACB Media Podcasts…</td>
+<td><code>radio.acb_podcasts</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+N</td>
+<td>Internet Radio: Add YouTube Link…</td>
+<td><code>radio.add_youtube_link</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+R</td>
+<td>Record Station…</td>
+<td><code>radio.record_station</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+S</td>
+<td>Find Streams from a Website…</td>
+<td><code>radio.find_streams</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+0</td>
+<td>Internet Radio: Search YouTube with Filters…</td>
+<td><code>radio.youtube_search_filters</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+7</td>
+<td>Internet Radio: YouTube Live Chat…</td>
+<td><code>radio.youtube_live_chat</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+8</td>
+<td>Internet Radio: YouTube Video Details…</td>
+<td><code>radio.youtube_video</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+9</td>
+<td>Internet Radio: Skip Sponsor Segments in YouTube Videos…</td>
+<td><code>radio.youtube_sponsorblock</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+A</td>
+<td>Undo History…</td>
+<td><code>app.undo_history</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+D</td>
+<td>Internet Radio: Download Preferences…</td>
+<td><code>radio.download_preferences</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F</td>
+<td>Upcoming…</td>
+<td><code>radio.upcoming</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F3</td>
+<td>Notifications…</td>
+<td><code>app.notifications</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+G</td>
+<td>Internet Radio: Update Station Catalog</td>
+<td><code>radio.update_catalog</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+I</td>
+<td>Recording Settings…</td>
+<td><code>radio.recording_settings</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+J</td>
+<td>Bookmarks…</td>
+<td><code>app.bookmarks</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+N</td>
+<td>Import My Setup…</td>
+<td><code>app.import_setup</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+O</td>
+<td>Internet Radio: Choose Browse Sources…</td>
+<td><code>radio.browse_sources</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+P</td>
+<td>Recent Problems…</td>
+<td><code>app.recent_problems</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+S</td>
+<td>Internet Radio: Station Catalog Status…</td>
+<td><code>radio.catalog_status</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+V</td>
+<td>Internet Radio: Forget Every Station’s Own Volume…</td>
+<td><code>radio.forget_station_volumes</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+X</td>
+<td>Export My Setup…</td>
+<td><code>app.export_setup</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Y</td>
+<td>Internet Radio: Import YouTube Subscriptions…</td>
+<td><code>radio.import_youtube_subscriptions</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Z</td>
+<td>Quiet Hours…</td>
+<td><code>app.quiet_hours</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+T</td>
+<td>Announce Track Titles</td>
+<td><code>radio.toggle_title_announcements</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+V</td>
+<td>Use One Volume for All Stations</td>
+<td><code>radio.toggle_global_volume</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+X</td>
+<td>Stop All Recordings</td>
+<td><code>radio.stop_all_recordings</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Z</td>
+<td>Wake-Up Timer…</td>
+<td><code>radio.wake_timer</code></td>
+</tr>
+<tr>
+<td>Ctrl+B</td>
+<td>Browse Stations…</td>
+<td><code>radio.browse</code></td>
+</tr>
+<tr>
+<td>Ctrl+Down</td>
+<td>Radio: Volume Down</td>
+<td><code>radio.volume_down</code></td>
+</tr>
+<tr>
+<td>Ctrl+E</td>
+<td>Internet Radio: Sound Enhancements…</td>
+<td><code>radio.sound_enhancements</code></td>
+</tr>
+<tr>
+<td>Ctrl+F11</td>
+<td>Dictate here</td>
+<td><code>app.dictate_here</code></td>
+</tr>
+<tr>
+<td>Ctrl+G</td>
+<td>Go to</td>
+<td><code>radio.go_to</code></td>
+</tr>
+<tr>
+<td>Ctrl+K</td>
+<td>Identify This Song</td>
+<td><code>radio.identify_song</code></td>
+</tr>
+<tr>
+<td>Ctrl+L</td>
+<td>Play Last Station</td>
+<td><code>radio.play_last</code></td>
+</tr>
+<tr>
+<td>Ctrl+M</td>
+<td>Radio: Mute/Unmute</td>
+<td><code>radio.mute_toggle</code></td>
+</tr>
+<tr>
+<td>Ctrl+N</td>
+<td>Add Custom Station…</td>
+<td><code>radio.add_custom_station</code></td>
+</tr>
+<tr>
+<td>Ctrl+O</td>
+<td>Internet Radio: Local Media…</td>
+<td><code>radio.local_media</code></td>
+</tr>
+<tr>
+<td>Ctrl+P</td>
+<td>Radio: Play/Pause</td>
+<td><code>radio.play_pause</code></td>
+</tr>
+<tr>
+<td>Ctrl+R</td>
+<td>Record Now / Stop Recording</td>
+<td><code>radio.record_toggle</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+,</td>
+<td>Transport.previous chapter</td>
+<td><code>radio.transport.previous_chapter</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+.</td>
+<td>Transport.next chapter</td>
+<td><code>radio.transport.next_chapter</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+0</td>
+<td>Transport.speed reset</td>
+<td><code>radio.transport.speed_reset</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+6</td>
+<td>Internet Radio: Search YouTube…</td>
+<td><code>radio.search_youtube</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+7</td>
+<td>Internet Radio: Read YouTube Comments…</td>
+<td><code>radio.youtube_comments</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+8</td>
+<td>Ask QUILL Radio…</td>
+<td><code>radio.ask_quill_radio</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+9</td>
+<td>Transport.skip silence</td>
+<td><code>radio.transport.skip_silence</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+B</td>
+<td>Volume Boost</td>
+<td><code>radio.volume_boost</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+C</td>
+<td>Transport.chapter list</td>
+<td><code>radio.transport.chapter_list</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Down</td>
+<td>Transport.speed down</td>
+<td><code>radio.transport.speed_down</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+F</td>
+<td>Toggle playing favorite</td>
+<td><code>radio.toggle_playing_favorite</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+G</td>
+<td>Transport.go to player</td>
+<td><code>radio.transport.go_to_player</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+H</td>
+<td>Song History…</td>
+<td><code>radio.song_history</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+L</td>
+<td>Back to Live</td>
+<td><code>radio.jump_to_live</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Left</td>
+<td>Rewind</td>
+<td><code>radio.rewind</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+M</td>
+<td>Manage Favorites…</td>
+<td><code>radio.manage_favorites</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+N</td>
+<td>ACB Media Schedule…</td>
+<td><code>radio.acb_calendar</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Q</td>
+<td>Internet Radio: Listening Statistics…</td>
+<td><code>radio.statistics</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+R</td>
+<td>Recordings…</td>
+<td><code>radio.recordings</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Right</td>
+<td>Forward</td>
+<td><code>radio.forward</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+S</td>
+<td>Schedule Recording…</td>
+<td><code>radio.schedule_recording</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Up</td>
+<td>Transport.speed up</td>
+<td><code>radio.transport.speed_up</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+W</td>
+<td>Transport.announce position</td>
+<td><code>radio.transport.announce_position</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Y</td>
+<td>Internet Radio: Add from YouTube Playlist…</td>
+<td><code>radio.add_youtube_playlist</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Z</td>
+<td>Media: Sleep Timer…</td>
+<td><code>media.sleep_timer</code></td>
+</tr>
+<tr>
+<td>Ctrl+Space</td>
+<td>Pause</td>
+<td><code>radio.pause</code></td>
+</tr>
+<tr>
+<td>Ctrl+T</td>
+<td>What’s Playing - Review and Copy…</td>
+<td><code>radio.whats_playing_details</code></td>
+</tr>
+<tr>
+<td>Ctrl+U</td>
+<td>Internet Radio: Lineups…</td>
+<td><code>radio.lineups</code></td>
+</tr>
+<tr>
+<td>Ctrl+Up</td>
+<td>Radio: Volume Up</td>
+<td><code>radio.volume_up</code></td>
+</tr>
+<tr>
+<td>Ctrl+Z</td>
+<td>Undo Last Action</td>
+<td><code>app.undo_last</code></td>
+</tr>
+<tr>
+<td>F5</td>
+<td>Refresh the ACB Media Schedule</td>
+<td><code>radio.refresh_calendar</code></td>
+</tr>
+<tr>
+<td>F9</td>
+<td>Repeat Last Result</td>
+<td><code>app.repeat_last_result</code></td>
+</tr>
+<tr>
+<td>Shift+F9</td>
+<td>Activity…</td>
+<td><code>app.activity</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="quill-cast-app-keys">QUILL Cast (app keys)</h2>
+<p>App keys, not editor keys: these apply inside the app named above and
+never inside the QUILL editor.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Alt+F2</td>
+<td>Use My Own AI Key…</td>
+<td><code>tools.hosted_ai_own_key</code></td>
+</tr>
+<tr>
+<td>Alt+F5</td>
+<td>Use My ChatGPT Subscription…</td>
+<td><code>tools.hosted_ai_chatgpt</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+E</td>
+<td>Podcasts: Mark All Episodes as Played…</td>
+<td><code>podcasts.mark_all_played</code></td>
+</tr>
+<tr>
+<td>Alt+Shift+F2</td>
+<td>Privacy Agreement…</td>
+<td><code>tools.hosted_ai_privacy</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+2</td>
+<td>Podcasts: Now Playing window</td>
+<td><code>podcasts.now_playing</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+A</td>
+<td>Bookmark This Moment</td>
+<td><code>app.bookmark_moment</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F1</td>
+<td>Podcasts: Tutorials…</td>
+<td><code>podcasts.tutorials</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F10</td>
+<td>Carry My Place Between Machines…</td>
+<td><code>media.sync_places</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F12</td>
+<td>Restore</td>
+<td><code>app.restore</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+F5</td>
+<td>Ask About an Image…</td>
+<td><code>tools.hosted_ai_image</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+G</td>
+<td>Free AI Assistant…</td>
+<td><code>tools.hosted_ai_assistant</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+J</td>
+<td>Podcasts: Go to Position…</td>
+<td><code>podcasts.go_to_position</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+B</td>
+<td>Backup</td>
+<td><code>app.backup</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Down</td>
+<td>Podcasts: Mark as Played and Next</td>
+<td><code>podcasts.mark_played_and_next</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F2</td>
+<td>Free AI Usage…</td>
+<td><code>tools.hosted_ai_usage</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F3</td>
+<td>Notifications…</td>
+<td><code>app.notifications</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F4</td>
+<td>Connect or Sign Out…</td>
+<td><code>tools.hosted_ai_sign_in</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+J</td>
+<td>Bookmarks…</td>
+<td><code>app.bookmarks</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+K</td>
+<td>Shortcut sheet</td>
+<td><code>app.shortcut_sheet</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+M</td>
+<td>Media tools</td>
+<td><code>app.media_tools</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+N</td>
+<td>Import My Setup…</td>
+<td><code>app.import_setup</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+P</td>
+<td>Recent Problems…</td>
+<td><code>app.recent_problems</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+X</td>
+<td>Export My Setup…</td>
+<td><code>app.export_setup</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+Z</td>
+<td>Quiet Hours…</td>
+<td><code>app.quiet_hours</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Z</td>
+<td>Ask About This Document…</td>
+<td><code>tools.hosted_ai_ask_document</code></td>
+</tr>
+<tr>
+<td>Ctrl+F11</td>
+<td>Dictate here</td>
+<td><code>app.dictate_here</code></td>
+</tr>
+<tr>
+<td>Ctrl+F5</td>
+<td>Refresh podcasts</td>
+<td><code>media.refresh_podcasts</code></td>
+</tr>
+<tr>
+<td>Ctrl+G</td>
+<td>Go to</td>
+<td><code>app.go_to</code></td>
+</tr>
+<tr>
+<td>Ctrl+I</td>
+<td>Player Information…</td>
+<td><code>podcasts.player_information</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+9</td>
+<td>Skip silence</td>
+<td><code>podcasts.skip_silence</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+D</td>
+<td>Bookmark note</td>
+<td><code>podcasts.bookmark_note</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+E</td>
+<td>New folder</td>
+<td><code>podcasts.new_folder</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+J</td>
+<td>Episode bookmarks</td>
+<td><code>podcasts.episode_bookmarks</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+T</td>
+<td>Podcasts: Time Remaining</td>
+<td><code>podcasts.time_remaining</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+V</td>
+<td>Move to folder</td>
+<td><code>podcasts.move_to_folder</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Y</td>
+<td>Copy to folder</td>
+<td><code>podcasts.copy_to_folder</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Z</td>
+<td>Undo History…</td>
+<td><code>app.undo_history</code></td>
+</tr>
+<tr>
+<td>Ctrl+T</td>
+<td>Say now playing</td>
+<td><code>podcasts.say_now_playing</code></td>
+</tr>
+<tr>
+<td>Ctrl+U</td>
+<td>Podcasts: Lineups…</td>
+<td><code>podcasts.lineups</code></td>
+</tr>
+<tr>
+<td>Ctrl+Z</td>
+<td>Undo Last Action</td>
+<td><code>app.undo_last</code></td>
+</tr>
+<tr>
+<td>F5</td>
+<td>Refresh feed</td>
+<td><code>podcasts.refresh_feed</code></td>
+</tr>
+<tr>
+<td>F9</td>
+<td>Repeat Last Result</td>
+<td><code>app.repeat_last_result</code></td>
+</tr>
+<tr>
+<td>Shift+F9</td>
+<td>Activity…</td>
+<td><code>app.activity</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="weather-app-keys">Weather (app keys)</h2>
+<p>App keys, not editor keys: these apply inside the app named above and
+never inside the QUILL editor.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Command</th>
+<th>Command id</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ctrl+Alt+F1</td>
+<td>Tutorials</td>
+<td><code>weather.tutorials</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+N</td>
+<td>Noaa listen</td>
+<td><code>weather.noaa_listen</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+F</td>
+<td>Settings</td>
+<td><code>weather.settings</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+L</td>
+<td>Add location</td>
+<td><code>weather.add_location</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+M</td>
+<td>Monitor toggle</td>
+<td><code>weather.monitor_toggle</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+N</td>
+<td>Noaa update</td>
+<td><code>weather.noaa_update</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+P</td>
+<td>Monitor pause</td>
+<td><code>weather.monitor_pause</code></td>
+</tr>
+<tr>
+<td>Ctrl+Alt+Shift+T</td>
+<td>Test alert</td>
+<td><code>weather.test_alert</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Alt+A</td>
+<td>Alerts</td>
+<td><code>weather.alerts</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+Q</td>
+<td>Quick</td>
+<td><code>weather.quick</code></td>
+</tr>
+<tr>
+<td>Ctrl+Shift+W</td>
+<td>Now</td>
+<td><code>weather.now</code></td>
+</tr>
+</tbody>
+</table>
+</main>
+</body>
+</html>

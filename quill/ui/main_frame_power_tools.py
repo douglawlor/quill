@@ -13,23 +13,23 @@ wrap_ops, set_ops, regex_ops, cursor_address, indent_infer, clipboard_collector,
 key_describer, run_target) and ``quill/core/line_ops``; this layer only wires
 those into the editor, dialogs, and announcements.
 
-NOTE: the former ``insert_date_time`` and ``calculate_and_insert_date`` EDS-2
-and EDS-3 methods were removed in lock-step with the date/time consolidation
-that moved all Insert-menu date/time items into the bundled
-``com.quill.bundled.insert-tools`` Quillin (``Insert > Date and Time``).
-``quill.core.datetime_insert`` is no longer imported here for that reason;
-``datetime.now`` is still used for unrelated helpers (clipboard collector,
-session metadata).
+NOTE: ``calculate_and_insert_date`` (EDS-3) and the three Insert > Date and Time
+menu variants belong to the bundled ``com.quill.bundled.insert-tools`` Quillin,
+where the 2026-06 consolidation put them. ``insert_date_time`` (EDS-2) came back
+on 2026-09-16 as **F5** -- Notepad's key, QUILL Lite's key, and one that a menu
+row cannot be; it is core rather than contributed so it also works in Safe Mode,
+where every Quillin contribution is off (bad.md P1.9).
 """
 
 from __future__ import annotations
 
-import os
+import sys
 import webbrowser
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from quill.core import format_ops as _fmt
-from quill.core.clipboard_collector import append_collected
 from quill.core.cursor_address import (
     offset_for_percent,
 )
@@ -51,15 +51,18 @@ from quill.core.line_ops import (
     first_non_blank_position,
     last_non_blank_position,
 )
-from quill.core.paths import app_data_dir
 from quill.core.regex_ops import RegexError, count_matches, extract_matches
 from quill.core.run_target import classify_target, is_dangerous_executable, target_at_cursor
 from quill.core.set_ops import format_lines, lines_common_to_both, lines_in_first_not_second
-from quill.core.storage import read_json, write_json_atomic
-from quill.core.unicode_insert import CodepointError, parse_codepoint
+from quill.ui.main_frame_clipboard_collector import ClipboardCollectorMixin
+from quill.ui.main_frame_line_break import LineBreakMixin
+from quill.ui.main_frame_read_only import ReadOnlyGuardMixin
+from quill.ui.main_frame_special_character import SpecialCharacterMixin
 
 
-class PowerToolsActionsMixin:
+class PowerToolsActionsMixin(
+    ClipboardCollectorMixin, SpecialCharacterMixin, LineBreakMixin, ReadOnlyGuardMixin
+):
     """Editor power-tool conveniences mixed into :class:`MainFrame`."""
 
     # ------------------------------------------------------------------ shared
@@ -80,19 +83,87 @@ class PowerToolsActionsMixin:
         self._set_status(status)
 
     def _power_tools_transform_selection_or_document(self, transform, status: str) -> None:
+        """Kept as the name twenty-two call sites use; the work is in one place."""
+        self.apply_line_tool(transform, status)
+
+    def apply_line_tool(self, transform, status: str, *, unit: str = "line") -> None:
+        """Run *transform* over the selection, or the whole document if none.
+
+        The one line-tool helper (bad.md N1-N3, P1.16). QUILL had three, with
+        three different scopes: this one, a second that acted on the *current
+        line* when nothing was selected -- so Sort Lines with no selection
+        sorted one line and said "Sorted lines ascending" -- and a third for
+        case, which takes the word at the caret and is a deliberately different
+        rule (bad.md 3.4). QUILL Lite has always had one, and this is its shape.
+
+        Three things came with it, and each is a thing a listener cannot see:
+
+        * **A no-op says so.** Running Remove Duplicate Lines on a file with
+          none was indistinguishable from running it on one that had twelve.
+        * **The result carries a count**, chosen by what the tool did:
+          ``quill.core.line_tool_report`` says "Sorted lines ascending, 40
+          lines" for a reordering and "Removed duplicate lines, 2 lines" for a
+          removal.
+        * **A whole-document rewrite in rich text asks first**, because the
+          replaced text takes the formatting of where it lands.
+
+        The write goes through ``_atomic_replace`` -- one undo step, and only
+        over the span that changed -- rather than ``_replace_document_text``,
+        which rewrote the whole buffer and took every other list, note and
+        formatting run in the document with it (bad.md R2, N3).
+        """
+        from quill.core.line_tool_report import (
+            count_for,
+            describe_result,
+            nothing_changed,
+        )
+
         if self._document_is_read_only():
             self._set_status("Document is read-only")
             return
         text = self.editor.GetValue()
         start, end = self.editor.GetSelection()
-        if start == end:
+        whole = end <= start
+        if whole:
             start, end = 0, len(text)
-        block = transform(text[start:end])
-        updated = text[:start] + block + text[end:]
-        self._replace_document_text(updated)
-        self.document.set_text(updated)
-        self.editor.SetSelection(start, start + len(block))
-        self._set_status(status)
+        original = text[start:end]
+        if not original:
+            self._set_status("Nothing to change")
+            return
+        if whole and not self._confirm_whole_document_rewrite():
+            self._set_status("Left unchanged")
+            return
+        updated_block = transform(original)
+        if updated_block == original:
+            self._set_status(nothing_changed(unit))
+            return
+        self._atomic_replace(start, end, updated_block)
+        self.document.set_text(self.editor.GetValue())
+        self.editor.SetSelection(start, start + len(updated_block))
+        self._set_status(
+            describe_result(status, count_for(original, updated_block, unit=unit), unit)
+        )
+
+    def _confirm_whole_document_rewrite(self) -> bool:
+        """Rich mode only: warn that replaced text takes the run's formatting.
+
+        QUILL Lite's words, and QUILL Lite's NO_DEFAULT -- Enter must not be the
+        key that rewrites the document.
+        """
+        if self._current_editor_mode() not in {"rich", "rich_converted"}:
+            return True
+        wx = self._wx
+        dialog = wx.MessageDialog(
+            self.frame,
+            "This rewrites the whole document, and in rich text the replaced "
+            "text takes the formatting of where it lands. Continue?",
+            "Rewrite the whole document",
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_QUESTION,
+        )
+        try:
+            return self._show_modal_dialog(dialog, "Rewrite the whole document") == wx.ID_YES
+        finally:
+            dialog.Destroy()
 
     def _power_tools_open_text_in_new_buffer(self, text: str, status: str) -> None:
         self._clear_empty_workspace_state()
@@ -111,17 +182,18 @@ class PowerToolsActionsMixin:
             return str(dialog.GetValue())
 
     def _power_tools_clipboard_text(self) -> str:
+        """The clipboard's text, quietly: the collector polls this every 750 ms.
+
+        wx's error dialog on a sustained lock is right for a command somebody
+        just ran and wrong for a timer tick, where it is a modal nobody asked
+        for, arriving out of nowhere (bad.md C8).
+        """
         wx = self._wx
-        clipboard = getattr(wx, "TheClipboard", None)
-        if clipboard is None or not clipboard.Open():
+        if getattr(wx, "TheClipboard", None) is None:
             return ""
-        try:
-            data = wx.TextDataObject()
-            if clipboard.GetData(data):
-                return str(data.GetText())
-            return ""
-        finally:
-            clipboard.Close()
+        from quill.ui.clipboard_retry import read_clipboard_text
+
+        return read_clipboard_text(wx, surface_errors=False)
 
     def _power_tools_clipboard_html(self) -> str:
         """Return the clipboard's HTML payload, if any.
@@ -132,25 +204,57 @@ class PowerToolsActionsMixin:
         """
         wx = self._wx
         clipboard = getattr(wx, "TheClipboard", None)
-        if clipboard is None or not clipboard.Open():
+        if clipboard is None:
             return ""
-        try:
-            data_format = wx.DataFormat("HTML Format")
-            if not clipboard.IsSupported(data_format):
-                return ""
-            data = wx.CustomDataObject(data_format)
-            if not clipboard.GetData(data):
-                return ""
-            raw = data.GetData()
+        from quill.ui.clipboard_retry import with_clipboard_read_retry
+
+        payload = ""
+        fragment = ""
+
+        def _attempt() -> bool:
+            nonlocal payload
+            if not clipboard.Open():
+                return False
             try:
-                payload = bytes(raw).decode("utf-8", errors="replace")
-            except (TypeError, ValueError):
-                payload = str(raw)
-            return extract_cf_html_fragment(payload)
+                # Windows exposes HTML as the CF_HTML "HTML Format" flavour;
+                # macOS exposes it as the public.html UTI (no CF_HTML header,
+                # so extract_cf_html_fragment returns the raw HTML as-is). Try
+                # the platform-native flavour(s) and use the first supported
+                # one (#52). The Windows single-flavour path is unchanged.
+                candidate_formats = (
+                    ("public.html", "Apple HTML pasteboard type", "HTML Format")
+                    if sys.platform == "darwin"
+                    else ("HTML Format",)
+                )
+                data_format = None
+                for name in candidate_formats:
+                    fmt = wx.DataFormat(name)
+                    if clipboard.IsSupported(fmt):
+                        data_format = fmt
+                        break
+                if data_format is None:
+                    # Not a retry-worthy failure: the clipboard opened fine,
+                    # it simply has no HTML flavour on it.
+                    return True
+                data = wx.CustomDataObject(data_format)
+                if not clipboard.GetData(data):
+                    return False
+                raw = data.GetData()
+                try:
+                    payload = bytes(raw).decode("utf-8", errors="replace")
+                except (TypeError, ValueError):
+                    payload = str(raw)
+                return True
+            finally:
+                clipboard.Close()
+
+        try:
+            with_clipboard_read_retry(wx, _attempt)
+            if payload:
+                fragment = extract_cf_html_fragment(payload)
         except Exception:
             return ""
-        finally:
-            clipboard.Close()
+        return fragment
 
     # ------------------------------------------- HTML clipboard -> Markdown
     def paste_html_as_markdown(self) -> None:
@@ -172,29 +276,59 @@ class PowerToolsActionsMixin:
             return
         self._power_tools_insert_at_cursor(markdown, "Pasted HTML as Markdown")
 
-    # ----------------------------------------------------------- EDS-1 unicode
-    def insert_special_character(self) -> None:
-        raw = self._power_tools_prompt_single(
-            "Insert Special Character",
-            "Unicode code point (hex, d-prefix for decimal, or U+):",
-        )
-        if raw is None:
-            return
-        try:
-            character = parse_codepoint(raw)
-        except CodepointError as error:
-            self._set_status(str(error))
-            return
-        self._power_tools_insert_at_cursor(character, f"Inserted U+{ord(character):04X}")
+    # ------------------------------------------- Markdown clipboard -> HTML
+    def paste_markdown_as_html(self) -> None:
+        """Reverse of :meth:`paste_html_as_markdown`: render clipboard Markdown
+        to a clean HTML body fragment (same renderer as preview/export)."""
+        from quill.core.browser_preview import render_preview_body
 
-    # NOTE: EDS-2 (``insert_date_time``) and EDS-3 (``calculate_and_insert_date``)
-    # were removed in the date/time consolidation that moved all Insert-menu
-    # date/time items into the bundled ``com.quill.bundled.insert-tools``
-    # Quillin (``Insert > Date and Time``). The handlers used to live here and
-    # the corresponding ``power.insert_date_time`` / ``power.calculate_and_insert_date``
-    # commands are no longer registered. ``quill.core.datetime_insert`` still
-    # exists for tests and downstream callers but is no longer imported by this
-    # module.
+        markdown = self._power_tools_clipboard_text()
+        if not markdown.strip():
+            self._set_status("Clipboard is empty")
+            return
+        fragment = render_preview_body(markdown, "markdown")
+        if not fragment.strip():
+            self._set_status("No Markdown content to convert")
+            return
+        self._power_tools_insert_at_cursor(fragment, "Pasted Markdown as HTML")
+
+    # EDS-1 (``insert_special_character``) lives on
+    # :class:`~quill.ui.main_frame_special_character.SpecialCharacterMixin`,
+    # inherited below. It moved out under GATE-11 when it grew a character list;
+    # the method name and the ``power.insert_special_character`` id are unchanged.
+
+    # EDS-3 (``calculate_and_insert_date``) is still the bundled
+    # ``com.quill.bundled.insert-tools`` Quillin's, along with the three
+    # Insert > Date and Time menu variants it contributes. EDS-2 came back on
+    # 2026-09-16 as the one-key version below.
+
+    def insert_date_time(self) -> None:
+        """F5: write the time and date at the caret, and read it back.
+
+        Notepad's key and Notepad's stamp, which is the whole argument for it:
+        somebody who has pressed F5 in Notepad for twenty years should get the
+        same thing here, and QUILL Lite has since it shipped (bad.md P1.9).
+
+        This reverses the 2026-09-10 decision not to give QUILL an F5 on the
+        grounds that the bundled insert-tools Quillin already offered three
+        date/time variants. It does -- as **menu rows**, reached through a
+        submenu, and a menu row is not a chord. It also switches off in **Safe
+        Mode** along with every other Quillin contribution, which left QUILL
+        with no way to insert a date at all in the mode people fall back to when
+        something is wrong. A core command has neither problem, and the
+        Quillin's three variants are untouched.
+
+        The read-back is the accessibility of the command, not decoration: a
+        screen reader says nothing when an app writes text on its own behalf --
+        no focus moved, no control was named -- so without it F5 is a keystroke
+        after which something has silently appeared.
+        """
+        from quill.core.datetime_insert import NOTEPAD_DATETIME_FORMAT, format_datetime
+
+        stamp = format_datetime(datetime.now(), NOTEPAD_DATETIME_FORMAT)
+        self.editor.WriteText(stamp)
+        self.document.set_text(self.editor.GetValue())
+        self._announce_result(f"Inserted {stamp}")
 
     # ----------------------------------- EDS-4/5 line transforms (migrated)
     # ``number_lines`` and ``hard_wrap_lines`` moved onto the contribution
@@ -240,53 +374,6 @@ class PowerToolsActionsMixin:
                 continue
         return raw.decode("latin-1")
 
-    # -------------------------------------------------- EDS-8 read-only guard
-    def _read_only_store_path(self) -> Path:
-        return app_data_dir() / "read-only-guards.json"
-
-    def _read_only_paths(self) -> set[str]:
-        cached = getattr(self, "_power_tools_read_only_paths", None)
-        if cached is None:
-            stored = read_json(self._read_only_store_path(), [])
-            # Versioned envelope {"schema_version", "paths": [...]} or legacy list.
-            items = stored.get("paths", []) if isinstance(stored, dict) else stored
-            cached = {str(item) for item in items} if isinstance(items, list) else set()
-            self._power_tools_read_only_paths = cached
-        return cached
-
-    def _document_is_read_only(self) -> bool:
-        flag = self.document.source_metadata.get("read_only_guard")
-        if flag is not None:
-            return bool(flag)
-        if self.document.path is not None:
-            return str(self.document.path) in self._read_only_paths()
-        return False
-
-    def _refresh_read_only_state(self) -> None:
-        """Re-apply the persisted read-only guard to the active editor."""
-        read_only = self._document_is_read_only()
-        self.document.source_metadata["read_only_guard"] = read_only
-        getattr(self.editor, "SetEditable", lambda _v: None)(not read_only)
-
-    def toggle_read_only_guard(self) -> None:
-        read_only = not self._document_is_read_only()
-        self.document.source_metadata["read_only_guard"] = read_only
-        self.editor.SetEditable(not read_only)
-        if self.document.path is not None:
-            paths = self._read_only_paths()
-            if read_only:
-                paths.add(str(self.document.path))
-            else:
-                paths.discard(str(self.document.path))
-            try:
-                write_json_atomic(
-                    self._read_only_store_path(),
-                    {"schema_version": 1, "paths": sorted(paths)},
-                )
-            except OSError:
-                pass
-        self._announce("Document is read-only" if read_only else "Document is editable")
-
     # ------------------------------------------------ EDS-9 delete to bounds
     def delete_to_line_start(self) -> None:
         self._apply_line_operation(delete_to_line_start, "Deleted to start of line")
@@ -303,49 +390,6 @@ class PowerToolsActionsMixin:
     # ----------------------------------------------- EDS-10 delete paragraph
     def delete_paragraph(self) -> None:
         self._apply_line_operation(delete_paragraph, "Deleted paragraph")
-
-    # -------------------------------------------- EDS-11 clipboard collector
-    def toggle_clipboard_collector(self) -> None:
-        active = not getattr(self, "_power_tools_clipboard_collector", False)
-        self._power_tools_clipboard_collector = active
-        copy_event = getattr(self._wx, "EVT_TEXT_COPY", None)
-        previous = getattr(self, "_power_tools_collector_editor", None)
-        if copy_event is not None and previous is not None:
-            previous.Unbind(copy_event)
-        self._power_tools_collector_editor = (
-            self.editor if (copy_event is not None and active) else None
-        )
-        if copy_event is not None and active:
-            self.editor.Bind(copy_event, self._on_power_tools_collect_copy)
-        self._announce(
-            "Clipboard collector on; copies append to this document"
-            if active
-            else "Clipboard collector off"
-        )
-
-    def _on_power_tools_collect_copy(self, event: object) -> None:
-        event.Skip()
-        call_after = getattr(self._wx, "CallAfter", None)
-        if callable(call_after):
-            call_after(self.collect_clipboard_now)
-        else:
-            self.collect_clipboard_now()
-
-    def collect_clipboard_now(self) -> None:
-        if self._document_is_read_only():
-            return
-        clip = self._power_tools_clipboard_text()
-        if not clip:
-            return
-        updated = append_collected(self.editor.GetValue(), clip)
-        self._replace_document_text(updated)
-        self.document.set_text(updated)
-        end = len(updated)
-        self.editor.SetInsertionPoint(end)
-        self.editor.SetSelection(end, end)
-        if self.document.path is not None:
-            self.save_file()
-        self._set_status("Collected clipboard text")
 
     # ---------------------------------------------------- EDS-12 set operations
     def set_lines_first_not_second(self) -> None:
@@ -603,7 +647,7 @@ class PowerToolsActionsMixin:
             self._set_status("Refusing to launch an executable or script for safety")
             return
         try:
-            os.startfile(str(path))  # type: ignore[attr-defined]  # noqa: S606
+            self._open_with_default_app(path)
         except OSError as error:
             self._set_status(f"Could not run file: {error}")
             return
@@ -634,11 +678,109 @@ class PowerToolsActionsMixin:
             self._set_status(f"Path does not exist: {target.value}")
             return
         try:
-            os.startfile(str(path))  # type: ignore[attr-defined]  # noqa: S606
+            self._open_with_default_app(path)
         except OSError as error:
             self._set_status(f"Could not open path: {error}")
             return
         self._set_status(f"Opened {path.name}")
+
+    # ------------------------------------------- Send / Copy as Email (#900)
+
+    def _email_fragment(self) -> object:
+        """Build a Fragment from the current selection, or the whole document
+        when nothing is selected -- #900's "the document, a selection, or a
+        kept fragment" framing."""
+        from quill.core.fragment import Fragment
+
+        start, end = self.editor.GetSelection()
+        text = self.editor.GetValue()
+        markup = text[start:end] if start != end else text
+        title = getattr(self.document, "name", "") or "QUILL document"
+        return Fragment(markup=markup, title=title, source="Document")
+
+    def _email_format(self) -> object:
+        from quill.core.fragment import FragmentFormat
+
+        raw = str(getattr(self.settings, "content_handoff_format", "text"))
+        try:
+            return FragmentFormat(raw)
+        except ValueError:
+            return FragmentFormat.TEXT
+
+    def send_as_email(self) -> None:
+        """Open the user's mail client with the selection (or document) as the body."""
+        from quill.core.email_handoff import build_mailto
+
+        frag = self._email_fragment()
+        if not frag.markup.strip():
+            self._set_status("Nothing to send: the document is empty.")
+            return
+        url = build_mailto(frag, self._email_format(), subject=frag.title)
+        webbrowser.open(url)
+        self._set_status("Opened your mail client with this content as the body.")
+
+    def copy_as_email_body(self) -> None:
+        """Copy the selection (or document), rendered for email, to the clipboard.
+
+        The practical alternative to Send as Email: many mail clients silently
+        truncate or reject a long mailto: body, so this puts the same rendered
+        content straight on the clipboard to paste into a compose window.
+        """
+        import wx
+
+        from quill.core.fragment import render_fragment
+
+        frag = self._email_fragment()
+        if not frag.markup.strip():
+            self._set_status("Nothing to copy: the document is empty.")
+            return
+        text = render_fragment(frag, self._email_format())
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(text))
+            wx.TheClipboard.Close()
+        self._set_status("Copied to the clipboard as an email body.")
+
+    # ------------------------------------------- AutoOutline (#894)
+
+    def apply_auto_outline_numbering(self) -> None:
+        """Number every heading by nesting level, as literal text (Format menu).
+
+        Always operates on the whole document -- heading numbering is only
+        meaningful with full document context, unlike most power-tools
+        transforms that fall back to the whole document only when nothing
+        is selected.
+        """
+        from quill.core.auto_outline import OutlineStyle, apply_auto_outline
+
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
+            return
+        style_raw = str(getattr(self.settings, "auto_outline_style", "numeric"))
+        style = OutlineStyle.LEGAL if style_raw == "legal" else OutlineStyle.NUMERIC
+        text = self.editor.GetValue()
+        updated = apply_auto_outline(text, style)
+        if updated == text:
+            self._set_status("No headings to number.")
+            return
+        self._replace_document_text(updated)
+        self.document.set_text(updated)
+        self._set_status("Outline numbering updated.")
+
+    def remove_auto_outline_numbering(self) -> None:
+        """Strip any AutoOutline numbers from headings (Format menu)."""
+        from quill.core.auto_outline import remove_outline_numbers
+
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
+            return
+        text = self.editor.GetValue()
+        updated = remove_outline_numbers(text)
+        if updated == text:
+            self._set_status("No outline numbering to remove.")
+            return
+        self._replace_document_text(updated)
+        self.document.set_text(updated)
+        self._set_status("Outline numbering removed.")
 
     # ------------------------------------------- EDS-20 rename/delete on disk
     def rename_current_file(self) -> None:
@@ -674,7 +816,7 @@ class PowerToolsActionsMixin:
         answer = self._show_message_box(
             f"Delete {path.name} from disk? This cannot be undone.",
             "Delete File",
-            wx.YES_NO | wx.ICON_WARNING,
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_WARNING,
         )
         if answer != wx.ID_YES:
             return
@@ -755,13 +897,44 @@ class PowerToolsActionsMixin:
         self._select_tab(rep_idx)
 
     def encode_all_non_ascii(self) -> None:
-        """Replace every non-ASCII character with its HTML entity (#197)."""
+        """Replace every non-ASCII character with its HTML entity (#197).
+
+        Runs on a background thread (#906): the per-character transform loop
+        can take the better part of a minute on a large (1MB+) document, and
+        running that synchronously on the UI thread (the shared
+        ``_power_tools_transform_selection_or_document`` helper other, faster
+        power-tool commands use) froze QUILL -- and the screen reader riding
+        along with it -- for the whole duration.
+        """
         from quill.core import encoding_tools
 
-        self._power_tools_transform_selection_or_document(
-            encoding_tools.encode_non_ascii_to_entities,
-            "Converted non-ASCII characters to HTML entities",
-        )
+        if self._document_is_read_only():
+            self._set_status("Document is read-only")
+            return
+        text = self.editor.GetValue()
+        start, end = self.editor.GetSelection()
+        if start == end:
+            start, end = 0, len(text)
+        segment = text[start:end]
+
+        def _work(_progress: Callable[[str, int, int], None]) -> str:
+            return encoding_tools.encode_non_ascii_to_entities(segment)
+
+        def _done(block: object) -> None:
+            updated = text[:start] + str(block) + text[end:]
+            self._replace_document_text(updated)
+            self.document.set_text(updated)
+            self.editor.SetSelection(start, start + len(str(block)))
+            # #905: a UTF-8 BOM only makes sense when the file still has
+            # multi-byte UTF-8 content. Once every non-ASCII character is an
+            # HTML entity, the result is pure ASCII, and saving with
+            # "utf-8-sig" would keep writing a three-byte BOM prefix nothing
+            # in the file needs anymore.
+            if self.document.encoding == "utf-8-sig" and updated.isascii():
+                self.document.encoding = "utf-8"
+            self._set_status("Converted non-ASCII characters to HTML entities")
+
+        self._run_background_task("Converting non-ASCII characters", _work, _done)
 
     def reencode_file(self) -> None:
         """Save a copy of the document in a chosen text encoding (#197)."""
@@ -1242,6 +1415,14 @@ class PowerToolsActionsMixin:
             _fmt.trim_blank_lines, "Trimmed blank lines"
         )
 
+    def remove_blank_lines(self) -> None:
+        # Every blank line, not only the two ends. Why it is a separate command
+        # from trim_blank_lines above, and why it landed here: see
+        # quill.core.format_ops.remove_blank_lines.
+        self._power_tools_transform_selection_or_document(
+            _fmt.remove_blank_lines, "Removed blank lines"
+        )
+
     def shuffle_lines(self) -> None:
         self._power_tools_transform_selection_or_document(_fmt.shuffle_lines, "Shuffled lines")
 
@@ -1255,10 +1436,20 @@ class PowerToolsActionsMixin:
             _fmt.sort_lines_by_length, "Sorted lines by length"
         )
 
-    def keep_unique_lines(self) -> None:
-        """Remove duplicate lines (case-sensitive); alias with a discoverable name."""
+    def _date_sort_day_first(self) -> bool:
+        """Infer d/m/y vs m/d/y for ambiguous numeric dates from the user's region.
+
+        Reuse the spell-check language as the region signal (the same signal the
+        Windows region setting carries): US English is the main month-first (m/d/y)
+        locale, so treat every other locale as day-first (d/m/y)."""
+        language = str(getattr(self.settings, "spellcheck_language", "en_US"))
+        return not language.lower().replace("-", "_").startswith("en_us")
+
+    def sort_lines_by_date(self) -> None:
+        day_first = self._date_sort_day_first()
         self._power_tools_transform_selection_or_document(
-            _fmt.remove_duplicate_lines, "Kept unique lines (removed duplicates)"
+            lambda text: _fmt.sort_lines_by_date(text, day_first=day_first),
+            "Sorted lines by date",
         )
 
     def delete_lines_containing(self) -> None:

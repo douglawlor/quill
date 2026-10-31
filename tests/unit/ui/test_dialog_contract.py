@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from quill.ui.dialog_contract import (
+    accessible_label,
     apply_modal_ids,
     find_primary_focus_target,
     focus_primary_control,
+    set_accessible_name,
+    set_transition_announcement_policy,
     show_modal_dialog,
 )
+from tests.wx_session import shared_wx_app
 
 
 class _DialogWithIds:
@@ -73,6 +77,68 @@ def test_show_modal_dialog_calls_accessibility_hooks_in_order() -> None:
         enter_region=enter_region,
         exit_region=exit_region,
     )
+
+    assert result == 9
+    assert events == [
+        "enter:Find",
+        "announce:Entered Find dialog",
+        "announce:Exited Find dialog",
+        "exit:Find",
+    ]
+
+
+def _run_dialog_with_hooks(events: list[str]) -> int:
+    dialog = _DialogWithIds(result=9)
+    return show_modal_dialog(
+        dialog,
+        "Find",
+        announce=lambda message: events.append(f"announce:{message}"),
+        enter_region=lambda label: events.append(f"enter:{label}"),
+        exit_region=lambda label: events.append(f"exit:{label}"),
+    )
+
+
+def test_show_modal_dialog_policy_off_silences_transition_cues() -> None:
+    events: list[str] = []
+    set_transition_announcement_policy(lambda: False)
+    try:
+        result = _run_dialog_with_hooks(events)
+    finally:
+        set_transition_announcement_policy(None)
+
+    assert result == 9
+    # Region tracking must survive so navigation state stays correct.
+    assert events == ["enter:Find", "exit:Find"]
+
+
+def test_show_modal_dialog_policy_on_keeps_transition_cues() -> None:
+    events: list[str] = []
+    set_transition_announcement_policy(lambda: True)
+    try:
+        result = _run_dialog_with_hooks(events)
+    finally:
+        set_transition_announcement_policy(None)
+
+    assert result == 9
+    assert events == [
+        "enter:Find",
+        "announce:Entered Find dialog",
+        "announce:Exited Find dialog",
+        "exit:Find",
+    ]
+
+
+def test_show_modal_dialog_policy_error_falls_back_to_announcing() -> None:
+    events: list[str] = []
+
+    def _broken_policy() -> bool:
+        raise RuntimeError("settings unavailable")
+
+    set_transition_announcement_policy(_broken_policy)
+    try:
+        result = _run_dialog_with_hooks(events)
+    finally:
+        set_transition_announcement_policy(None)
 
     assert result == 9
     assert events == [
@@ -202,3 +268,193 @@ def test_focus_primary_control_skips_disabled_or_hidden_controls() -> None:
     dialog = _FakeDialog([disabled, hidden, usable])
 
     assert focus_primary_control(dialog) is usable
+
+
+class _FakeNotebook(_FakeControl):
+    """A book control exposing GetSelection/GetPage over its page children."""
+
+    def __init__(self, pages: list[_FakeControl], *, selection: int = 0) -> None:
+        super().__init__(children=pages)
+        self._selection = selection
+
+    def GetSelection(self) -> int:
+        return self._selection
+
+    def GetPage(self, index: int) -> _FakeControl:
+        return self._children[index]
+
+
+def _make_notebook(pages: list[_FakeControl], *, selection: int = 0) -> _FakeNotebook:
+    # The class name must end in "book" so the contract recognises it as a book
+    # control (mirroring wx.Notebook / wx.Listbook / ...).
+    cls = type("Notebook", (_FakeNotebook,), {})
+    return cls(pages, selection=selection)  # type: ignore[arg-type]
+
+
+def test_find_primary_focus_target_confines_to_selected_notebook_page() -> None:
+    """Focus must land on the first control of the SELECTED tab, never a hidden
+    earlier tab's control (the AI Hub / About / Quillin-prefs tab-focus fix)."""
+    hidden_page = _make_control("Panel", children=[_make_control("ListBox")])
+    visible_text = _make_control("TextCtrl")
+    visible_page = _make_control("Panel", children=[visible_text])
+    notebook = _make_notebook([hidden_page, visible_page], selection=1)
+    dialog = _FakeDialog([notebook])
+
+    assert find_primary_focus_target(dialog) is visible_text
+
+
+def test_find_primary_focus_target_uses_first_page_when_it_is_selected() -> None:
+    first_text = _make_control("TextCtrl")
+    first_page = _make_control("Panel", children=[first_text])
+    later_page = _make_control("Panel", children=[_make_control("ListBox")])
+    notebook = _make_notebook([first_page, later_page], selection=0)
+    dialog = _FakeDialog([notebook])
+
+    assert find_primary_focus_target(dialog) is first_text
+
+
+def test_focus_primary_control_targets_tab_content_not_the_tab_strip() -> None:
+    """The notebook (tab strip) is never the focus target -- the selected page's
+    first content control is, so a screen reader lands on a real control."""
+    combo = _make_control("ComboBox")
+    page = _make_control("Panel", children=[combo])
+    notebook = _make_notebook([page], selection=0)
+    dialog = _FakeDialog([notebook])
+
+    target = focus_primary_control(dialog)
+
+    assert target is combo
+    assert combo.HasFocus() is True
+
+
+# ---------------------------------------------------------------------------
+# #1012: macOS VoiceOver announces controls without their labels
+# ---------------------------------------------------------------------------
+
+
+class _FakeNamedControl:
+    def __init__(self, children: list[object] | None = None) -> None:
+        self.name: str | None = None
+        self._children = children or []
+
+    def SetName(self, name: str) -> None:
+        self.name = name
+
+    def GetChildren(self) -> list[object]:
+        return self._children
+
+
+def test_accessible_label_strips_mnemonic_ampersand() -> None:
+    assert accessible_label("&Word or phrase:") == "Word or phrase"
+
+
+def test_accessible_label_preserves_escaped_double_ampersand() -> None:
+    assert accessible_label("Search && Replace") == "Search & Replace"
+
+
+def test_accessible_label_strips_trailing_colon_and_whitespace() -> None:
+    assert accessible_label("  Font size:  ") == "Font size"
+
+
+def test_set_accessible_name_names_a_plain_control() -> None:
+    control = _FakeNamedControl()
+
+    set_accessible_name(control, "&Word or phrase:")
+
+    assert control.name == "Word or phrase"
+
+
+def test_set_accessible_name_names_composite_spin_inner_child() -> None:
+    """macOS wx.SpinCtrl is a composite: naming only the composite leaves
+    VoiceOver announcing the bare inner TextCtrl's value with no label.
+
+    Propagation is class-targeted (see accessible_names._PROPAGATE_CLASSES,
+    the implementation behind this module's re-export): the inner
+    TextCtrl/SpinButton get the name, while self-labeled children — a
+    picker's Browse *button* — must keep their own labels, which the
+    original name-every-child version of this helper clobbered.
+    """
+
+    class TextCtrl(_FakeNamedControl):
+        def GetName(self) -> str:  # noqa: N802 - wx spelling
+            return self.name or "text"
+
+    class Button(_FakeNamedControl):
+        def GetName(self) -> str:  # noqa: N802 - wx spelling
+            return self.name or "button"
+
+    inner = TextCtrl()
+    browse = Button()
+    browse.SetName("Browse")
+    spin = _FakeNamedControl(children=[inner, browse])
+
+    set_accessible_name(spin, "Font size")
+
+    assert spin.name == "Font size"
+    assert inner.name == "Font size"
+    assert browse.name == "Browse"  # self-labeled child left alone
+
+
+def test_set_accessible_name_ignores_controls_without_setname() -> None:
+    class _Bare:
+        pass
+
+    set_accessible_name(_Bare(), "Label")  # must not raise
+
+
+class _WindowWithFont:
+    """Just a text-extent: what ``readable_min_size`` actually asks a window."""
+
+    def __init__(self, char_width: int, char_height: int) -> None:
+        self._extent = (char_width, char_height)
+
+    def GetTextExtent(self, _text: str) -> tuple[int, int]:
+        return self._extent
+
+
+def test_readable_min_size_is_measured_in_characters() -> None:
+    from quill.ui.dialog_contract import READABLE_COLUMNS, readable_min_size
+
+    width, _height = readable_min_size(_WindowWithFont(10, 16))
+    assert width == 10 * READABLE_COLUMNS
+
+
+def test_readable_min_size_grows_with_the_font() -> None:
+    """The listener who turned the system font up is the one reading this box,
+    so a bigger font must mean a bigger box -- not the same box with less in it.
+    """
+    from quill.ui.dialog_contract import readable_min_size
+
+    small = readable_min_size(_WindowWithFont(8, 14))
+    large = readable_min_size(_WindowWithFont(16, 28))
+    assert large[0] > small[0]
+    assert large[1] > small[1]
+
+
+def test_labels_land_on_this_dialogs_buttons_not_another_windows() -> None:
+    """``FindWindowById`` with no parent searches every window in the app, so
+    a frame's OK button created first was the one relabelled (2026-10-15)."""
+    import pytest
+
+    wx = pytest.importorskip("wx")
+    app = wx.App.Get() or shared_wx_app()
+    frame = wx.Frame(None)
+    frame_ok = wx.Button(frame, wx.ID_OK, "frame ok")
+    dialog = wx.Dialog(frame)
+    sizer = dialog.CreateStdDialogButtonSizer(wx.OK | wx.CANCEL)
+    dialog.SetSizer(sizer)
+    try:
+        apply_modal_ids(
+            dialog,
+            affirmative_id=wx.ID_OK,
+            affirmative_label="&Go To",
+            cancel_id=wx.ID_CANCEL,
+            cancel_label="Close",
+        )
+        assert dialog.FindWindow(wx.ID_OK).GetLabel() == "&Go To"
+        assert dialog.FindWindow(wx.ID_CANCEL).GetLabel() == "Close"
+        assert frame_ok.GetLabel() == "frame ok"
+    finally:
+        dialog.Destroy()
+        frame.Destroy()
+        del app

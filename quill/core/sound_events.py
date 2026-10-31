@@ -16,11 +16,51 @@ class SoundEvent(StrEnum):
     SNIPPET_INSERTED = "snippet_inserted"
     AUTOCOMPLETE_ACCEPTED = "autocomplete_accepted"
     WORD_CORRECTED = "word_corrected"
+    # Live spell-check-as-you-type alert: a sound, not speech, so the alert
+    # never interrupts what the screen reader is saying mid-sentence.
+    SPELLING_ALERT = "spelling_alert"
 
     # Document lifecycle
     DOCUMENT_CREATED = "document_created"
+    DOCUMENT_OPENED = "document_opened"
     DOCUMENT_SAVED = "document_saved"
     DOCUMENT_CLOSED = "document_closed"
+
+    # The desktop-parity set (2026-09-10). Every desktop suite since the
+    # nineties has had a sound scheme, and the events in it are the same
+    # everywhere because they are the moments a user actually has: open, save,
+    # close, cut, copy, paste, delete, undo, redo, print, and the message tones.
+    # QUILL had earcons for its own clever features and none for those.
+    #
+    # For a listener that ordering is backwards. The clever features announce
+    # themselves in words; the ordinary ones are silent by design, because a
+    # screen reader says nothing when a paste lands -- which makes an earcon the
+    # only feedback those moments can have, and them the ones that needed it.
+    APP_STARTED = "app_started"
+    APP_EXITING = "app_exiting"
+    TEXT_CUT = "text_cut"
+    TEXT_COPIED = "text_copied"
+    TEXT_PASTED = "text_pasted"
+    TEXT_DELETED = "text_deleted"
+    #: Undo and redo are the only two commands whose entire meaning is
+    #: direction, so their cues are one figure played backwards from each other
+    #: -- a listener who has to think about which one they heard has lost the
+    #: benefit. NOTHING_TO_UNDO does not move in pitch at all, because the undo
+    #: stack did not move either.
+    UNDO_PERFORMED = "undo_performed"
+    REDO_PERFORMED = "redo_performed"
+    NOTHING_TO_UNDO = "nothing_to_undo"
+    PRINT_STARTED = "print_started"
+    PRINT_COMPLETE = "print_complete"
+    #: The two message tones every desktop has and QUILL did not: a neutral one
+    #: for "here is a fact" and a rising one for "I need an answer". Rising,
+    #: because a question rises -- the one piece of prosody every listener
+    #: already reads. ERROR and WARNING are below with the rest of System.
+    INFORMATION = "information"
+    QUESTION = "question"
+    #: A background job finishing. Distinct from AI_RESPONSE_RECEIVED, which is
+    #: the AI family's own arpeggio: a finished job is not an answer arriving.
+    TASK_COMPLETE = "task_complete"
 
     # Navigation
     QUILL_KEY_PRESSED = "quill_key_pressed"
@@ -29,6 +69,10 @@ class SoundEvent(StrEnum):
     LIST_ENTERED = "list_entered"
     BROWSE_MODE_ON = "browse_mode_on"
     BROWSE_MODE_OFF = "browse_mode_off"
+    #: The caret has entered a line that carries an inline note (2026-10-17,
+    #: both editors; quill/core/inline_note_cue.py). Once on arrival, never
+    #: while the caret moves along the same line.
+    INLINE_NOTE_LINE = "inline_note_line"
 
     # Search
     SEARCH_FOUND = "search_found"
@@ -46,6 +90,83 @@ class SoundEvent(StrEnum):
     # hands-free session sounds different from a press-and-hold one.
     DICTATION_LOCKED_ON = "dictation_locked_on"
     DICTATION_LOCKED_OFF = "dictation_locked_off"
+    # Windows Dictation (quill/core/windows_dictation), in both editors: a
+    # rising pair when it starts listening, a soft short tone each time a phrase
+    # has actually been written, a falling pair when it stops, and a low double
+    # pulse when it could not go on. The phrase cue is the one heard hundreds
+    # of times an hour, so it is the quietest of the four. The working tick
+    # (2026-10-13, off unless chosen) is quieter and shorter still: once a
+    # second while a heard phrase is still being recognised.
+    WINDOWS_DICTATION_ON = "windows_dictation_on"
+    WINDOWS_DICTATION_PHRASE = "windows_dictation_phrase"
+    WINDOWS_DICTATION_OFF = "windows_dictation_off"
+    WINDOWS_DICTATION_ERROR = "windows_dictation_error"
+    WINDOWS_DICTATION_WORKING = "windows_dictation_working"
+    # The command word (D-1, 2026-10-15): a short rising pair when "QUILL" (or
+    # the Command Key) is heard and when command mode starts, the same pair
+    # falling when command mode ends. Higher and shorter than the on and off
+    # pair, so the two kinds of edge are never confused.
+    WINDOWS_DICTATION_COMMAND_ON = "windows_dictation_command_on"
+    WINDOWS_DICTATION_COMMAND_OFF = "windows_dictation_command_off"
+
+    # Voice conversation mode (Hey QUILL Phase 2). Warm, consonant bell cues
+    # that make every state of a hands-free exchange audible: on/off, the mic
+    # opening (listen), an utterance captured (review), an action done (ready),
+    # relaxing back (idle), a "still working" tick, and a calm error fall.
+    # The wake cue is used by the always-listening "Hey QUILL" loop (Phase 3,
+    # shipped); it was defined alongside the Phase 2 cues so sound packs could
+    # override the full set from the start.
+    CONVERSATION_ON = "conversation_on"
+    CONVERSATION_OFF = "conversation_off"
+    CONVERSATION_WAKE = "conversation_wake"
+    CONVERSATION_LISTEN = "conversation_listen"
+    CONVERSATION_REVIEW = "conversation_review"
+    CONVERSATION_READY = "conversation_ready"
+    CONVERSATION_IDLE = "conversation_idle"
+    CONVERSATION_THINKING_TICK = "conversation_thinking_tick"
+    CONVERSATION_ERROR = "conversation_error"
+
+    # Companion-app cues (#1302). The apps had no earcons at all before the
+    # announcement service: every one of these is a state a listener
+    # otherwise had to infer from silence. Kept short and consonant with the
+    # Ink pack, and every one is disableable and pack-overridable.
+    RADIO_CONNECTING = "radio_connecting"
+    RADIO_PLAYING = "radio_playing"
+    RADIO_BUFFERING = "radio_buffering"
+    RADIO_STOPPED = "radio_stopped"
+    RADIO_STREAM_ERROR = "radio_stream_error"
+    RADIO_RECORDING_STARTED = "radio_recording_started"
+    RADIO_RECORDING_STOPPED = "radio_recording_stopped"
+    RADIO_FAVORITE_ADDED = "radio_favorite_added"
+    CAST_DOWNLOAD_STARTED = "cast_download_started"
+    CAST_DOWNLOAD_COMPLETE = "cast_download_complete"
+    #: A subscribed podcast has new episodes, found by the background check
+    #: (3.1.0). Its own sound rather than a borrowed one, because it is the
+    #: one thing here that arrives *unprompted*: nobody pressed anything, so
+    #: it has to be recognisable before the words that follow it. Soft and
+    #: short on purpose -- it lands while somebody is reading -- and it plays
+    #: only in the "Notify me" alert mode; "Quietly" is silent by definition
+    #: (quill/core/podcasts/episode_alerts.py).
+    CAST_NEW_EPISODES = "cast_new_episodes"
+    #: A reminder coming due (list.md 7.4). Its own sound rather than a
+    #: borrowed one: a reminder is the only thing in these apps that arrives
+    #: because the listener asked to be interrupted at a moment they chose,
+    #: and it has to be tellable from a download finishing or a feed check
+    #: ticking without waiting for the words that follow it.
+    RADIO_REMINDER = "radio_reminder"
+    #: Playback carrying on after a pause (xradio2 4.5): a tape spooling back
+    #: up to speed, so "carrying on where you were" is tellable from "tuned in
+    #: to something new" (RADIO_PLAYING) before the audio says which.
+    RADIO_RESUMED = "radio_resumed"
+    CAST_EPISODE_FINISHED = "cast_episode_finished"
+    #: The four outcomes of a one-key action in QUILL Cast (qc.md 18.7), under
+    #: Cast's own action_feedback choice; failures use ERROR.
+    CAST_QUEUE_ADDED = "cast_queue_added"
+    CAST_REMOVED = "cast_removed"
+    CAST_MARKED_PLAYED = "cast_marked_played"
+    WEATHER_ALERT = "weather_alert"
+    BEACON_CAPTURED = "beacon_captured"
+    BEACON_SYNC_COMPLETE = "beacon_sync_complete"
 
     # Connectivity
     SSH_CONNECTED = "ssh_connected"
@@ -81,8 +202,91 @@ class SoundEvent(StrEnum):
     COMPARE_PREVIOUS_DIFFERENCE = "compare_previous_difference"
     COMPARE_NO_MORE_DIFFERENCES = "compare_no_more_differences"
 
+    # Voice preview (Voice Browser + Download Optional Components hub)
+    VOICE_PREVIEW_GENERATING = "voice_preview_generating"
+
+    # Per-slot earcons (audio identity). Numbered features
+    # are unusable at speed when every slot sounds the same: each copy-tray
+    # slot (1-12) and quick-bookmark slot (0-9) has its own pitch on a shared
+    # pentatonic scale, so "slot seven" is a note you learn, not a sentence
+    # you wait through. Copy tray and bookmarks use different timbres so the
+    # family is instantly recognisable before the pitch lands.
+    COPY_SLOT_1 = "copy_slot_1"
+    COPY_SLOT_2 = "copy_slot_2"
+    COPY_SLOT_3 = "copy_slot_3"
+    COPY_SLOT_4 = "copy_slot_4"
+    COPY_SLOT_5 = "copy_slot_5"
+    COPY_SLOT_6 = "copy_slot_6"
+    COPY_SLOT_7 = "copy_slot_7"
+    COPY_SLOT_8 = "copy_slot_8"
+    COPY_SLOT_9 = "copy_slot_9"
+    COPY_SLOT_10 = "copy_slot_10"
+    COPY_SLOT_11 = "copy_slot_11"
+    COPY_SLOT_12 = "copy_slot_12"
+    BOOKMARK_SLOT_0 = "bookmark_slot_0"
+    BOOKMARK_SLOT_1 = "bookmark_slot_1"
+    BOOKMARK_SLOT_2 = "bookmark_slot_2"
+    BOOKMARK_SLOT_3 = "bookmark_slot_3"
+    BOOKMARK_SLOT_4 = "bookmark_slot_4"
+    BOOKMARK_SLOT_5 = "bookmark_slot_5"
+    BOOKMARK_SLOT_6 = "bookmark_slot_6"
+    BOOKMARK_SLOT_7 = "bookmark_slot_7"
+    BOOKMARK_SLOT_8 = "bookmark_slot_8"
+    BOOKMARK_SLOT_9 = "bookmark_slot_9"
+
+    # Progress as audio (5-percent steps plus an indeterminate tick): a short
+    # blip whose pitch rises with completion never interrupts speech the way
+    # a spoken "forty-five percent" does. The quarter marks carry a touch of
+    # harmony and 100 percent resolves, so progress is legible eyes-free.
+    PROGRESS_5 = "progress_5"
+    PROGRESS_10 = "progress_10"
+    PROGRESS_15 = "progress_15"
+    PROGRESS_20 = "progress_20"
+    PROGRESS_25 = "progress_25"
+    PROGRESS_30 = "progress_30"
+    PROGRESS_35 = "progress_35"
+    PROGRESS_40 = "progress_40"
+    PROGRESS_45 = "progress_45"
+    PROGRESS_50 = "progress_50"
+    PROGRESS_55 = "progress_55"
+    PROGRESS_60 = "progress_60"
+    PROGRESS_65 = "progress_65"
+    PROGRESS_70 = "progress_70"
+    PROGRESS_75 = "progress_75"
+    PROGRESS_80 = "progress_80"
+    PROGRESS_85 = "progress_85"
+    PROGRESS_90 = "progress_90"
+    PROGRESS_95 = "progress_95"
+    PROGRESS_100 = "progress_100"
+    PROGRESS_TICK = "progress_tick"
+
+    # Selection and document boundaries: begin/complete selection get a
+    # mirrored pair, and the top/bottom of the document get a ceiling tick
+    # and a floor thud so hitting an edge is felt, not narrated.
+    SELECTION_STARTED = "selection_started"
+    SELECTION_COMPLETED = "selection_completed"
+    DOCUMENT_TOP = "document_top"
+    DOCUMENT_BOTTOM = "document_bottom"
+
+    # Soundcard keep-alive: a silent clip played on a timer (opt-in setting)
+    # so cheap USB/Bluetooth audio devices never power down and clip the
+    # first earcon after a pause.
+    KEEPALIVE = "keepalive"
+
     # System
     ERROR = "error"
     WARNING = "warning"
     SOUND_ON = "sound_on"
     SOUND_OFF = "sound_off"
+
+
+def progress_sound_event(percent: int) -> str:
+    """The 5-percent-step progress event id at or below *percent*, or "".
+
+    ``progress_sound_event(47) == "progress_45"``. Returns "" below 5 so a
+    just-started task stays silent, and clamps at 100. Callers post the sound
+    only when the step *changes*, which is what makes progress audible
+    without becoming a metronome.
+    """
+    step = min(100, max(0, int(percent))) // 5 * 5
+    return f"progress_{step}" if step >= 5 else ""

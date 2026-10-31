@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Quill Radio 3.2</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-radio-32">Quill Radio 3.2</h1>
+<p>Version 3.2.0 (build 5), the beta for testers, October 2026. 3.2.0
+was prepared on 2026-10-03 and is not yet published; the last published
+version is 3.0.4.</p>
+<h2 id="since-testing-build-5-somafm-and-the-shared-runtime">Since
+testing build 5: SomaFM and the shared runtime</h2>
+<p>The shared Radio code retires the built-in SomaFM source in response
+to its published third-party-client terms. Known catalogue entries and
+direct playback and recording paths are filtered or blocked. Indirect
+paths, existing user data and previously published packages still need
+review; this is not a new public release. The shared Windows Media
+runtime also moves to PyWinRT 4.0.3 and the Windows SDK 10.0.28000.2705
+projections.</p>
+<p>Installed editions use the shared QuillVille Runtime, which currently
+includes PyMuPDF 1.28.2 under AGPL-3.0. Radio does not itself expose
+GLOW, the feature that brings it into the runtime. Release-specific
+source and legal review remain open; portable packages must be checked
+separately.</p>
+<p>Welcome to Quill Radio 3.2. You can now ask the radio about what you
+are hearing and get an answer in words, and the radio keeps a list of
+everything it has told you, so nothing slips past while your screen
+reader is busy.</p>
+<p>There is a new station made for this community, Double Tap Live. You
+can leave yourself a note on any station. Apple’s podcast categories are
+full lists now, and Preferences has a box that finds a setting as you
+type. And updates install themselves properly again, after one last
+update by hand.</p>
+<h2 id="testing-rebuild-320-build-5">Testing rebuild: 3.2.0 (build
+5)</h2>
+<p>This beta is not a GitHub release or a Stable-channel promotion.
+Builds 2 to 5 are testing rebuilds of 3.2.0, and everything they added
+is part of 3.2.0. It is gathered here by subject; the rest of these
+notes describe 3.2.0 as first prepared. <strong>Help &gt; What’s
+New</strong> (<strong>Ctrl+Shift+F1</strong>) opens the changelog in
+your browser, with every change and when it arrived.</p>
+<p>What build 5 added: Slider Keys in Preferences, the 181.FM and
+laut.fm branches with three more music networks, and Help &gt; What’s
+New. Build 4 ran Quill Radio on Python 3.14 and added most of what
+follows. Builds 2 and 3 added Start Quill Radio with Windows in
+Preferences, editing a station’s website in your own copy, and the fixes
+under “Updates and installing”.</p>
+<h3 id="later-windows-testing-update-2026-10-27">Later Windows testing
+update (2026-10-27)</h3>
+<p>Quill Radio now closes cleanly after Windows audio-device enumeration
+or a device switch. This fixes a process-exit crash; choosing an output
+device and playing through Windows Media work as before.</p>
+<h3 id="later-testing-update-2026-10-29-to-2026-10-31">Later testing
+update (2026-10-29 to 2026-10-31)</h3>
+<p>Text stays sharp at 125, 150 and 200 percent display scaling and on
+monitors with different scaling, and windows and list columns keep their
+proportions. Controls that had no label, such as Now playing, the
+station details in Browse, the calendar’s schedule and the sleep timer’s
+custom minutes, now have a spoken name, so your screen reader says what
+they are instead of just “edit” or “list”.</p>
+<p><strong>Bring your Victor Stream stations across.</strong> Import
+Stations from Playlist (Ctrl+I) reads the XSPF list a HumanWare Victor
+Stream or Victor Trek exports, even one whose name ends in
+<code>.xspf.txt</code> or that has a damaged line, and each station’s
+website comes with it. Radio Reading Services has fifteen more services
+from that list, and the one listed as WUFT is now called Minnesota Radio
+Talking Book, which is what it always was.</p>
+<p><strong>Your ChatGPT plan stays signed in.</strong> A brief problem
+on OpenAI’s side no longer signs you out of Ask QUILL Radio.</p>
+<h3 id="new-stations-and-networks">New stations and networks</h3>
+<p>A listener in Hawaii asked for 181.FM by name, and it is now a branch
+of its own in Browse Stations: every channel the network lists, about
+eighty of them, by 181.FM’s own genres, with <strong>All
+stations</strong> first. Explicit channels say so, and the Christmas
+genre is marked seasonal. <strong>laut.fm</strong> is another new
+branch: thousands of stations that people run themselves, by the
+platform’s most-listened genres. Search Stations finds both, and so do
+Search All Sources and Find inside either branch. In <strong>Networks
+&gt; Music</strong> you will also find 181.FM, Big R Radio and 1.FM,
+each showing only that network’s own stations. If you chose your sources
+before these existed, they are switched on for you once.</p>
+<h3 id="volume-and-sound">Volume and sound</h3>
+<p><strong>Slider Keys</strong> is new in Preferences
+(<strong>Ctrl+,</strong>), for every Quill app at once. <strong>Up is
+more</strong> stays the default: Up, Page Up and Home raise the volume
+slider, and Home is now the top, 100 percent, with End the bottom. Or
+choose <strong>As Windows sliders</strong>, where Down, Page Down and
+End raise it. Right is more and Left is less either way. Ctrl+Up and
+Ctrl+Down, the volume keys that work from anywhere, are not changed.
+Each key press also tells your screen reader the new value straight
+away.</p>
+<p>Quill Radio’s own sounds now play on the same sound card as the
+radio. If you send the station to a broadcast card, the playing, stopped
+and stream error sounds are there with it, so you can tell by ear that
+you are on air. They follow the radio wherever you move it. If you would
+rather keep them somewhere else, <strong>App Sounds Play On…</strong> in
+Preferences can leave them on the system default, give them any sound
+card of their own, or turn them off with <strong>None</strong>.
+<strong>Alt+Shift+M</strong> turns them off and back on, the same key in
+every QUILL app. After a change you hear one sound on the new device. If
+that device is unplugged, the sounds play on the system default until it
+comes back, and Quill Radio tells you. Your screen reader is never
+moved.</p>
+<ul>
+<li><strong>A sound for resuming.</strong> Resuming after a pause plays
+a short sound of its own, so you can tell carrying on from starting a
+new station. <strong>Alt+Shift+M</strong> turns it off with Quill
+Radio’s other sounds.</li>
+<li><strong>A background station on another device.</strong>
+<strong>Audio &gt; Background Station on Another Device…</strong>
+(<strong>Alt+Shift+B</strong>) plays one of your favorites quietly on a
+second sound card or headset, underneath whatever else is playing. Press
+<strong>Alt+Shift+B</strong> again to turn it off.</li>
+<li><strong>Mirror to another device.</strong> <strong>Audio &gt; Mirror
+to Another Device…</strong> (<strong>Alt+Shift+D</strong>) plays the
+same station on a second device as well, following the main player in
+everything. This and the background station both need the mpv playback
+engine. See “A second device: a background station, or a mirror” in
+Chapter 5.</li>
+<li><strong>No more “mpv is missing” at every start.</strong> With
+<strong>Playback engine</strong> on Automatic in Preferences, Quill
+Radio no longer warns about mpv each time it starts, because playing
+through Windows Media is what Automatic is for. You still hear it if you
+chose <strong>mpv</strong> yourself and it cannot be loaded.</li>
+</ul>
+<h3 id="recording">Recording</h3>
+<ul>
+<li><strong>Every recording says how it went.</strong> When a recording
+is over you hear one message, once, with the station, when it started,
+how long it is and the folder it is in. If the station goes away for
+good before the end, you hear the error sound, how much was kept and
+why, and Activity (<strong>Shift+F9</strong>) keeps the message with
+<strong>Open Folder</strong>. See “When a recording ends” and “Cannot
+find a recording?” in Chapter 8.</li>
+<li><strong>Radio Recordings lists every recording.</strong> Raw stream
+recordings, such as AAC or Opus files, are in the list now. So is a file
+that could not leave the temporary recording folder, and it says “still
+in the temporary recording folder”.</li>
+<li><strong>Recordings comes back when it is already open.</strong>
+<strong>Record &gt; Recordings…</strong> (<strong>Ctrl+Shift+R</strong>)
+opens the recordings list or restores its existing window, including
+when it is minimized. The last public 3.0.4 build could silently leave
+that window minimized. The shared opener has been checked with real
+Windows controls, with empty and with full recordings folders.</li>
+<li><strong>Stop All Recordings stops a recording that is waiting to
+reconnect.</strong> It used to say nothing was recording, and the
+recording carried on after its wait. Now it stops, and you hear
+“including 1 waiting to reconnect”.</li>
+<li><strong>A reconnect that records nothing keeps what you
+have.</strong> The earlier parts of the show are kept, and it counts as
+one more try to reconnect.</li>
+<li><strong>A scheduled recording that cannot start stays in
+Activity</strong>, with the reason, so you can still find it when you
+come back hours later.</li>
+<li><strong>Recordings no longer start with the station’s
+advert.</strong> Many stations play an advert to every new listener, and
+a recording is a new listener. When a recording ends, Quill Radio cuts
+the advert it began with, and any repeat of it after a reconnect, and
+tells you how much was removed. There is nothing to set. See “Station
+adverts at the start of a recording” in Chapter 8.</li>
+<li><strong>One file per song.</strong> Turn on <strong>Split the
+recording at each song change</strong> in <strong>Record &gt; Recording
+Settings…</strong> (<strong>Ctrl+Alt+Shift+I</strong>, then
+<strong>Alt+N</strong>). A recording from a station that sends song
+names is then cut into one file per song, named after the song and
+numbered in play order. A cut can land a few seconds early or late, and
+if the split cannot be done, the recording is kept whole and you hear
+why.</li>
+</ul>
+<h3 id="listening">Listening</h3>
+<ul>
+<li><strong>Lyrics.</strong> <strong>Playback &gt; Lyrics…</strong>
+(<strong>Ctrl+Alt+B</strong>) opens the words of the song on the air as
+text to arrow through and copy, and the <strong>Lyrics</strong> button
+(<strong>Alt+Y</strong>) in Song History does the same for a song heard
+earlier. Lyrics are looked up only when you ask, and nothing about what
+you heard is saved. See “Lyrics, step by step” in Chapter 5.</li>
+<li><strong>Rewind live radio by an hour, or five.</strong> Quill Radio
+now keeps an hour of a live station, and up to five hours if you choose
+it with <strong>Time-shift buffer</strong> in Preferences.
+<strong>Ctrl+Shift+Left</strong> and <strong>Ctrl+Shift+Right</strong>
+go further the more quickly you tap, and say where you landed. See
+“Rewinding live radio, and going back to live” in Chapter 4.</li>
+<li><strong>Identify This Song.</strong> On a station that never says
+what it is playing, <strong>Identify This Song</strong> on the Playback
+menu (<strong>Ctrl+K</strong>) asks the free AcoustID service and tells
+you its best guess and how sure it is. It needs a free AcoustID key in
+Preferences and Chromaprint’s fpcalc program, and until both are there
+it tells you what is missing. See “Identify This Song” in Chapter
+5.</li>
+<li><strong>QUILL Lineups.</strong> <strong>Playback &gt;
+Lineups…</strong> (<strong>Ctrl+U</strong>) keeps named lists of
+anything Quill Radio and QUILL Cast can play: stations, podcasts and
+episodes, YouTube videos, Local Media files and recordings. Fill one by
+hand with <strong>Add to Lineup…</strong>, or give it rules that fill it
+for you, then play it straight through. See Chapter 17, QUILL Lineups,
+and the tutorial <strong>Build a lineup that fills itself</strong>.</li>
+<li><strong>Stopping, three ways.</strong> To stop what is playing,
+press <strong>Ctrl+Period</strong> from anywhere, the
+<strong>Stop</strong> button (<strong>Alt+T</strong>), or
+<strong>Playback &gt; Play</strong> (<strong>Ctrl+P</strong>), which
+reads <strong>Stop</strong> while something plays.</li>
+<li><strong>Properties describes the drive.</strong>
+<strong>Properties…</strong> (<strong>Alt+Enter</strong>) in Local Media
+now describes the drive a file is on.</li>
+</ul>
+<h3 id="finding-and-keeping-stations">Finding and keeping stations</h3>
+<ul>
+<li><strong>Your YouTube channels are in A to Z order.</strong> Asked
+for on QUILLVille: the channels you follow, under
+<strong>YouTube</strong> in Browse Stations, and **My YouTube
+<blockquote>
+<p>Subscriptions &gt; Your Channels** are both listed alphabetically, so
+you can type the first letters of a channel’s name and land on it. They
+used to come in the order you followed them, or in YouTube’s own
+order.</p>
+</blockquote></li>
+<li><strong>Mark several rows, then delete them with one
+question.</strong> In your favorites, Manage Favorites, Radio
+Recordings, Browse Stations and Schedule Recording, press
+<strong>.</strong> (period) on each row you want; you hear how many are
+marked. <strong>Delete</strong> then asks once, for example “Delete 5
+stations?”, and <strong>Ctrl+Shift+Delete</strong> clears the
+marks.</li>
+<li><strong>A key that plays a favorite from anywhere.</strong> Choose
+<strong>System-Wide Key…</strong> on a favorite’s
+<strong>Shift+F10</strong> menu to give that station its own key, which
+works even with another program in front. A key that is already taken is
+refused, with the reason.</li>
+<li><strong>Saved places in Favorites come back.</strong> A genre,
+country or other place you saved to Favorites is still there after Quill
+Radio restarts.</li>
+<li><strong>Escape walks back out of Browse Stations one level at a
+time.</strong> Inside a branch, Escape goes back to the row you opened
+it from and folds it. Only on a top-level branch does it close the
+window, and playback carries on.</li>
+<li><strong>Station Details finds a station by its call sign, frequency
+or slogan.</strong> <strong>View &gt; Station Details…</strong>
+(<strong>Alt+Shift+I</strong>) searches by name, call sign, frequency,
+slogan, format or city, and says why each result matched. No station
+pack ships yet, so for now the window says so.</li>
+<li><strong>Add Custom Station accepts a station’s web page.</strong>
+Paste a home page or a “Listen Live” player link into <strong>Stream
+URL</strong>, and Test and OK find the real stream behind it. See “Add
+Custom Station, step by step” in Chapter 6.</li>
+<li><strong>Correct a station’s website in your own copy.</strong>
+Choose <strong>Edit Website…</strong> on a station row in Browse
+Stations or Manage Favorite Stations. The correction is saved in this
+Radio profile only; it does not change the directory, and Quill Radio
+checks only the address format, not the website itself. Clear the
+address to return to the directory’s version.</li>
+<li><strong>Spotify is on the Station menu from the start.</strong>
+<strong>Connect to Spotify…</strong> (<strong>Ctrl+Alt+P</strong>) and
+<strong>Browse Spotify…</strong> (<strong>Ctrl+Alt+O</strong>) are there
+in a new install. Spotify is still experimental, and nothing is sent
+until you connect an account.</li>
+<li><strong>Community &gt; Suggest a Station or Podcast…</strong> sends
+nothing until you choose whether it is a station or a podcast.</li>
+</ul>
+<h3 id="podcasts-and-show-notes">Podcasts and show notes</h3>
+<ul>
+<li><strong>CBC podcasts play again.</strong> Podcasts you have just
+imported no longer arrive as hundreds of new episodes, and a podcast
+that fails says why in plain words.</li>
+<li><strong>Find</strong> on an Internet Archive folder puts the best
+matches first, so new uploads are found.</li>
+<li><strong>Show notes read as words.</strong> Apostrophes and other
+punctuation in show notes, titles and station descriptions are read as
+themselves, not as a string of symbols and numbers.</li>
+<li><strong>View Show Notes.</strong> An episode with notes has
+<strong>View Show Notes…</strong> on its context menu. The notes open
+with working links you can Tab between, and Save As keeps them as
+links.</li>
+<li><strong>Podcasts over http and https.</strong> A new user guide
+section, “Podcasts with http and https addresses”, explains that https
+is tried first, that a password is never sent over plain http, and what
+to try when a certificate cannot be verified.</li>
+</ul>
+<h3 id="notifications-and-reminders">Notifications and reminders</h3>
+<ul>
+<li><strong>Community &gt; What’s New, in one key.</strong>
+<strong>Community &gt; What’s New</strong>
+(<strong>Alt+Shift+N</strong>) tells you in one sentence what arrived
+since you last looked: new episodes, new videos from channels you
+follow, and reminders that went off. It is not the same as <strong>Help
+&gt; What’s New</strong> (<strong>Ctrl+Shift+F1</strong>), which opens
+the changelog.</li>
+<li><strong>How many notifications are unread.</strong> The status bar
+has a <strong>Notifications</strong> cell, such as “3 new”, and
+<strong>Help &gt; Notifications…</strong> shows the count too whenever
+some are unread.</li>
+<li><strong>Reminders wait in Notifications.</strong> A tune-in reminder
+now stays in <strong>Help &gt; Notifications…</strong>
+(<strong>Ctrl+Alt+Shift+F3</strong>), so you can find it if you were
+away, and Enter on a station reminder plays the station. A reminder also
+reads the <strong>Note to Self</strong> you keep on that station.</li>
+</ul>
+<h3 id="dictation-and-the-quillville-family">Dictation and the
+QuillVille family</h3>
+<p><strong>Edit &gt; Dictate Here</strong> (<strong>Ctrl+F11</strong>)
+dictates into Search Stations or any text box through QUILL Transcribe,
+coming on 1 November 2026, and the <strong>QuillVille</strong> menu has
+<strong>Open QUILL Transcribe</strong>. See “Dictating a search”.</p>
+<p><strong>Ctrl+Alt+Shift+R</strong> shows and hides Quill Radio even
+while other QUILL apps run.</p>
+<ul>
+<li><strong>A pin on the taskbar opens Quill Radio’s own window, every
+time.</strong> Every QuillVille app now does what Quill Radio has done
+since 3.0.2: its shortcuts carry its own taskbar identity, so pinning
+the running app pins its shortcut. An older pin that still opens
+“Several QuillVille apps are installed” now opens the app you pick
+through its own launcher, with all of its settings, instead of a copy
+that cannot find its speech engines.</li>
+</ul>
+<h3 id="settings-keys-and-saving">Settings, keys and saving</h3>
+<ul>
+<li><strong>Start Quill Radio when you sign in.</strong> <strong>Start
+Quill Radio with Windows</strong> is in Preferences as well as on the
+Station menu. Both control the same per-user Windows setting. It is
+available for an installed copy, needs no administrator rights, and is
+unavailable for portable copies, which do not change Windows startup
+settings.</li>
+<li><strong>Choosing a show and hide key is easier.</strong>
+<strong>Record Key…</strong> (<strong>Alt+R</strong>) in the Show and
+Hide Key window writes out the combination you press. You can still type
+it.</li>
+<li><strong>Settings saves are steadier when Quill Radio
+closes.</strong> A change made just before the window closes is saved,
+and a save that fails after closing no longer speaks over whatever you
+have moved on to. Routine history and preference saves run in the
+background.</li>
+<li><strong>Certificate problems said plainly.</strong> Every secure
+connection now checks certificates the way Windows does, using the
+Windows certificate store while still checking certificates and
+hostnames. When one cannot be verified, Browse Stations says so in one
+sentence with what to check, instead of “could not be reached”, and the
+Troubleshooting chapter has a section on it.</li>
+</ul>
+<h3 id="updates-and-installing">Updates and installing</h3>
+<ul>
+<li><strong>Python 3.14.</strong> Build 4 and later run on Python 3.14.
+The installer also removes the older Python 3.13 runtime once no
+QuillVille app on your computer uses it.</li>
+<li><strong>No administrator prompt.</strong> The installer is for you
+alone and does not offer an administrator-only installation. The startup
+update check no longer makes a bookkeeping write while the window
+opens.</li>
+<li><strong>A portable copy updates in place</strong> and keeps its
+<code>data</code> folder where Quill Radio looks for it.</li>
+<li><strong>A failed update puts back the version you had</strong> and
+says so.</li>
+<li><strong>The Beta engine’s 335 MB are removed</strong> when the last
+app on Beta returns to Stable.</li>
+</ul>
+<h2 id="a-word-about-the-number">A word about the number</h2>
+<p>The last Quill Radio you could download was 3.0.4, and this one is
+3.2.0. You have not missed anything in between. This release was
+prepared as 3.1.1 and never went out under that number, so there was
+never a public 3.1, and the next number is 3.2.0. Your favorites,
+settings and recordings come with you exactly as before, and after the
+one update by hand described next, Check for Updates works the way it
+always has.</p>
+<h2 id="before-you-update-one-last-time-by-hand">Before you update: one
+last time by hand</h2>
+<p>In 3.0.4, Check for Updates could offer you an update you had already
+installed, and <strong>Install and restart</strong> closed Quill Radio
+without installing anything. Both are fixed in 3.2.0. But the fix lives
+in the new version, so the old one cannot install it for you. Just this
+once, please update by hand:</p>
+<ul>
+<li><strong>If you installed Quill Radio</strong>, download
+Quill-Radio-Setup-Shared-3.2.0.exe from the releases page and run
+it.</li>
+<li><strong>If you use a portable copy</strong>, unzip
+Quill-Radio-Portable-3.2.0.zip over the folder you already have.</li>
+</ul>
+<p>Your favorites, settings, recordings and history are not touched.
+Every update after this one installs itself. If Windows ever refuses to
+start the installer, Quill Radio now tells you, stays open, and
+<strong>Open folder</strong> takes you to the file it downloaded so you
+can run it yourself.</p>
+<p>The new number also clears up one old muddle. For a few days, files
+shared by the QuillVille apps said Quill Radio was already 3.1.0, and
+QUILL Lite 1.1 came out during those days, so a computer with QUILL Lite
+1.1 might think it already had a Quill Radio 3.1. Because 3.2.0 is newer
+than that, every copy is offered this update.</p>
+<p><strong>Help &gt; About</strong> (Alt+F1) now shows the version of
+Quill Radio you installed. If another QuillVille app’s newer shared
+files are the ones running, About says that too. That is useful to
+include when you write to support.</p>
+<h2 id="try-this-first">Try this first</h2>
+<ol type="1">
+<li>Press <strong>Alt+F5</strong> to open <strong>Community &gt; Use My
+ChatGPT Subscription</strong>, then press <strong>Continue with
+ChatGPT</strong> and sign in once in your browser.</li>
+<li>Play a station, then press <strong>Ctrl+Shift+8</strong> for
+<strong>Ask QUILL Radio</strong>. Press <strong>Ask About What’s
+Playing</strong> and listen to the answer.</li>
+<li>Press <strong>Ctrl+Alt+Shift+F3</strong> to see
+<strong>Notifications</strong>, the list of everything Quill Radio has
+told you.</li>
+<li>On one of your favorites, press <strong>Shift+F10</strong> and
+choose <strong>Note to Self</strong>. Write a few words. The next time
+you arrow onto that station, you hear them.</li>
+<li>Press <strong>Ctrl+,</strong> for Preferences and type “podcast” in
+<strong>Find a setting</strong>. Press Down, then Enter, and you are on
+that setting.</li>
+<li>Press <strong>Ctrl+Shift+6</strong> for <strong>Search
+YouTube</strong>, type something you like, and arrow through the videos,
+playlists and channels it finds.</li>
+<li>Press <strong>Ctrl+O</strong> for <strong>Local Media</strong>, then
+<strong>Ctrl+Alt+O</strong> and choose a folder of music or an
+audiobook. Press <strong>Enter</strong> on the first item and
+listen.</li>
+</ol>
+<h2 id="asking-the-radio-about-what-you-hear">Asking the radio about
+what you hear</h2>
+<p>Every radio listener has asked the air a question. Who is this? What
+was that song? Where is this station? Now Quill Radio can answer. It
+knows the name of the station you are on and the title the station is
+sending, and it uses them to answer you.</p>
+<h3 id="signing-in-with-your-chatgpt-plan">Signing in with your ChatGPT
+plan</h3>
+<p>Ask QUILL Radio runs on the ChatGPT plan you already pay for. There
+is no key to paste and no bill per question, and nothing goes through
+our servers.</p>
+<ol type="1">
+<li>Press <strong>Alt+F5</strong>, or choose <strong>Community &gt; Use
+My ChatGPT Subscription</strong>.</li>
+<li>Press <strong>Continue with ChatGPT</strong>. Your browser opens on
+OpenAI’s own sign-in page.</li>
+<li>Sign in, allow “QUILL Radio” to use your plan, and come back. You
+are signed in.</li>
+</ol>
+<p>The model list comes from your own account, and the first one is
+chosen for you. What you ask counts toward your plan’s usage, which
+OpenAI sets. If you reach a limit, the window tells you in plain words,
+and <strong>Open ChatGPT Usage</strong> shows when it resets.</p>
+<p>Quill Radio never sees your password. <strong>Sign Out</strong>
+(press it twice) signs you out with OpenAI and here. <strong>Forget on
+This Computer</strong> forgets the sign-in on this computer only. Quill
+Radio, QUILL Cast, QUILL Lite and QUILL each sign in on their own, so
+signing out of one leaves the others signed in. If another of them is
+already signed in on this computer, the window tells you, and signing in
+here is one Allow in your browser.</p>
+<h3 id="asking-a-question">Asking a question</h3>
+<ol type="1">
+<li>Press <strong>Ctrl+Shift+8</strong>, or choose <strong>Community
+&gt; Ask QUILL Radio</strong>. A conversation window opens. It is on the
+Window menu, one Ctrl+Tab away, and the player keys keep working while
+you are in it.</li>
+<li>Type your question in <strong>Your message</strong> and press
+Enter.</li>
+<li>The answer is read aloud as it arrives. It is also added to the
+conversation above the box, so you can read it again word by word.</li>
+</ol>
+<p>If you would rather not type, press <strong>Ask About What’s
+Playing</strong>. Each press asks the next natural question. It is a
+real conversation, so “and where can I hear more of them?” follows on
+from the answer before.</p>
+<p>Some things to try with a station on:</p>
+<ul>
+<li>“What is this song, and who made it?”</li>
+<li>“Tell me about this station: who runs it, where, and what it
+plays.”</li>
+<li>“This is in Spanish. What are they talking about?”</li>
+<li>“Explain the rules of the sport they are commentating on.”</li>
+<li>“Is there a podcast like this one?”</li>
+</ul>
+<h3 id="quick-questions-including-three-about-you">Quick questions,
+including three about you</h3>
+<p>Above the message box is a <strong>Quick questions</strong> list with
+nine ready-made questions. Arrow through it as much as you like.
+Pressing Enter or <strong>Use This Question</strong> only puts the
+question in the box. You still choose whether to send it.</p>
+<p>Six are about what is playing. The other three are about you:</p>
+<ul>
+<li><strong>Recommend stations like my favorites</strong> sends the
+names of your favorites and asks for five stations you do not have
+yet.</li>
+<li><strong>What have I been hearing on this station lately?</strong>
+sends the songs Quill Radio has noted on this station.</li>
+<li><strong>Suggest something new from everything I have played</strong>
+sends the stations you have played lately, with a few songs from
+each.</li>
+</ul>
+<p>Before you send one of these three, Quill Radio tells you exactly
+what goes with it, for example “This question also sends the names of
+your 32 favorite stations.” Nothing about you leaves your computer
+unless you choose one of them.</p>
+<h3 id="letting-it-search-the-web">Letting it search the web</h3>
+<p>With web search allowed, the assistant can look things up for you,
+such as a station’s schedule or a news story the presenter mentioned. It
+is off until you turn it on:</p>
+<ol type="1">
+<li>Press <strong>Alt+F5</strong>.</li>
+<li>Press <strong>Alt+W</strong> to reach <strong>Allow web
+search</strong>.</li>
+<li>Press <strong>Space</strong>. You hear “Web search is allowed.”</li>
+</ol>
+<p>Press Space on the same checkbox to turn it off again.</p>
+<h3 id="it-reads-words-it-does-not-listen">It reads words, it does not
+listen</h3>
+<p>Ask QUILL Radio never listens to the station and never records
+anything. It only knows what Quill Radio already knows in words: the
+station’s name, and the title the station sends, when it sends one. If a
+station sends no titles, the assistant knows the station but not the
+song, and it tells you so. Ask QUILL Radio is turned off in Safe
+Mode.</p>
+<h2 id="your-own-music-and-audiobooks-local-media">Your own music and
+audiobooks: Local Media</h2>
+<p>Quill Radio now plays the files on your computer too. The album you
+ripped years ago, the audiobook you bought, a folder of old radio shows,
+even videos: put them in playlists, arrange them exactly the way you
+like, and they play one after another with the keys you already know.
+Nothing is ever copied or moved, and nothing in Local Media touches the
+internet, so it works in Safe Mode and when you are offline.</p>
+<p>It is the kind of thing that feels small until you use it. Your own
+music sits right beside your stations, every verb is on the keyboard,
+and Quill Radio tells you where things landed every time you move
+them.</p>
+<h3 id="a-short-walk-through-it">A short walk through it</h3>
+<ol type="1">
+<li><strong>Open it with Ctrl+O</strong> (<strong>Station &gt; Local
+Media…</strong>). The first time it is empty, and your cursor is already
+on <strong>Add Media Files…</strong>, so pressing Ctrl+O twice takes you
+straight to picking files.</li>
+<li><strong>Bring in a folder</strong> with <strong>Ctrl+Alt+O</strong>.
+Every file in it, and in the folders inside it, comes in the order you
+would read the names, so track 2 comes before track 10. The playlist is
+named after the folder.</li>
+<li><strong>Follow the Folder</strong> (Ctrl+Alt+F) is on for a playlist
+made from a folder: copy new music into the folder later and it joins
+the playlist the next time you open it. <strong>Check the Folder
+Now</strong> (F5) looks straight away.</li>
+<li><strong>Make your own playlists</strong> with <strong>New
+Playlist…</strong> (Ctrl+N), and fill them with <strong>Add Media
+Files…</strong> (Ctrl+O). <strong>Insert</strong> puts new files before
+the item you are on, and <strong>Shift+Insert</strong> after it, so you
+can slip a song in between two others.</li>
+<li><strong>Press Enter</strong> on any item. It plays, and the rest of
+the playlist follows. The row that is playing says so.
+<strong>Space</strong> pauses, and <strong>Ctrl+Right</strong> and
+<strong>Ctrl+Left</strong> move to the next and previous item.</li>
+<li><strong>Arrange it.</strong> <strong>Alt+Shift+Up</strong> and
+<strong>Alt+Shift+Down</strong> move items one place and tell you where
+they landed. <strong>Ctrl+J</strong> moves them to a place you type.
+<strong>Ctrl+X</strong> then <strong>Ctrl+V</strong> (or
+<strong>Ctrl+Alt+V</strong> for after) moves them a long way.
+<strong>Ctrl+Shift+S</strong> sorts once, by title, artist, album,
+length and more. <strong>Ctrl+Z</strong> takes back any change.</li>
+<li><strong>Shuffle and repeat.</strong> <strong>Ctrl+H</strong>
+shuffles in one order that stays put, so going back always takes you to
+what you just heard, and <strong>Ctrl+Shift+H</strong> deals a fresh
+one. <strong>Ctrl+R</strong> goes from repeat off, to the whole
+playlist, to this item.</li>
+<li><strong>Line things up.</strong> <strong>Play Next</strong>
+(Ctrl+Shift+Enter) plays the selected items straight after this one, and
+<strong>Add to Up Next</strong> (Ctrl+Alt+Enter) puts them after
+anything already waiting. <strong>Stop After This Item</strong>
+(Ctrl+Alt+S) stops when this one ends: perfect for one more chapter at
+bedtime.</li>
+<li><strong>Pick up where you stopped.</strong> <strong>Continue Where I
+Left Off</strong> (Ctrl+Alt+C) goes back to the item you were last
+listening to, at the place you stopped. It is the one to use for an
+audiobook.</li>
+<li><strong>Move through it from any window.</strong> The chapter keys,
+<strong>Ctrl+Shift+.</strong> and <strong>Ctrl+Shift+,</strong>, move to
+the next and previous item in the playlist that is playing, and
+<strong>Where Am I</strong> (Ctrl+Shift+W) adds where you are in
+it.</li>
+</ol>
+<h3 id="playlists-from-other-players-and-files-that-moved">Playlists
+from other players, and files that moved</h3>
+<ul>
+<li><strong>Import a Playlist…</strong> (Ctrl+I) reads an M3U, M3U8 or
+PLS from Winamp, foobar2000, VLC or anything else. <strong>Export as
+M3U…</strong> (Ctrl+Shift+X) goes the other way. Save it in your music
+folder and it keeps working when you copy the folder to another
+computer.</li>
+<li><strong>A file that moved says missing</strong> and keeps its place.
+<strong>Locate Missing File…</strong> (Ctrl+Shift+L) asks where it is
+now, and if the whole folder moved, the rest of it is found too.
+<strong>Remove Missing Items</strong> (Ctrl+Shift+Delete) tidies up the
+ones that are gone for good.</li>
+<li><strong>Delete takes an item out of the playlist, never off your
+computer</strong>, and Ctrl+Z puts it back. Deleting a whole playlist
+asks first, with No already chosen, and only the list goes.</li>
+<li><strong>Properties…</strong> (Alt+Enter) shows a file’s tags,
+length, size and where it is, and <strong>Show in File Explorer</strong>
+(Ctrl+Shift+E) opens its folder with the file selected.</li>
+</ul>
+<h3 id="in-browse-stations-too">In Browse Stations too</h3>
+<p>Local Media is the second branch of Browse Stations, right under
+Favorites. Open a playlist and press Enter on an item to play it and the
+rest after it. <strong>Shift+F10</strong> on any playlist or item offers
+everything, including <strong>Shuffle and Play</strong>, <strong>Copy
+Path</strong> and <strong>Open in Local Media Window</strong>.</p>
+<blockquote>
+<p><strong>QUILLBee’s tip:</strong> The keys worth learning first are
+Enter to play, Alt+Shift+Up and Down to move, Ctrl+Z to undo, and
+Shift+F10 for everything else. The Local Media window’s menus show every
+other key.</p>
+</blockquote>
+<h3 id="play-a-song-straight-from-file-explorer">Play a song straight
+from File Explorer</h3>
+<p>Julie asked whether she could be looking at the music on her external
+drive, pick a song, and choose Quill Radio to play it, the way you might
+choose VLC. Now you can.</p>
+<ul>
+<li><strong>Open with.</strong> Press <strong>Shift+F10</strong> on a
+song in File Explorer, choose <strong>Open with</strong>, and Quill
+Radio is on the list. It is there for music, audiobooks, video and M3U
+or PLS playlists as soon as Quill Radio is installed.</li>
+<li><strong>Make Quill Radio your media player.</strong> In
+<strong>Preferences</strong> (Ctrl+,), under <strong>Windows and your
+files</strong>, press <strong>Make Quill Radio My Media
+Player…</strong>. Windows does not let any app make itself the default,
+so Quill Radio opens the Windows page where you choose, already on Quill
+Radio. Chapter 10 of the user guide walks you through that page.</li>
+<li><strong>Several songs at once.</strong> Select a few and press
+Enter, and they become a list called <strong>Opened files</strong> in
+Local Media, so Next and Previous work. The next songs you open replace
+it, unless you keep it with <strong>Save as Playlist…</strong> (Ctrl+S
+in the Local Media window).</li>
+<li><strong>Quill Radio already open?</strong> The song goes to the copy
+that is running, and you stay in File Explorer while it plays.</li>
+<li><strong>Right-click.</strong> <strong>Play with Quill Radio</strong>
+and <strong>Add to Quill Radio Playlist</strong> are on the right-click
+menu of every song.</li>
+</ul>
+<p>There is a new tutorial, <strong>Play your own files in
+playlists</strong>, and a whole new chapter in the user guide: Chapter
+10, Local Media, your own music and audiobooks.</p>
+<h2 id="finding-stations">Finding stations</h2>
+<h3 id="double-tap-live">Double Tap Live</h3>
+<p>Double Tap is the daily show where blind people talk tech, with
+Steven Scott and Shaun Preece. Since 30 September 2026 it is also a
+radio station, on the air around the clock with talk, tech, music and
+the best of the Double Tap podcast.</p>
+<p>Press <strong>Ctrl+B</strong> for Browse Stations. <strong>Double Tap
+Live</strong> has its own branch, right under ACB Media. Open it and
+press Enter, and you are listening. What’s Playing
+(<strong>Ctrl+T</strong>) reads the segment or song. You can favorite,
+record and schedule it like any other station.</p>
+<h3 id="hiding-a-source-you-never-use">Hiding a source you never
+use</h3>
+<p>In Browse Stations, press Delete on a top-level branch, such as
+Podcasts, to hide it. That is the same as <strong>Hide This
+Source</strong> on its menu. <strong>Reset Sources to Default</strong>
+brings it back.</p>
+<h3 id="podcast-categories-that-fill-up">Podcast categories that fill
+up</h3>
+<p>In Browse Stations, <strong>Podcasts (Apple)</strong> has a
+storefront for each country, and each storefront has Apple’s categories,
+such as History or Comedy. A category used to hold only the few shows
+that made the overall chart, and some held none at all. Now every
+category and subcategory lists Apple’s own top shows for it, up to 200.
+History and Comedy Fiction are full lists now.</p>
+<h3 id="the-podcast-index-says-what-it-needs">The Podcast Index says
+what it needs</h3>
+<p>The <strong>Podcast Index</strong> branch has Trending Now, By
+Category and a search. If a folder there cannot load, Quill Radio now
+tells you why, instead of saying “Nothing in here”.</p>
+<p>The Podcast Index needs a free key. If your copy of Quill Radio has
+none, the branch shows one row, <strong>Add a Podcast Index
+Key…</strong>. Press Enter on it to open the <strong>Podcast Index
+Credentials</strong> window, and enter your key and secret there. You
+can get them free at api.podcastindex.org/signup. A key you enter in
+Quill Radio or QUILL Cast works in both.</p>
+<p>If the Podcast Index turns your key down, Quill Radio says the key
+was not accepted, rather than saying the service could not be
+reached.</p>
+<h3 id="smoother-browsing-in-long-lists">Smoother browsing in long
+lists</h3>
+<p>When you arrow through a long list, such as Top Podcasts, Quill Radio
+no longer loads every show you pass. It waits until you stop on one. The
+list stays quick to move through with your screen reader, and a big
+folder fills in all at once.</p>
+<ul>
+<li><strong>Searching the Internet Archive finds new uploads.</strong>
+Find on an Internet Archive folder now puts the best matches first, so a
+series uploaded last week turns up instead of being lost behind older
+items.</li>
+</ul>
+<h2 id="youtube">YouTube</h2>
+<p>A listener asked for two things, searching YouTube properly and
+reading a video’s comments. Both are here, with a few more that grew out
+of them.</p>
+<p>Everything YouTube in Quill Radio, old and new, now has its own
+chapter in the user guide: Chapter 11, YouTube.</p>
+<p>New in 3.2.0:</p>
+<ul>
+<li><strong>Search YouTube</strong> for videos, playlists and channels
+(Ctrl+Shift+6).</li>
+<li><strong>A Live folder</strong> on every channel, with what is live
+now first.</li>
+<li><strong>Read Comments</strong> on any YouTube video
+(Ctrl+Shift+7).</li>
+<li><strong>Follow This Channel in Quill Radio</strong> and
+<strong>Subscribe on YouTube…</strong> on every channel.</li>
+<li><strong>Notify Me About New Videos</strong> on a channel you
+follow.</li>
+<li><strong>My YouTube</strong>, with your own sign-in, if you turn it
+on, now with your <strong>History</strong>.</li>
+<li><strong>Live Chat</strong> for a live stream, or a finished stream’s
+replay (Ctrl+Alt+Shift+7).</li>
+<li><strong>The YouTube Video window</strong>: description, the moments
+it lists, and a countdown for a premiere (Ctrl+Alt+Shift+8).</li>
+<li><strong>Skip Sponsor Segments</strong>, off until you turn it on
+(Ctrl+Alt+Shift+9).</li>
+<li><strong>Search YouTube with Filters</strong>, and <strong>YouTube
+Music</strong> songs (Ctrl+Alt+Shift+0).</li>
+<li><strong>Shorts</strong> and <strong>About This Channel</strong> on
+every channel.</li>
+</ul>
+<h3 id="search-youtube-for-videos-playlists-and-channels">Search YouTube
+for videos, playlists and channels</h3>
+<p>Press <strong>Ctrl+Shift+6</strong> (<strong>Station &gt; Search
+YouTube…</strong>), type what you are looking for, and press Enter. The
+answer appears in Browse Stations, and every row says what it is:
+“Bristol walking tour (video, 12 minutes, Rick Steves)”, “Europe Through
+the Back Door (playlist, Rick Steves)”, “Rick Steves’ Europe (channel,
+1.2 million subscribers)”. You hear how many were found once, not row by
+row. Enter plays a video, and opens a playlist or a channel. A channel
+opens into its uploads, anything it is broadcasting live, and its
+playlists. <strong>Search YouTube…</strong> is also the first row under
+YouTube in Browse Stations.</p>
+<h3 id="read-a-videos-comments">Read a video’s comments</h3>
+<p>Press <strong>Ctrl+Shift+7</strong> (<strong>Video &gt; Read
+Comments…</strong>) while a YouTube video is playing, or choose
+<strong>Read Comments…</strong> on a video’s row. A window lists the
+comments, one per row, with replies right after the comment they answer.
+The whole comment is one Tab away, ready to read or copy. Type in
+<strong>Search comments</strong> to narrow the list; you hear how many
+match when you pause. Choose <strong>Top comments</strong> or
+<strong>Newest first</strong>, and <strong>Load More</strong> for the
+next hundred. Escape takes you back where you were.</p>
+<h3 id="follow-a-channel-or-subscribe-on-youtube">Follow a channel, or
+subscribe on YouTube</h3>
+<p>Every channel row now offers <strong>Follow This Channel in Quill
+Radio</strong>, which keeps it under Browse Stations, YouTube, with no
+account needed, and <strong>Stop Following This Channel</strong> once
+you do. <strong>Subscribe on YouTube…</strong> opens the channel’s own
+subscribe page in your browser, where YouTube asks you to confirm. Quill
+Radio never subscribes for you. That same page in your browser is where
+YouTube offers its own notification bell.</p>
+<h3 id="notify-me-about-new-videos">Notify Me About New Videos</h3>
+<p>On a channel you follow, choose <strong>Notify Me About New
+Videos</strong>. Whenever Quill Radio checks your podcasts, it also
+looks at that channel’s newest videos, and each new one arrives in
+Notifications as “New on Rick Steves’ Europe: Bristol walking tour”,
+with the same desktop notice, sound and quiet hours as a new podcast
+episode. Enter on it plays the video. It is off for every channel until
+you turn it on.</p>
+<h3 id="my-youtube-with-your-own-sign-in">My YouTube, with your own
+sign-in</h3>
+<p>If you would like your Home page, your subscriptions, Watch Later,
+Liked videos and your own playlists, turn on <strong>Use my YouTube
+sign-in from my web browser</strong> in Preferences and choose your
+browser, or a cookies.txt file. A <strong>My YouTube</strong> branch
+appears under YouTube in Browse Stations. It is off until you turn it
+on. Quill Radio reads your browser’s YouTube sign-in each time it asks
+YouTube for something; it never copies, saves or logs it, and anyone who
+can use your Windows account can already do this, so it opens nothing
+new. Turn it off any time.</p>
+<p>Edge and Chrome sometimes keep their sign-in locked or protected.
+When that happens Quill Radio says so in one sentence and suggests what
+to try: close the browser, choose Firefox, or use a cookies.txt file.
+The user guide’s “When the YouTube sign-in does not work” goes through
+each message.</p>
+<h3 id="live-chat">Live Chat</h3>
+<p>Press <strong>Ctrl+Alt+Shift+7</strong> (<strong>Video &gt; YouTube
+&gt; Live Chat…</strong>) while a live stream plays, or choose
+<strong>Live Chat…</strong> on a video’s row. The chat is a plain list,
+oldest at the top. New messages are added at the bottom without moving
+you, taking focus or making the list read itself again, so you can read
+at your own pace however busy it gets. Each row reads who wrote it, what
+they said, and whether it was paid or from a member, a moderator or the
+owner: “Sam: great show, moderator”. Emoji are read as words and links
+say they are links.</p>
+<p>Press <strong>Space</strong> to pause the list; you hear how many
+came in when you resume. <strong>Follow new messages</strong> steps down
+onto each new one, but only while you are on the last row, and only if
+you turn it on. <strong>Speak new messages</strong> is off until you
+choose it: every message, only paid messages and moderators, or only
+messages with your word in them. It speaks at most once every few
+seconds and says a burst as “12 new messages”, and Quiet Hours silence
+it. <strong>Ctrl+S</strong> turns it on and off. Ctrl+Up and Ctrl+Down
+move to the same person’s previous or next message, Ctrl+J jumps to the
+newest, Ctrl+L reads the newest without moving, and F6 moves around the
+window. A finished stream’s replay keeps in step with playback.</p>
+<h3 id="the-youtube-video-window">The YouTube Video window</h3>
+<p>Press <strong>Ctrl+Alt+Shift+8</strong> (<strong>Video &gt; YouTube
+&gt; YouTube Video…</strong>), or choose <strong>YouTube Video…</strong>
+on a video’s row. It says what the video is right now: live, finished,
+or a premiere with how long until it starts. It shows the description,
+and lists the moments the description gives a time for, so Enter on “The
+interview, 12:40” jumps there. For a premiere, <strong>Remind Me When It
+Goes Live…</strong> sets a reminder.</p>
+<h3 id="skip-sponsor-segments">Skip sponsor segments</h3>
+<p>Press <strong>Ctrl+Alt+Shift+9</strong> (<strong>Video &gt; YouTube
+&gt; Skip Sponsor Segments…</strong>), check the box, and pick what to
+skip: sponsor reads, self-promotion and reminders to subscribe to start
+with, and intros, credits and more if you like. Quill Radio uses
+SponsorBlock’s volunteer list, jumps over a marked part as playback
+reaches it, and says “Skipped a sponsor segment.” once. To look a video
+up it sends only four characters of a scrambled form of the video’s id,
+never its address and nothing about you. It is off until you turn it
+on.</p>
+<h3 id="search-with-filters-and-youtube-music">Search with filters, and
+YouTube Music</h3>
+<p>Press <strong>Ctrl+Alt+Shift+0</strong> (<strong>Video &gt; YouTube
+&gt; Search YouTube with Filters…</strong>) for YouTube’s own filters:
+videos, live now, playlists or channels; uploaded in the last hour,
+today, this week, month or year; under 4 minutes, 4 to 20, or over 20;
+and sorted by relevance, date, views or rating. Or choose
+<strong>YouTube Music songs</strong> to find songs rather than music
+videos. The answers arrive in Browse Stations like any search.</p>
+<h3 id="more-on-every-channel-and-in-my-youtube">More on every channel,
+and in My YouTube</h3>
+<p>A channel now opens into <strong>Uploads</strong>,
+<strong>Live</strong>, <strong>Shorts</strong> and its playlists, and
+its menu has <strong>About This Channel…</strong>, with its subscriber
+count and description. With your YouTube sign-in on, <strong>My
+YouTube</strong> has your <strong>History</strong>, and videos for
+members only, or kept for grown-ups, play when your account is allowed
+to see them.</p>
+<h2 id="keeping-up-with-podcasts">Keeping up with podcasts</h2>
+<p>Quill Radio has always checked a podcast for new episodes when you
+opened it. Now it can check on its own.</p>
+<h3 id="how-often-it-checks">How often it checks</h3>
+<p>Press <strong>Ctrl+,</strong> for Preferences and find <strong>Check
+subscribed podcast feeds</strong> under Podcasts. Choose anything from
+<strong>Manually only</strong> to <strong>Once a day</strong>. Quill
+Radio and QUILL Cast share this setting, so turning it on in one turns
+it on in both, and they never check the same feeds twice. If you had
+already chosen something in Quill Radio, your choice is kept.</p>
+<p>Refresh on a podcast’s row always checks that podcast, whatever the
+setting says.</p>
+<h3 id="being-told-about-new-episodes">Being told about new
+episodes</h3>
+<p>New episodes are noted quietly in the Notifications list. Nothing
+pops up over what you are reading, and nothing plays. A daily show can
+bring nine new episodes in a week, and you want to be able to find them,
+not hear about them nine times.</p>
+<p>If you do want to hear about one podcast, press
+<strong>Shift+F10</strong> on its row and choose <strong>Notify Me About
+This Podcast</strong>. You then get a desktop notification and a short
+sound when a new episode arrives. <strong>Stop Notifying About This
+Podcast</strong> on the same menu goes back to quiet.</p>
+<p>Quiet hours hold back the notification and the sound, but the episode
+still goes in the Notifications list.</p>
+<h2 id="knowing-what-happened">Knowing what happened</h2>
+<h3 id="notifications">Notifications</h3>
+<p>Press <strong>Ctrl+Alt+Shift+F3</strong>, or choose <strong>Help &gt;
+Notifications</strong>.</p>
+<p>A desktop notification pops up, says its piece and goes away. If your
+screen reader was in the middle of a sentence, you may never have heard
+it. This list keeps all of them, newest first. Anything you have not
+read yet starts with the word “New”.</p>
+<ul>
+<li>Press <strong>Enter</strong> on a row to go to what it is about,
+such as the podcast it names.</li>
+<li><strong>Mark All as Read</strong> takes the word “New” off every
+row.</li>
+<li><strong>Clear List</strong> empties the list. It only removes the
+record, never the episodes or stations.</li>
+</ul>
+<p>QUILL Cast shares this list, so whichever app you have open can show
+you what the other one found.</p>
+<h3 id="activity-and-repeat-last-result">Activity, and Repeat Last
+Result</h3>
+<p><strong>Help &gt; Activity</strong> (<strong>Shift+F9</strong>) lists
+everything Quill Radio told you since you opened it, newest first. A row
+can offer Retry, Open Folder or Copy Details, so you can do something
+about it on the spot.</p>
+<p>For example, if Quill Radio could not save your settings, you hear it
+once, with the reason, and the Activity row offers Retry. When a later
+save works, you hear that too. Recordings that finished or failed, and
+files you exported, are kept there as well, so Open Folder takes you
+straight to them.</p>
+<p><strong>Help &gt; Repeat Last Result</strong> (<strong>F9</strong>)
+says the last important thing Quill Radio told you again. That is Quill
+Radio’s own last message, not the last thing your screen reader
+read.</p>
+<p>These two keys do the same in QUILL, QUILL Lite and QUILL Cast.</p>
+<h3 id="windows-knows-what-you-are-listening-to">Windows knows what you
+are listening to</h3>
+<p>When you press a volume key, Windows shows a small “now playing”
+panel, and the same information is on the lock screen. It used to be
+blank for Quill Radio. Now it shows the station, with the song
+underneath when the station sends one. Your screen reader reads the
+panel when it appears, so you can find out what is playing without going
+back to Quill Radio. It never speaks on its own when a song changes.</p>
+<h2 id="your-stations">Your stations</h2>
+<h3 id="a-note-to-yourself-about-any-station">A note to yourself about
+any station</h3>
+<p>Every row in Browse Stations and Favorites now has <strong>Note to
+Self</strong> on its menu. Press <strong>Shift+F10</strong> on a row and
+choose it.</p>
+<p>Write whatever helps: “the morning show is the good one”, “only worth
+it on Sundays”, “the 6am repeat is the one with the interview”. The next
+time you arrow onto that row, your note is read in the details box. You
+never have to open a window to find it.</p>
+<p>To remove a note, empty the box. The note stays with the station even
+if you rename it, sort your favorites or refresh the catalog.</p>
+<h3 id="find-a-station-by-the-team-it-carries">Find a station by the
+team it carries</h3>
+<p>Type <code>Tigers</code> into Search Stations and you get 97.1 The
+Ticket in Detroit, with “carries the Detroit Tigers” right in the row.
+Quill Radio now comes with a checked list of the stations that carry
+MLB, NFL, NBA, WNBA, NHL and MLS teams, so a team name, a city and a
+sport (<code>Detroit baseball</code>), or a league (<code>MLB</code>)
+all find the right station. It works in Search All Sources and in the
+Favorites Manager’s search box too. A team that only streams its games,
+or whose station we could not confirm, is not on the list yet.</p>
+<h3 id="your-own-tags-on-a-station">Your own tags on a station</h3>
+<p>Some things about a station only you know. Press
+<strong>Shift+F10</strong> on a station and choose <strong>Edit Station
+Tags…</strong>, then type a few words with commas between them, such as
+<code>Red Wings, hockey, Saturday folk</code>. From then on, a search
+for any of those words finds the station, and the row says which tag
+matched. The directory’s own tags are shown in the same box so you can
+see what is already there.</p>
+<p>Your tags are read in the details box, they travel with a favorite
+into backups and Export My Setup, and <strong>Edit Tags for the Playing
+Station</strong> in the Command Palette tags whatever you are listening
+to.</p>
+<h3 id="taking-back-more-than-one-step">Taking back more than one
+step</h3>
+<p><strong>Ctrl+Z</strong> takes back what you just removed, such as a
+favorite, a recording or a podcast you stopped following. Press it again
+and it takes back the one before, up to ten steps.</p>
+<p>Sometimes the mistake was a few steps ago, and you want to keep what
+you did since. Choose <strong>Edit &gt; Undo History</strong>
+(<strong>Ctrl+Alt+Shift+A</strong>). It lists the last ten things you
+can take back, newest first. Choose one and press <strong>Undo This
+One</strong>. Only that one comes back, and the others stay as they are.
+QUILL Cast has the same list.</p>
+<h2 id="listening-1">Listening</h2>
+<h3 id="the-play-button-says-what-it-will-do">The Play button says what
+it will do</h3>
+<p>A listener asked why the Stop button never turned back into Play. It
+should have, and now it does. The button in the main window changes with
+what is happening, and it names what it will act on:</p>
+<ul>
+<li><strong>Play</strong> and the name of the favorite you are on, while
+nothing is playing. Its access key is <strong>Alt+L</strong>.</li>
+<li><strong>Stop</strong> and the name of what is playing, while
+something plays. Its access key is <strong>Alt+T</strong>. If you
+renamed a station in Favorites, it uses your name.</li>
+<li><strong>Resume</strong> and its name, while a podcast, recording or
+file is paused. Its access key is <strong>Alt+U</strong>.</li>
+<li><strong>Play, nothing selected</strong>, when you are on a folder.
+Pressing it tells you to choose a station in Favorites first, or press
+Ctrl+B to browse for one.</li>
+</ul>
+<p><strong>Ctrl+P</strong> and <strong>Playback &gt; Play</strong> press
+this same button from anywhere, and the menu item uses the same word as
+the button.</p>
+<h3 id="the-stations-website-one-tab-away">The station’s website, one
+Tab away</h3>
+<p>A listener wanted to reach Double Tap Live’s schedule without hunting
+for it, and that is a good reason for a button. Right after Play and
+Stop in the main window there is now a <strong>Website</strong> button.
+Its access key is <strong>Alt+B</strong>.</p>
+<p>Press it and the website of the station that is playing opens in your
+browser. When nothing is playing, it opens the website of the favorite
+you are on. Quill Radio tells you which site it opened. If the station
+never gave a website, it says so instead of opening something you did
+not ask for.</p>
+<p>One key moved to make room: the Volume slider is now
+<strong>Alt+O</strong>. Ctrl+Up and Ctrl+Down still change the volume
+from anywhere.</p>
+<h3 id="choosing-where-the-sound-goes">Choosing where the sound
+goes</h3>
+<p><strong>Audio &gt; Output Device</strong>
+(<strong>Ctrl+Shift+D</strong>) now really moves the sound. A station
+that is playing moves to the new device straight away, without a break,
+on either playback engine.</p>
+<p>If the device cannot be opened, perhaps a Bluetooth headset that is
+asleep or a card another program is using, you hear which one, for
+example “Speakers (Logi USB Headset) could not be opened, so the output
+device is back to System default.” The sound keeps playing where it was.
+Wake up or plug in the device, then choose it again. The same happens if
+a saved device will not open when Quill Radio starts.</p>
+<p>A tip: Windows calls both a laptop’s built-in sound and a USB headset
+“Speakers”. The part in brackets is what tells them apart.</p>
+<p>On an older copy of Windows, the Windows Media engine cannot choose a
+device. There, choosing one tells you so and opens Windows’ own Sound
+settings, where you can give each app its own output device.</p>
+<p>In Preferences, the <strong>Playback engine</strong> list now only
+offers the engines your computer actually has. And if a station will not
+play on the main engine and Quill Radio switches to Windows Media
+instead, it tells you.</p>
+<h3 id="whats-playing-says-it-all-every-time">What’s Playing says it
+all, every time</h3>
+<p><strong>Ctrl+T</strong> used to say the station, title and artist the
+first time, and only the station after that. Now every press says the
+whole thing.</p>
+<h2 id="your-settings">Your settings</h2>
+<h3 id="finding-a-setting">Finding a setting</h3>
+<p>Preferences (<strong>Ctrl+,</strong>) has a <strong>Find a
+setting</strong> box at the top. Type a word, such as “podcast” or
+“record”, press <strong>Down</strong> to reach the matches, and press
+<strong>Enter</strong> on one to go straight to it.
+<strong>Ctrl+F</strong> takes you back to the box. Searching never
+changes a setting, and OK and Cancel work just as before. QUILL Cast and
+QUILL Lite have the same box.</p>
+<h3 id="sharing-choices-with-your-other-quill-apps">Sharing choices with
+your other Quill apps</h3>
+<p>If you use QUILL Cast too, you may want the two apps to behave the
+same way. In Preferences, turn on <strong>Share these choices with my
+other Quill apps</strong>. From then on, <strong>Announce dialog
+transitions</strong> stays the same in Quill Radio and in every other
+Quill app where you have turned this on. Quill Radio tells you when it
+picks up a choice from another app. Nothing about your keys, your cursor
+or your screen reader is ever shared, and it stays off until you turn it
+on.</p>
+<h2 id="choose-stable-beta-or-dev">Choose Stable, Beta or Dev</h2>
+<p>New in this version: <strong>Release Channel…</strong>, on the Help
+menu. Every copy stays on <strong>Stable</strong>, the version we check
+with JAWS and NVDA, unless you choose otherwise. <strong>Beta</strong>
+gets new features a few weeks early; <strong>Dev</strong> is the work in
+progress, for testers.</p>
+<p>Arrowing through the three only explains them. If you choose Beta or
+Dev, a short warning says plainly what could go wrong and how to come
+back, and nothing moves until you check <strong>I understand</strong>
+and choose <strong>Move</strong>. Before it moves, Quill Radio saves a
+copy of your favorites, history and settings. Your recordings are not
+copied, and updates don’t change them.</p>
+<p>Coming back to Stable is safe. If Stable can read everything you have
+saved, Quill Radio offers to go straight back. If it can’t yet, Quill
+Radio says so plainly and lets you either wait for Stable to catch up
+(it moves you across by itself), or go back to the copy of your
+favorites, history and settings saved when you joined. A copy of how
+things are right now is saved first, so nothing is thrown away.</p>
+<p>On Beta and Dev, Quill Radio downloads new versions in the background
+so they are ready when you are, and never installs one without asking.
+It waits on a metered connection, during Quiet Hours, and while you are
+recording.</p>
+<p>QUILL Lite and QUILL Cast share one engine with Quill Radio on your
+computer. When one of you moves to Beta or Dev, it gets its own copy of
+the engine, so the apps you leave on Stable are never touched. That copy
+uses about 335 MB of disk space until your last app comes back to
+Stable.</p>
+<p>If an update ever fails to start, it undoes itself, puts back the
+version you had, and tells you so the next time Quill Radio opens. The
+window’s <strong>Update History</strong> button shows everything the
+updater has done.</p>
+<p>Help &gt; About now shows a build number after the version: this
+release is 3.2.0 (build 1). If a fix comes out without a new version
+number, it is a newer build, and Check for Updates offers it to you.</p>
+<h2 id="things-that-work-better-now">Things that work better now</h2>
+<ul>
+<li><strong>Windows you minimized come back.</strong> Pressing
+Ctrl+Shift+R for Recordings, or asking for any other big window, now
+restores it if you had minimized it, with focus where you left it.
+Before, nothing seemed to happen.</li>
+<li><strong>Start with Windows works again.</strong> Some listeners got
+an “Unhandled exception in script” box at every login instead of the
+radio. The installer now repairs this while it installs, so your next
+login works. If it ever opens the wrong thing, turn <strong>Station &gt;
+Start Quill Radio with Windows</strong> off and on again.</li>
+<li><strong>Preferences opens straight away.</strong> It used to take
+two seconds or more, and the list of sound devices was sometimes empty.
+Both are fixed.</li>
+<li><strong>Enter in Preferences presses OK</strong>, even after you
+change a list. This works the same in every QuillVille app.</li>
+<li><strong>Closing a window while it loads really closes it.</strong>
+You no longer hear about a search or a schedule after you have left its
+window.</li>
+<li><strong>A failed save while closing is no longer silent.</strong> If
+Quill Radio could not note the time it closed, or that a recording had
+finished, it tells you the next time it starts, and Recent Problems
+offers a Retry.</li>
+<li><strong>Undo says Unfollow.</strong> Undoing removing a podcast now
+says “Undid Unfollow”, the same word QUILL Cast uses.</li>
+<li><strong>Bringing favorites into a portable copy works.</strong>
+Answering Yes to copy your favorites into a portable copy you had opened
+before now copies them.</li>
+<li>Portable copies now start from a folder whose name has a space in
+it.</li>
+<li><strong>Backups say what they hold, and name anything left
+out.</strong> A backup now carries the podcasts you follow and where you
+are in each episode, your notes, tags, bookmarks and recording settings,
+as well as your favorites and settings, and takes recordings from the
+folder you chose in Recording Settings, even a OneDrive one. If anything
+is left out, from a backup or from Export My Setup, you are told how
+many and can choose <strong>Show what was left out, and why?</strong> to
+hear each one and what to do. See “Moving to a new or reset computer” in
+the user guide.</li>
+<li><strong>Live stations stay close to live.</strong> After a hiccup in
+the connection, a live station now catches up rather than playing
+further and further behind.</li>
+<li><strong>Four keys work even with the other QuillVille apps
+open.</strong> Restore from Backup (Ctrl+Alt+Shift+W), Recording
+Settings (Ctrl+Alt+Shift+I), Recent Problems (Ctrl+Alt+Shift+P) and
+Choose Columns (Ctrl+Alt+Shift+C) did nothing while Quill Weather,
+Inkwell, the Media Player or Converter was running, because each of
+those apps took one of these keys for itself. Those apps now have no
+show and hide key until you choose one, so the keys are Quill Radio’s
+again. And Ctrl+Alt+Shift+R stays Quill Radio’s own: QUILL, QUILL Lite,
+QUILL Cast and Audio Studio each had a command on it, and those commands
+have moved.</li>
+</ul>
+<h2 id="where-to-learn-more">Where to learn more</h2>
+<p>The user guide, <strong>Help &gt; User Guide</strong>
+(<strong>Ctrl+F1</strong>), covers everything here:</p>
+<ul>
+<li>Chapter 3, Finding your way around, for the main window and its Play
+and Website buttons.</li>
+<li>Chapter 5, What’s playing, and how it sounds, for What’s Playing,
+Output Device and Slider Keys.</li>
+<li>Chapter 6, Finding something to listen to, for Double Tap Live,
+181.FM and laut.fm, Apple’s podcast categories, the Podcast Index,
+hiding sources and notes to yourself.</li>
+<li>Chapter 9, Podcasts, books, video and more, for checking your
+podcasts.</li>
+<li>Chapter 10, Local Media, your own music and audiobooks, for
+playlists of the files on your computer.</li>
+<li>Chapter 11, YouTube, for searching YouTube, comments, following
+channels, new-video notices and My YouTube.</li>
+<li>Chapter 12, The ACB Media schedule and reminders, for
+Notifications.</li>
+<li>Chapter 13, The Community menu, for Ask QUILL Radio and your ChatGPT
+plan.</li>
+<li>Chapter 14, Making Quill Radio yours, for Find a setting and sharing
+choices with your other Quill apps.</li>
+<li>Chapter 15, Safety nets, for Activity, Repeat Last Result and Undo
+History.</li>
+<li>Chapter 16, When you need a hand, for updates and getting help.</li>
+</ul>
+<p><strong>Help &gt; Tutorials</strong> (<strong>Ctrl+Alt+F1</strong>)
+teaches the radio one short lesson at a time. Good places to start are
+Play your first station, Wander the browse tree, Follow a podcast and
+What was that song?</p>
+<p><strong>Help &gt; Release Notes</strong> (<strong>Shift+F1</strong>)
+opens these notes. The 3.0 release and its updates have their own notes,
+Quill Radio 3.0.</p>
+<p>If you get stuck, choose <strong>Help &gt; Get Help from
+Support</strong> (<strong>Ctrl+Alt+F2</strong>), or write to <a
+href="mailto:support@community-access.org">support@community-access.org</a>.
+A person at Community Access reads every message.</p>
+</main>
+</body>
+</html>

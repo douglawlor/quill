@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.10" />
+  <meta name="generator" content="pandoc 3.10.1" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>README</title>
+  <title>Publishing Providers Framework — Design Documents</title>
   <style>
     /* Default styles provided by pandoc.
     ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -41,7 +41,6 @@
       body {
         background-color: transparent;
         color: black;
-        font-size: 12pt;
       }
       p, h2, h3 {
         orphans: 3;
@@ -174,9 +173,69 @@
     }
     .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
 </head>
 <body>
-<h1 id="publishing-providers-framework-design-documents">Publishing
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="publishing-providers-framework--design-documents">Publishing
 Providers Framework — Design Documents</h1>
 <p>Design and planning documents for QUILL’s provider-aware publishing
 feature (connect to a remote site such as WordPress and browse / open /
@@ -185,10 +244,6 @@ adapter).</p>
 <p>These were authored during the framework’s development and relocated
 here from the working notes for durable reference.</p>
 <table>
-<colgroup>
-<col style="width: 50%" />
-<col style="width: 50%" />
-</colgroup>
 <thead>
 <tr>
 <th>Document</th>
@@ -198,30 +253,30 @@ here from the working notes for durable reference.</p>
 <tbody>
 <tr>
 <td><a
-href="bundled-publishing-provider-adapter-contract-2026-06-19.md">bundled-publishing-provider-adapter-contract-2026-06-19.md</a></td>
-<td>The bundled provider adapter contract (the core interface a provider
-implements).</td>
+href="publishing-framework-design-record.md">publishing-framework-design-record.md</a></td>
+<td>The consolidated, chronological design record: early
+remote-integration planning (2026-06-10), the follow-up phase plan and
+bundled provider adapter contract (2026-06-19), the implementation
+checkpoints through live third-party loading (2026-06-21), and the
+writer-tier-and-above profile restriction (2026-06-22).</td>
 </tr>
 <tr>
 <td><a
-href="publishing-providers-framework-current-state-2026-06-19.md">publishing-providers-framework-current-state-2026-06-19.md</a></td>
-<td>Framework plan state and phase breakdown.</td>
+href="auphonic-integration-reference-chapterforge.md">auphonic-integration-reference-chapterforge.md</a></td>
+<td>Archived ChapterForge Auphonic design, kept as reference for growing
+QUILL’s shipped Auphonic client.</td>
 </tr>
 <tr>
 <td><a
-href="publishing-follow-up-phases-2026-06-19.md">publishing-follow-up-phases-2026-06-19.md</a></td>
-<td>Planned follow-up phases / roadmap.</td>
+href="google-docs-drive-inbound-integration-points-2026-06-29.md">google-docs-drive-inbound-integration-points-2026-06-29.md</a></td>
+<td>Embed map for the on-hold read-only Google Docs/Drive
+integration.</td>
 </tr>
 <tr>
 <td><a
-href="publishing-remote-integration-planning-2026-06-10.md">publishing-remote-integration-planning-2026-06-10.md</a></td>
-<td>Early remote-integration planning.</td>
-</tr>
-<tr>
-<td><a
-href="publishing-profile-restriction-2026-06-22.md">publishing-profile-restriction-2026-06-22.md</a></td>
-<td>Scoping plan for restricting publishing to writer-tier-and-above
-profiles.</td>
+href="wordpress-inbound-embed-and-safety-review-2026-06-29.md">wordpress-inbound-embed-and-safety-review-2026-06-29.md</a></td>
+<td>Audit of the shipped WordPress inbound touchpoints and their safety
+posture.</td>
 </tr>
 </tbody>
 </table>
@@ -238,5 +293,6 @@ UI. Only a developer removing <code>locked_off</code> in source can lift
 the gate. The File &gt; Publish menu and all <code>publishing.*</code>
 commands are gated on this flag (the command palette and Go to Anything
 exclude locked-off features automatically).</p>
+</main>
 </body>
 </html>

@@ -1,0 +1,185 @@
+"""Launch a sibling QUILL app in its own window and process.
+
+QUILL, Quill Radio, and Quill Weather are separate apps that can reach each
+other: Radio can open Weather, Weather can open Radio, and QUILL can open either
+-- each in its own window, with its own system-tray icon. Because every app is a
+single-instance (``core.ipc``), launching one that is already running simply
+brings it to the front instead of opening a second copy.
+
+``build_launch_argv`` is the pure, tested piece: from source it runs
+``python -m quill.apps.<app>``; a frozen build runs the sibling's own ``.exe``
+sitting next to the current one (and reports it cannot when that exe is not
+installed, so the caller can say so instead of failing silently).
+``launch_app`` is the thin, best-effort spawn -- detached so the child outlives
+the launcher, and never raising.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+#: app key -> (module for ``-m`` from source, candidate frozen exe basenames).
+_APPS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "quill": ("quill", ("QUILL.exe", "Quill.exe", "quill.exe")),
+    "radio": ("quill.apps.radio", ("QuillRadio.exe", "Quill Radio.exe")),
+    "weather": ("quill.apps.weather", ("QuillWeather.exe", "Quill Weather.exe")),
+    "cast": ("quill.apps.podcasts", ("QuillCast.exe", "QUILLCast.exe", "Quill Cast.exe")),
+    "studio": ("quill.apps.studio", ("QuillStudio.exe", "Quill Studio.exe")),
+    "converter": (
+        "quill.apps.converter",
+        ("QuillConverter.exe", "Quill Converter.exe"),
+    ),
+    "player": ("quill.apps.player", ("QuillMediaPlayer.exe", "Quill Media Player.exe")),
+    "inkwell": ("quill.apps.inkwell", ("QuillInkwell.exe", "Quill Inkwell.exe")),
+    "transcribe": ("quill.apps.transcribe", ("QuillTranscribe.exe", "QUILL Transcribe.exe")),
+}
+
+#: app key -> the folder name each app's portable bundle unpacks to. Portable
+#: siblings live as adjacent folders under a shared parent (…/QuillRadio/,
+#: …/QuillWeather/), so a sibling's exe is found one level over, not only in the
+#: current app's own folder. Installed builds usually co-locate, so both the
+#: same-folder and the adjacent-folder layouts are searched.
+_PORTABLE_DIRNAMES: dict[str, str] = {
+    "quill": "QUILL",
+    "radio": "QuillRadio",
+    "weather": "QuillWeather",
+    "cast": "QuillCast",
+    "studio": "QuillStudio",
+    "converter": "QuillConverter",
+    "player": "QuillMediaPlayer",
+    "inkwell": "QuillInkwell",
+    "transcribe": "QuillTranscribe",
+}
+
+
+def portable_sibling_dirname(app_key: str) -> str | None:
+    """The adjacent folder name a portable ``app_key`` bundle unpacks to."""
+    return _PORTABLE_DIRNAMES.get(app_key)
+
+
+#: Friendly names, for menu labels and announcements.
+APP_NAMES: dict[str, str] = {
+    "quill": "QUILL",
+    "radio": "Quill Radio",
+    "weather": "Quill Weather",
+    "cast": "Quill Cast",
+    "studio": "Audio Studio",
+    "converter": "Quill Converter",
+    "player": "Quill Media Player",
+    "inkwell": "Quill Inkwell",
+    "transcribe": "QUILL Transcribe",
+}
+
+
+def app_name(app_key: str) -> str:
+    return APP_NAMES.get(app_key, app_key)
+
+
+#: Apps that may be surfaced (launched/advertised) in a public 1.0.0 build. Quill
+#: Cast, Audio Studio, the Media Player, and QuillBeacon are built
+#: but gated for now -- add a key here when it ships publicly. This is the single
+#: source of truth every launcher/menu should gate on (via :func:`is_app_released`).
+#: Quill Inkwell ships in 1.0.0: it is the system-wide half of the editor's own
+#: abbreviation expansion, sharing one library with it, so gating it would leave
+#: that feature visibly half-present.
+#: Quill Converter ships on 2026-09-27 (1.0.0), with its own installer and portable zip.
+#: QUILL Transcribe ships on 2026-11-01 (1.0.0), with its own installer and
+#: portable zip (Jeff, 2026-10-16). It is the system-wide half of dictation, as
+#: Inkwell is of abbreviation expansion. Releasing it shows Edit > Dictate Here
+#: (Ctrl+F11) in public Quill Cast and Quill Radio builds (only QUILL Transcribe
+#: answers it, so ``dictate_here_ui`` hid it until now), and lists it on every
+#: QuillVille menu, the tray menus and the companion-install offer. It goes last
+#: in ``QUILLVILLE_APP_ORDER``, so no row anybody has learned changes key.
+RELEASED_APPS: frozenset[str] = frozenset({
+    "quill",
+    "radio",
+    "weather",
+    "inkwell",
+    "converter",
+    "transcribe",
+})
+
+
+def is_dev_build() -> bool:
+    """Whether this is a developer/admin build (``QUILL_DEV_BUILD=1``).
+
+    The single source of truth for the release gate: gated companion apps
+    (:func:`is_app_released`) and unreleased editor features
+    (``feature_catalog.FeatureDefinition.released``) both ask this one question,
+    so a developer build reveals all of them and a public build reveals none.
+
+    Deliberately reads the environment on every call rather than caching at
+    import time, and deliberately *not* ``paths._DEV_BUILD`` (which the test
+    suite forces True session-wide for data-directory isolation).
+    """
+    return os.environ.get("QUILL_DEV_BUILD") == "1"
+
+
+def is_app_released(app_key: str) -> bool:
+    """Whether ``app_key`` may be surfaced in this build.
+
+    True for a publicly-released app always, and for *every* app in a
+    developer/admin build (``QUILL_DEV_BUILD=1``) so internal builds can still
+    reach the gated apps. The one gate every launcher, menu, shell verb, and
+    download offer checks.
+    """
+    return app_key in RELEASED_APPS or is_dev_build()
+
+
+def build_launch_argv(app_key: str) -> list[str] | None:
+    """The argv that launches sibling ``app_key`` in its own process, or None
+    when it cannot be launched (unknown key, or a frozen build whose sibling
+    ``.exe`` is not installed next to this one)."""
+    entry = _APPS.get(app_key)
+    if entry is None:
+        return None
+    module, exe_names = entry
+    from quill.core.app_command import is_generic_interpreter
+
+    if getattr(sys, "frozen", False) and is_generic_interpreter(sys.executable):
+        # Every QuillVille app shares one runtime: a sibling is the same
+        # interpreter with a different module (2026-09-27; searching for a
+        # sibling .exe beside the runtime found nothing).
+        return [sys.executable, "-m", module]
+    if getattr(sys, "frozen", False):
+        here = Path(sys.executable).resolve().parent
+        # 1) Same folder as the current app (co-located / shared-folder install).
+        # 2) An adjacent folder under the shared parent (the portable layout,
+        #    …/QuillRadio/ next to …/QuillWeather/).
+        search_dirs = [here]
+        sibling_dir = _PORTABLE_DIRNAMES.get(app_key)
+        if sibling_dir:
+            search_dirs.append(here.parent / sibling_dir)
+        for folder in search_dirs:
+            for name in exe_names:
+                candidate = folder / name
+                if candidate.exists():
+                    return [str(candidate)]
+        return None  # sibling app is not installed alongside this one
+    return [sys.executable, "-m", module]
+
+
+def launch_app(app_key: str, *, extra_args: tuple[str, ...] = ()) -> bool:
+    """Spawn sibling ``app_key`` detached (best-effort). True if a launch was
+    started, False when it could not be (see :func:`build_launch_argv`). Never
+    raises -- a failed launch must not disturb the app the user is in."""
+    argv = build_launch_argv(app_key)
+    if argv is None:
+        return False
+    argv = [*argv, *extra_args]
+    import subprocess
+
+    try:
+        creationflags = 0
+        if sys.platform.startswith("win"):
+            # Detach so the child keeps running if the launcher exits, and give
+            # it its own process group (no shared console window).
+            creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+                subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+            )
+        subprocess.Popen(argv, close_fds=True, creationflags=creationflags)  # noqa: S603
+        return True
+    except Exception:  # noqa: BLE001 - a launch failure never disrupts the caller
+        return False

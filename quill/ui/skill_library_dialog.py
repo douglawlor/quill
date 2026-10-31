@@ -28,9 +28,28 @@ from quill.ui.dialog_contract import (
     apply_modal_ids,
     show_message_box,
 )
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 if TYPE_CHECKING:
     from quill.core.settings import Settings
+
+
+def open_skill_library(controller: object) -> None:
+    """Open the Skill Library for the host MainFrame (keeps main_frame thin)."""
+    dlg = SkillLibraryDialog(
+        controller.frame,  # type: ignore[attr-defined]
+        controller._get_skill_files(),  # type: ignore[attr-defined]
+        controller.settings,  # type: ignore[attr-defined]
+        selection=str(controller.editor.GetStringSelection()),  # type: ignore[attr-defined]
+        document=str(controller.editor.GetValue()),  # type: ignore[attr-defined]
+        title_text=controller._current_document_title(),  # type: ignore[attr-defined]
+        on_insert=controller._ai_insert_text,  # type: ignore[attr-defined]
+        announce_cb=controller._announce,  # type: ignore[attr-defined]
+    )
+    dlg.dialog.CenterOnParent()
+    controller._show_modal_dialog(dlg.dialog, "Skill Library")  # type: ignore[attr-defined]
+    dlg.close()
 
 
 class _SkillCancelled(Exception):
@@ -72,14 +91,14 @@ class SkillLibraryDialog:
             title="Skill Library",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(540, 440))
+        self.dialog.SetMinSize(dip_size(self.dialog, 540, 440))
 
         root = wx.BoxSizer(wx.VERTICAL)
 
         root.Add(wx.StaticText(self.dialog, label="&Skills:"), 0, wx.LEFT | wx.TOP, 8)
         self._list = wx.ListBox(self.dialog, style=wx.LB_SINGLE)
         self._list.SetName("Skills")
-        self._list.SetMinSize(wx.Size(-1, 180))
+        self._list.SetMinSize(dip_size(self._list, -1, 180))
         root.Add(self._list, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 8)
 
         root.Add(wx.StaticText(self.dialog, label="&Description:"), 0, wx.LEFT | wx.TOP, 8)
@@ -88,7 +107,7 @@ class SkillLibraryDialog:
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
         )
         self._desc.SetName("Description")
-        self._desc.SetMinSize(wx.Size(-1, 70))
+        self._desc.SetMinSize(dip_size(self._desc, -1, 70))
         root.Add(self._desc, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 4)
 
         self._status = wx.StaticText(self.dialog, label="")
@@ -425,7 +444,7 @@ class _SkillParameterDialog:
             title=f"Options — {pack.name}",
             style=wx.DEFAULT_DIALOG_STYLE,
         )
-        self.dialog.SetMinSize(wx.Size(380, -1))
+        self.dialog.SetMinSize(dip_size(self.dialog, 380, -1))
 
         root = wx.BoxSizer(wx.VERTICAL)
         grid = wx.FlexGridSizer(cols=2, hgap=8, vgap=8)
@@ -463,13 +482,14 @@ class _SkillParameterDialog:
             ctrl = wx.SpinCtrl(self.dialog, value=default or "0", min=0, max=999999)
         elif param.type == "multiline":
             ctrl = wx.TextCtrl(self.dialog, value=default, style=wx.TE_MULTILINE)
-            ctrl.SetMinSize(wx.Size(-1, 80))
+            ctrl.SetMinSize(dip_size(ctrl, -1, 80))
         else:
             ctrl = wx.TextCtrl(self.dialog, value=default)
         # Accessible name from the parameter's visible label so screen readers
         # announce each field by name (the StaticText label alone is not reliably
         # associated across screen readers).
         ctrl.SetName(param.label or param.name)
+        set_spoken_name(ctrl, param.label or param.name)
         return ctrl
 
     def show(self) -> int:
@@ -521,7 +541,7 @@ class _SkillResultDialog:
             title=label,
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(560, 460))
+        self.dialog.SetMinSize(dip_size(self.dialog, 560, 460))
 
         root = wx.BoxSizer(wx.VERTICAL)
 

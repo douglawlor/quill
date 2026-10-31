@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
+import pytest
+
 from quill.branding import QUILL_KEY_LABEL
 from quill.core.quill_key_help import MODE_BROWSE, MODE_PREFIX
 from quill.ui.main_frame import MainFrame
@@ -16,12 +18,14 @@ class _Event:
         ctrl: bool = False,
         shift: bool = False,
         alt: bool = False,
+        raw_ctrl: bool | None = None,
         unicode_key: int | None = None,
     ) -> None:
         self._key_code = key_code
         self._ctrl = ctrl
         self._shift = shift
         self._alt = alt
+        self._raw_ctrl = raw_ctrl
         self._unicode_key = unicode_key if unicode_key is not None else key_code
         self.skipped = False
 
@@ -42,6 +46,18 @@ class _Event:
 
     def Skip(self) -> None:
         self.skipped = True
+
+
+class _MacEvent(_Event):
+    """Mimics wx on macOS: ``RawControlDown()`` is the physical Ctrl key.
+
+    ``ControlDown()`` reflects Cmd on macOS, so a real physical Ctrl press
+    reports ``ctrl=False`` here, with the physical key visible only via
+    ``RawControlDown()``.
+    """
+
+    def RawControlDown(self) -> bool:
+        return bool(self._raw_ctrl)
 
 
 _BACKTICK = ord("`")
@@ -97,6 +113,27 @@ def test_default_prefix_press_sets_pending() -> None:
     assert frame._quill_key_prefix_pending is True
 
 
+def test_physical_ctrl_on_mac_sets_pending() -> None:
+    # #883-follow-up: on macOS, wx's ControlDown() reflects Cmd, not the
+    # physical Ctrl key (only RawControlDown() does). A real physical
+    # Ctrl+Shift+` press must still trigger the QUILL key prefix there.
+    frame = _build_frame()
+    event = _MacEvent(_BACKTICK, ctrl=False, shift=True, raw_ctrl=True)
+    handled = frame._handle_quill_key_mode_event(event)
+    assert handled is True
+    assert frame._quill_key_prefix_pending is True
+
+
+def test_cmd_alone_without_raw_ctrl_still_matches() -> None:
+    # ControlDown()==True (Cmd held) continues to work on its own, e.g. on
+    # platforms/configurations where the OS hasn't reserved the chord.
+    frame = _build_frame()
+    event = _MacEvent(_BACKTICK, ctrl=True, shift=True, raw_ctrl=False)
+    handled = frame._handle_quill_key_mode_event(event)
+    assert handled is True
+    assert frame._quill_key_prefix_pending is True
+
+
 def test_prefix_then_n_enters_browse_mode() -> None:
     frame = _build_frame()
     frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
@@ -126,6 +163,32 @@ def test_double_press_prefix_enters_sticky_locked_mode() -> None:
     assert frame._quill_key_mode_active is True
     assert frame._quill_key_mode_sticky is True
     assert any("locked" in message.lower() for message in frame._feedback)
+
+
+def test_sticky_lock_survives_entry_key_autorepeat() -> None:
+    # #1185: double-pressing the QUILL key locks sticky browse mode, but the
+    # second (entry) key is still physically held, so the OS auto-repeats it.
+    # That repeat arrived as another QUILL-key event while browse mode was now
+    # active and instantly exited the mode we had just locked -- so the follow-on
+    # navigation letters (P/S/H) typed into the document instead of navigating,
+    # even though "browse mode locked" had just been announced. A locked mode
+    # must stay locked until Escape, exactly as its own message promises.
+    frame = _build_frame()
+    frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))  # prefix
+    frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))  # lock
+    assert frame._quill_key_mode_active is True
+    assert frame._quill_key_mode_sticky is True
+
+    # The held entry key auto-repeats while the lock is active: it must be
+    # swallowed, not treated as a fresh "exit browse mode" gesture.
+    handled = frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
+    assert handled is True  # consumed, never typed into the editor
+    assert frame._quill_key_mode_active is True  # regression: used to exit here
+    assert frame._quill_key_mode_sticky is True
+
+    # Escape still exits the lock -- the one documented exit for a locked mode.
+    frame._handle_quill_key_mode_event(_Event(27))
+    assert frame._quill_key_mode_active is False
 
 
 def test_sticky_mode_ignores_timeout() -> None:
@@ -303,16 +366,62 @@ def test_browse_mode_question_mark_shows_browse_cheat_sheet_and_stays() -> None:
     assert "(3)" in frame._help_shown[0][1]  # type: ignore[attr-defined]
 
 
-def test_prefix_then_g_opens_quick_nav() -> None:
-    # NAV-4: the QUILL key prefix then G opens Quick Nav / Go to Anything.
-    frame = _build_frame()
+def _default_keymap_frame() -> tuple[MainFrame, list[str]]:
+    from quill.core.keymap import DEFAULT_KEYMAP
+
+    frame = _build_frame(keymap=dict(DEFAULT_KEYMAP))
+    ran: list[str] = []
+    frame._run_command = ran.append  # type: ignore[method-assign]
+    frame._chord_command_available = lambda _cid: True  # type: ignore[method-assign]
+    frame._has_active_selection = lambda: False  # type: ignore[method-assign]
+    return frame, ran
+
+
+def test_prefix_then_g_reaches_open_from_favorite_folder() -> None:
+    # Leader G is Open From Favorite Folder in the keymap. The handler used to
+    # answer G itself (Quick Nav), so the bound command never fired; Quick Nav
+    # is Ctrl+Shift+Z and Go to Anything Ctrl+Alt+Shift+A (2026-10-03).
+    frame, ran = _default_keymap_frame()
     opened: list[str] = []
     frame.open_quick_nav = lambda: opened.append("nav")  # type: ignore[method-assign]
     frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
     handled = frame._handle_quill_key_mode_event(_Event(ord("G")))
     assert handled is True
-    assert opened == ["nav"]
+    assert ran == ["file.open_from_favorite_folder"]
+    assert opened == []
     assert frame._quill_key_mode_active is False
+
+
+def test_prefix_then_n_enters_browse_mode_and_radio_play_pause_is_on_two() -> None:
+    # N is browse mode, answered before the keymap, so Radio Play/Pause --
+    # which the keymap put on leader N, where it could never fire -- is on
+    # leader 2 with the rest of the media digits.
+    frame, ran = _default_keymap_frame()
+    frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
+    assert frame._handle_quill_key_mode_event(_Event(ord("N"))) is True
+    assert frame._quill_key_mode_active is True
+    assert ran == []
+
+    frame, ran = _default_keymap_frame()
+    frame._handle_quill_key_mode_event(_Event(_BACKTICK, ctrl=True, shift=True))
+    assert frame._handle_quill_key_mode_event(_Event(ord("2"))) is True
+    assert ran == ["radio.play_pause"]
+
+
+def test_no_default_leader_chord_sits_on_a_key_the_handler_answers_itself() -> None:
+    # A keymap binding on a reserved second key is dead on arrival: the handler
+    # consumes the key before it ever reads the keymap.
+    from quill.core.keymap import _QUILL_LEADER_PREFIX, DEFAULT_KEYMAP
+    from quill.core.quill_key_help import RESERVED_LEADER_KEYS
+
+    leader = _QUILL_LEADER_PREFIX + ", "
+    dead = sorted(
+        command_id
+        for command_id, binding in DEFAULT_KEYMAP.items()
+        if binding.upper().startswith(leader)
+        and binding[len(leader) :].strip().upper() in RESERVED_LEADER_KEYS
+    )
+    assert dead == []
 
 
 def test_prefix_press_announces_quill_key() -> None:
@@ -406,6 +515,47 @@ def test_quill_key_cheat_sheet_includes_chord_groups() -> None:
     assert "Navigate" in text
     assert "View" in text
     assert "File" in text
+
+
+def test_chords_for_an_unreleased_feature_never_fire_or_appear(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Podcasts is not released in a public 1.0.0 build, so its QUILL-key chords
+    # must neither dispatch nor be advertised in the cheat sheet. Read Aloud,
+    # which ships, is untouched. (Radio is likewise unreleased in the public
+    # editor as of #1340, so it can no longer stand in for a shipping feature.)
+    from quill.core.commands import CommandRegistry
+
+    monkeypatch.delenv("QUILL_DEV_BUILD", raising=False)
+    frame = _build_frame()
+    _wire_help_stubs(frame)
+    registry = CommandRegistry()
+    registry.register(
+        "podcasts.play_pause", "Podcasts: Play/Pause", lambda: None, feature_id="core.podcasts"
+    )
+    registry.register(
+        "tools.read_aloud_start_pause",
+        "Read Aloud: Start/Pause",
+        lambda: None,
+        feature_id="core.read_aloud",
+    )
+    frame.commands = registry  # type: ignore[attr-defined]
+    frame.keymap = {  # type: ignore[attr-defined]
+        "podcasts.play_pause": "Ctrl+Shift+Grave, 8",
+        "tools.read_aloud_start_pause": "Ctrl+Shift+Grave, 0",
+    }
+    frame._binding_for = lambda cid: frame.keymap.get(cid)  # type: ignore[method-assign]
+
+    assert frame._chord_command_available("podcasts.play_pause") is False
+    assert frame._chord_command_available("tools.read_aloud_start_pause") is True
+    assert frame._chord_command_for_event(_Event(ord("8"))) is None
+    assert frame._chord_command_for_event(_Event(ord("0"))) == "tools.read_aloud_start_pause"
+
+    frame._enter_quill_key_mode()
+    frame._handle_quill_key_mode_event(_Event(ord("?")))
+    _mode, text = frame._help_shown[0]  # type: ignore[attr-defined]
+    assert "Podcasts" not in text
+    assert "Read Aloud" in text
 
 
 def test_browse_mode_unlimited_preset_disables_timeout() -> None:

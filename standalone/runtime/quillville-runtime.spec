@@ -1,0 +1,354 @@
+# PyInstaller spec for the shared QuillVille Runtime onedir.
+#
+# This is the ONE Python runtime every QuillVille app reuses: CPython +
+# wxPython + the shared quill and quill_social packages, with a generic
+# launcher (runtime_launcher.py) that dispatches `-m <module>` to any app.
+# An app installer installs this bundle once (skipping it when a matching
+# version is already present -- see quill.core.runtime_marker) and ships only
+# a thin per-app launcher that runs QuillVilleRuntime.exe -m <the app>.
+#
+# collect_all("quill") + collect_all("quill_social") bring both packages'
+# code and data; nacl is collected explicitly for Ed25519 verification (lazy
+# imports the tracer would miss). The heavy optional ML stacks are NOT
+# excluded here (unlike a single-app spec): the shared runtime is the union
+# of every app's needs, and QUILL itself uses transcription/neural TTS -- those
+# still resolve their models from the shared component store at runtime.
+
+import os
+
+from PyInstaller.utils.hooks import collect_all
+
+# collect_all sweeps whatever is sitting in the package tree, and mypy, pytest
+# and ruff all leave caches *inside* quill/ (quill/core/ai/.mypy_cache and
+# quill/tools/.mypy_cache alone were 15.8 MB). They are gitignored, so they are
+# invisible in a diff, and they were being packaged into every installer:
+# regenerable build detritus carrying absolute paths from the build machine.
+# build_portable.py already filters them for the portable bundles
+# (_DEV_CACHE_IGNORE); this is the same rule for the frozen builds.
+_DEV_CACHE_PARTS = ("__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache")
+
+#: The same rule for compiled-in-place native code: quill/native/<x>/build is
+#: CMake scratch (CMakeFiles, *.tlog, Debug/, VCTargetsPath), gitignored and
+#: regenerable, and it was riding into every installer's runtime exactly as the
+#: mypy caches above once did (2026-09-30). Matched on the DEST path only --
+#: the in-archive path, always "quill/native/.../build/..." -- because a build
+#: machine whose checkout merely sits under some .../build/... directory would
+#: otherwise have its whole package filtered away.
+def _is_native_build_scratch(dest):
+    parts = dest.split("/")
+    return "native" in parts and "build" in parts[parts.index("native") :]
+
+
+def drop_dev_caches(entries):
+    """Filter (source, dest) data entries that are regenerable build detritus."""
+    kept = []
+    for entry in entries:
+        source = str(entry[0]).replace("\\", "/")
+        dest = str(entry[1]).replace("\\", "/")
+        if any(f"/{part}/" in f"/{source}/" or f"/{part}/" in f"/{dest}/" for part in _DEV_CACHE_PARTS):
+            continue
+        if _is_native_build_scratch(dest):
+            continue
+        kept.append(entry)
+    return kept
+
+
+# Freeze the quill of the checkout this spec sits in, whatever else is
+# importable. The build interpreter's editable install points at one checkout
+# (S:\QUILL), so a build from a second worktree silently froze the first one's
+# code -- 422 files of it, caught by check_runtime_freshness (2026-09-27).
+# PYTHONPATH did not help: it never reached PyInstaller's module search path.
+import os  # noqa: E402
+import sys  # noqa: E402
+
+_CHECKOUT_ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))  # noqa: F821
+if sys.path[:1] != [_CHECKOUT_ROOT]:
+    sys.path.insert(0, _CHECKOUT_ROOT)
+
+quill_datas, quill_binaries, quill_hidden = collect_all("quill")
+# No bug-report credential ships in any QuillVille build (2026-09-26; feedback
+# is email-only). collect_all("quill") would sweep a stale, gitignored
+# quill/_feedback_token.py left in the checkout, so drop it here, exclude it
+# below, and let scripts/check_no_credentials.py refuse the build if it or
+# feedback_hub reaches the archive anyway.
+quill_hidden = [m for m in quill_hidden if m != "quill._feedback_token"]
+social_datas, social_binaries, social_hidden = collect_all("quill_social")
+nacl_datas, nacl_binaries, nacl_hidden = collect_all("nacl")
+# yt-dlp: part of the [runtime] dependency set, so the shared runtime
+# carries it for every app that resolves a YouTube or media-page link.
+# Collected explicitly -- its ~940 site extractors load through a lazy
+# registry the import tracer cannot follow.
+ytdlp_datas, ytdlp_binaries, ytdlp_hidden = collect_all("yt_dlp")
+# yt-dlp-ejs: the challenge-solver scripts (.js data files) yt-dlp hands to the
+# bundled deno. Imported lazily by yt-dlp, and data the tracer cannot see.
+ejs_datas, ejs_binaries, ejs_hidden = collect_all("yt_dlp_ejs")
+ytdlp_datas += ejs_datas
+ytdlp_binaries += ejs_binaries
+ytdlp_hidden += ejs_hidden
+# chat-downloader: Quill Radio's Live Chat window. Imported lazily, and it
+# ships a JSON format table (formatting/custom_formats.json) the tracer cannot
+# see, so it is collected the same way.
+chat_datas, chat_binaries, chat_hidden = collect_all("chat_downloader")
+ytdlp_datas += chat_datas
+ytdlp_binaries += chat_binaries
+ytdlp_hidden += chat_hidden
+
+# mutagen: Quill Converter carries cover art into the formats FFmpeg drops it
+# from (quill/core/audio/cover_art.py), and QUILL writes MP3 chapter frames
+# with it. Pure Python and imported lazily inside functions, so it is named
+# here rather than trusted to the tracer.
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata  # noqa: E402
+
+mutagen_hidden = collect_submodules("mutagen")
+# mutagen is GPL-2.0-or-later: its dist-info (licenses/COPYING) ships with it,
+# as yt-dlp's already does through collect_all. Without this the runtime
+# carried the code and not the licence.
+ytdlp_datas += copy_metadata("mutagen")
+
+# The Word stack (2026-10-17). python-docx and python-pptx parse through lxml,
+# a native extension (the upstream hooks in pyinstaller-hooks-contrib collect
+# lxml's own submodules and the docx/pptx package templates); openpyxl reads
+# .xlsx for Office import and the GLOW Excel audit. The GLOW auditors are
+# reached only through acb_large_print_core's per-extension lazy imports, so
+# they are named rather than trusted to the tracer. Named here so the Word path
+# never again depends on what some optional import happened to reach. It added
+# `lxml` and `acb-large-print` (metadata) to _internal; the inventory was
+# rebaselined on 2026-10-24 (docs/building-windows-family.md).
+word_hidden = ["lxml", "lxml.etree", "lxml._elementpath", "docx", "pptx", "openpyxl"]
+try:
+    word_hidden += collect_submodules("acb_large_print")
+except Exception:  # GLOW absent on this build machine: check_build_env names it
+    pass
+ytdlp_hidden += word_hidden
+
+# Pygments (2026-10-30): spell check lexes code and markup to read only their
+# strings, comments and text (quill/core/spellcheck_spans.py). It finds its
+# lexers by name at run time, so the tracer sees none of them; collected here,
+# or a frozen build quietly falls back to the regex lexer for every language.
+ytdlp_hidden += collect_submodules("pygments.lexers") + [
+    "pygments.token",
+    "pygments.util",
+    "pygments.lexer",
+]
+
+a = Analysis(
+    ["runtime_launcher.py"],
+    pathex=[_CHECKOUT_ROOT],
+    binaries=quill_binaries + social_binaries + nacl_binaries + ytdlp_binaries,
+    datas=drop_dev_caches(quill_datas + social_datas + nacl_datas + ytdlp_datas),
+    hiddenimports=quill_hidden + social_hidden + nacl_hidden + ytdlp_hidden + mutagen_hidden,
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[
+        # The retired bug-report credential and its client (see above).
+        "quill._feedback_token",
+        "feedback_hub",
+        # The shared runtime backs QUILL (the full editor) too, so it KEEPS PIL
+        # (AI vision), the PDF stack, and the speech engines QUILL uses. These are
+        # only the libraries NO QuillVille app -- QUILL included -- imports at
+        # runtime, dragged in solely by collect_all pulling unused quill
+        # submodules. babel alone is ~152 MB.
+        "babel",
+        "pandas",
+        "psycopg",
+        "psycopg2",
+        "grpc",
+        "matplotlib",
+        "scipy",
+        "mypy",
+        # hypothesis is a property-based TEST library. It reached the sweep the
+        # same way mypy did -- installed in the build interpreter, reachable
+        # through some collected package's optional import -- and a test
+        # framework has no business in a shipped runtime whatever its size.
+        "hypothesis",
+        # Optional imports of collected packages, frozen only when the build
+        # interpreter happens to have them (the 2026-10-24 build swept all five;
+        # none is declared and nothing under quill/ imports them): orjson
+        # (curl_cffi's fast JSON), bcrypt (cryptography's SSH key format), h2
+        # (httpx's HTTP/2, never enabled here), and pythonnet/clr_loader
+        # (pyreadline3's IronPython clipboard).
+        "orjson",
+        "bcrypt",
+        "h2",
+        "clr",
+        "clr_loader",
+        "pythonnet",
+        # lxml is NOT excluded (Jeff, 2026-10-17: "get whatever is needed to
+        # make word documents fully usable in quill and quill lite ... do not
+        # worry about size"). It was listed here until then, and python-docx
+        # and python-pptx cannot import without it: every installed QUILL and
+        # QUILL Lite opened Word files as plain text and could not save a real
+        # .docx, and the GLOW Word, PDF and PowerPoint audits failed. Both
+        # import gates now prove the Word path (check_runtime_imports.py runs
+        # quill.io.word_selfcheck inside this bundle), and
+        # tests/unit/scripts/test_word_support_in_runtime.py fails a pull
+        # request that excludes it again.
+        # Additional dead weight dragged in transitively that NO QuillVille app
+        # imports (verified: no `import speech_recognition|onnxruntime|av|imageio`
+        # anywhere under quill/). speech_recognition (~44 MB) is unused -- QUILL's
+        # offline speech is whisper.cpp / faster-whisper. onnxruntime (~29 MB)
+        # arrives with the on-demand kokoro-onnx engine-pack, not the base runtime.
+        # av / imageio pull in libx265 (~22 MB of H.265 VIDEO encoding) that these
+        # audio/text apps never use. Together ~100 MB off the shared runtime.
+        "speech_recognition",
+        "onnxruntime",
+        "av",
+        "imageio",
+        "imageio_ffmpeg",
+        # --- engine-pack-owned modules: MUST NOT be frozen in -----------------
+        # These are installed on demand into %APPDATA%\Quill\engine-packs\ by
+        # quill.core.speech.engine_install, which puts the pack on sys.path.
+        # A frozen copy does not merely duplicate the pack -- it SHADOWS it and
+        # cannot be overridden, because PyInstaller's FrozenImporter sits ahead
+        # of PathFinder on sys.meta_path (the reason yt-dlp needs the explicit
+        # meta-path finder in engine_pack_imports.py to be updatable at all).
+        #
+        # Freezing them silently broke all three, verified in the 2026-08-17
+        # build by importing each one inside the shipped runtime:
+        #   vosk         -> OSError: cannot load libvosk.dll (0x7e). The wheel's
+        #                   26 MB libvosk.dll is not a PyInstaller-visible
+        #                   dependency, so only its three mingw support DLLs
+        #                   (27.6 MB) shipped -- the engine itself never did.
+        #   faster_whisper -> ModuleNotFoundError: 'av' (excluded above, and
+        #                   build_runtime.ps1 then prunes libx265, so `av` can
+        #                   never come back). ctranslate2's 59 MB shipped for a
+        #                   module that cannot import.
+        #   kokoro_onnx  -> ModuleNotFoundError: 'onnxruntime' (excluded above).
+        # Worse than the wasted weight: is_vosk_available() and friends use
+        # find_spec(), which finds the broken frozen module, so QUILL reported
+        # all three as installed and never offered the working engine pack.
+        # Excluding them costs no capability -- none of the three could run --
+        # and restores the on-demand path that already exists, is SHA-256
+        # verified, and is refcounted in the shared component store.
+        "vosk",
+        "faster_whisper",
+        "ctranslate2",
+        "kokoro_onnx",
+        # Not installed on the 2026-08-17 build machine, so it has never shipped
+        # -- which is exactly why it belongs here. sherpa-onnx backs the Nemotron
+        # and Parakeet providers and the VAD, all engine-pack-installed, so on a
+        # build machine that happens to have it the sweep would freeze it in and
+        # shadow the pack silently. Same class of accident as `winrt` vanishing
+        # from a release: what ships must not depend on what one laptop has.
+        "sherpa_onnx",
+        # The Faster Whisper pack installs its own huggingface_hub (see
+        # engine_install._FASTER_WHISPER_REQUIREMENTS), and nothing under quill/
+        # imports the hub directly. Whether it was swept in at all depended on
+        # which unrelated package on the build machine reached it -- on this one
+        # that was `mcp`, excluded below, so the hub silently stopped shipping
+        # and the import gate failed demanding it. Excluded outright now: what
+        # ships must not depend on what one laptop has, and a frozen hub would
+        # shadow the pack's pinned copy the way vosk shadowed its pack.
+        "huggingface_hub",
+        # --- present-but-broken in the 2026-08-18 probe ----------------------
+        # weasyprint needs GTK native libraries (libgobject, pango) that no
+        # wheel provides and the bundle never carried: it raises OSError the
+        # moment anything imports it. Nothing first-party imports it; it was
+        # swept in as a transitive extra of the documents stack.
+        "weasyprint",
+        # --- undeclared payload: reachable on the build machine, called by ---
+        # --- nothing the [runtime] extra declares (2026-08-19) --------------
+        # Every entry below arrived the way the inventory gate's own docstring
+        # describes: Analysis follows an optional import, the package happens to
+        # be installed on this laptop, and ~15 MB ships in all seven installers.
+        # None of it is reachable from a capability pyproject's [runtime] group
+        # declares. Verified per package before excluding, not swept by size.
+        #
+        # hf_xet (9.3 MB) -- huggingface_hub's Xet transfer accelerator. It is
+        # optional by construction: is_xet_available() gates every use and
+        # file_download falls back to plain HTTPS with a log line. QUILL only
+        # ever downloads through the hub (faster-whisper's snapshot_download);
+        # the upload paths that genuinely require it are never called. The hub
+        # itself is excluded above and arrives with the pack that uses it, so
+        # this exclude no longer strands a bundled copy.
+        "hf_xet",
+        # keynote_parser and its closure -- protobuf (google/_upb, 0.8 MB) and
+        # python-snappy -> cramjam (4.1 MB). This is quill.io.pages Route A, and
+        # `pages` is NOT in the [runtime] extra: it ships only because this build
+        # machine has `.[pages]` installed, the same accident as sherpa_onnx
+        # above. quill.io.pages already treats the import as optional
+        # (`except ImportError: raise ImportError("keynote-parser not available")`)
+        # and falls through to Route B (LibreOffice / MarkItDown), so a .pages
+        # file still opens. Excluding the root as well as the closure is
+        # deliberate: dropping only protobuf would leave keynote_parser frozen
+        # and broken, which is the failure mode check_runtime_imports.py exists
+        # for. To ship Route A, add quill[pages] to [runtime] and drop these
+        # four -- a declaration, not a build-machine coincidence.
+        "keynote_parser",
+        "google",
+        "snappy",
+        "cramjam",
+        # mcp -> opentelemetry (~1 MB, pure Python). Nothing in quill,
+        # quill_social or any app imports `mcp`; it is installed here for an
+        # unrelated project (adp-mcp) and reaches the sweep through
+        # huggingface_hub's optional inference/_mcp module. Excluded as a pair
+        # so the exclude cannot leave a frozen mcp that raises on opentelemetry.
+        # This one exclude takes the largest bite, because mcp 2.0 drags a whole
+        # second HTTP stack and a schema validator behind it: httpx2 + httpcore2
+        # (mcp does not use the httpx the AI SDKs already ship -- it requires the
+        # separately-named 2.x distribution), and jsonschema -> rpds,
+        # jsonschema_specifications, and lark via rfc3987-syntax. QUILL ships no
+        # jsonschema dependency on purpose -- every manifest validator in the
+        # tree is hand-rolled and says so (core/quillins/validation.py,
+        # core/verbosity/qvp.py, core/ai/agent_catalog.py) -- so all six were
+        # payload for a package no app imports. ~4.4 MB, and the reason the
+        # inventory loses six names it never should have gained.
+        "mcp",
+        "opentelemetry",
+        # fontTools + zopfli (0.8 MB). Both are weasyprint's, and weasyprint is
+        # excluded five lines up; pypdf wants fontTools only under its `fonts`
+        # extra, which nothing installs. Dead the moment weasyprint went.
+        "fontTools",
+        "zopfli",
+        # openai + jiter (2026-08-28). Nothing first-party imports the OpenAI
+        # SDK -- it arrives as an on-demand AI SDK pack (sdk_install), exactly
+        # like huggingface_hub above. It reached the sweep through
+        # llama_cpp.llama's guarded `import openai`, the moment an openai
+        # install appeared on this build machine: the pure-Python SDK froze
+        # invisibly into the PYZ and only jiter (its compiled JSON parser, the
+        # one piece that lands in _internal) tripped the inventory gate. A
+        # frozen SDK would shadow the pack's pinned copy the way vosk shadowed
+        # its pack, so both are excluded as a pair: dropping jiter alone would
+        # leave a frozen openai that raises on import, the failure mode
+        # check_runtime_imports.py exists for.
+        "openai",
+        "jiter",
+        # tomli is deliberately NOT excluded, though the 2026-08-18 probe found
+        # it broken too (a mypyc-compiled dist whose hashed runtime module never
+        # shipped). PyInstaller's setuptools hook aliases the vendored
+        # setuptools tomli onto that name, and an exclude collides with the
+        # alias ("Target module tomli already imported as ExcludedModule").
+        # The declared [runtime] closure does not install the mypyc dist, so a
+        # clean build machine ships the working vendored copy; a stray mypyc
+        # tomli install is exactly the drift build_fingerprint.py compare
+        # reports.
+    ],
+    noarchive=False,
+)
+
+import sys as _sys  # noqa: E402
+
+_sys.path.insert(0, os.path.join(SPECPATH, "..", "..", "scripts"))
+from check_no_credentials import assert_toc_clean  # noqa: E402
+
+assert_toc_clean(a.pure)
+
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    exclude_binaries=True,
+    name="QuillVilleRuntime",
+    console=False,
+    upx=False,
+    disable_windowed_traceback=False,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    name="QuillVilleRuntime",
+    upx=False,
+)

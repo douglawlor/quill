@@ -13,11 +13,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import quill.ui.main_frame as main_frame_module
+import quill.ui.main_frame_commands as main_frame_commands_module
 import quill.ui.main_frame_menu as main_frame_menu_module
 import quill.ui.main_frame_quillins as quillins_module
 
 _QUILLINS = Path(quillins_module.__file__).read_text(encoding="utf-8")
 _MENU = Path(main_frame_menu_module.__file__).read_text(encoding="utf-8")
+_COMMANDS = Path(main_frame_commands_module.__file__).read_text(encoding="utf-8")
 _MAIN = Path(main_frame_module.__file__).read_text(encoding="utf-8")
 
 
@@ -27,7 +29,7 @@ def test_mixin_is_a_main_frame_base() -> None:
 
 
 def test_manager_command_is_registered() -> None:
-    assert "self._register_quillins_commands()" in _MAIN
+    assert "self._register_quillins_commands()" in _COMMANDS
     register = _QUILLINS[_QUILLINS.index("def _register_quillins_commands") :][:500]
     assert "self.commands.register(" in register
     assert "_QUILLINS_MANAGER_COMMAND" in register
@@ -42,10 +44,42 @@ def test_quillins_submenu_is_attached_to_tools() -> None:
     )
 
 
+def test_startup_refreshes_the_menu_after_loading_quillins() -> None:
+    """#974: Insert > Date and Time's submenu was permanently empty (right
+    arrow on it jumped to the next top-level menu instead of opening it)
+    because _build_menu() runs synchronously in __init__, before Quillin
+    loading -- which is deferred to _run_deferred_startup_tasks for startup
+    speed and crash isolation. Without a rebuild afterward, every
+    Quillin-contributed menu item (the bundled insert-tools items behind
+    Date and Time, plus any Quillin's Insert/Format/Search contributions)
+    stayed silently absent for the whole session."""
+    assert '"quillin contributions",' in _MAIN
+    assert "self._load_quillins_and_refresh_menu," in _MAIN
+    method = _MAIN[_MAIN.index("def _load_quillins_and_refresh_menu") :][:1200]
+    assert "self._register_quillin_contributions()" in method
+    assert "self._build_menu()" in method
+
+
+def test_quillin_manager_actions_also_refresh_the_menu() -> None:
+    """The Quillins Manager's enable/disable/reload/remove/install actions
+    share the same #974 root cause: _register_quillin_contributions() alone
+    never touches the already-built menu bar."""
+    for anchor in (
+        "def on_enable",
+        "def on_disable",
+        "def on_reload",
+        "def on_remove",
+        "def on_install",
+    ):
+        handler = _QUILLINS[_QUILLINS.index(anchor) :][:1700]
+        assert "self._register_quillin_contributions()" in handler
+        assert "self._build_menu()" in handler
+
+
 def test_runtime_gates_bundled_and_third_party_separately() -> None:
     # Registration loads bundled (Tier C) behind core.bundled_quillins and
     # third-party behind the SEC-8 flag — they are merged into one registry.
-    reg = _QUILLINS[_QUILLINS.index("def _register_quillin_contributions") :][:1600]
+    reg = _QUILLINS[_QUILLINS.index("def _register_quillin_contributions") :][:2200]
     assert "load_enabled_bundled_manifests(self.features)" in reg
     assert "load_enabled_manifests(self.features)" in reg
     enabled = _QUILLINS[_QUILLINS.index("def _quillins_enabled") :][:400]

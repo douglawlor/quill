@@ -1,0 +1,141 @@
+"""Channel runtime slots for the shared QuillVille Runtime (release-channels plan 6.5).
+
+**The rule: each channel has its own runtime slot. Within a slot the newest
+build wins, as it always has. Across slots nothing is shared.**
+
+=========== ====================================== ===========================
+Channel     Folder under ``%LOCALAPPDATA%\\QuillVille\\Runtime``  Repairs itself from
+=========== ====================================== ===========================
+Stable      ``3.14`` (``3.13`` before 2026-10-11)  ``runtime-3.14``
+Beta        ``3.14-beta``                          ``runtime-3.14-beta``
+Dev         ``3.14-dev``                           nothing: "Reinstall the Dev build"
+=========== ====================================== ===========================
+
+**A runtime's tag is named for its slot, so a launcher only ever repairs from
+the Python it looks for.** Launchers built for 3.13 have ``runtime-latest``
+compiled in and swap it for ``runtime-beta``; had a 3.14 runtime been published
+there, an old app missing its runtime would install one into ``Runtime\\3.14``,
+keep looking in ``Runtime\\3.13``, and never start. So both of those tags stay
+frozen at the last 3.13 runtime (:data:`LEGACY_RUNTIME_TAGS`) and nothing
+publishes to them again; 3.15 will get ``runtime-3.15`` with no code change.
+
+So a Beta Quill Radio puts its runtime in ``3.14-beta``, and a Stable QUILL Lite
+on the same computer keeps running from ``3.14``, untouched. Going back to
+Stable installs into ``3.14`` again, and when the last app leaves a slot its
+uninstaller removes it -- about 335 MB comes back.
+
+The installer (``installer/shared-runtime.iss``) chooses the slot from
+``/CHANNEL=`` -- which the updater always passes -- or, for a hand install with
+no ``/CHANNEL``, Stable for a final version and Beta for any pre-release. It
+writes ``[runtime] slot=`` and ``[app] channel=`` into the app's
+``quill-app-version.ini``, and the native launcher reads ``slot=`` from there
+(``quill/native/launcher/runtime_resolve.c``); with no ``slot=`` it uses
+``3.14``, exactly as before.
+
+This module is the Python mirror of those two, unit-tested, plus what the
+updater and the risk window need to know. wx-free and strict-typed.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+from quill.core.updater.channels import BETA, DEV, STABLE, Channel, normalize_channel
+from quill.core.versioning import ReleaseVersion
+
+__all__ = [
+    "LEGACY_RUNTIME_TAGS",
+    "PYTHON_MAJOR",
+    "SLOT_EXTRA_MB",
+    "channel_of_slot",
+    "default_channel",
+    "installer_args",
+    "is_valid_slot",
+    "launcher_slot_dir",
+    "self_heal_tag",
+    "slot_for",
+    "slots_in_use",
+]
+
+PYTHON_MAJOR = "3.14"
+
+#: About how much disk a Beta or Dev slot adds until the last app leaves it.
+#: The risk window says this number plainly (owner decision, 2026-10-03).
+SLOT_EXTRA_MB = 335
+
+#: Tags that hold the last Python 3.13 runtime for ever, for the launchers that
+#: have them compiled in. Nothing may publish to these again (module docstring).
+LEGACY_RUNTIME_TAGS: tuple[str, ...] = ("runtime-latest", "runtime-beta")
+
+_SLOT_RE = re.compile(r"^\d+\.\d+(?:-(?:beta|dev))?$")
+
+
+def slot_for(channel: str, python_major: str = PYTHON_MAJOR) -> str:
+    """``3.14`` for Stable, ``3.14-beta``, ``3.14-dev``."""
+    ch = normalize_channel(channel)
+    return python_major if ch == STABLE else f"{python_major}-{ch}"
+
+
+def channel_of_slot(slot: str) -> Channel:
+    if slot.endswith("-dev"):
+        return DEV
+    if slot.endswith("-beta"):
+        return BETA
+    return STABLE
+
+
+def is_valid_slot(slot: str) -> bool:
+    """What the launcher accepts from the ini: a version and an optional channel."""
+    return bool(_SLOT_RE.match(slot or ""))
+
+
+def default_channel(version: str, requested: str = "") -> Channel:
+    """The installer's rule: ``/CHANNEL=`` when given; else Stable for a final
+    version and Beta for any pre-release (a hand install from the website).
+
+    A ``/CHANNEL=`` that names no channel counts as not given, exactly as
+    ``InstallChannel`` in ``installer/shared-runtime.iss`` treats it -- checked
+    against the compiled installer by
+    ``tests/unit/structure/test_shared_runtime_channel_compiled.py``.
+    """
+    if requested.strip().lower() in (STABLE, BETA, DEV):
+        return normalize_channel(requested)
+    parsed = ReleaseVersion.try_parse(version)
+    if parsed is None or not parsed.is_prerelease:
+        return STABLE
+    return DEV if parsed.stage == "dev" else BETA
+
+
+def installer_args(channel: str) -> list[str]:
+    """What the update helper adds to the installer's command line."""
+    return [f"/CHANNEL={normalize_channel(channel)}"]
+
+
+def self_heal_tag(slot: str) -> str | None:
+    """The release tag a missing runtime in *slot* is downloaded from, and the one
+    its installer is published under: ``runtime-<slot>``. ``None`` for Dev."""
+    if channel_of_slot(slot) == DEV:
+        return None
+    return f"runtime-{slot}"
+
+
+def launcher_slot_dir(local_app_data: Path, slot: str) -> Path:
+    """The folder the launcher resolves for *slot* -- the C code's rule, in Python.
+
+    A missing or malformed ``slot=`` means the Stable folder, so a launcher
+    reading an older ini behaves exactly as it always has.
+    """
+    name = slot if is_valid_slot(slot) else PYTHON_MAJOR
+    return local_app_data / "QuillVille" / "Runtime" / name
+
+
+def slots_in_use(refs: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Group ``runtime_refs`` entries by slot (old ``3.13.1`` keys are the Stable slot)."""
+    from quill.core.runtime_refs import slot_of
+
+    grouped: dict[str, list[str]] = {}
+    for key, apps in refs.items():
+        grouped.setdefault(slot_of(key), [])
+        grouped[slot_of(key)] = sorted({*grouped[slot_of(key)], *apps})
+    return grouped

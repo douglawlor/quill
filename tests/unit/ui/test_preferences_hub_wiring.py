@@ -15,7 +15,9 @@ from pathlib import Path
 
 
 def _open_preferences_source() -> str:
-    source = Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # open_preferences lives in the PreferencesMixin module (extracted from
+    # main_frame.py, CQ-1).
+    source = Path("quill/ui/main_frame_preferences.py").read_text(encoding="utf-8")
     start = source.index("def open_preferences(self)")
     end = source.index("\n    def ", start + 1)
     return source[start:end]
@@ -27,6 +29,11 @@ def test_preferences_uses_listbook_on_every_platform() -> None:
     # wired because its native toolbar selector needs per-page bitmaps.
     assert "wx.Listbook(" in body
     assert "wx.Toolbook(" not in body
+
+
+def test_preferences_menu_uses_stock_app_menu_id() -> None:
+    source = Path("quill/ui/main_frame_menu.py").read_text(encoding="utf-8")
+    assert "self._id_preferences = wx.ID_PREFERENCES" in source
 
 
 def test_preferences_no_longer_uses_single_choice_picker() -> None:
@@ -72,12 +79,17 @@ def test_preferences_runs_chosen_handler_after_the_hub_closes() -> None:
     # only after the hub has closed, and closing without a choice reports it.
     assert 'handler = chosen["handler"]' in body
     assert "if handler is None:" in body
-    assert 'self._set_status("Preferences closed")' in body
+    assert 'self._set_status("More Preferences closed")' in body
     assert "handler()" in body
 
 
 def test_general_settings_search_box_removed() -> None:
-    source = Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # The Settings dialog lives in main_frame_preferences.py now; check both
+    # homes so the retired search box cannot quietly come back in either.
+    source = "\n".join(
+        Path(f"quill/ui/{name}").read_text(encoding="utf-8")
+        for name in ("main_frame.py", "main_frame_preferences.py")
+    )
     # The "no search button here" requirement: the Settings notebook must no
     # longer build a search box or its enter-to-jump handler.
     assert "Search settings" not in source

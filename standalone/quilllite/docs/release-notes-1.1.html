@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Lite 1.1</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-lite-11">QUILL Lite 1.1</h1>
+<p><em>Version 1.1.2, released September 30, 2026.</em></p>
+<p>Welcome to QUILL Lite 1.1. You can now write by talking, and AI help
+can run on the ChatGPT plan you already pay for, which also lets QUILL
+Lite describe a picture and look something up on the web for the first
+time.</p>
+<p>There are ten new writing tools in the AI pad, and you can now have a
+real back-and-forth conversation with AI help. Everything works from the
+keyboard and tells you what happened, the way the rest of QUILL Lite
+does.</p>
+<h2 id="about-111-and-112">About 1.1.1 and 1.1.2</h2>
+<p><strong>1.1.2</strong> fixes the <strong>Install and restart
+now</strong> button. Before, it closed QUILL Lite but never ran the
+installer. Now it installs and restarts as it should. You need to update
+to 1.1.2 by hand once: in the update window, choose <strong>Open
+folder</strong> and run the installer yourself. After that, the button
+works.</p>
+<p><strong>1.1.1</strong> was 1.1.0 with a new number. Some computers
+showed 1.1.0 in **Help</p>
+<blockquote>
+<p>About** but had no ChatGPT choices under <strong>Tools &gt;
+AI</strong>, because files shared by Quill Radio had given Check for
+Updates the wrong idea of which version you had. The new number made
+sure everyone was offered the update.</p>
+</blockquote>
+<h2 id="try-this-first">Try this first</h2>
+<ol type="1">
+<li>Put the cursor where you want some words, press
+<strong>Ctrl+F11</strong>, and say a sentence. Pause, and QUILL Lite
+writes it and reads it back. Press <strong>Ctrl+F11</strong> again to
+stop.</li>
+<li>If you pay for ChatGPT, press <strong>Alt+F5</strong>, choose
+<strong>Continue with ChatGPT</strong>, and sign in once in your
+browser.</li>
+<li>Put the cursor in a long paragraph, press
+<strong>Ctrl+Alt+G</strong>, and choose <strong>Shorten</strong>. Press
+<strong>Insert Below</strong> if you like the result, or Escape if you
+do not.</li>
+<li>Press <strong>Ctrl+F5</strong>, choose a photo or a screenshot, and
+hear what is in it.</li>
+</ol>
+<h2 id="dictating">Dictating</h2>
+<p>The speech recognition comes with QUILL Lite. There is nothing to
+download and no account to make. Nothing you say leaves your computer,
+and no recording is kept anywhere.</p>
+<h3 id="getting-started">Getting started</h3>
+<ol type="1">
+<li>Put the cursor where you want the words.</li>
+<li>Press <strong>Ctrl+F11</strong>. You hear two rising tones and
+“Dictation on”.</li>
+<li>Talk the way you would talk to a person, then pause. Your sentence
+is written, a soft tone tells you it went in, and QUILL Lite reads it
+back.</li>
+<li>Keep going. It keeps listening between sentences.</li>
+<li>To stop, press <strong>Ctrl+F11</strong> again, or say “stop
+dictation”.</li>
+</ol>
+<p>You do not need to say punctuation. Full stops, commas, question
+marks and capitals go in for you. If you want a particular mark, say it,
+and your word wins.</p>
+<h3 id="fixing-things-by-voice">Fixing things by voice</h3>
+<p>Say these on their own, after a pause:</p>
+<ul>
+<li><strong>“scratch that”</strong> takes out the last phrase. Say it
+again for the one before.</li>
+<li><strong>“select that”</strong> selects the last phrase, so you can
+fix it with the keyboard.</li>
+<li><strong>“capitalize that”</strong>, <strong>“all caps that”</strong>
+and <strong>“no caps that”</strong> change its capitals.</li>
+<li><strong>“delete word”</strong> and <strong>“delete
+sentence”</strong> delete back from the cursor.</li>
+<li><strong>“undo that”</strong> is the same as Ctrl+Z, and
+<strong>“read that”</strong> reads the last phrase again.</li>
+<li><strong>“go to end of line”</strong>, <strong>“go to top”</strong>
+and others like them move the cursor.</li>
+</ul>
+<p>To spell a name, say <strong>“start spelling”</strong>, then the
+letters, then <strong>“stop spelling”</strong>. For example, “capital
+bravo alpha delta” writes <em>Bad</em>.</p>
+<p>While dictating, say <strong>“what can I say”</strong> for a list of
+everything dictation understands, including your own phrases. The same
+list is in the documentation as <strong>Dictation commands</strong>.</p>
+<h3 id="starting-and-stopping-with-your-voice">Starting and stopping
+with your voice</h3>
+<p>Turn on the <strong>wake phrase</strong> in Dictation Settings. Then
+say <strong>“Quill dictate”</strong>, or a phrase of your own, to start
+without touching the keyboard. It only listens while QUILL Lite is the
+window in front, and nothing it hears is kept unless it starts with the
+wake phrase. It is off until you turn it on.</p>
+<p>Say <strong>“stop dictation”</strong> on its own to stop, or choose
+your own <strong>stop phrase</strong>. It only counts when it is all you
+said, so the same words in the middle of a sentence are just written
+down.</p>
+<h3 id="talking-in-one-long-run">Talking in one long run</h3>
+<p>Turn on <strong>Just write what I say</strong> in Dictation Settings,
+and a pause does nothing: no full stop, no tone, no read-back and no
+voice commands. Only the punctuation you say, and your stop phrase,
+still work. It is good for thinking out loud or telling a story without
+being interrupted.</p>
+<h3 id="your-own-words-and-phrases">Your own words and phrases</h3>
+<p><strong>My Words and Phrases</strong>
+(<strong>Alt+Shift+F10</strong>) lists everything you have taught
+dictation, with Add Word, Add Phrase, Add Correction, Edit and Remove
+buttons.</p>
+<ul>
+<li>A <strong>word</strong> is a name, spelled your way.</li>
+<li>A <strong>phrase</strong> is something short you say that writes
+something longer, like <em>my email address</em>.</li>
+<li>A <strong>correction</strong> is something dictation keeps getting
+wrong, and what to write instead. For example, <em>quill light</em>
+becomes <em>QUILL Lite</em>.</li>
+</ul>
+<p>Each change is used from your next phrase. If you would rather edit
+the list as a plain text file, <strong>Open the File</strong> opens
+it.</p>
+<h3 id="tidying-what-you-dictated">Tidying what you dictated</h3>
+<p><strong>Tidy Dictated Text</strong> (<strong>Ctrl+F3</strong>) is the
+one dictation users asked for. Leave the cursor in a paragraph you
+dictated, or select part of it, and press <strong>Ctrl+F3</strong>. AI
+help fixes what dictation got wrong: words that sound alike, a name it
+had never heard, words run together, a comma that should have been a
+full stop, and every “um”. It changes nothing else.</p>
+<p>The <strong>Tidied Dictation</strong> window opens on the corrected
+text. <strong>Replace My Selection</strong> puts it in place, and
+<strong>Ctrl+Z</strong> takes it back in one step. This works on your
+ChatGPT plan or your own OpenAI key, not the free allowance.</p>
+<h3 id="when-something-goes-wrong">When something goes wrong</h3>
+<ul>
+<li>Press <strong>Escape</strong> while a phrase is being heard to throw
+it away. You hear “Cancelled” and nothing is written.</li>
+<li>If the microphone is unplugged or goes quiet, dictation pauses,
+tells you, and starts again by itself when the microphone is back.</li>
+<li>If dictation stops answering, QUILL Lite quietly restarts it once.
+Only if that fails too are you told, with which engine to try
+instead.</li>
+<li><strong>Recent Phrases</strong> (<strong>Shift+F11</strong>) lists
+the last twenty phrases. Press Enter on one to write it again, which is
+how you get a phrase back when “scratch that” went one too far.</li>
+</ul>
+<h3 id="more-you-can-do">More you can do</h3>
+<ul>
+<li><strong>Every phrase is one Ctrl+Z</strong>, even one that replaced
+a selection.</li>
+<li><strong>One document at a time.</strong> Press Ctrl+F11 in another
+document and dictation moves there and tells you.</li>
+<li><strong>A read-only document says no</strong> before the microphone
+even opens.</li>
+<li><strong>Dictate into a box.</strong> Press <strong>Ctrl+F11</strong>
+in the Find box, either Replace box, or the AI pad’s question box, and
+you dictate into that box.</li>
+<li><strong>The status bar has a Dictation part</strong>, which tells
+you whether dictation is off, listening, hearing you, writing, spelling
+or waiting for the wake phrase. <strong>Tools &gt; Dictation &gt;
+Dictation On</strong> is checked while it is on.</li>
+</ul>
+<h3 id="dictation-settings">Dictation Settings</h3>
+<p>Open <strong>Tools &gt; Dictation &gt; Dictation Settings</strong>
+(<strong>Alt+Shift+F6</strong>).</p>
+<ul>
+<li><strong>Speech engine.</strong> <strong>Moonshine</strong> is the
+one you start with, and it is fast even on a modest computer.
+<strong>Whisper</strong> is a little slower; try it if Moonshine often
+mishears you. Both understand English. <strong>Windows speech
+recognition</strong> can use any speech language installed in Windows,
+but you say the punctuation yourself. <strong>Windows voice
+typing</strong> hands over to Windows+H.</li>
+<li><strong>Microphone.</strong> Choose yours by name, or use the
+Windows default.</li>
+<li><strong>What you hear</strong> after each phrase: a sound, the words
+read back, both, or neither. If the read-back plays through speakers,
+the microphone can hear it too, so use headphones or choose just the
+sound.</li>
+<li><strong>Automatic punctuation</strong> on or off, how long a
+<strong>pause</strong> ends a phrase, <strong>remove filler
+words</strong> like um and uh, and <strong>stop after
+silence</strong>.</li>
+<li><strong>Test Microphone</strong> listens for four seconds and tells
+you how loud you were and what it heard.</li>
+</ul>
+<h2 id="ai-help-on-your-chatgpt-plan">AI help on your ChatGPT plan</h2>
+<p>If you pay for ChatGPT, QUILL Lite no longer needs anything else from
+you.</p>
+<ol type="1">
+<li>Press <strong>Alt+F5</strong> (<strong>Tools &gt; AI &gt; Use My
+ChatGPT Subscription</strong>).</li>
+<li>Choose <strong>Continue with ChatGPT</strong>.</li>
+<li>Sign in the way you sign in to ChatGPT on the web.</li>
+<li>Allow “QUILL Lite” to use your plan, and come back.</li>
+</ol>
+<p>From then on, the AI pad, all the writing tools, Ask About This
+Document and conversations run on your plan. There is no key to paste,
+no free allowance to count, no size limit from us, and no bill per
+request. Nothing passes through our servers.</p>
+<h3 id="pictures-described">Pictures, described</h3>
+<p>Press <strong>Ctrl+F5</strong> for <strong>Ask About an
+Image</strong>. Choose a JPEG, PNG, WebP or GIF. Ask a question about
+it, or ask nothing at all. You hear a description written for a blind
+reader: what the picture is, what matters most in it, and every word of
+any text in it, written out exactly.</p>
+<p>Some things to try:</p>
+<ul>
+<li>a screenshot a colleague sent with “see attached”,</li>
+<li>a photo of a letter,</li>
+<li>a chart in a report,</li>
+<li>a receipt, asking “what is the total”.</li>
+</ul>
+<p><strong>Insert Below</strong> puts the description in your document
+under the paragraph you are in, which is handy for captioning a picture.
+<strong>Ctrl+Z</strong> takes it back out.</p>
+<h3 id="web-search">Web search</h3>
+<p>When a question needs it, AI help can look things up for you: an
+event, a price, what a web page says today. This works when you ask a
+general question, a question about your document, and in
+conversations.</p>
+<p>It is off until you turn it on, because a search sends something to
+one more place, and that is your call:</p>
+<ol type="1">
+<li>Press <strong>Alt+F5</strong>. Sign in first if you have not.</li>
+<li>Press <strong>Alt+W</strong> to reach <strong>Allow web
+search</strong>.</li>
+<li>Press <strong>Space</strong>. You hear “Web search is allowed.” It
+is saved straight away.</li>
+<li>Press <strong>Escape</strong> to close the window.</li>
+</ol>
+<p>To turn it off, press Space on the same checkbox. You hear “Web
+search is off; only what you send is used.”</p>
+<h3 id="your-model-your-usage-and-signing-out">Your model, your usage,
+and signing out</h3>
+<p>The <strong>Model</strong> list comes from your own plan, and the
+first one is chosen for you. What you use counts toward your plan’s own
+usage, which OpenAI sets. <strong>Open ChatGPT Usage</strong> takes you
+to it, and if you reach a limit, QUILL Lite tells you in plain words.
+<strong>Usage</strong> (<strong>Ctrl+Alt+Shift+F9</strong>) shows your
+account, and <strong>Help &gt; About</strong> names the account and the
+model.</p>
+<p>QUILL Lite never sees your ChatGPT password. <strong>Sign
+Out</strong> (press it twice) signs you out with OpenAI and on this
+computer. <strong>Forget on This Computer</strong> forgets the sign-in
+here only. QUILL Lite, QUILL and Quill Radio each sign in on their own,
+so signing one out leaves the others alone.</p>
+<p>If you also have your own OpenAI key saved, your plan is used, since
+you have already paid for it. Sign out and your key takes over again
+straight away.</p>
+<h2 id="ten-new-writing-tools">Ten new writing tools</h2>
+<p>The AI pad (<strong>Ctrl+Alt+G</strong>) now has seventeen choices
+instead of seven. The new ones work on your selection if you have one,
+otherwise the paragraph you are in. Each counts as one request, the same
+as Summarize. Press a letter in the list to jump to a choice.</p>
+<ul>
+<li><strong>Shorten</strong>: the same passage at about half the length,
+with every important fact kept.</li>
+<li><strong>Simplify</strong>: short sentences, everyday words, and
+technical terms explained.</li>
+<li><strong>Make more formal</strong>: the same meaning in a
+professional tone.</li>
+<li><strong>Make friendlier</strong>: the same meaning in a warmer
+tone.</li>
+<li><strong>Turn into a list</strong>: a bulleted list, or numbered
+steps for a process.</li>
+<li><strong>Find action items</strong>: every task, who does it and by
+when, one per line. If there is nothing to do, it says so.</li>
+<li><strong>Suggest headings</strong>: headings for a long passage, and
+where each one goes, so your screen reader can jump between sections.
+You place the ones you want.</li>
+<li><strong>Continue writing</strong>: a next paragraph in the same
+voice, to keep, change or throw away.</li>
+<li><strong>Write an email reply</strong>: select an email and get a
+polite reply, with anything only you can decide left in [square
+brackets].</li>
+<li><strong>Translate</strong>: into one of twenty languages, with the
+meaning and formatting kept. Spanish is chosen until you pick
+another.</li>
+</ul>
+<p>Every result opens with <strong>Replace My Selection</strong>,
+<strong>Insert Below</strong>, <strong>Copy</strong>, <strong>Try
+Again</strong> and <strong>Follow Up</strong>. So if you want it
+“shorter still”, it is one button away.</p>
+<h2 id="conversations-with-ai-help">Conversations with AI help</h2>
+<p>Until now, AI help answered one question at a time. Now you can talk
+it through.</p>
+<ul>
+<li>In the AI pad (<strong>Ctrl+Alt+G</strong>), choose <strong>Have a
+conversation</strong>, type your first message if you like, and press
+<strong>Send</strong>.</li>
+<li>Or press <strong>Follow Up</strong> in any answer window to carry on
+from that answer.</li>
+</ul>
+<p>Your focus stays in <strong>Your message</strong>. Type, and press
+<strong>Enter</strong>. The reply is read aloud as it arrives and added
+to the <strong>Conversation</strong> box above. Press Shift+Tab to read
+it again word by word.</p>
+<p>Nothing goes into your document unless you ask. <strong>Copy Last
+Reply</strong> and <strong>Insert Last Reply Below</strong> put the
+latest reply where you want it, and <strong>Ctrl+Z</strong> takes an
+insert back out. <strong>New Conversation</strong> starts again.</p>
+<p>On the free service, each message is one request, and conversations
+can use up to 40 of your 100 a month. A very long conversation slowly
+forgets how it began, and the window tells you the first time that
+happens. With your own key or your ChatGPT plan, there is no such limit.
+With your own key, the whole conversation goes with every message, so a
+long one costs more per reply, and the window tells you so.</p>
+<h2 id="ai-help-with-your-own-openai-key">AI help with your own OpenAI
+key</h2>
+<p>Choose <strong>Tools &gt; AI &gt; Use My Own OpenAI Key</strong>
+(<strong>Alt+F2</strong>), paste an OpenAI key, and press OK. Every
+limit on AI help is gone. Your text goes straight from this computer to
+OpenAI, on your account, and OpenAI bills you for each request.</p>
+<ul>
+<li>The <strong>Model</strong> list shows every model your account can
+use, with Luna 6 first. Each row shows an estimated cost per 100
+requests, to help you compare. They are estimates, not OpenAI’s
+prices.</li>
+<li><strong>Usage</strong> (<strong>Ctrl+Alt+Shift+F9</strong>) names
+the model and opens your OpenAI usage page.</li>
+<li><strong>Remove the Saved Key</strong> goes back to the free service
+straight away.</li>
+<li>Your key is kept safely by Windows, never in a settings file, and
+never shown again. A portable copy keeps it in an encrypted file. QUILL
+uses the same key, so saving or removing it in one does it for
+both.</li>
+</ul>
+<h2 id="keys-new-in-11">Keys new in 1.1</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ctrl+F11</strong></td>
+<td>Start or stop dictation</td>
+</tr>
+<tr>
+<td><strong>Alt+Shift+F6</strong></td>
+<td>Dictation Settings</td>
+</tr>
+<tr>
+<td><strong>Shift+F11</strong></td>
+<td>Recent Phrases</td>
+</tr>
+<tr>
+<td><strong>Alt+Shift+F10</strong></td>
+<td>My Words and Phrases</td>
+</tr>
+<tr>
+<td><strong>Ctrl+F3</strong></td>
+<td>Tidy Dictated Text</td>
+</tr>
+<tr>
+<td><strong>Alt+F5</strong></td>
+<td>Use My ChatGPT Subscription</td>
+</tr>
+<tr>
+<td><strong>Ctrl+F5</strong></td>
+<td>Ask About an Image</td>
+</tr>
+<tr>
+<td><strong>Alt+F2</strong></td>
+<td>Use My Own OpenAI Key</td>
+</tr>
+</tbody>
+</table>
+<p>All of these are in QUILL too, on the same keys. Quill Radio has the
+ChatGPT sign-in as well, behind Ask QUILL Radio.</p>
+<h2 id="coming-next-in-200">Coming next, in 2.0.0</h2>
+<p>These are on their way in the next release.</p>
+<h3 id="words-a-thesaurus-a-dictionary-and-look-up">Words: a thesaurus,
+a dictionary and Look Up</h3>
+<ul>
+<li><strong>Thesaurus</strong> (<strong>Shift+F7</strong>) finds the
+word you are really on, so “running” finds “run”, and puts your choice
+back in the form your sentence needs.</li>
+<li>Press the Applications key on any word for two new submenus,
+<strong>Thesaurus for</strong> that word and <strong>Dictionary
+for</strong> that word.</li>
+<li><strong>Look Up Word</strong> (<strong>Alt+F10</strong>) works
+offline. Check <strong>Use online sources</strong> for definitions and a
+short Wikipedia summary too; only the word is sent, and only after you
+check the box. <strong>Add to Dictionary</strong> teaches the word to
+your spell checker.</li>
+<li><strong>Tools &gt; Dictionary</strong> asks AI help about a word as
+it is used in your sentence: define it, synonyms that fit, a simpler,
+more formal or more vivid word, opposites, is this the right word, use
+it in a sentence, where it comes from, how to say it, rhymes, or the
+<strong>Word Explorer</strong>, which does them all. <strong>Find the
+Word For</strong> suggests the word you are reaching for from a
+description. <strong>Use This Word</strong> puts your choice in as one
+step you can undo. These need your ChatGPT plan or your own key.</li>
+<li><strong>Dictionary Status</strong>, under <strong>Tools &gt;
+Spelling</strong>, tells you how many words your dictionaries hold and
+where they are kept.</li>
+</ul>
+<h3 id="your-own-key-can-be-a-google-gemini-key">Your own key can be a
+Google Gemini key</h3>
+<p><strong>Use My Own AI Key</strong> (Alt+F2), the new name for Use My
+Own OpenAI Key, opens on a <strong>Provider</strong> list: OpenAI or
+Google Gemini. Everything follows your choice, and QUILL Lite never
+guesses. Ask About an Image works with Gemini too.</p>
+<h3 id="knowing-what-happened">Knowing what happened</h3>
+<p><strong>Help &gt; Activity</strong> (<strong>Shift+F9</strong>) lists
+everything QUILL Lite told you since you opened it, newest first, with
+what you can do about each one: Retry, Open Folder or Copy Details. If
+background work finishes after you closed its window, the result lands
+here instead of being lost. <strong>F9</strong> says the last important
+result again. The same keys work in QUILL, Quill Radio and QUILL
+Cast.</p>
+<h3 id="things-that-will-work-better">Things that will work better</h3>
+<ul>
+<li><strong>Coming back with Alt+Tab</strong> puts your focus where it
+should be, even when Windows is slow. It leaves Find boxes and menus
+alone.</li>
+<li><strong>If your settings cannot be saved, you are told</strong>,
+with the reason. Your choices still work for the rest of the session, a
+message stays in the status bar, and Preferences no longer says “saved”
+when it was not.</li>
+<li><strong>Big files and network drives no longer freeze the
+window.</strong> You hear “Opening” and the file’s name, and closing the
+window cancels it.</li>
+<li><strong>Closing QUILL Lite is tidier.</strong> Documents sent to it
+while it closes are opened next time, an update check never starts on
+the way out, and an error message some people saw while exiting is
+gone.</li>
+<li><strong>Two copies at once</strong> no longer undo each other’s
+preferences.</li>
+</ul>
+<h2 id="where-to-learn-more">Where to learn more</h2>
+<p>The QUILL Lite User Guide, in the Start menu beside QUILL Lite, has
+chapters on everything here, including Dictation, AI help, Thesaurus,
+Dictionary, Activity and Repeat Last Result, and Keeping QUILL Lite up
+to date.</p>
+<p><strong>Help &gt; Tutorials</strong> (<strong>Ctrl+Alt+F1</strong>)
+has nine short lessons. For AI help, try Asking a question about a
+document.</p>
+<p>If you get stuck, choose <strong>Help &gt; Get Help from
+Support</strong> (<strong>Ctrl+Alt+F2</strong>), or write to <a
+href="mailto:support@community-access.org">support@community-access.org</a>.
+A person at Community Access reads every message.</p>
+</main>
+</body>
+</html>

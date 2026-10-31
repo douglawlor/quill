@@ -12,6 +12,7 @@ from quill.core.recovery import (
     _MAX_CURSOR_POSITION,
     RecoveryOffer,
     begin_session,
+    find_error_evidence,
     latest_session_snapshot,
     mark_clean_exit,
     mark_recovery_offer_dismissed,
@@ -124,6 +125,247 @@ def test_begin_session_does_not_offer_empty_snapshot(
     begin_session(previous)
     offers = begin_session(current)
     assert offers == []
+
+
+def test_begin_session_suppresses_offer_when_log_has_no_error_evidence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Regression for #940/#948: two crash-recovery reports had a log with
+    # only routine idle-sweep heartbeat entries, no exception or traceback --
+    # consistent with an external termination (OS shutdown, forced close),
+    # not a QUILL bug. That case should not surface "Quill detected an
+    # unclean exit" with nothing actionable behind it.
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous = str(uuid4())
+    current = str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "quill.log").write_text(
+        "2026-07-10 10:22:41 INFO quill.stability.task_manager: "
+        "Task finished operation_id=abc name=lifecycle-idle-sweep duration_ms=0.1\n",
+        encoding="utf-8",
+    )
+    begin_session(previous)
+    offers = begin_session(current)
+    assert offers == []
+
+
+def test_begin_session_suppresses_offer_when_only_evidence_is_the_hard_exit_watchdog(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Group D (#1079/#1085/#1095): the #210 hard-exit watchdog logs its
+    # force-exit at ERROR on a slow-but-committed shutdown. That is not a crash,
+    # so it must not surface "Quill detected an unclean exit" with only the
+    # watchdog line behind it.
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous, current = str(uuid4()), str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "quill.log").write_text(
+        "2026-07-17 15:39:00 INFO quill.ui.main_frame: "
+        "Close committed; arming hard-exit watchdog (#210)\n"
+        "2026-07-17 15:39:05 ERROR quill.stability.shutdown_watchdog: "
+        "Graceful shutdown did not finish within 5.0s; forcing exit (#210)\n",
+        encoding="utf-8",
+    )
+    begin_session(previous)
+    assert begin_session(current) == []
+
+
+def test_begin_session_still_offers_when_a_real_error_accompanies_the_watchdog(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A genuine error alongside the benign watchdog line must still offer.
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous, current = str(uuid4()), str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "quill.log").write_text(
+        "2026-07-17 15:39:00 ERROR quill.ui.main_frame: TypeError: unhashable type\n"
+        "2026-07-17 15:39:05 ERROR quill.stability.shutdown_watchdog: "
+        "Graceful shutdown did not finish within 5.0s; forcing exit (#210)\n",
+        encoding="utf-8",
+    )
+    begin_session(previous)
+    assert len(begin_session(current)) == 1
+
+
+def test_find_error_evidence_skips_the_hard_exit_watchdog_line(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "quill.log").write_text(
+        "2026-07-17 15:39:05 ERROR quill.stability.shutdown_watchdog: "
+        "Graceful shutdown did not finish within 5.0s; forcing exit (#210)\n",
+        encoding="utf-8",
+    )
+    assert find_error_evidence(logs_dir) is None
+
+
+def test_latest_crash_report_returns_newest_and_respects_min_mtime(tmp_path: Path) -> None:
+    import os
+
+    from quill.core.recovery import latest_crash_report
+
+    crash_dir = tmp_path / "crash-reports"
+    crash_dir.mkdir()
+    assert latest_crash_report(crash_dir) is None  # empty dir
+    old = crash_dir / "crash-20260717-100000.txt"
+    old.write_text("old traceback", encoding="utf-8")
+    os.utime(old, (1000, 1000))
+    new = crash_dir / "crash-20260717-140000.txt"
+    new.write_text("Traceback (most recent call last):\nValueError: boom\n", encoding="utf-8")
+    os.utime(new, (2000, 2000))
+    result = latest_crash_report(crash_dir)
+    assert result is not None and "ValueError: boom" in result
+    # min_mtime excludes reports older than the cutoff.
+    assert latest_crash_report(crash_dir, min_mtime=1500) is not None  # the new one survives
+    assert latest_crash_report(crash_dir, min_mtime=3000) is None  # both too old
+
+
+def test_latest_crash_report_none_for_missing_dir(tmp_path: Path) -> None:
+    from quill.core.recovery import latest_crash_report
+
+    assert latest_crash_report(tmp_path / "does-not-exist") is None
+
+
+def test_begin_session_still_offers_when_log_has_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous = str(uuid4())
+    current = str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "quill.log").write_text(
+        "2026-07-10 10:22:41 ERROR quill.ui.main_frame: Unhandled exception\n"
+        "Traceback (most recent call last):\n"
+        '  File "main_frame.py", line 42, in on_click\n'
+        "ValueError: boom\n",
+        encoding="utf-8",
+    )
+    begin_session(previous)
+    offers = begin_session(current)
+    assert len(offers) == 1
+    assert offers[0].session_id == previous
+
+
+def test_begin_session_captures_error_evidence_on_the_offer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # #1045/#1046: the crash-recovery dialog's "Send Bug Report" button used
+    # to call find_error_evidence() fresh, re-scanning whatever quill.log
+    # looks like at click time -- which can be long after begin_session()'s
+    # own gating check, once the new session's own routine logging has grown
+    # the file enough to push the original evidence out of the scan window.
+    # Capture the evidence once, at offer time (when it is guaranteed to
+    # still be in-window), and carry it on the offer itself.
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous = str(uuid4())
+    current = str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir(parents=True)
+    (logs_dir / "quill.log").write_text(
+        "2026-07-10 10:22:41 ERROR quill.ui.main_frame: Unhandled exception\n"
+        "Traceback (most recent call last):\n"
+        '  File "main_frame.py", line 42, in on_click\n'
+        "ValueError: boom\n",
+        encoding="utf-8",
+    )
+    begin_session(previous)
+    offers = begin_session(current)
+    assert len(offers) == 1
+    assert offers[0].error_evidence is not None
+    assert "ValueError: boom" in offers[0].error_evidence
+
+
+def test_begin_session_offer_has_no_evidence_when_log_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous = str(uuid4())
+    current = str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    begin_session(previous)
+    offers = begin_session(current)
+    assert len(offers) == 1
+    assert offers[0].error_evidence is None
+
+
+def test_begin_session_still_offers_when_log_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # No log at all is inconclusive, not evidence of "nothing happened" --
+    # err toward still offering recovery rather than silently discarding a
+    # real crash whose log write itself failed.
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    previous = str(uuid4())
+    current = str(uuid4())
+    session_root = tmp_path / "autosave" / previous
+    session_root.mkdir(parents=True)
+    (session_root / "doc.snap").write_text("recovered text", encoding="utf-8")
+    begin_session(previous)
+    offers = begin_session(current)
+    assert len(offers) == 1
+
+
+def test_find_error_evidence_returns_none_without_markers(tmp_path: Path) -> None:
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "quill.log").write_text(
+        "2026-07-10 10:22:41 INFO quill.stability.task_manager: "
+        "Task finished operation_id=abc name=lifecycle-idle-sweep duration_ms=0.1\n",
+        encoding="utf-8",
+    )
+    assert find_error_evidence(logs_dir) is None
+
+
+def test_find_error_evidence_returns_none_when_log_missing(tmp_path: Path) -> None:
+    assert find_error_evidence(tmp_path / "logs") is None
+
+
+def test_find_error_evidence_returns_marker_with_context(tmp_path: Path) -> None:
+    # #1013: a filed crash-recovery report showed only a routine log tail
+    # with no visible justification for the offer, because the report
+    # bundler's tail (crash_submit._MAX_LOG_CHARS, 6000 chars) is far
+    # smaller than the window that actually gates the offer (262,144
+    # bytes) -- real error evidence earlier in that window never made it
+    # into the filed report. find_error_evidence() lets the report
+    # include the actual evidence regardless of where it falls in the
+    # scanned window.
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    (logs_dir / "quill.log").write_text(
+        "2026-07-10 10:22:40 INFO before\n"
+        "2026-07-10 10:22:41 ERROR quill.ui.main_frame: Unhandled exception\n"
+        "Traceback (most recent call last):\n"
+        '  File "main_frame.py", line 42, in on_click\n'
+        "ValueError: boom\n"
+        "2026-07-10 10:22:42 INFO after\n" + ("2026-07-10 10:22:43 INFO padding line\n" * 50),
+        encoding="utf-8",
+    )
+    excerpt = find_error_evidence(logs_dir)
+    assert excerpt is not None
+    assert "ERROR quill.ui.main_frame" in excerpt
+    assert "ValueError: boom" in excerpt
+    # Bounded: does not include every padding line appended after the error.
+    assert excerpt.count("padding line") < 5
 
 
 def test_concurrent_begin_session_serialize_via_lock(

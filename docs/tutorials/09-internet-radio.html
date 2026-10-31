@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Tutorial 9: Internet Radio with Quill Radio</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="tutorial-9-internet-radio-with-quill-radio">Tutorial 9: Internet
+Radio with Quill Radio</h1>
+<p>In this tutorial you will play a radio station, save it as a
+favorite, learn the keys that work from anywhere, and record a few
+seconds of a show. It takes about fifteen minutes. Every step tells you
+what to press and what you should hear.</p>
+<p>Internet radio has its own app in the QUILL family, called
+<strong>Quill Radio</strong>. It is free. If you don’t have it yet, <a
+href="/radio.html">download Quill Radio</a> and install it first. If you
+have QUILL, you can also find it on QUILL’s QuillVille menu.</p>
+<h2 id="1-play-your-first-station">1. Play your first station</h2>
+<ol type="1">
+<li>Open Quill Radio from the Start Menu. Press the Windows key, type
+Quill Radio, and press Enter.</li>
+<li>The first time, a short welcome opens. Press Alt+N to move through
+its three screens, or press Escape to skip it.</li>
+<li>Focus is now in your favorites list. It is empty for now, and that
+is fine.</li>
+<li>Press <strong>Ctrl+B</strong> to open Browse Stations. Press Down
+Arrow a few times. Each press reads a branch, such as Popular Stations,
+By Country or ACB Media.</li>
+<li>Stop on <strong>Popular Stations</strong> and press Right Arrow to
+open it. The first time, give it a moment. You will hear “Loading
+Popular Stations”, and then how many stations it found.</li>
+<li>Press Down Arrow to move onto a station, then press
+<strong>Enter</strong>. You will hear “Playing” and the station’s name,
+and then the station.</li>
+<li>Press <strong>Enter</strong> again on the same station to stop it.
+Press it once more to play it again.</li>
+</ol>
+<p>If you hear an error, that station’s address may no longer work. Just
+pick another one. If the app says it is playing but you hear nothing,
+press Ctrl+M in case it is muted, and check your Windows volume.</p>
+<h2 id="2-save-it-as-a-favorite">2. Save it as a favorite</h2>
+<ol type="1">
+<li>Leave the station playing and press <strong>Escape</strong> to close
+Browse Stations. The music keeps going.</li>
+<li>Press <strong>Ctrl+Shift+F</strong>. Quill Radio tells you the
+station was added to your favorites.</li>
+<li>Press Down Arrow in your favorites list. Your station is there.</li>
+</ol>
+<p>From now on, this is all it takes: open Quill Radio, arrow to a
+favorite, and press Enter. Your first ten favorites also play straight
+away with Alt+1 through Alt+0.</p>
+<h2 id="3-keys-that-work-from-any-window">3. Keys that work from any
+window</h2>
+<p>These keys work wherever you are in Quill Radio. Try each one while
+something is playing.</p>
+<ul>
+<li><strong>Ctrl+Up</strong> and <strong>Ctrl+Down</strong> turn the
+volume up and down. You hear the new level each time.</li>
+<li><strong>Ctrl+T</strong> tells you what is playing right now.</li>
+<li><strong>Ctrl+Shift+G</strong> opens the Player window, with buttons
+for everything. Press Escape to close it again.</li>
+<li><strong>Ctrl+Shift+Left</strong> rewinds live radio by 30 seconds.
+<strong>Ctrl+Shift+L</strong> takes you back to live.</li>
+</ul>
+<p>Can’t remember a key? Press <strong>Ctrl+Shift+P</strong> to open the
+Command Palette. Type a word, such as “volume” or “record”, arrow to
+what you want, and press Enter. Each command shows its key, so you learn
+it as you go.</p>
+<h2 id="4-record-a-few-seconds">4. Record a few seconds</h2>
+<ol type="1">
+<li>With a station playing, press <strong>Ctrl+R</strong>. You will hear
+“Recording started”.</li>
+<li>Wait ten or twenty seconds.</li>
+<li>Press <strong>Ctrl+R</strong> again. Quill Radio tells you the
+recording was saved, and gives its name.</li>
+<li>Press <strong>Ctrl+Shift+R</strong> to open the Recordings window.
+Your new recording is at the top. Press Enter to play it.</li>
+<li>To delete it, press Delete. A question asks if you are sure. No is
+the default, so pressing Enter keeps it. Press Y to delete it.</li>
+<li>Press Escape to close the Recordings window.</li>
+</ol>
+<p>Your recordings are saved in your Music folder, in a folder called
+Quill Radio Recordings.</p>
+<h2 id="5-keep-the-music-going-while-you-work">5. Keep the music going
+while you work</h2>
+<p>Press <strong>Ctrl+W</strong> to send Quill Radio to the system tray.
+You will hear that it is still running there. The music keeps playing
+while you write, read email or do anything else. The media keys on your
+keyboard still work. To bring the window back, press
+<strong>Ctrl+Alt+Shift+R</strong> from any program. Press it again to
+hide Quill Radio. You can also choose Show Quill Radio from the tray
+icon’s menu.</p>
+<h2 id="if-you-get-lost">If you get lost</h2>
+<ul>
+<li><strong>Escape</strong> closes the window you are in and takes you
+back to the one before.</li>
+<li><strong>F1</strong> tells you where you are and what the control you
+are on does.</li>
+<li><strong>Help &gt; Tutorials</strong> (Ctrl+Alt+F1) has 41 guided
+lessons inside the app.</li>
+</ul>
+<h2 id="where-to-go-next">Where to go next</h2>
+<p>The <a href="/docs/radio-userguide.html">Quill Radio user guide</a>
+starts with “Your first half hour” and then covers every menu and key.
+For podcasts, see <a href="10-podcasts.md">Tutorial 10</a>.</p>
+</main>
+</body>
+</html>

@@ -15,6 +15,7 @@ from quill.core.spelling.announcements import AccessibilityAnnouncer
 from quill.core.spelling.models import ReviewCounters, SpellingIssue
 from quill.core.spelling.session import ReviewSession
 from quill.ui.dialog_contract import apply_modal_ids, show_message_box
+from quill.ui.dpi import dip_size
 
 if TYPE_CHECKING:
     pass
@@ -55,6 +56,7 @@ class SpellingReviewDialog:
         project_root: Path | None,
         settings: object,
         scope_label: str = "document",
+        personal_dir: Path | None = None,
     ) -> None:
         import wx
 
@@ -64,6 +66,9 @@ class SpellingReviewDialog:
         self._doc_path = document_path
         self._project_root = project_root
         self._scope_label = scope_label
+        self._settings = settings
+        self._personal_dir = personal_dir
+        self._announce_fn = announce_fn
 
         verbosity = str(getattr(settings, "spell_review_verbosity", "balanced"))
         spell_word = bool(getattr(settings, "spell_review_spell_word", True))
@@ -74,6 +79,11 @@ class SpellingReviewDialog:
             spell_word=spell_word,
             spell_word_pause_ms=spell_pause,
             timer_factory=wx.CallLater,
+            # The shared voicing preferences: how letters are said, whether
+            # capitals are named, whether each suggestion spells itself as you
+            # arrow onto it. The two spell_review_* values above still win over
+            # their equivalents in here, because they are the review's own.
+            settings=settings,
         )
 
         self._current_issue: SpellingIssue | None = None
@@ -85,8 +95,8 @@ class SpellingReviewDialog:
             title="Spelling Review",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(560, 460))
-        self.dialog.SetSize(wx.Size(700, 540))
+        self.dialog.SetMinSize(dip_size(self.dialog, 560, 460))
+        self.dialog.SetSize(dip_size(self.dialog, 700, 540))
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -103,7 +113,10 @@ class SpellingReviewDialog:
         root.Add(self._issue_label, 0, wx.ALL, 10)
 
         # Context field
-        ctx_label = wx.StaticText(self.dialog, label="Conte&xt around word (Alt+W to reselect):")
+        ctx_label = wx.StaticText(
+            self.dialog,
+            label="Conte&xt around word (Alt+W to reselect, Ctrl+R to read the sentence aloud):",
+        )
         root.Add(ctx_label, 0, wx.LEFT | wx.RIGHT, 10)
 
         self._context = wx.TextCtrl(
@@ -111,12 +124,12 @@ class SpellingReviewDialog:
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
         )
         self._context.SetName("Context")
-        self._context.SetMinSize(wx.Size(-1, 90))
+        self._context.SetMinSize(dip_size(self._context, -1, 90))
         root.Add(self._context, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         # Change-to field
         change_row = wx.BoxSizer(wx.HORIZONTAL)
-        change_label = wx.StaticText(self.dialog, label="Chan&ge to:")
+        change_label = wx.StaticText(self.dialog, label="Change &to:")
         self._change_to = wx.TextCtrl(self.dialog, style=wx.TE_PROCESS_ENTER)
         self._change_to.SetName("Change to")
         change_row.Add(change_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 6)
@@ -129,8 +142,23 @@ class SpellingReviewDialog:
 
         self._suggestions = wx.ListBox(self.dialog, style=wx.LB_SINGLE)
         self._suggestions.SetName("Suggestions")
-        self._suggestions.SetMinSize(wx.Size(-1, 80))
+        self._suggestions.SetMinSize(dip_size(self._suggestions, -1, 80))
         root.Add(self._suggestions, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
+
+        # Review order. This was two commands until 2026-09-16 -- Spell Check
+        # and Spell Check (Ranked by Frequency), the same dialog opened two
+        # ways, on two chords, in two menu rows. One verb registered twice is
+        # how a pair drifts (bad.md 7.1), and the F7 chord family had no room
+        # left for the second one anyway. A checkbox instead, which also gives
+        # QUILL Lite ranked review for the first time -- it shares this dialog
+        # and never had the second command.
+        self._ranked_box = wx.CheckBox(self.dialog, label="Review most-&frequent words first")
+        self._ranked_box.SetValue(self._session.is_ranked())
+        self._ranked_box.SetToolTip(
+            "Walk the list by how often each word recurs rather than by "
+            "position, so fixing one repeated typo clears the bulk of it."
+        )
+        root.Add(self._ranked_box, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         # Action buttons — row 1
         btn1 = wx.BoxSizer(wx.HORIZONTAL)
@@ -149,10 +177,11 @@ class SpellingReviewDialog:
 
         # Action buttons — row 2
         btn2 = wx.BoxSizer(wx.HORIZONTAL)
+        self._btn_read_sentence = wx.Button(self.dialog, label="&Read Sentence")
         self._btn_add_dict = wx.Button(self.dialog, label="Add to &Dictionary")
         self._btn_undo = wx.Button(self.dialog, label="&Undo Last")
         self._btn_close = wx.Button(self.dialog, label="&Close")
-        for btn in (self._btn_add_dict, self._btn_undo, self._btn_close):
+        for btn in (self._btn_read_sentence, self._btn_add_dict, self._btn_undo, self._btn_close):
             btn2.Add(btn, 0, wx.RIGHT, 6)
         root.Add(btn2, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
@@ -171,6 +200,10 @@ class SpellingReviewDialog:
         # Suggestion list selection → update Change to field.
         self._suggestions.Bind(wx.EVT_LISTBOX, self._on_suggestion_select)
 
+        # Review order, live: the session re-scans, so the remaining
+        # issues reorder without losing what has been corrected.
+        self._ranked_box.Bind(wx.EVT_CHECKBOX, lambda _e: self._on_ranked_toggled())
+
         # Enter in Change-to field → Change.
         self._change_to.Bind(wx.EVT_TEXT_ENTER, lambda _e: self._on_change())
 
@@ -179,6 +212,7 @@ class SpellingReviewDialog:
         self._btn_change_all.Bind(wx.EVT_BUTTON, lambda _e: self._on_change_all())
         self._btn_ignore_once.Bind(wx.EVT_BUTTON, lambda _e: self._on_ignore_once())
         self._btn_ignore_all.Bind(wx.EVT_BUTTON, lambda _e: self._on_ignore_all())
+        self._btn_read_sentence.Bind(wx.EVT_BUTTON, lambda _e: self._read_sentence_in_context())
         self._btn_add_dict.Bind(wx.EVT_BUTTON, lambda _e: self._on_add_dict())
         self._btn_undo.Bind(wx.EVT_BUTTON, lambda _e: self._on_undo())
         self._btn_close.Bind(wx.EVT_BUTTON, lambda _e: self._on_close())
@@ -193,6 +227,30 @@ class SpellingReviewDialog:
     # Event handlers
     # ------------------------------------------------------------------
 
+    def _on_ranked_toggled(self) -> None:
+        """Re-order what is left, say what changed, and remember the choice."""
+        ranked = bool(self._ranked_box.GetValue())
+        self._session.set_ranked(ranked)
+        if self._settings is not None:
+            try:
+                self._settings.spell_review_ranked = ranked
+            except Exception:  # noqa: BLE001 - a stub settings object in tests
+                pass
+        if self._session.is_complete():
+            self._show_completion()
+            return
+        self._populate_current_issue()
+        # The reader has already said "checked"/"unchecked" -- that is the
+        # control's own state and announcing it again would be GATE-13
+        # over-announcing. What it cannot say is that the list underneath was
+        # reordered and a different word is now in front of you, so that is
+        # what gets said, with the position to prove it moved.
+        self._announcer.announce_action_result(
+            "Most frequent first." if ranked else "Document order.",
+            self._session.position(),
+            self._session.total(),
+        )
+
     def _on_char_hook(self, event: object) -> None:
         wx = self._wx
         key = event.GetKeyCode()  # type: ignore[attr-defined]
@@ -200,12 +258,25 @@ class SpellingReviewDialog:
         if key == ord("W") and mods == wx.MOD_ALT:
             self._reselect_word()
             return
+        if key == ord("R") and mods == wx.MOD_CONTROL:
+            self._read_sentence_in_context()
+            return
         event.Skip()  # type: ignore[attr-defined]
 
     def _on_suggestion_select(self, event: object) -> None:
         sel = self._suggestions.GetSelection()
         if sel != self._wx.NOT_FOUND:
-            self._change_to.SetValue(self._suggestions.GetString(sel))
+            suggestion = self._suggestions.GetString(sel)
+            self._change_to.SetValue(suggestion)
+            # Spell it out after a pause, which is the whole point of a
+            # suggestion list to somebody listening: choosing between "receive"
+            # and "recieve" by ear is exactly as impossible here as it was in
+            # the document. The announcer has been built with these settings
+            # since it shipped and nothing was calling it, so the twelve
+            # Announcements settings QUILL could reach did nothing on this
+            # list -- and QUILL Lite had done it all along, which is rule 10
+            # backwards (bad.md P1.14). Arrowing on cancels the pending one.
+            self._announcer.spell_suggestion(str(suggestion))
         event.Skip()  # type: ignore[attr-defined]
 
     def _on_change(self) -> None:
@@ -259,7 +330,9 @@ class SpellingReviewDialog:
         if issue is None:
             return
         word = issue.word
-        self._session.add_to_dict("personal", self._doc_path, self._project_root)
+        self._session.add_to_dict(
+            "personal", self._doc_path, self._project_root, self._personal_dir
+        )
         self._advance_or_complete(f"Added {word} to dictionary.")
 
     def _on_undo(self) -> None:
@@ -276,6 +349,16 @@ class SpellingReviewDialog:
     # ------------------------------------------------------------------
 
     def _advance_or_complete(self, action_msg: str) -> None:
+        # Reaching the end when the review started at the caret is not the end
+        # of the review: it is the moment to come back round to the top, which
+        # is what Word does and what ``spell_review_wrap_to_beginning`` has
+        # promised in Preferences while being read by nothing (bad.md S7).
+        if self._session.should_wrap():
+            self._announcer.announce_wrap_prompt()
+            self._session.wrap_to_beginning()
+            if not self._session.is_complete():
+                self._populate_current_issue()
+                return
         if self._session.is_complete():
             self._announcer.announce_action_result(
                 action_msg, self._session.total() + 1, self._session.total()
@@ -330,6 +413,16 @@ class SpellingReviewDialog:
     def _reselect_word(self) -> None:
         self._context.SetFocus()
         self._context.SetSelection(self._context_word_start, self._context_word_end)
+
+    def _read_sentence_in_context(self) -> None:
+        """Read the sentence(s) surrounding the misspelling aloud (Ctrl+R / button).
+
+        Speaks the same context text shown in the Context field so the user hears
+        the misspelling in situ. No-op when no issue is current."""
+        issue = self._current_issue
+        if issue is None:
+            return
+        self._announcer.announce_context_sentence(issue.context_text)
 
     def _show_completion(self) -> None:
         counters = self._session.get_counters()

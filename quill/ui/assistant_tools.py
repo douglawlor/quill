@@ -16,7 +16,6 @@ from quill.core.assistant import (
     rank_assistant_tools,
     render_assistant_prompt,
 )
-from quill.core.assistant_agents import agent_profiles, build_agent_plan
 from quill.core.assistant_ai import (
     AssistantConnectionSettings,
     ModelRecommendation,
@@ -27,7 +26,6 @@ from quill.core.assistant_ai import (
     list_assistant_models,
     load_assistant_api_key,
     load_assistant_connection_settings,
-    load_provider_api_key,
     load_provider_model,
     missing_required_api_key,
     provider_api_key_label,
@@ -38,23 +36,22 @@ from quill.core.assistant_ai import (
     recommended_model_guidance,
     save_assistant_connection_settings,
     set_active_provider,
+    stored_assistant_api_key,
+    stored_provider_api_key,
     test_chat,
     verify_assistant_connection,
-)
-from quill.core.assistant_prompts import (
-    CustomPrompt,
-    delete_custom_prompt,
-    generate_prompt_id,
-    load_custom_prompts,
-    render_prompt_template,
-    template_variables,
-    unknown_template_variables,
-    upsert_custom_prompt,
 )
 from quill.core.commands import CommandRegistry
 from quill.core.features import FeatureManager
 from quill.core.python_sandbox import PythonSandboxResult, run_python_sandbox
-from quill.ui.dialog_contract import apply_modal_ids, show_message_box, show_modal_dialog
+from quill.ui.ai_diff_review_dialog import DiffReviewDialog  # noqa: F401 - re-export
+from quill.ui.dialog_contract import (
+    apply_modal_ids,
+    set_accessible_name,
+    show_message_box,
+    show_modal_dialog,
+)
+from quill.ui.dpi import dip_size
 
 
 class RunPythonDialog:
@@ -81,7 +78,7 @@ class RunPythonDialog:
             title="Run Python",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((900, 680))
+        self.dialog.SetSize(dip_size(self.dialog, 900, 680))
 
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
@@ -100,8 +97,9 @@ class RunPythonDialog:
         self.code = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_PROCESS_TAB | wx.BORDER_SIMPLE,
-            size=(-1, 280),
+            size=dip_size(self.dialog, -1, 280),
         )
+        set_accessible_name(self.code, "Python code")
         self.code.SetValue(
             "# document_text and selection_text are available.\n"
             "# Set result or call set_result(...).\n"
@@ -115,8 +113,9 @@ class RunPythonDialog:
         self.preview = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 220),
+            size=dip_size(self.dialog, -1, 220),
         )
+        set_accessible_name(self.preview, "Result preview")
         root.Add(self.preview, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         buttons = wx.BoxSizer(wx.HORIZONTAL)
@@ -207,288 +206,6 @@ class RunPythonDialog:
         return "\n".join(parts).strip()
 
 
-class PromptStudioDialog:
-    def __init__(
-        self,
-        parent: object,
-        *,
-        selection_text: str,
-        document_text: str,
-        on_use_prompt: Callable[[str], None],
-        announce: Callable[[str], None] | None = None,
-    ) -> None:
-        import wx
-
-        self._wx = wx
-        self._selection_text = selection_text
-        self._document_text = document_text
-        self._use_prompt_callback = on_use_prompt
-        self._announce = announce or (lambda _message: None)
-        self._custom_prompts = load_custom_prompts()
-        self._custom_by_id = {prompt.prompt_id: prompt for prompt in self._custom_prompts}
-        self._builtin = assistant_prompt_presets()
-
-        self.dialog = wx.Dialog(
-            parent,
-            title="Prompt Studio",
-            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
-        )
-        self.dialog.SetSize((980, 680))
-
-        root = wx.BoxSizer(wx.HORIZONTAL)
-        left = wx.BoxSizer(wx.VERTICAL)
-        right = wx.BoxSizer(wx.VERTICAL)
-
-        left.Add(
-            wx.StaticText(self.dialog, label="Prompt Library"),
-            0,
-            wx.LEFT | wx.RIGHT | wx.TOP,
-            8,
-        )
-        self.prompt_list = wx.ListBox(self.dialog)
-        left.Add(self.prompt_list, 1, wx.EXPAND | wx.ALL, 8)
-        self.new_button = wx.Button(self.dialog, label="New Custom Prompt")
-        self.delete_button = wx.Button(self.dialog, label="Delete Custom Prompt")
-        self.use_button = wx.Button(self.dialog, label="Use in Writing Assistant")
-        left_actions = wx.BoxSizer(wx.HORIZONTAL)
-        left_actions.Add(self.new_button, 0, wx.RIGHT, 8)
-        left_actions.Add(self.delete_button, 0, wx.RIGHT, 8)
-        left_actions.Add(self.use_button, 0)
-        left.Add(left_actions, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        right.Add(wx.StaticText(self.dialog, label="Title"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 8)
-        self.title_text = wx.TextCtrl(self.dialog)
-        self.title_text.SetName("Title")
-        right.Add(self.title_text, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        right.Add(
-            wx.StaticText(
-                self.dialog,
-                label=("Template (variables: {selection} {document} {tone} {audience} {goal})"),
-            ),
-            0,
-            wx.LEFT | wx.RIGHT | wx.TOP,
-            8,
-        )
-        self.template_text = wx.TextCtrl(self.dialog, style=wx.TE_MULTILINE, size=(-1, 220))
-        self.template_text.SetName("Template")
-        right.Add(self.template_text, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        row = wx.BoxSizer(wx.HORIZONTAL)
-        row.Add(wx.StaticText(self.dialog, label="Tone"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
-        self.tone_text = wx.TextCtrl(self.dialog)
-        self.tone_text.SetName("Tone")
-        row.Add(self.tone_text, 1, wx.RIGHT, 8)
-        row.Add(
-            wx.StaticText(self.dialog, label="Audience"),
-            0,
-            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
-            8,
-        )
-        self.audience_text = wx.TextCtrl(self.dialog)
-        self.audience_text.SetName("Audience")
-        row.Add(self.audience_text, 1)
-        right.Add(row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        right.Add(wx.StaticText(self.dialog, label="Goal"), 0, wx.LEFT | wx.RIGHT | wx.TOP, 8)
-        self.goal_text = wx.TextCtrl(self.dialog)
-        self.goal_text.SetName("Goal")
-        right.Add(self.goal_text, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        preview_actions = wx.BoxSizer(wx.HORIZONTAL)
-        self.preview_button = wx.Button(self.dialog, label="Preview Render")
-        self.save_button = wx.Button(self.dialog, label="Save Custom Prompt")
-        preview_actions.Add(self.preview_button, 0, wx.RIGHT, 8)
-        preview_actions.Add(self.save_button, 0)
-        right.Add(preview_actions, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        self.preview = wx.TextCtrl(
-            self.dialog,
-            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 180),
-        )
-        right.Add(self.preview, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        self.status = wx.StaticText(self.dialog, label="Ready.")
-        right.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        # A Close button bound to wx.ID_CANCEL gives keyboard and mouse users a
-        # dismiss affordance and lets SetEscapeId(wx.ID_CANCEL) close the dialog
-        # with Escape (#124); without a matching button id, Escape has nothing
-        # to activate and the dialog cannot be closed from the keyboard.
-        close_row = wx.BoxSizer(wx.HORIZONTAL)
-        self.close_button = wx.Button(self.dialog, id=wx.ID_CANCEL, label="Close")
-        self.close_button.SetName("Close")
-        close_row.AddStretchSpacer(1)
-        close_row.Add(self.close_button, 0)
-        right.Add(close_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        root.Add(left, 1, wx.EXPAND)
-        root.Add(right, 2, wx.EXPAND)
-        self.dialog.SetSizer(root)
-
-        self.prompt_list.Bind(wx.EVT_LISTBOX, self._on_selected_prompt_changed)
-        self.new_button.Bind(wx.EVT_BUTTON, self._on_new_prompt)
-        self.delete_button.Bind(wx.EVT_BUTTON, self._on_delete_prompt)
-        self.use_button.Bind(wx.EVT_BUTTON, self._on_use_prompt_clicked)
-        self.preview_button.Bind(wx.EVT_BUTTON, self._on_preview_prompt)
-        self.save_button.Bind(wx.EVT_BUTTON, self._on_save_prompt)
-        apply_modal_ids(self.dialog, escape_id=wx.ID_CANCEL)
-
-        self._selected_prompt_key = ""
-        self._refresh_prompt_list()
-
-    def show_modal(self) -> None:
-        self.dialog.CentreOnParent()
-        try:
-            show_modal_dialog(self.dialog, "Prompt Studio")
-        finally:
-            self.dialog.Destroy()
-
-    def _refresh_prompt_list(self) -> None:
-        labels: list[str] = []
-        keys: list[str] = []
-        for preset in self._builtin:
-            labels.append(f"Built-in: {preset.title}")
-            keys.append(f"builtin:{preset.name}")
-        for prompt in self._custom_prompts:
-            labels.append(f"Custom: {prompt.title}")
-            keys.append(f"custom:{prompt.prompt_id}")
-        self._keys = keys
-        self.prompt_list.Set(labels)
-        if keys:
-            self.prompt_list.SetSelection(0)
-            self._selected_prompt_key = keys[0]
-            self._load_selected_prompt()
-        else:
-            self._selected_prompt_key = ""
-            self.title_text.SetValue("")
-            self.template_text.SetValue("")
-            self.preview.SetValue("")
-
-    def _on_selected_prompt_changed(self, _event: object) -> None:
-        selection = self.prompt_list.GetSelection()
-        if selection == self._wx.NOT_FOUND:
-            return
-        if selection < 0 or selection >= len(self._keys):
-            return
-        self._selected_prompt_key = self._keys[selection]
-        self._load_selected_prompt()
-
-    def _load_selected_prompt(self) -> None:
-        key = self._selected_prompt_key
-        if key.startswith("builtin:"):
-            preset_name = key.removeprefix("builtin:")
-            preset = next((item for item in self._builtin if item.name == preset_name), None)
-            if preset is None:
-                return
-            self.title_text.SetValue(preset.title)
-            self.template_text.SetValue(preset.template)
-            self.save_button.Enable(False)
-            self.delete_button.Enable(False)
-            self.status.SetLabel("Loaded built-in prompt.")
-            self._render_preview()
-            return
-        if key.startswith("custom:"):
-            prompt_id = key.removeprefix("custom:")
-            prompt = self._custom_by_id.get(prompt_id)
-            if prompt is None:
-                return
-            self.title_text.SetValue(prompt.title)
-            self.template_text.SetValue(prompt.template)
-            self.save_button.Enable(True)
-            self.delete_button.Enable(True)
-            self.status.SetLabel("Loaded custom prompt.")
-            self._render_preview()
-
-    def _on_new_prompt(self, _event: object) -> None:
-        self._selected_prompt_key = f"custom:{generate_prompt_id()}"
-        self.title_text.SetValue("")
-        self.template_text.SetValue(
-            "Goal: {goal}\nAudience: {audience}\nTone: {tone}\n\n{selection}"
-        )
-        self.save_button.Enable(True)
-        self.delete_button.Enable(False)
-        self.status.SetLabel("Creating a new custom prompt. Type a title, then edit the template.")
-        self.preview.SetValue("")
-        # Move focus to the title field and announce the new state so keyboard and
-        # screen-reader users know a blank prompt is ready to fill in (#125).
-        self.title_text.SetFocus()
-        self._announce("Creating a new custom prompt. Type a title, then edit the template.")
-
-    def _on_delete_prompt(self, _event: object) -> None:
-        key = self._selected_prompt_key
-        if not key.startswith("custom:"):
-            return
-        prompt_id = key.removeprefix("custom:")
-        self._custom_prompts = delete_custom_prompt(prompt_id)
-        self._custom_by_id = {prompt.prompt_id: prompt for prompt in self._custom_prompts}
-        self._refresh_prompt_list()
-        self.status.SetLabel("Deleted custom prompt.")
-        self._announce("Deleted custom prompt")
-
-    def _on_use_prompt_clicked(self, _event: object) -> None:
-        template = self.template_text.GetValue().strip()
-        if not template:
-            self.status.SetLabel("Prompt template is empty.")
-            return
-        rendered = self._render_prompt(template)
-        if not rendered:
-            self.status.SetLabel("Prompt rendered empty text.")
-            return
-        self._use_prompt_callback(rendered)
-        self._announce("Loaded prompt into Writing Assistant")
-        self.dialog.EndModal(self._wx.ID_OK)
-
-    def _on_preview_prompt(self, _event: object) -> None:
-        self._render_preview()
-
-    def _render_preview(self) -> None:
-        template = self.template_text.GetValue().strip()
-        if not template:
-            self.preview.SetValue("")
-            return
-        unknown = unknown_template_variables(template)
-        if unknown:
-            self.status.SetLabel(f"Unknown variables: {', '.join(unknown)}")
-            return
-        rendered = self._render_prompt(template)
-        self.preview.SetValue(rendered)
-        variables = ", ".join(template_variables(template)) or "none"
-        self.status.SetLabel(f"Preview rendered. Variables: {variables}.")
-
-    def _render_prompt(self, template: str) -> str:
-        return render_prompt_template(
-            template,
-            values={
-                "selection": self._selection_text.strip(),
-                "document": self._document_text.strip(),
-                "tone": self.tone_text.GetValue().strip(),
-                "audience": self.audience_text.GetValue().strip(),
-                "goal": self.goal_text.GetValue().strip(),
-            },
-        )
-
-    def _on_save_prompt(self, _event: object) -> None:
-        key = self._selected_prompt_key
-        if not key.startswith("custom:"):
-            self.status.SetLabel("Built-in prompts cannot be overwritten.")
-            return
-        title = self.title_text.GetValue().strip()
-        template = self.template_text.GetValue().strip()
-        if not title:
-            self.status.SetLabel("Title is required.")
-            return
-        if not template:
-            self.status.SetLabel("Template is required.")
-            return
-        unknown = unknown_template_variables(template)
-        if unknown:
-            self.status.SetLabel(f"Unknown variables: {', '.join(unknown)}")
-            return
-        prompt_id = key.removeprefix("custom:")
-        prompt = CustomPrompt(prompt_id=prompt_id, title=title, template=template)
-        self._custom_prompts = upsert_custom_prompt(prompt)
-        self._custom_by_id = {item.prompt_id: item for item in self._custom_prompts}
-        self._refresh_prompt_list()
-        self.status.SetLabel("Saved custom prompt.")
-        self._announce("Saved custom prompt")
-
-
 class AccessibilityAgentDialog:
     """Reviewable, per-step, single-undo "make this document accessible" agent.
 
@@ -525,7 +242,7 @@ class AccessibilityAgentDialog:
             title="Accessibility Tune-Up",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((860, 620))
+        self.dialog.SetSize(dip_size(self.dialog, 860, 620))
 
         panel = wx.Panel(self.dialog)
         root = wx.BoxSizer(wx.VERTICAL)
@@ -557,6 +274,7 @@ class AccessibilityAgentDialog:
             panel,
             choices=[self._step_label(step) for step in self.plan.steps],
         )
+        set_accessible_name(self.step_list, "Proposed steps")
         root.Add(self.step_list, 1, wx.EXPAND | wx.ALL, 8)
         for index, step in enumerate(self.plan.steps):
             if step.auto_fixable:
@@ -571,8 +289,9 @@ class AccessibilityAgentDialog:
         self.details = wx.TextCtrl(
             panel,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 150),
+            size=dip_size(panel, -1, 150),
         )
+        set_accessible_name(self.details, "Step details")
         root.Add(self.details, 0, wx.EXPAND | wx.ALL, 8)
 
         self.status = wx.StaticText(panel, label="Ready to apply the checked steps.")
@@ -661,310 +380,6 @@ class AccessibilityAgentDialog:
         self.dialog.EndModal(self._wx.ID_OK)
 
 
-class DiffReviewDialog:
-    """Accessible, line-by-line review of an AI edit (AI-7).
-
-    Presents the diff between the current document text and a proposed revision
-    as a navigable checklist of added / removed / changed hunks. Each hunk is
-    pre-checked; the reader can read every change line by line in the detail
-    pane, then apply all, some (partial apply), or none (reject). Applying is
-    handed back to the caller as a single replacement text so the editor records
-    it as one undo unit.
-    """
-
-    def __init__(
-        self,
-        parent: object,
-        *,
-        title: str,
-        original_text: str,
-        revised_text: str,
-        on_apply: Callable[[str], None],
-        announce: Callable[[str], None] | None = None,
-    ) -> None:
-        import wx
-
-        from quill.core.ai.diff_review import build_diff_review
-
-        self._wx = wx
-        self._on_apply = on_apply
-        self._announce = announce or (lambda _message: None)
-        self.review = build_diff_review(original_text, revised_text)
-        self.applied = False
-
-        self.dialog = wx.Dialog(
-            parent,
-            title=title,
-            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
-        )
-        self.dialog.SetSize((880, 640))
-
-        panel = wx.Panel(self.dialog)
-        root = wx.BoxSizer(wx.VERTICAL)
-
-        root.Add(
-            wx.StaticText(
-                panel,
-                label=(
-                    "Review the proposed AI changes below. Checked hunks will be "
-                    "applied; uncheck any you want to keep as-is. Read each hunk "
-                    "line by line in the details pane. Nothing changes until you "
-                    "choose Apply."
-                ),
-            ),
-            0,
-            wx.EXPAND | wx.ALL,
-            8,
-        )
-
-        self.summary = wx.StaticText(panel, label=self.review.summary())
-        root.Add(self.summary, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        root.Add(wx.StaticText(panel, label="Changes"), 0, wx.LEFT | wx.RIGHT, 8)
-        self.hunk_list = wx.CheckListBox(  # A11Y-SR-1-OK: diff hunks; pending CheckBox conversion
-            panel,
-            choices=[hunk.describe() for hunk in self.review.hunks],
-        )
-        root.Add(self.hunk_list, 1, wx.EXPAND | wx.ALL, 8)
-        for index in range(len(self.review.hunks)):
-            self.hunk_list.Check(index, True)
-
-        root.Add(wx.StaticText(panel, label="Change details"), 0, wx.LEFT | wx.RIGHT, 8)
-        self.details = wx.TextCtrl(
-            panel,
-            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 170),
-        )
-        root.Add(self.details, 0, wx.EXPAND | wx.ALL, 8)
-
-        self.status = wx.StaticText(panel, label="Ready to apply the checked changes.")
-        root.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        buttons = wx.BoxSizer(wx.HORIZONTAL)
-        self.apply_button = wx.Button(panel, label="Apply Checked")
-        accept_all_button = wx.Button(panel, label="Accept All")
-        reject_all_button = wx.Button(panel, label="Reject All")
-        buttons.Add(self.apply_button, 0, wx.RIGHT, 8)
-        buttons.Add(accept_all_button, 0, wx.RIGHT, 8)
-        buttons.Add(reject_all_button, 0, wx.RIGHT, 8)
-        buttons.AddStretchSpacer(1)
-        close_button = wx.Button(panel, id=wx.ID_CANCEL, label="Close")
-        buttons.Add(close_button, 0)
-        root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
-
-        panel.SetSizer(root)
-        outer = wx.BoxSizer(wx.VERTICAL)
-        outer.Add(panel, 1, wx.EXPAND)
-        self.dialog.SetSizer(outer)
-
-        self.hunk_list.Bind(wx.EVT_LISTBOX, self._on_hunk_selected)
-        self.apply_button.Bind(wx.EVT_BUTTON, self._on_apply_clicked)
-        accept_all_button.Bind(wx.EVT_BUTTON, lambda _e: self._check_all(True))
-        reject_all_button.Bind(wx.EVT_BUTTON, lambda _e: self._check_all(False))
-        close_button.Bind(wx.EVT_BUTTON, lambda _e: self.dialog.EndModal(wx.ID_CANCEL))
-        apply_modal_ids(self.dialog, escape_id=wx.ID_CANCEL)
-
-        if self.review.hunks:
-            self.hunk_list.SetSelection(0)
-            self._show_hunk_details(0)
-        else:
-            self.apply_button.Enable(False)
-            accept_all_button.Enable(False)
-            reject_all_button.Enable(False)
-            self.details.SetValue(
-                "The proposed revision is identical to the current document. "
-                "There is nothing to apply."
-            )
-
-    def show_modal(self) -> None:
-        self.dialog.CentreOnParent()
-        try:
-            show_modal_dialog(self.dialog, self.dialog.GetTitle())
-        finally:
-            self.dialog.Destroy()
-
-    def _on_hunk_selected(self, _event: object) -> None:
-        index = self.hunk_list.GetSelection()
-        if index != self._wx.NOT_FOUND and 0 <= index < len(self.review.hunks):
-            self._show_hunk_details(index)
-
-    def _show_hunk_details(self, index: int) -> None:
-        hunk = self.review.hunks[index]
-        self.details.SetValue("\n".join(hunk.detail_lines()))
-
-    def _check_all(self, checked: bool) -> None:
-        for index in range(len(self.review.hunks)):
-            self.hunk_list.Check(index, checked)
-        label = "Accepted all changes" if checked else "Rejected all changes"
-        self.status.SetLabel(f"{label}. Choose Apply to update the document.")
-        self._announce(label)
-
-    def _on_apply_clicked(self, _event: object) -> None:
-        accepted = {
-            index for index in range(len(self.review.hunks)) if self.hunk_list.IsChecked(index)
-        }
-        result_text = self.review.apply(accepted)
-        if result_text == self.review.original:
-            self.status.SetLabel("No changes were applied; the document is unchanged.")
-            self._announce("No changes were applied")
-            return
-        self.applied = True
-        self._on_apply(result_text)
-        count = len(accepted)
-        self._announce(f"Applied {count} {'change' if count == 1 else 'changes'} as one undo step")
-        self.dialog.EndModal(self._wx.ID_OK)
-
-
-class AgentCenterDialog:
-    def __init__(
-        self,
-        parent: object,
-        *,
-        selection_text: str,
-        document_text: str,
-        on_use_prompt: Callable[[str], None],
-        announce: Callable[[str], None] | None = None,
-    ) -> None:
-        import wx
-
-        self._wx = wx
-        self._selection_text = selection_text
-        self._document_text = document_text
-        self._use_prompt_callback = on_use_prompt
-        self._announce = announce or (lambda _message: None)
-        self._profiles = agent_profiles()
-
-        self.dialog = wx.Dialog(
-            parent,
-            title="Agent Center",
-            style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
-        )
-        self.dialog.SetSize((860, 620))
-
-        root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(
-            wx.StaticText(
-                self.dialog,
-                label=(
-                    "Choose a task-focused agent profile. Quill builds a draft prompt, then "
-                    "you review and approve changes before applying."
-                ),
-            ),
-            0,
-            wx.EXPAND | wx.ALL,
-            8,
-        )
-
-        self.agent_choice = wx.Choice(
-            self.dialog,
-            choices=[profile.title for profile in self._profiles],
-        )
-        self.agent_choice.SetSelection(0 if self._profiles else self._wx.NOT_FOUND)
-        root.Add(self.agent_choice, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        self.description = wx.StaticText(self.dialog, label="")
-        root.Add(self.description, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        row = wx.BoxSizer(wx.HORIZONTAL)
-        row.Add(wx.StaticText(self.dialog, label="Goal"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
-        self.goal_text = wx.TextCtrl(self.dialog)
-        self.goal_text.SetName("Goal")
-        self.goal_text.SetValue("Help improve this draft.")
-        row.Add(self.goal_text, 1, wx.RIGHT, 8)
-        row.Add(wx.StaticText(self.dialog, label="Tone"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
-        self.tone_text = wx.TextCtrl(self.dialog)
-        self.tone_text.SetName("Tone")
-        self.tone_text.SetValue("Clear and practical")
-        row.Add(self.tone_text, 1)
-        root.Add(row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        row2 = wx.BoxSizer(wx.HORIZONTAL)
-        row2.Add(
-            wx.StaticText(self.dialog, label="Audience"),
-            0,
-            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
-            8,
-        )
-        self.audience_text = wx.TextCtrl(self.dialog)
-        self.audience_text.SetName("Audience")
-        self.audience_text.SetValue("General readers")
-        row2.Add(self.audience_text, 1)
-        root.Add(row2, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        self.preview = wx.TextCtrl(
-            self.dialog,
-            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 260),
-        )
-        root.Add(self.preview, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        self.status = wx.StaticText(self.dialog, label="Ready.")
-        root.Add(self.status, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-
-        buttons = wx.BoxSizer(wx.HORIZONTAL)
-        self.generate_button = wx.Button(self.dialog, label="Generate Agent Prompt")
-        self.use_button = wx.Button(self.dialog, label="Open in Writing Assistant")
-        close_button = wx.Button(self.dialog, id=wx.ID_CANCEL, label="Close")
-        buttons.Add(self.generate_button, 0, wx.RIGHT, 8)
-        buttons.Add(self.use_button, 0, wx.RIGHT, 8)
-        buttons.AddStretchSpacer(1)
-        buttons.Add(close_button, 0)
-        root.Add(buttons, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
-        self.dialog.SetSizer(root)
-
-        self._current_prompt = ""
-        self.agent_choice.Bind(wx.EVT_CHOICE, self._on_agent_changed)
-        self.generate_button.Bind(wx.EVT_BUTTON, self._on_generate_prompt)
-        self.use_button.Bind(wx.EVT_BUTTON, self._on_use_prompt_clicked)
-        close_button.Bind(wx.EVT_BUTTON, lambda _e: self.dialog.EndModal(wx.ID_CANCEL))
-        apply_modal_ids(self.dialog, escape_id=wx.ID_CANCEL)
-        self._on_agent_changed(None)
-
-    def show_modal(self) -> None:
-        self.dialog.CentreOnParent()
-        try:
-            show_modal_dialog(self.dialog, "Agent Center")
-        finally:
-            self.dialog.Destroy()
-
-    def _on_agent_changed(self, _event: object | None) -> None:
-        index = self.agent_choice.GetSelection()
-        if index == self._wx.NOT_FOUND or index < 0 or index >= len(self._profiles):
-            return
-        profile = self._profiles[index]
-        self.description.SetLabel(profile.description)
-        self._on_generate_prompt(None)
-
-    def _on_generate_prompt(self, _event: object | None) -> None:
-        index = self.agent_choice.GetSelection()
-        if index == self._wx.NOT_FOUND or index < 0 or index >= len(self._profiles):
-            return
-        profile = self._profiles[index]
-        plan = build_agent_plan(
-            profile.agent_id,
-            selection_text=self._selection_text,
-            document_text=self._document_text,
-            goal=self.goal_text.GetValue(),
-            audience=self.audience_text.GetValue(),
-            tone=self.tone_text.GetValue(),
-        )
-        if plan is None:
-            self.status.SetLabel("Could not build agent plan.")
-            return
-        checklist = "\n".join(f"- {item}" for item in plan.checks)
-        self._current_prompt = plan.prompt
-        self.preview.SetValue(f"{plan.prompt}\n\nSafety checks:\n{checklist}")
-        self.status.SetLabel(f"Generated {plan.profile.title} prompt.")
-
-    def _on_use_prompt_clicked(self, _event: object) -> None:
-        if not self._current_prompt.strip():
-            self._on_generate_prompt(None)
-        if not self._current_prompt.strip():
-            self.status.SetLabel("No prompt generated.")
-            return
-        self._use_prompt_callback(self._current_prompt)
-        self._announce("Loaded agent prompt into Writing Assistant")
-        self.dialog.EndModal(self._wx.ID_OK)
-
-
 class WritingAssistantDialog:
     def __init__(
         self,
@@ -980,6 +395,8 @@ class WritingAssistantDialog:
         prompt_style: str = "balanced",
     ) -> None:
         import wx
+
+        from quill.ui.spoken_name import set_spoken_name
 
         self._wx = wx
         self._registry = command_registry
@@ -997,7 +414,7 @@ class WritingAssistantDialog:
             title="Writing Assistant",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((960, 700))
+        self.dialog.SetSize(dip_size(self.dialog, 960, 700))
 
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
@@ -1019,6 +436,7 @@ class WritingAssistantDialog:
             choices=[preset.title for preset in self._prompt_presets],
         )
         self.preset_choice.SetSelection(0 if self._prompt_presets else wx.NOT_FOUND)
+        set_accessible_name(self.preset_choice, "Prompt presets")
         self.load_prompt_button = wx.Button(self.dialog, label="Load Prompt")
         self.use_selection_button = wx.Button(self.dialog, label="Use Selection")
         self.use_document_button = wx.Button(self.dialog, label="Use Document")
@@ -1057,19 +475,24 @@ class WritingAssistantDialog:
         self.chat_log = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 110),
+            size=dip_size(self.dialog, -1, 110),
         )
         self.chat_log.SetValue(self._initial_chat_log())
+        set_accessible_name(self.chat_log, "Assistant conversation log")
         root.Add(self.chat_log, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         self.results = wx.ListBox(self.dialog)
+        set_accessible_name(self.results, "Matching actions")
+        set_spoken_name(self.results, "Matching actions")
         root.Add(self.results, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         self.details = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 120),
+            size=dip_size(self.dialog, -1, 120),
         )
+        set_accessible_name(self.details, "Action details")
+        set_spoken_name(self.details, "Action details")
         root.Add(self.details, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         buttons = wx.BoxSizer(wx.HORIZONTAL)
@@ -1225,13 +648,15 @@ class SearchableModelPickerDialog:
     def __init__(self, parent: object, models: list[str]) -> None:
         import wx
 
+        from quill.ui.spoken_name import set_spoken_name
+
         self._wx = wx
         self.dialog = wx.Dialog(
             parent,
             title="Available Models",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((640, 520))
+        self.dialog.SetSize(dip_size(self.dialog, 640, 520))
         self._models = models
         self._filtered_models = list(models)
 
@@ -1242,6 +667,8 @@ class SearchableModelPickerDialog:
         root.Add(self.query, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         self.listbox = wx.ListBox(self.dialog, choices=self._filtered_models)
+        set_accessible_name(self.listbox, "Available models")
+        set_spoken_name(self.listbox, "Available models")
         root.Add(self.listbox, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         buttons = self.dialog.CreateButtonSizer(wx.OK | wx.CANCEL)
@@ -1314,7 +741,7 @@ class AIHubDialog:
             title="AI Hub",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((760, 560))
+        self.dialog.SetSize(dip_size(self.dialog, 760, 560))
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
             wx.StaticText(
@@ -1332,8 +759,9 @@ class AIHubDialog:
         self.summary = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 220),
+            size=dip_size(self.dialog, -1, 220),
         )
+        set_accessible_name(self.summary, "AI Hub summary")
         root.Add(self.summary, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         self.status = wx.StaticText(self.dialog, label="Ready.")
@@ -1507,15 +935,18 @@ class AssistantConnectionDialog:
             title="AI Hub",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((780, 520))
+        self.dialog.SetSize(dip_size(self.dialog, 780, 520))
 
         self._settings = load_assistant_connection_settings()
         # Prefer the per-provider key for the initial provider so the field
         # always matches what is selected, even when the legacy active-key store
         # still holds a different provider's key from a previous session.
         _initial_provider = self._settings.provider.strip().lower() or "ollama"
-        _per_provider_key = load_provider_api_key(_initial_provider)
-        self._api_key = _per_provider_key or load_assistant_api_key()
+        # stored_* not load_*: this field is editable and its Save writes back
+        # to the credential store, so prefilling it from an environment
+        # variable would persist a key the user never entered here.
+        _per_provider_key = stored_provider_api_key(_initial_provider)
+        self._api_key = _per_provider_key or stored_assistant_api_key()
         self._api_key_revealed = False
         self.last_verification_ok: bool | None = None
         self.last_verification_message: str = "Not checked"
@@ -1753,7 +1184,7 @@ class AssistantConnectionDialog:
             # loses another provider's configuration.
             saved = self._per_provider_models.get(provider) or load_provider_model(provider)
             model_value = saved if saved else default_model_for_provider(provider)
-            self.api_key.SetValue(load_provider_api_key(provider))
+            self.api_key.SetValue(stored_provider_api_key(provider))
         else:
             model_value = self.model.GetValue().strip()
             known_models = {

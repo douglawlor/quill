@@ -1,22 +1,30 @@
 """Optional in-app Piper TTS engine download (#669).
 
 Piper (https://github.com/rhasspy/piper) is a fast, local, high-quality neural
-TTS engine. QUILL does not bundle the Piper binary because it is ~10 MB and adds
-little value to users who already have a system TTS. For users who want Piper,
-this downloads the official Windows AMD64 release on demand and extracts
-piper.exe + its supporting files into a QUILL-managed folder the discover
-function searches (``<app data>/speech/piper``).
+TTS engine. QUILL no longer bundles the Piper binary (PRD 10.2.x footprint
+unbundle); users who want Piper download the official Windows AMD64 release
+(~22 MB) on demand, and this extracts piper.exe + its supporting files into a
+QUILL-managed folder the discover function searches (``<app data>/speech/piper``).
 
-Safety mirrors the ffmpeg download path: HTTPS-only with a verified TLS context,
-blocked in Safe Mode, on an explicit user action only. Windows-only — on macOS and
-Linux install Piper from https://github.com/rhasspy/piper/releases. wx-free.
+Safety mirrors QUILL's other verified downloads: HTTPS-only with a verified TLS
+context, the downloaded archive is checked against a pinned SHA-256 before it is
+extracted, blocked in Safe Mode, and only on an explicit user action. Windows-only
+— on macOS and Linux install Piper from https://github.com/rhasspy/piper/releases.
+wx-free.
+
+**Offline Edition:** ``--bundle-offline`` builds stage the engine zip and
+starter voice model(s) under ``{app}/speech-models-bundled/piper`` (see
+``_stage_piper_offline`` in ``scripts/build_windows_distribution.py``).
+:func:`install_piper` prefers that staged zip — verified against the same
+pinned SHA-256 — and :func:`install_bundled_piper_voice` copies a staged voice
+into the user's piper-models folder, so choosing Piper under the Offline
+Edition never needs the internet.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-import ssl
 import sys
 import tempfile
 import urllib.request
@@ -24,6 +32,8 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
+from quill.core.error_codes import CodedError
+from quill.core.net import verified_ssl_context
 from quill.core.speech import models
 
 ProgressCallback = Callable[[float, str], None]
@@ -36,12 +46,18 @@ PIPER_DOWNLOAD_URL = (
     "https://github.com/rhasspy/piper/releases/download/"
     f"{PIPER_RELEASE_TAG}/piper_windows_amd64.zip"
 )
+# SHA-256 of piper_windows_amd64.zip for PIPER_RELEASE_TAG (22,477,236 bytes),
+# verified against the live GitHub asset. The download is rejected if it does
+# not match, matching the integrity guarantee of QUILL's other verified fetches.
+PIPER_DOWNLOAD_SHA256 = "f3c58906402b24f3a96d92145f58acba6d86c9b5db896d207f78dc80811efcea"
 _DOWNLOAD_TIMEOUT_S = 1800.0
 _PIPER_EXE = "piper.exe"
 
 
-class PiperInstallError(Exception):
+class PiperInstallError(CodedError):
     """Raised when the Piper download or extraction fails."""
+
+    code = "QUILL-SPEECH-PIPER-INSTALL"
 
 
 def piper_install_supported() -> bool:
@@ -52,6 +68,88 @@ def piper_install_supported() -> bool:
 def managed_piper_dir() -> Path:
     """The folder a downloaded Piper binary is installed into (discover-searched)."""
     return models.app_data_dir() / "speech" / "piper"
+
+
+def bundled_piper_offline_dir() -> Path | None:
+    """The Offline Edition's staged Piper bundle, when this build ships one.
+
+    ``_stage_piper_offline`` in ``scripts/build_windows_distribution.py``
+    stages the SHA-256-verified engine zip plus starter voice model(s) under
+    ``{app}/speech-models-bundled/piper`` (the same root the bundled
+    whisper.cpp model uses), so a Piper install under the Offline Edition
+    never touches the network. Returns None on every non-Offline build (the
+    common case).
+    """
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if not app_root:
+        return None
+    candidate = Path(app_root) / "speech-models-bundled" / "piper"
+    try:
+        return candidate if candidate.is_dir() else None
+    except OSError:
+        return None
+
+
+def _bundled_piper_zip() -> Path | None:
+    """The staged ``piper_windows_amd64.zip``, when the Offline bundle has it."""
+    root = bundled_piper_offline_dir()
+    if root is None:
+        return None
+    candidate = root / "piper_windows_amd64.zip"
+    return candidate if candidate.is_file() else None
+
+
+def bundled_piper_voice_paths(voice_id: str) -> tuple[Path, Path] | None:
+    """The staged (.onnx, .onnx.json) pair for *voice_id*, or None.
+
+    The Offline Edition stages starter voice models under
+    ``{bundle}/voices/`` so the first Piper voice needs no HuggingFace fetch.
+    """
+    root = bundled_piper_offline_dir()
+    if root is None:
+        return None
+    onnx = root / "voices" / f"{voice_id}.onnx"
+    meta = root / "voices" / f"{voice_id}.onnx.json"
+    if onnx.is_file() and meta.is_file():
+        return onnx, meta
+    return None
+
+
+def list_bundled_piper_voices() -> list[str]:
+    """Voice ids the Offline bundle stages (empty on non-Offline builds)."""
+    root = bundled_piper_offline_dir()
+    if root is None:
+        return []
+    try:
+        return sorted(
+            path.name.removesuffix(".onnx")
+            for path in (root / "voices").glob("*.onnx")
+            if path.with_name(f"{path.name}.json").is_file()
+        )
+    except OSError:
+        return []
+
+
+def install_bundled_piper_voice(voice_id: str, dest_dir: Path | None = None) -> Path | None:
+    """Copy a bundled voice into the user's piper-models dir; None when not bundled.
+
+    The offline counterpart of the on-demand HuggingFace voice download: same
+    destination (``<app data>/piper-models``), same file pair, no network.
+    Best-effort — any copy failure returns None so the caller falls back to
+    the download path.
+    """
+    pair = bundled_piper_voice_paths(voice_id)
+    if pair is None:
+        return None
+    dest = Path(dest_dir) if dest_dir is not None else models.app_data_dir() / "piper-models"
+    try:
+        dest.mkdir(parents=True, exist_ok=True)
+        onnx_target = dest / pair[0].name
+        shutil.copy2(pair[0], onnx_target)
+        shutil.copy2(pair[1], dest / pair[1].name)
+    except OSError:
+        return None
+    return onnx_target
 
 
 def install_piper(
@@ -75,19 +173,65 @@ def install_piper(
         )
     dest = Path(dest_dir) if dest_dir is not None else managed_piper_dir()
     dest.mkdir(parents=True, exist_ok=True)
-    fd, raw = tempfile.mkstemp(prefix="quill_piper_", suffix=".zip")
-    os.close(fd)
-    tmp_zip = Path(raw)
+    # Offline Edition first: a staged, SHA-256-verified engine zip installs
+    # with zero network access (the same pinned hash gates it here as online).
+    bundled = _bundled_piper_zip()
+    if bundled is not None:
+        if progress is not None:
+            progress(0.5, "Installing Piper from the offline bundle...")
+        _verify_sha256(bundled, PIPER_DOWNLOAD_SHA256)
+        piper_path = _extract_piper_from_zip(bundled, dest)
+        if progress is not None:
+            progress(1.0, "Done.")
+        return piper_path
+    staging = Path(tempfile.mkdtemp(prefix="quill_piper_dl_"))
     try:
-        _download_zip(PIPER_DOWNLOAD_URL, tmp_zip, progress, timeout_seconds)
+        # Asset-first: prefer QUILL's own hosted, SHA-verified copy so a rhasspy
+        # outage or removal can't break Piper; fall back to the upstream release.
+        zip_path = _maybe_fetch_hosted_piper(staging, progress)
+        if zip_path is None:
+            zip_path = staging / "piper_windows_amd64.zip"
+            _download_zip(PIPER_DOWNLOAD_URL, zip_path, progress, timeout_seconds)
+            if progress is not None:
+                progress(0.9, "Verifying download...")
+            _verify_sha256(zip_path, PIPER_DOWNLOAD_SHA256)
+        # (a hosted copy is already SHA-verified by fetch_file against the pinned asset)
         if progress is not None:
             progress(0.92, "Extracting Piper...")
-        piper_path = _extract_piper_from_zip(tmp_zip, dest)
+        piper_path = _extract_piper_from_zip(zip_path, dest)
     finally:
-        tmp_zip.unlink(missing_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
     if progress is not None:
         progress(1.0, "Done.")
     return piper_path
+
+
+def _maybe_fetch_hosted_piper(dest_dir: Path, progress: ProgressCallback | None) -> Path | None:
+    """Return QUILL's own hosted, SHA-verified Piper zip if published, else None.
+
+    QUILL prefers a byte-identical copy on its ``assets-v1`` release over the
+    upstream rhasspy asset, so an upstream outage or removal cannot break Piper.
+    Returns None -- so :func:`install_piper` falls back to ``PIPER_DOWNLOAD_URL``
+    -- whenever no pinned ``piper`` asset is published yet, or any fetch step
+    fails. This mirrors the Vosk self-hosting fallback
+    (:func:`quill.core.speech.engine_install._maybe_fetch_vosk_wheel`).
+
+    To activate it: upload ``piper_windows_amd64.zip`` to the ``assets-v1``
+    release and add a pinned ``piper`` entry to ``release_assets.ASSETS`` (its
+    SHA-256 is :data:`PIPER_DOWNLOAD_SHA256`). Until then this is inert -- no
+    hosted request is attempted -- so there is no wasted round trip.
+    """
+    try:
+        from quill.core.release_assets import ASSETS, fetch_file, is_pinned
+    except Exception:  # noqa: BLE001 - release_assets should import; be defensive
+        return None
+    asset = ASSETS.get("piper")
+    if asset is None or not is_pinned(asset):
+        return None
+    try:
+        return fetch_file("piper", dest_dir, progress=progress, label="Downloading Piper...")
+    except Exception:  # noqa: BLE001 - any hosted-fetch failure -> upstream fallback
+        return None
 
 
 def _download_zip(
@@ -101,7 +245,7 @@ def _download_zip(
     """
     if not url.lower().startswith("https://"):
         raise PiperInstallError("Piper download must use a secure (HTTPS) address.")
-    context = ssl.create_default_context()
+    context = verified_ssl_context()
     request = urllib.request.Request(url, headers={"User-Agent": "QUILL"})
     try:
         with (
@@ -124,6 +268,28 @@ def _download_zip(
         raise
     except Exception as exc:  # noqa: BLE001
         raise PiperInstallError(f"Could not download Piper: {exc}") from exc
+
+
+def _verify_sha256(path: Path, expected: str) -> None:
+    """Reject the download unless its SHA-256 matches the pinned value.
+
+    A mismatch means a corrupted or substituted archive; without this check a
+    bare stream would extract and run whatever it received. Mirrors the
+    integrity guarantee of QUILL's other verified downloads (release_assets).
+    """
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    actual = digest.hexdigest()
+    if actual.lower() != expected.lower():
+        raise PiperInstallError(
+            f"The downloaded Piper archive failed its integrity check "
+            f"(expected {expected[:12]}..., got {actual[:12]}...). "
+            "The download may be corrupted or blocked; please try again."
+        )
 
 
 def _extract_piper_from_zip(zip_path: Path, dest_dir: Path) -> Path:
@@ -160,3 +326,97 @@ def _extract_piper_from_zip(zip_path: Path, dest_dir: Path) -> Path:
     if piper_path is None or not piper_path.exists():
         raise PiperInstallError("piper.exe was not found in the downloaded archive.")
     return piper_path
+
+
+def download_piper_voice(
+    voice_id: str,
+    dest_dir: Path,
+    *,
+    progress: ProgressCallback | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> None:
+    """Fetch a Piper voice (its ``.onnx`` + ``.onnx.json``) into ``dest_dir``.
+
+    Prefers QUILL's own SHA-verified ``assets-v1`` mirror -- no Hugging Face -- and
+    for a voice not yet mirrored falls back to the upstream rhasspy/piper-voices
+    files over verified HTTPS. Raises :class:`PiperInstallError` on failure or
+    cancellation. One shared implementation for the read-aloud UI (main window)
+    and Audio Studio, so the voice download lives in one place.
+    """
+    from quill.core.voice_catalog import piper_voice_download_urls
+
+    urls = piper_voice_download_urls(voice_id)
+    if urls is None:
+        raise PiperInstallError(f"Cannot determine the download URL for voice: {voice_id}")
+
+    # Mirror first: a SHA-verified zip of the two voice files, no Hugging Face.
+    from quill.core.speech import model_mirrors
+
+    mirror = model_mirrors.mirror_for("piper", voice_id)
+    if mirror is not None:
+        from quill.core.release_assets import ReleaseAssetError
+
+        try:
+            model_mirrors.fetch_mirror_archive(
+                mirror,
+                dest_dir,
+                progress=progress,
+                label=f"Downloading Piper voice {voice_id}...",
+            )
+            return
+        except ReleaseAssetError:
+            pass  # not uploaded / transient -- fall back to the upstream files
+
+    onnx_url, json_url = urls
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    _download_piper_voice_files(
+        [
+            (onnx_url, dest_dir / f"{voice_id}.onnx"),
+            (json_url, dest_dir / f"{voice_id}.onnx.json"),
+        ],
+        progress,
+        should_cancel,
+    )
+
+
+def _download_piper_voice_files(
+    pairs: list[tuple[str, Path]],
+    progress: ProgressCallback | None,
+    should_cancel: Callable[[], bool] | None,
+) -> None:
+    """Stream the upstream Piper voice files over verified HTTPS.
+
+    GATE-9 / network-egress: the Piper-voice fallback fetch (used only for a voice
+    that is not on QUILL's mirror). Runs only on an explicit user "download voice"
+    action, refuses non-HTTPS URLs, and uses a verified TLS context.
+    """
+    context = verified_ssl_context()
+    count = len(pairs)
+    for index, (url, path) in enumerate(pairs):
+        if not url.lower().startswith("https://"):
+            raise PiperInstallError("The Piper voice download must use a secure (HTTPS) address.")
+        if should_cancel is not None and should_cancel():
+            raise PiperInstallError("Download cancelled.")
+        request = urllib.request.Request(url, headers={"User-Agent": "QUILL"})
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - HTTPS enforced above
+                request, timeout=120, context=context
+            ) as resp:
+                total = int(resp.headers.get("Content-Length", 0) or 0)
+                got = 0
+                chunks: list[bytes] = []
+                while True:
+                    if should_cancel is not None and should_cancel():
+                        raise PiperInstallError("Download cancelled.")
+                    chunk = resp.read(1 << 16)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    got += len(chunk)
+                    if progress is not None and total:
+                        progress((index + got / total) / count, f"Downloading {path.name}...")
+        except PiperInstallError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - surface a clean message
+            raise PiperInstallError(f"Could not download the Piper voice: {exc}") from exc
+        path.write_bytes(b"".join(chunks))

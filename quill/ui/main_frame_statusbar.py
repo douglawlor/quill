@@ -14,15 +14,30 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 
-from quill.core.braille_statusbar import short_form_from_resolver
+from quill.core.braille_statusbar import page_break_mode, short_form_from_resolver
+from quill.core.document_text import DocumentText
 from quill.core.links import infer_markup_kind
 from quill.core.markdown_sections import current_section_at, parse_heading_blocks
-from quill.core.marks import line_column_for_position
-from quill.core.metrics import compute_document_stats
+from quill.core.navigation import estimate_page_count, estimate_page_for_position, page_position
 from quill.core.palette import load_palette_usage, top_suggestion
 from quill.core.settings import STATUS_BAR_ITEMS, Settings, save_settings
+from quill.core.status_cell_width import ratchet_width
+from quill.core.status_message import (
+    IDLE_MESSAGE,
+    MESSAGE_TTL_SECONDS,
+    StatusMessage,
+    current_message,
+)
 from quill.platform.sr_announce import announce
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, set_accessible_name
+from quill.ui.dpi import dip_size
+from quill.ui.native_status_bar import (
+    native_status_text,
+    show_native_status_bar,
+    sync_native_status_bar,
+)
+from quill.ui.status_bar_role import mark_as_status_cell
+from quill.ui.statusbar_cell_help import STATUS_BAR_CELL_HELP
 
 
 @dataclass(slots=True)
@@ -92,10 +107,35 @@ class StatusBarMixin:
             visible.append("suggestion")
         if "braille" not in visible and self._statusbar_braille_text():
             visible.append("braille")
+        if "page" in visible and self._statusbar_braille_text():
+            visible = [item for item in visible if item != "page"]
+        # Auto-surface the AI engine cell once the user has chosen a non-Native
+        # agentic engine, so the active engine is always visible while in use
+        # without permanently occupying the bar for everyone else.
+        if "ai_engine" not in visible and self._ai_engine_should_autoshow():
+            visible.append("ai_engine")
         if not visible:
             return ["message"]
         if "message" not in visible:
-            visible.insert(0, "message")
+            # At the end, not the front. The message is a replay of something
+            # already spoken rather than a fact you cannot otherwise get, and
+            # it is the one cell whose text has no ceiling -- put first in a
+            # wrapping row it shoves every fixed cell onto a row a reader
+            # scraping the window cannot see.
+            visible.append("message")
+        # The generic Message cell has nothing left to say once another
+        # visible cell already shows the exact same text -- saying it twice
+        # through two different cells is confusing noise, not information.
+        # ``any()`` short-circuits on the first match, so this only computes
+        # every other cell's text in the (rare) case nothing matches.
+        if "message" in visible:
+            message_text = self._statusbar_text_for_item("message")
+            if message_text and any(
+                self._statusbar_text_for_item(item) == message_text
+                for item in visible
+                if item != "message"
+            ):
+                visible = [item for item in visible if item != "message"]
         return visible
 
     def _statusbar_document_stats(self) -> object | None:
@@ -109,9 +149,62 @@ class StatusBarMixin:
         if editor is None:
             return None
         try:
-            return compute_document_stats(editor.GetValue())
+            # The insertion-point probe keeps the #269 dead-widget contract:
+            # document.text would happily produce stats for a destroyed tab,
+            # but a queued caret event on a dead editor must stay empty.
+            editor.GetInsertionPoint()
         except RuntimeError:
             return None
+        # Through the shared DocumentText since 2026-09-18 (bad.md P0.6c, V4).
+        # QUILL had its own half of this -- document.text plus a stats cache
+        # keyed on document.revision, right here -- and QUILL Lite had the whole
+        # object, which is backwards: the small product was ahead on the one
+        # piece of machinery that decides how a big document feels. One object
+        # now, owned by core, answering both.
+        try:
+            return self.doc_text.stats()
+        except RuntimeError:
+            return None
+
+    @property
+    def doc_text(self) -> DocumentText:
+        """The document's text and its cached answers, synced to the revision.
+
+        Lazy and per-frame rather than per-tab: the read closure asks
+        ``_document_text_for_display`` for whatever the *active* document says,
+        so switching tabs needs nothing but the revision check the next reader
+        does anyway. Tab-scoped mirrors would be one per tab to invalidate and
+        one per tab to get wrong.
+        """
+        mirror = getattr(self, "_doc_text_mirror", None)
+        if mirror is None:
+            mirror = DocumentText(self._document_text_for_display)
+            self._doc_text_mirror = mirror
+        mirror.sync_to(getattr(getattr(self, "document", None), "revision", None))
+        return mirror
+
+    def _document_text_for_display(self) -> str:
+        """The document's text for read-only display work, without a marshal.
+
+        ``editor.GetValue()`` on a multiline ``wx.TextCtrl`` copies the whole
+        buffer across the wx/native boundary -- the very cost #1346 budgets.
+        Every text change already lands in ``document.set_text`` synchronously,
+        so for display purposes (statusbar cells, transition checks) the
+        document's own Python string *is* the current text, at zero marshals.
+        Falls back to the editor for stub frames without a document, and to ""
+        for a dead TextCtrl. Display-only by contract: anything that edits or
+        saves must keep reading the control itself.
+        """
+        text = getattr(getattr(self, "document", None), "text", None)
+        if isinstance(text, str):
+            return text
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return ""
+        try:
+            return editor.GetValue()
+        except RuntimeError:
+            return ""
 
     def _statusbar_text_for_item(self, item: str) -> str:
         feature_id = self._STATUS_BAR_FEATURES.get(item)
@@ -135,9 +228,9 @@ class StatusBarMixin:
         notifications = getattr(self, "_notifications", [])
         autosave_interval = getattr(self, "_autosave_interval", timedelta(seconds=30))
         if item == "message":
-            message = getattr(self, "_status_message", "Ready")
+            message = self._live_status_message()
             if message == "Modified" and self._dirty_title_suffix():
-                return "Ready"
+                return IDLE_MESSAGE
             return message
         if item == "file_path":
             document = getattr(self, "document", None)
@@ -153,10 +246,11 @@ class StatusBarMixin:
             # C++ TextCtrl. Treat the dead-widget condition as "no editor"
             # so a queued caret event does not crash the statusbar refresh.
             try:
-                line, column = line_column_for_position(
-                    editor.GetValue(),
-                    editor.GetInsertionPoint(),
-                )
+                # Off the shared mirror's cached line table rather than a fresh
+                # scan: this runs on every caret move, and rebuilding the table
+                # per arrow press is an O(N) pass in the middle of somebody
+                # holding the Down arrow (bad.md P0.6c, V4).
+                line, column = self.doc_text.line_column(editor.GetInsertionPoint())
             except RuntimeError:
                 return ""
             return f"Ln {line}, Col {column}"
@@ -180,7 +274,7 @@ class StatusBarMixin:
             if editor is None:
                 return ""
             try:
-                total = len(editor.GetValue())
+                total = len(self._document_text_for_display())
                 caret = editor.GetInsertionPoint()
             except RuntimeError:
                 return ""
@@ -192,6 +286,11 @@ class StatusBarMixin:
             return "Overwrite" if getattr(self, "_overwrite_mode", False) else "Insert"
         if item == "tab_mode":
             return "Tab char" if getattr(self, "_tab_inserts_literal", False) else "Indent"
+        if item == "document_format":
+            try:
+                return self._document_format_status_text()
+            except Exception:  # noqa: BLE001 - a status cell must never raise
+                return ""
         if item == "selection":
             editor = getattr(self, "editor", None)
             if editor is not None and hasattr(editor, "GetSelection"):
@@ -272,12 +371,16 @@ class StatusBarMixin:
             if getattr(tab, "_language_profile_pinned", False):
                 return f"{name} (set)"
             return name
+        if item == "ai_engine":
+            return self.ai_engine_status_text()
         if item == "braille":
             return self._statusbar_braille_text()
+        if item == "page":
+            return self._statusbar_page_text()
         if item == "sr_name":
             # A11Y live indicator (§8.3): show the detected screen reader name.
-            # Cache the result on the instance to avoid re-running tasklist on
-            # every status-bar refresh.
+            # Cache the result on the instance to avoid re-running the process
+            # snapshot on every status-bar refresh.
             if not hasattr(self, "_sr_name_cache"):
                 try:
                     from quill.platform.windows.sr_detect import detect_screen_reader
@@ -315,6 +418,10 @@ class StatusBarMixin:
             # (see _default_status_bar_hidden); the cell silently returns
             # "" for plain-text documents and for carets not on a heading.
             return self._statusbar_section_heading_text()
+        if item == "radio_player":
+            return self._radio_status_text()
+        if item == "podcast_player":
+            return self._podcast_status_text()
         return ""
 
     def _statusbar_section_heading_text(self) -> str:
@@ -336,7 +443,7 @@ class StatusBarMixin:
         if surface not in {"markdown", "html"}:
             return ""
         try:
-            text = editor.GetValue()
+            text = self._document_text_for_display()
             caret = editor.GetInsertionPoint()
         except RuntimeError:
             return ""
@@ -388,6 +495,31 @@ class StatusBarMixin:
         except (ValueError, TypeError):
             return ""
 
+    def _statusbar_page_text(self) -> str:
+        """Return the page cell's text: exact "N of M" or "N of M (estimated)".
+
+        Exact when the document's text contains at least one form-feed
+        (real page boundaries, e.g. from PDF import); otherwise estimated
+        from word count via ``page_estimate_words_per_page``, marked by the
+        spelled-out "(estimated)" alone -- no "~" tildes, which a screen
+        reader voices as "tilde one of tilde one".
+        """
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return ""
+        try:
+            text = self._document_text_for_display()
+            position = editor.GetInsertionPoint()
+        except RuntimeError:
+            return ""
+        where = page_position(text, position)  # shared with QUILL Lite's Page cell
+        if where is not None:
+            return f"{where[0]} of {where[1]}"
+        words_per_page = getattr(self.settings, "page_estimate_words_per_page", 300)
+        total = estimate_page_count(text, words_per_page)
+        current = estimate_page_for_position(text, position, words_per_page)
+        return f"{current} of {total} (estimated)"
+
     def _active_brf_resolver(self) -> object | None:
         """Return a BraillePositionResolver for the active BRF document, or None.
 
@@ -402,7 +534,7 @@ class StatusBarMixin:
         if meta.get("source_kind") != "brf":
             return None
         text = getattr(document, "text", "") or ""
-        key = (id(document), len(text))
+        key = (id(document), len(text), page_break_mode(getattr(self, "settings", None)))
         cache = getattr(self, "_brf_resolver_cache", None)
         if cache is not None and cache[0] == key:
             return cache[1]
@@ -418,7 +550,7 @@ class StatusBarMixin:
             line_height=int(meta.get("brf_line_height", 25) or 25),
             profile=str(meta.get("brf_profile", "ueb_english")),
         )
-        resolver = BraillePositionResolver(brf_doc)
+        resolver = BraillePositionResolver(brf_doc, mode=key[2])
         self._brf_resolver_cache = (key, resolver)
         return resolver
 
@@ -441,7 +573,7 @@ class StatusBarMixin:
             return value or label
         # These cells show only the value — the label is carried by SetName / announce,
         # not repeated in the visible button text.
-        if item in {"line_column", "mode"}:
+        if item in {"line_column", "mode", "radio_player", "podcast_player"}:
             return value or label
         if value:
             return f"{label}: {value}"
@@ -458,32 +590,7 @@ class StatusBarMixin:
             return (
                 f"{self._STATUS_BAR_LABELS.get(item, item)} is unavailable in the current profile"
             )
-        labels = {
-            "message": "Open notifications",
-            "line_column": "Go to line",
-            "word_count": "Show document statistics",
-            "mode": "Toggle overwrite mode",
-            "tab_mode": "Toggle Tab key mode (QUILL Key + U). Indent or insert a tab character.",
-            "selection": "Show selection statistics",
-            "encoding": "Choose document encoding",
-            "line_endings": "Toggle line endings",
-            "spell_check": "Open spell check dialog",
-            "background_tasks": "Open notifications",
-            "notifications": "Open notifications",
-            "read_aloud": "Start or pause read aloud",
-            "autosave": "Cycle autosave interval",
-            "search_term": "Reopen Find",
-            "file_path": "Open containing folder",
-            "quill_key_mode": "QUILL key mode state",
-            "extend_mode": "Extend selection mode active. Press F7 to toggle.",
-            "abbreviations": "Abbreviation expansion. Press Enter to toggle on/off.",
-            "copy_tray_slots": "Copy tray slots in use. Press Enter to open Copy Tray.",
-            "language_profile": "Active language profile. Press Enter to change language.",
-            "sr_name": "Detected screen reader. Press Enter to re-detect.",
-            "suggestion": "Frequently used command. Press Enter to run it.",
-            "braille": "Braille position. Press Enter for Read Braille Status.",
-        }
-        return labels.get(item, self._STATUS_BAR_LABELS.get(item, item))
+        return STATUS_BAR_CELL_HELP.get(item, self._STATUS_BAR_LABELS.get(item, item))
 
     def _build_statusbar_cells(self) -> None:
         if not hasattr(self, "_wx") or not hasattr(self, "statusbar"):
@@ -503,6 +610,7 @@ class StatusBarMixin:
             )
             button.SetName(self._STATUS_BAR_LABELS.get(item, item))
             button.SetHelpText(self._statusbar_help_text(item))
+            mark_as_status_cell(wx, button)
             button.Bind(wx.EVT_BUTTON, lambda _e, cell=item: self._activate_statusbar_cell(cell))
             button.Bind(
                 wx.EVT_KEY_DOWN, lambda event, cell=item: self._on_statusbar_key_down(event, cell)
@@ -523,7 +631,23 @@ class StatusBarMixin:
                 2,
             )
             self._statusbar_cells.append(_StatusBarCell(item=item, button=button))
-        self.statusbar.Layout()
+        self._relayout_statusbar()
+
+    def _relayout_statusbar(self) -> None:
+        """``statusbar.Layout()``, which is allowed to be impossible (#1483).
+
+        wxMSW batches child repositioning, and a ``Layout()`` landing inside
+        somebody else's batch asserts ``"m_hDWP" ... Shouldn't be called`` and
+        raises into Python -- which is how Ctrl+Tab crashed the editor. Nothing
+        is repaired because there is nothing to repair: the layout that could
+        not run runs on the next refresh, and refreshes are continuous.
+        ``wx.wxAssertionError`` subclasses ``AssertionError``; ``RuntimeError``
+        is the dead C++ wrapper the cell updates above already catch (#269).
+        """
+        try:
+            self.statusbar.Layout()
+        except (RuntimeError, AssertionError):
+            return
 
     def _apply_statusbar_layout(self) -> None:
         if not hasattr(self, "_wx") or not hasattr(self, "statusbar"):
@@ -537,12 +661,87 @@ class StatusBarMixin:
             )
             self._refresh_statusbar()
 
+    #: How long caret movement may leave the statusbar stale (#1346 follow-up).
+    #: The visual line/column cell trailing an arrow-key run by a tenth of a
+    #: second is imperceptible; refreshing it synchronously on every caret
+    #: event was several full-buffer scans per keystroke.
+    _STATUSBAR_COALESCE_MS = 90
+
+    def _schedule_statusbar_refresh(self) -> None:
+        """Refresh the statusbar soon, coalescing a burst of caret activity.
+
+        The restarting-timer pattern of ``_schedule_deferred_edit_work``: each
+        call cancels the pending refresh, so a held arrow key costs one refresh
+        after the caret stops instead of one per repeat. Falls back to an
+        immediate refresh when there is no ``wx.CallLater`` (headless tests).
+        """
+        call_later = getattr(getattr(self, "_wx", None), "CallLater", None)
+        if not callable(call_later):
+            self._refresh_statusbar()
+            return
+        timer = getattr(self, "_statusbar_refresh_timer", None)
+        stop = getattr(timer, "Stop", None)
+        if callable(stop):
+            stop()
+        self._statusbar_refresh_timer = call_later(
+            self._STATUSBAR_COALESCE_MS, self._refresh_statusbar
+        )
+
+    def apply_status_bar_visibility(self) -> None:
+        """Show or hide the whole bar, per ``settings.show_status_bar``.
+
+        QUILL could hide any *cell* and not the bar itself, so a person who
+        wanted Notepad's plain window had to empty a list and still give up a
+        row of the screen to a bar with nothing in it (bad.md G3, P1.10).
+
+        Never raises: the bar is a panel that may be mid-teardown, and a view
+        preference is not worth failing a settings save for.
+        """
+        bar = getattr(self, "statusbar", None)
+        if bar is None:
+            return
+        try:
+            visible = bool(getattr(self.settings, "show_status_bar", True))
+            bar.Show(visible)
+            # The native mirror goes with it: the setting means "no status
+            # bar", not "no status bar unless you ask a different way".
+            show_native_status_bar(getattr(self, "frame", None), visible)
+            self.frame.Layout()
+        except Exception:  # noqa: BLE001 - see the docstring
+            pass
+
+    def toggle_status_bar(self) -> None:
+        """Alt+Shift+B: Notepad's View > Status Bar, and QUILL Lite's chord.
+
+        Spoken, because nothing else will say it. A bar that has just left the
+        window is not a focus change and not a control the reader was on, so
+        the only evidence of the press is the sentence -- and the state is
+        exactly what somebody pressing a toggle needs to hear.
+        """
+        self.settings.show_status_bar = not getattr(self.settings, "show_status_bar", True)
+        self.apply_status_bar_visibility()
+        self._save_settings_quietly()
+        self._announce_result(
+            "Status bar shown" if self.settings.show_status_bar else "Status bar hidden"
+        )
+
     def _refresh_statusbar(self) -> None:
+        """Put every cell's current text in, and let no cell shrink.
+
+        ``_STATUS_BAR_WIDTHS`` is a **floor**, not a width -- set as a width it
+        ellipsised "Line 1, column 1 of 50,000" into 140 pixels, and a screen
+        reader reading the bottom line of the window off the screen read the
+        half that was drawn. Above the floor a cell may grow and may not shrink;
+        :func:`~quill.core.status_cell_width.ratchet_width` is that rule and the
+        two bug reports behind it.
+        """
         if not hasattr(self, "_statusbar_cells") or not hasattr(self, "_wx"):
             self._refresh_legacy_statusbar()
             return
         if not self._statusbar_cells:
             self._build_statusbar_cells()
+        native: list[str] = []
+        message_label = ""
         for cell in self._statusbar_cells:
             item = cell.item
             try:
@@ -550,19 +749,42 @@ class StatusBarMixin:
                 # statusbar was torn down mid-refresh. Treat the dead-widget
                 # condition as a transient skip and let the next refresh
                 # try again (#269).
-                cell.button.SetLabel(self._statusbar_button_label(item))
+                label = self._statusbar_button_label(item)
+                # An unchanged label is left alone: SetLabel fires a name change
+                # through MSAA/UIA, and a reader has no use for hearing that
+                # Encoding was renamed to "UTF-8" again after every keystroke.
+                if cell.button.GetLabel() != label:
+                    cell.button.SetLabel(label)
                 cell.button.SetHelpText(self._statusbar_help_text(item))
                 cell.button.SetName(self._STATUS_BAR_LABELS.get(item, item))
             except RuntimeError:
                 continue
+            if item == "message":
+                # Held back rather than dropped: on the native bar the message
+                # reads last, after the facts somebody pressed the key for.
+                if label and label != IDLE_MESSAGE:
+                    message_label = label
+                # The one cell added with a proportion: the sizer hands it the
+                # slack, so it has no width of its own to hold.
+                continue
+            native.append(label)
             try:
-                cell.button.SetMinSize((-1, -1))
-                if item != "message":
-                    width = self._STATUS_BAR_WIDTHS.get(item, 120)
-                    cell.button.SetMinSize((width, -1))
+                cell.button.InvalidateBestSize()
+                width = ratchet_width(
+                    cell.button.GetBestSize().width,
+                    cell.button.GetMinSize().width,
+                    self._STATUS_BAR_WIDTHS.get(item, 120),
+                )
+                cell.button.SetMinSize((width, -1))
             except Exception:
                 pass
-        self.statusbar.Layout()
+        if message_label:
+            native.append(message_label)
+        # The same text, on the control JAWS's Insert+Page Down actually looks
+        # for. See quill/ui/native_status_bar.py: the role on the panel was
+        # never going to answer a command that searches by window class.
+        sync_native_status_bar(getattr(self, "frame", None), native_status_text(native))
+        self._relayout_statusbar()
 
     def _refresh_legacy_statusbar(self) -> None:
         if not hasattr(self, "statusbar"):
@@ -596,18 +818,21 @@ class StatusBarMixin:
         self._statusbar_cells[target_index].button.SetFocus()
 
     def _on_statusbar_cell_focus(self, event: object, item: str) -> None:
-        index = self._statusbar_cell_index(item)
-        self._active_statusbar_cell_index = index
-        self._announce_statusbar_item(item)
-        event.Skip()
+        """Track which cell has focus. Say nothing (GATE-13, bad.md H3, P1.18).
 
-    def _announce_statusbar_item(self, item: str) -> None:
-        label = self._STATUS_BAR_LABELS.get(item, item)
-        value = self._statusbar_text_for_item(item)
-        if value:
-            announce(f"Status bar, {label}, {value}")
-        else:
-            announce(f"Status bar, {label}")
+        Every cell is a real ``wx.Button`` whose name is the label and whose
+        text is the value, so the screen reader announces "Position, line 3 of
+        20" on its own the moment focus lands. This used to announce the same
+        pair itself, which meant every arrow press along the bar was spoken
+        twice -- and over-announcing is the failure nobody files, because it
+        reads as "this app is chatty" rather than as a bug.
+
+        The region name is not said here either: ``_cycle_region`` says
+        "Focused Status Bar region" for this region exactly as it does for
+        every other one, which is the thing the reader genuinely cannot know.
+        """
+        self._active_statusbar_cell_index = self._statusbar_cell_index(item)
+        event.Skip()
 
     def _on_statusbar_key_down(self, event: object, item: str) -> None:
         wx = self._wx
@@ -624,10 +849,18 @@ class StatusBarMixin:
         if key_code == wx.WXK_END:
             self._focus_statusbar_cell(len(self._statusbar_cells) - 1)
             return
-        if key_code == wx.WXK_ESCAPE:
+        if key_code in (wx.WXK_ESCAPE, wx.WXK_F6):
+            # F6 as well as Escape, and for the reason F6 got you here: a key
+            # that takes you somewhere should take you back. Every other
+            # region-cycling key in Windows works that way, and a listener who
+            # pressed F6 to check a number and pressed it again to get on with
+            # their sentence should not discover that the second press did
+            # nothing. Shift+F6 too -- it is the same journey backwards.
             self.editor.SetFocus()
             self._set_active_region("Editor")
-            announce("Returned to editor")
+            # No "Returned to editor": moving focus into the editor is a focus
+            # move, and a focus move is the first thing on GATE-13's list of
+            # what the screen reader already says (bad.md H3).
             return
         if key_code == wx.WXK_TAB:
             step = -1 if event.ShiftDown() else 1
@@ -656,12 +889,20 @@ class StatusBarMixin:
         if item == "copy_tray_slots":
             self.open_copy_tray()
             return
+        if item == "radio_player":
+            self.radio_toggle_play_pause()
+            return
+        if item == "podcast_player":
+            self.podcast_toggle_play_pause()
+            return
         actions: dict[str, Callable[[], None]] = {
             "message": self.open_notifications,
             "line_column": self.go_to_line,
+            "page": self.go_to_page,
             "word_count": self.show_word_count,
             "mode": self.toggle_overwrite_mode,
             "tab_mode": self.toggle_tab_insert_mode,
+            "document_format": self.switch_document_format,
             "selection": self.show_word_count,
             "encoding": self.choose_document_encoding,
             "line_endings": self.toggle_line_endings,
@@ -673,6 +914,9 @@ class StatusBarMixin:
             "search_term": self.find_text,
             "file_path": self.open_containing_folder,
         }
+        if item == "ai_engine":
+            self.open_ai_engine_switcher()
+            return
         if item == "language_profile":
             self.set_document_language()
             return
@@ -730,6 +974,10 @@ class StatusBarMixin:
                 lambda _e: self.clear_all_notifications(),
                 id=clear_notifications_id,
             )
+        if item == "radio_player":
+            self._build_radio_status_bar_menu(menu)
+        if item == "podcast_player":
+            self._build_podcast_status_bar_menu(menu)
         menu.Append(hide_id, "Hide this item")
         menu.Append(settings_id, "Status bar settings...")
         menu.Bind(wx.EVT_MENU, lambda _e: self._activate_statusbar_cell(item), id=activate_id)
@@ -748,8 +996,64 @@ class StatusBarMixin:
             popup_target = self.statusbar
         self._popup_context_menu(popup_target, menu, event)
 
-    def _set_status(self, message: str) -> None:
+    def _live_status_message(self) -> str:
+        """The message cell's text *now*, which is not always what was set.
+
+        A message describes a moment, and the moment passes: the next edit
+        clears it and so does a minute going by. :mod:`quill.core.status_message`
+        has the rules and the report behind them -- a "String not found" still
+        sitting in the bar after a page of editing.
+
+        A message set without a timestamp never expires, which is the case for
+        a stub frame in a test assigning ``_status_message`` directly: it
+        should read back what it assigned rather than a clock it never set.
+        """
+        text = getattr(self, "_status_message", "") or ""
+        set_at = getattr(self, "_status_message_at", None)
+        if set_at is None:
+            return text or IDLE_MESSAGE
+        return current_message(
+            StatusMessage(text, set_at, getattr(self, "_status_message_revision", 0)),
+            now=time.monotonic(),
+            revision=self._status_document_revision(),
+        )
+
+    def _status_document_revision(self) -> int:
+        """The active document's revision, or 0 for a frame without one."""
+        try:
+            return int(self.doc_text.revision)
+        except Exception:  # noqa: BLE001 - a status cell must never break typing
+            return 0
+
+    def _note_status_message(self, message: str) -> None:
+        """Stamp a message with the clock and revision that will expire it."""
         self._status_message = message
+        self._status_message_at = time.monotonic()
+        self._status_message_revision = self._status_document_revision()
+        wx = getattr(self, "_wx", None)
+        timer = getattr(self, "_status_expiry_timer", None)
+        if timer is not None:
+            try:
+                timer.Stop()
+            except Exception:  # noqa: BLE001
+                pass
+        self._status_expiry_timer = None
+        if wx is None:
+            return
+        # Refresh once the message is due out, because "nothing else is
+        # happening" is exactly the case the timeout exists for. Silent: a
+        # label changing on an unfocused control is what a reader does not
+        # announce (GATE-13).
+        try:
+            self._status_expiry_timer = wx.CallLater(
+                int(MESSAGE_TTL_SECONDS * 1000) + 100, self._schedule_statusbar_refresh
+            )
+        except Exception:  # noqa: BLE001 - a timer is never worth a crash
+            self._status_expiry_timer = None
+
+    def _set_status(self, message: str) -> None:
+        self._note_status_message(message)
+        self._record_spoken(message)
         self._refresh_statusbar()
         throttle_ms = int(getattr(self.settings, "announcement_throttle_ms", 0) or 0)
         if throttle_ms > 0:
@@ -763,9 +1067,17 @@ class StatusBarMixin:
     def _set_status_quiet(self, message: str) -> None:
         """Update the status bar text WITHOUT speaking it. Used for per-keystroke
         states like "Modified" so the screen reader doesn't repeat it on every
-        character (it already echoes what you type)."""
-        self._status_message = message
-        self._refresh_statusbar()
+        character (it already echoes what you type).
+
+        The repaint is coalesced, not immediate (#1346 round 3): this runs on
+        every keystroke, and the synchronous `_refresh_statusbar()` it used to
+        call was the last full statusbar recompute left on the typing path --
+        quietly undoing round 2's removal one line below where round 2 did it.
+        Every caller is a one-shot status message; a ~90 ms display delay on a
+        cell that is deliberately never spoken is imperceptible.
+        """
+        self._note_status_message(message)
+        self._schedule_statusbar_refresh()
 
     def _on_statusbar_context_menu(self, event: object) -> None:
         wx = self._wx
@@ -792,7 +1104,9 @@ class StatusBarMixin:
         wx = self._wx
         item_order = list(self.settings.status_bar_order)
         hidden = set(self.settings.status_bar_hidden)
-        dialog = wx.Dialog(self.frame, title="Status Bar Layout", size=(560, 420))
+        dialog = wx.Dialog(
+            self.frame, title="Status Bar Layout", size=dip_size(self.frame, 560, 420)
+        )
         # Parent every control directly to the dialog and lay them out in one
         # sizer (issue #119 pattern). The previous build parented controls to an
         # inner wx.Panel but added dialog.CreateButtonSizer()'s buttons (children
@@ -826,6 +1140,7 @@ class StatusBarMixin:
             dialog,
             choices=[state_label(item, item not in hidden) for item in item_order],
         )
+        set_accessible_name(chooser, "Status bar items")
         for index, item in enumerate(item_order):
             chooser.Check(index, item not in hidden)
         root.Add(chooser, 1, wx.ALL | wx.EXPAND, 8)

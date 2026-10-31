@@ -1,11 +1,14 @@
-"""Optional in-app install of the Faster Whisper speech engine (#669 follow-up).
+"""Optional in-app install of the Faster Whisper and Vosk speech engines (#669).
 
-QUILL bundles the whisper.cpp and Vosk engines. The higher-throughput Faster
-Whisper engine (CTranslate2-based, GPU-capable) pulls in ~110 MB of binary
-dependencies (CTranslate2, ONNX Runtime, PyAV, tokenizers), so it is not shipped
-in the installer. For users who want it, this installs the engine **on demand**
-into a user-writable folder -- no admin, not in the installer payload -- using the
-runtime's own pip with **binary wheels only** (no arbitrary build steps).
+No offline engine ships in the installer: the tiny default whisper.cpp engine
+downloads on demand (release_assets), and the two heavier optional engines install
+here. Faster Whisper (CTranslate2-based, GPU-capable) pulls in ~110 MB of binary
+dependencies; Vosk (~51 MB, self-contained libvosk) is the very-low-resource
+fallback. Both install **on demand** into a user-writable folder -- no admin, not in
+the installer payload -- using the runtime's own pip with **binary wheels only** (no
+arbitrary build steps). Vosk additionally prefers QUILL's own pinned, SHA-256-verified
+wheel from the assets-v1 release when available (source resilience, PRD 5.25f), falling
+back to PyPI otherwise.
 
 The packages land in ``<app data>/engine-packs/faster-whisper`` and that folder is
 added to ``sys.path`` (see :func:`activate_engine_packs`, called once at startup),
@@ -16,20 +19,40 @@ Safety mirrors the model / ffmpeg download paths: blocked in Safe Mode, on an
 explicit user action only, wheel-only, and the only network touch is the runtime
 pip reaching PyPI (documented in the network-egress audit as a subprocess egress).
 wx-free.
+
+Every ``install_*`` function here (Faster Whisper, Vosk, Kokoro ONNX, MP3
+support) first checks for a bundled offline wheelhouse via
+:func:`_bundled_wheelhouse_dir` -- the Offline Edition installer
+(``--bundle-offline`` in ``scripts/build_windows_distribution.py``) stages each
+engine's full dependency tree as local wheels under ``{app}/wheels/<name>``.
+When present, the pip install resolves entirely from disk
+(``--no-index --find-links``) and never touches PyPI; the "explicit user
+action only" click still gates the install itself, it just no longer needs a
+network connection to complete under the Offline Edition.
 """
 
 from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import os
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from quill.core.error_codes import CodedError
 from quill.core.speech import models
+from quill.core.speech.engine_pack_imports import prefer_pack_module
+from quill.core.speech.patched_wheels import kokoro_find_links
 
 ProgressCallback = Callable[[float, str], None]
+
+# On-demand engine installs run pip in a subprocess; when one fails the only
+# signal a user sees is a transient status-bar line, so the actual pip error
+# (the piece needed to tell a blocked network apart from a dependency problem)
+# is lost. Logging it to quill.log means Help > Save Diagnostics captures it.
+_LOG = logging.getLogger(__name__)
 
 #: Subdirectory under the app-data dir that holds downloadable engine packs.
 ENGINE_PACKS_SUBDIR = "engine-packs"
@@ -56,20 +79,46 @@ _VOSK_REQUIREMENTS: tuple[str, ...] = ("vosk>=0.3.45",)
 _KOKORO_ONNX_PACK = "kokoro-onnx"
 _KOKORO_ONNX_MODULE = "kokoro_onnx"
 
-# kokoro-onnx pulls in onnxruntime as a transitive dep; soundfile handles WAV I/O.
-# Keep these floors in sync with the pyproject ``kokoro`` extra -- the latest
-# kokoro-onnx is 0.5.0 (capped at Python <3.14), so an earlier >=0.9 floor here
-# was unsatisfiable and the on-demand install could never resolve a version.
+# kokoro-onnx pulls in onnxruntime; soundfile handles WAV I/O. Sync with pyproject's
+# ``kokoro``. On 3.14 only patched_wheels.py's wheel fits; the floor blocks 0.4.7.
 _KOKORO_ONNX_REQUIREMENTS: tuple[str, ...] = (
-    "kokoro-onnx>=0.5.0",
+    "kokoro-onnx>=0.6.1",
     "soundfile>=0.14.0",
 )
+
+#: The Nemotron ONNX pack's folder name and import name.
+_NEMOTRON_PACK = "nemotron-onnx"
+_NEMOTRON_MODULE = "sherpa_onnx"
+
+# sherpa-onnx bundles its own native onnxruntime; numpy handles the audio array.
+# Keep in sync with the pyproject ``nemotron`` extra. Wheel-only, no torch/CUDA.
+_NEMOTRON_REQUIREMENTS: tuple[str, ...] = (
+    "sherpa-onnx==1.13.8",  # pinned exactly, as pyproject.toml is (dict.md D-26)
+    "numpy>=1.24.0",
+)
+
+#: On-demand MP3 chapter-marker support (the pyproject ``mp3`` extra). Pure-Python
+#: and small; installed into an engine-pack like the speech engines.
+_MP3_PACK = "mp3-support"
+_MP3_MODULE = "mutagen"
+_MP3_REQUIREMENTS: tuple[str, ...] = ("mutagen>=1.48.1",)
+
+#: yt-dlp (Quill Radio's YouTube stations; the audio-converter URL import,
+#: #1255 §4.6). *Bundled* (pyproject's ``youtube`` extra), so this is the
+#: emergency **repair** path (yt_dlp_update: PyPI wheel, no pip), consent-gated
+#: at the call site. The floor tracks the bundled pin, and a pack copy shadows
+#: the bundled one only when it is newer (pinned by tests).
+_YT_DLP_PACK = "yt-dlp"
+_YT_DLP_MODULE = "yt_dlp"
+_YT_DLP_REQUIREMENTS: tuple[str, ...] = ("yt-dlp>=2026.8.19",)
 
 _INSTALL_TIMEOUT_S = 1800.0
 
 
-class EngineInstallError(Exception):
+class EngineInstallError(CodedError):
     """Raised when the optional speech-engine download/install fails."""
+
+    code = "QUILL-SPEECH-ENGINE-INSTALL"
 
 
 def engine_packs_dir() -> Path:
@@ -92,8 +141,30 @@ def kokoro_onnx_pack_dir() -> Path:
     return engine_packs_dir() / _KOKORO_ONNX_PACK
 
 
+def nemotron_pack_dir() -> Path:
+    """The folder a downloaded Nemotron ONNX engine (sherpa-onnx) is installed into."""
+    return engine_packs_dir() / _NEMOTRON_PACK
+
+
+def mp3_pack_dir() -> Path:
+    """The folder on-demand MP3 support (mutagen) is installed into."""
+    return engine_packs_dir() / _MP3_PACK
+
+
+def yt_dlp_pack_dir() -> Path:
+    """The folder on-demand yt-dlp (URL import) is installed into."""
+    return engine_packs_dir() / _YT_DLP_PACK
+
+
 def _known_pack_dirs() -> tuple[Path, ...]:
-    return (faster_whisper_pack_dir(), vosk_pack_dir(), kokoro_onnx_pack_dir())
+    return (
+        faster_whisper_pack_dir(),
+        vosk_pack_dir(),
+        kokoro_onnx_pack_dir(),
+        nemotron_pack_dir(),
+        mp3_pack_dir(),
+        yt_dlp_pack_dir(),
+    )
 
 
 def activate_engine_packs() -> None:
@@ -105,6 +176,8 @@ def activate_engine_packs() -> None:
     """
     changed = False
     for pack in _known_pack_dirs():
+        if pack == yt_dlp_pack_dir():
+            continue  # a meta-path finder, and only when newer (below)
         try:
             if not pack.is_dir() or not any(pack.iterdir()):
                 continue
@@ -116,6 +189,23 @@ def activate_engine_packs() -> None:
             changed = True
     if changed:
         importlib.invalidate_caches()
+    prefer_engine_pack_yt_dlp()
+
+
+def prefer_engine_pack_yt_dlp() -> bool:
+    """Let a repaired yt-dlp shadow the bundled copy -- only if it is NEWER.
+
+    A pack left by an older repair, after an app update shipped a newer
+    yt-dlp, is ignored. A meta-path finder, not a ``sys.path`` entry, because
+    of the frozen build: see :mod:`quill.core.speech.engine_pack_imports`.
+    """
+    from quill.core.speech.yt_dlp_update import EJS_MODULE, pack_is_newer_than_bundled
+
+    pack = yt_dlp_pack_dir()
+    if not pack_is_newer_than_bundled(pack):
+        return False
+    prefer_pack_module(pack, EJS_MODULE)  # its matching solver, when it brought one
+    return prefer_pack_module(pack, _YT_DLP_MODULE)
 
 
 def faster_whisper_install_supported() -> bool:
@@ -152,6 +242,33 @@ def is_kokoro_onnx_available() -> bool:
     return importlib.util.find_spec(_KOKORO_ONNX_MODULE) is not None
 
 
+def _bundled_wheelhouse_dir(name: str) -> Path | None:
+    """A pre-downloaded pip wheelhouse for engine *name*, shipped with the app.
+
+    The Offline Edition build stages each on-demand engine's full dependency
+    tree (kokoro-onnx's onnxruntime/phonemizer-fork/espeakng-loader/Babel,
+    Faster Whisper's ctranslate2/huggingface_hub, Vosk's cffi, mutagen, ...) as
+    local wheels under ``{app}/wheels/<name>`` (see ``_stage_pip_wheelhouse``
+    in ``scripts/build_windows_distribution.py``), downloaded with the exact
+    same embedded Python that will later install them, so the wheel tags
+    always match. When present, the matching ``install_*`` function below
+    resolves entirely from disk (``pip install --no-index --find-links``)
+    instead of touching PyPI. Returns None when no bundled wheelhouse exists
+    (the regular installer and portable builds never stage one, so this is
+    the common case).
+    """
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if not app_root:
+        return None
+    candidate = Path(app_root) / "wheels" / name
+    try:
+        if candidate.is_dir() and any(candidate.glob("*.whl")):
+            return candidate
+    except OSError:
+        return None
+    return None
+
+
 def install_kokoro_onnx(
     progress: ProgressCallback | None = None,
     *,
@@ -161,13 +278,17 @@ def install_kokoro_onnx(
     timeout_seconds: float = _INSTALL_TIMEOUT_S,
     runner: Callable[..., object] | None = None,
 ) -> Path:
-    """Download and install the Kokoro ONNX engine packages, returning the pack folder.
+    """Install the Kokoro ONNX engine packages, returning the pack folder.
 
     Mirrors :func:`install_faster_whisper` exactly: wheel-only into a
     user-writable engine-pack folder, activated on ``sys.path`` immediately.
     Installs ``kokoro-onnx`` and ``soundfile``; ``onnxruntime`` is a transitive dep.
-    Raises :class:`EngineInstallError` on Safe Mode, unavailable pip, a
-    non-zero pip exit, or if the engine still cannot be imported afterward.
+    When the Offline Edition's bundled wheelhouse is present
+    (:func:`_bundled_wheelhouse_dir`), this resolves entirely from local
+    disk and never touches the network; otherwise it downloads from PyPI like
+    every other on-demand engine. Raises :class:`EngineInstallError` on Safe
+    Mode, unavailable pip, a non-zero pip exit, or if the engine still cannot
+    be imported afterward.
     """
     if os.environ.get("QUILL_SAFE_MODE") == "1":
         raise EngineInstallError("Downloading speech engines is disabled in Safe Mode.")
@@ -184,21 +305,34 @@ def install_kokoro_onnx(
     if not python_exe:
         raise EngineInstallError("Could not locate the Python runtime to install into.")
 
+    # An explicit `requirements` override (tests / advanced callers) is used
+    # as-is, skipping the bundled-wheelhouse lookup, same as the Vosk pattern.
+    wheelhouse = _bundled_wheelhouse_dir("kokoro") if requirements is None else None
+    extra_args = kokoro_find_links(wheelhouse, use_patched=requirements is None)
+
     if progress is not None:
         progress(0.05, "Preparing to install Kokoro ONNX...")
-    command = _pip_command(dest, reqs, python_exe)
+    command = _pip_command(dest, reqs, python_exe, extra_args=extra_args)
     run = runner if runner is not None else _default_runner
+    _LOG.info("Kokoro ONNX install: running %s", " ".join(command))
     if progress is not None:
-        progress(0.15, "Downloading Kokoro ONNX packages (this may take a few minutes)...")
+        label = (
+            "Installing Kokoro ONNX from the offline bundle..."
+            if wheelhouse is not None
+            else "Downloading Kokoro ONNX packages (this may take a few minutes)..."
+        )
+        progress(0.15, label)
 
     try:
         result = run(command, timeout_seconds=timeout_seconds)
     except Exception as exc:  # noqa: BLE001
+        _LOG.exception("Kokoro ONNX install: pip runner could not start")
         raise EngineInstallError(f"Could not run the installer: {exc}") from exc
 
     returncode = int(getattr(result, "returncode", 1))
     if returncode != 0:
         detail = _tail(getattr(result, "stderr", "") or getattr(result, "stdout", ""))
+        _LOG.error("Kokoro ONNX install failed (pip exit %s). Output tail: %s", returncode, detail)
         raise EngineInstallError(
             f"Kokoro ONNX installation failed (pip exit {returncode}). {detail}"
         )
@@ -209,12 +343,241 @@ def install_kokoro_onnx(
         sys.path.insert(0, str(dest))
     importlib.invalidate_caches()
     if not is_kokoro_onnx_available():
+        _LOG.error("Kokoro ONNX installed into %s but the module is not importable", dest)
         raise EngineInstallError(
             "Kokoro ONNX was installed but could not be imported. Try restarting QUILL."
         )
     if progress is not None:
         progress(1.0, "Done.")
     return dest
+
+
+def nemotron_install_supported() -> bool:
+    """True when QUILL can install the Nemotron ONNX engine on demand (pip importable)."""
+    return importlib.util.find_spec("pip") is not None
+
+
+def is_nemotron_available() -> bool:
+    """True when ``sherpa_onnx`` (the Nemotron runtime) is importable (after activation)."""
+    return importlib.util.find_spec(_NEMOTRON_MODULE) is not None
+
+
+def install_nemotron(
+    progress: ProgressCallback | None = None,
+    *,
+    dest_dir: Path | None = None,
+    requirements: Sequence[str] | None = None,
+    python_executable: str | None = None,
+    timeout_seconds: float = _INSTALL_TIMEOUT_S,
+    runner: Callable[..., object] | None = None,
+) -> Path:
+    """Install the Nemotron ONNX engine (sherpa-onnx + numpy), returning the pack folder.
+
+    Mirrors :func:`install_kokoro_onnx` exactly: wheel-only into a user-writable
+    engine-pack folder, activated on ``sys.path`` immediately, preferring the
+    Offline Edition's bundled wheelhouse (:func:`_bundled_wheelhouse_dir`) over
+    PyPI when present. ``sherpa-onnx`` bundles its own native onnxruntime, so no
+    torch/CUDA is ever pulled in. Raises :class:`EngineInstallError` on Safe Mode,
+    unavailable pip, a non-zero pip exit, or if the engine cannot be imported afterward.
+    """
+    if os.environ.get("QUILL_SAFE_MODE") == "1":
+        raise EngineInstallError("Downloading speech engines is disabled in Safe Mode.")
+    if not nemotron_install_supported():
+        raise EngineInstallError(
+            "This build cannot install the Nemotron engine automatically (pip is "
+            "unavailable). Install it from source with: pip install sherpa-onnx numpy"
+        )
+
+    dest = Path(dest_dir) if dest_dir is not None else nemotron_pack_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    reqs = tuple(requirements) if requirements is not None else _NEMOTRON_REQUIREMENTS
+    python_exe = python_executable or sys.executable
+    if not python_exe:
+        raise EngineInstallError("Could not locate the Python runtime to install into.")
+
+    wheelhouse = _bundled_wheelhouse_dir("nemotron") if requirements is None else None
+    extra_args = ("--no-index", "--find-links", str(wheelhouse)) if wheelhouse is not None else ()
+
+    if progress is not None:
+        progress(0.05, "Preparing to install the Nemotron engine...")
+    command = _pip_command(dest, reqs, python_exe, extra_args=extra_args)
+    run = runner if runner is not None else _default_runner
+    _LOG.info("Nemotron install: running %s", " ".join(command))
+    if progress is not None:
+        label = (
+            "Installing the Nemotron engine from the offline bundle..."
+            if wheelhouse is not None
+            else "Downloading the Nemotron engine (sherpa-onnx); this may take a few minutes..."
+        )
+        progress(0.15, label)
+
+    try:
+        result = run(command, timeout_seconds=timeout_seconds)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.exception("Nemotron install: pip runner could not start")
+        raise EngineInstallError(f"Could not run the installer: {exc}") from exc
+
+    returncode = int(getattr(result, "returncode", 1))
+    if returncode != 0:
+        detail = _tail(getattr(result, "stderr", "") or getattr(result, "stdout", ""))
+        _LOG.error("Nemotron install failed (pip exit %s). Output tail: %s", returncode, detail)
+        raise EngineInstallError(
+            f"Nemotron engine installation failed (pip exit {returncode}). {detail}"
+        )
+
+    if progress is not None:
+        progress(0.9, "Finishing up...")
+    if str(dest) not in sys.path:
+        sys.path.insert(0, str(dest))
+    importlib.invalidate_caches()
+    if not is_nemotron_available():
+        _LOG.error("Nemotron installed into %s but sherpa_onnx is not importable", dest)
+        raise EngineInstallError(
+            "The Nemotron engine was installed but could not be imported. Try restarting QUILL."
+        )
+    if progress is not None:
+        progress(1.0, "Done.")
+    return dest
+
+
+def mp3_install_supported() -> bool:
+    """True when QUILL can install MP3 support on demand (pip must be importable)."""
+    return importlib.util.find_spec("pip") is not None
+
+
+def is_mp3_available() -> bool:
+    """True when ``mutagen`` (MP3 chapter markers) is importable (after activation)."""
+    return importlib.util.find_spec(_MP3_MODULE) is not None
+
+
+def install_mp3_support(
+    progress: ProgressCallback | None = None,
+    *,
+    dest_dir: Path | None = None,
+    python_executable: str | None = None,
+    timeout_seconds: float = _INSTALL_TIMEOUT_S,
+    runner: Callable[..., object] | None = None,
+) -> Path:
+    """Install MP3 chapter-marker support (mutagen) wheel-only into an engine-pack.
+
+    Mirrors :func:`install_kokoro_onnx`: pure-Python and small, activated on
+    ``sys.path`` immediately, and prefers the Offline Edition's bundled
+    wheelhouse (:func:`_bundled_wheelhouse_dir`) over PyPI when present.
+    Raises :class:`EngineInstallError` on Safe Mode, unavailable pip, a
+    non-zero pip exit, or if mutagen still cannot import.
+    """
+    if os.environ.get("QUILL_SAFE_MODE") == "1":
+        raise EngineInstallError("Downloading components is disabled in Safe Mode.")
+    if not mp3_install_supported():
+        raise EngineInstallError(
+            "This build cannot install MP3 support automatically (pip is unavailable). "
+            "Install it from source with: pip install mutagen"
+        )
+    dest = Path(dest_dir) if dest_dir is not None else mp3_pack_dir()
+    dest.mkdir(parents=True, exist_ok=True)
+    python_exe = python_executable or sys.executable
+    if not python_exe:
+        raise EngineInstallError("Could not locate the Python runtime to install into.")
+    wheelhouse = _bundled_wheelhouse_dir("mp3")
+    extra_args = ("--no-index", "--find-links", str(wheelhouse)) if wheelhouse is not None else ()
+    if progress is not None:
+        progress(0.05, "Preparing to install MP3 support...")
+    command = _pip_command(dest, _MP3_REQUIREMENTS, python_exe, extra_args=extra_args)
+    run = runner if runner is not None else _default_runner
+    _LOG.info("MP3 support install: running %s", " ".join(command))
+    if progress is not None:
+        label = (
+            "Installing MP3 support from the offline bundle..."
+            if wheelhouse is not None
+            else "Downloading MP3 support (mutagen)..."
+        )
+        progress(0.15, label)
+    try:
+        result = run(command, timeout_seconds=timeout_seconds)
+    except Exception as exc:  # noqa: BLE001
+        _LOG.exception("MP3 support install: pip runner could not start")
+        raise EngineInstallError(f"Could not run the installer: {exc}") from exc
+    returncode = int(getattr(result, "returncode", 1))
+    if returncode != 0:
+        detail = _tail(getattr(result, "stderr", "") or getattr(result, "stdout", ""))
+        _LOG.error("MP3 support install failed (pip exit %s). Output tail: %s", returncode, detail)
+        raise EngineInstallError(
+            f"MP3 support installation failed (pip exit {returncode}). {detail}"
+        )
+    if progress is not None:
+        progress(0.9, "Finishing up...")
+    if str(dest) not in sys.path:
+        sys.path.insert(0, str(dest))
+    importlib.invalidate_caches()
+    if not is_mp3_available():
+        _LOG.error("MP3 support installed into %s but mutagen is not importable", dest)
+        raise EngineInstallError(
+            "MP3 support was installed but could not be imported. Try restarting QUILL."
+        )
+    if progress is not None:
+        progress(1.0, "Done.")
+    return dest
+
+
+def yt_dlp_install_supported() -> bool:
+    """Always True: the repair downloads a wheel directly and needs no pip."""
+    return True
+
+
+def is_yt_dlp_available() -> bool:
+    """True when ``yt_dlp`` is importable, a newer repaired pack preferred."""
+    prefer_engine_pack_yt_dlp()
+    return importlib.util.find_spec(_YT_DLP_MODULE) is not None
+
+
+def install_yt_dlp(
+    progress: ProgressCallback | None = None,
+    *,
+    dest_dir: Path | None = None,
+    fetch: Callable[[str], bytes] | None = None,
+    download: Callable[[str, Path, str], None] | None = None,
+) -> Path:
+    """Repair YouTube support: the newest yt-dlp wheel into its engine pack.
+
+    Emergency repair only -- yt-dlp is bundled -- and an explicit user action
+    (the caller has asked). No pip: :mod:`quill.core.speech.yt_dlp_update`
+    reads PyPI's JSON, verifies the wheel's published SHA-256 and unzips it,
+    so it works in the shared runtime and the portable alike. Raises
+    :class:`EngineInstallError` on Safe Mode or failure, and
+    ``YtDlpAlreadyCurrent`` (a subclass) when nothing needed repairing.
+    """
+    from quill.core.speech import yt_dlp_update
+
+    if os.environ.get("QUILL_SAFE_MODE") == "1":
+        raise EngineInstallError("Downloading components is disabled in Safe Mode.")
+    dest = Path(dest_dir) if dest_dir is not None else yt_dlp_pack_dir()
+    floor = _YT_DLP_REQUIREMENTS[0].split(">=", 1)[1]
+    try:
+        version = yt_dlp_update.repair(
+            dest, floor=floor, progress=progress, fetch=fetch, download=download
+        )
+    except yt_dlp_update.YtDlpAlreadyCurrent as exc:
+        raise YtDlpAlreadyCurrent(str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - one clean, coded message
+        _LOG.error("yt-dlp repair failed: %s", exc)
+        raise EngineInstallError(f"YouTube support could not be repaired. {exc}") from exc
+    _LOG.info("yt-dlp repaired to %s in %s", version, dest)
+    # Forget the copy already imported this session, so the next import
+    # resolves through the finder to the repaired one.
+    for name in [m for m in sys.modules if m.split(".")[0] in ("yt_dlp", "yt_dlp_ejs")]:
+        sys.modules.pop(name, None)
+    importlib.invalidate_caches()
+    if dest_dir is None and not prefer_engine_pack_yt_dlp():
+        raise EngineInstallError("yt-dlp was repaired but is not in use. Try restarting.")
+    if progress is not None:
+        progress(1.0, "Done.")
+    return dest
+
+
+class YtDlpAlreadyCurrent(EngineInstallError):
+    """The YouTube support in use is already the newest release."""
+
+    code = "QUILL-SPEECH-YTDLP-UPTODATE"
 
 
 def install_vosk(
@@ -243,17 +606,53 @@ def install_vosk(
 
     dest = Path(dest_dir) if dest_dir is not None else vosk_pack_dir()
     dest.mkdir(parents=True, exist_ok=True)
-    reqs = tuple(requirements) if requirements is not None else _VOSK_REQUIREMENTS
     python_exe = python_executable or sys.executable
     if not python_exe:
         raise EngineInstallError("Could not locate the Python runtime to install into.")
 
     if progress is not None:
         progress(0.05, "Preparing to install Vosk...")
-    command = _pip_command(dest, reqs, python_exe)
+
+    # An explicit `requirements` override (tests / advanced callers) is used as-is.
+    # Otherwise prefer, in order: the Offline Edition's bundled wheelhouse (fully
+    # offline, no PyPI at all -- and unlike the assets-v1 wheel below, a `pip
+    # download`-built wheelhouse captures vosk's transitive `cffi` dependency too,
+    # so --no-index is safe here in a way it never was for the single pinned
+    # wheel); then QUILL's pinned assets-v1 wheel (source resilience); then PyPI.
+    if requirements is not None:
+        reqs: tuple[str, ...] = tuple(requirements)
+        extra_args: tuple[str, ...] = ()
+    else:
+        wheelhouse = _bundled_wheelhouse_dir("vosk")
+        if wheelhouse is not None:
+            reqs = _VOSK_REQUIREMENTS
+            extra_args = ("--no-index", "--find-links", str(wheelhouse))
+        else:
+            local_wheel = _maybe_fetch_vosk_wheel(progress)
+            if local_wheel is not None:
+                # Pin vosk to our verified wheel by passing the file path as the
+                # requirement -- pip installs exactly that file, not a PyPI-resolved
+                # vosk. We deliberately do NOT pass --no-index: vosk depends on
+                # ``cffi`` at install time, and under --no-index + --target pip has
+                # no source for cffi (not even the base env) without a wheelhouse
+                # to supply it, so it fails with "No matching distribution found
+                # for cffi". Leaving the index enabled lets the dependency resolve
+                # while vosk itself stays pinned to the verified wheel.
+                reqs = (str(local_wheel),)
+                extra_args = ()
+            else:
+                reqs = _VOSK_REQUIREMENTS
+                extra_args = ()
+
+    command = _pip_command(dest, reqs, python_exe, extra_args=extra_args)
     run = runner if runner is not None else _default_runner
     if progress is not None:
-        progress(0.15, "Downloading Vosk (this can take a few minutes)...")
+        label = (
+            "Installing Vosk from the offline bundle..."
+            if "--no-index" in extra_args
+            else "Downloading Vosk (this can take a few minutes)..."
+        )
+        progress(0.15, label)
 
     try:
         result = run(command, timeout_seconds=timeout_seconds)
@@ -279,7 +678,13 @@ def install_vosk(
     return dest
 
 
-def _pip_command(dest: Path, requirements: Sequence[str], python_executable: str) -> list[str]:
+def _pip_command(
+    dest: Path,
+    requirements: Sequence[str],
+    python_executable: str,
+    *,
+    extra_args: Sequence[str] = (),
+) -> list[str]:
     return [
         python_executable,
         "-m",
@@ -287,13 +692,47 @@ def _pip_command(dest: Path, requirements: Sequence[str], python_executable: str
         "install",
         "--no-input",
         "--disable-pip-version-check",
+        "--no-cache-dir",  # nothing in the host's %LOCALAPPDATA%\pip (portable copies)
         "--only-binary=:all:",
         "--no-warn-script-location",
         "--upgrade",
+        *extra_args,
         "--target",
         str(dest),
         *requirements,
     ]
+
+
+def _vosk_download_dir() -> Path:
+    """Where the verified Vosk wheel is staged before ``pip install --no-index``."""
+    return engine_packs_dir() / "_vosk-download"
+
+
+def _maybe_fetch_vosk_wheel(progress: ProgressCallback | None) -> Path | None:
+    """Return a locally-downloaded, SHA-verified Vosk wheel, or ``None`` for PyPI.
+
+    Only the Windows wheel is self-hosted on the assets-v1 release, so non-Windows
+    always returns ``None`` (use PyPI). When the asset is not yet pinned (no uploaded
+    wheel + SHA) or any fetch step fails, this also returns ``None`` so
+    :func:`install_vosk` degrades cleanly to the PyPI path — PyPI is always the backstop.
+    """
+    if sys.platform != "win32":
+        return None
+    try:
+        from quill.core.release_assets import ASSETS, fetch_file, is_pinned
+    except Exception:
+        _LOG.warning("Could not import release_assets for the Vosk wheel fetch.", exc_info=True)
+        return None
+    asset = ASSETS.get("vosk")
+    if asset is None or not is_pinned(asset):
+        return None
+    try:
+        return fetch_file(
+            "vosk", _vosk_download_dir(), progress=progress, label="Downloading Vosk..."
+        )
+    except Exception:
+        _LOG.warning("Vosk wheel fetch from assets-v1 failed; falling back to PyPI.", exc_info=True)
+        return None
 
 
 def install_faster_whisper(
@@ -308,9 +747,11 @@ def install_faster_whisper(
     """Download and install the Faster Whisper engine, returning its pack folder.
 
     Installs wheel-only into a user-writable engine-pack folder and activates it on
-    ``sys.path`` so the engine is immediately importable. Raises
-    :class:`EngineInstallError` on Safe Mode, an unsupported runtime, a non-zero
-    pip exit, or if the engine still cannot be imported afterward.
+    ``sys.path`` so the engine is immediately importable, preferring the Offline
+    Edition's bundled wheelhouse (:func:`_bundled_wheelhouse_dir`) over PyPI when
+    present. Raises :class:`EngineInstallError` on Safe Mode, an unsupported
+    runtime, a non-zero pip exit, or if the engine still cannot be imported
+    afterward.
 
     ``runner`` defaults to :func:`quill.stability.safe_subprocess.run_subprocess_safely`
     (injectable for tests); it must return an object with ``returncode``,
@@ -331,12 +772,20 @@ def install_faster_whisper(
     if not python_exe:
         raise EngineInstallError("Could not locate the Python runtime to install into.")
 
+    wheelhouse = _bundled_wheelhouse_dir("faster-whisper") if requirements is None else None
+    extra_args = ("--no-index", "--find-links", str(wheelhouse)) if wheelhouse is not None else ()
+
     if progress is not None:
         progress(0.05, "Preparing to install Faster Whisper...")
-    command = _pip_command(dest, reqs, python_exe)
+    command = _pip_command(dest, reqs, python_exe, extra_args=extra_args)
     run = runner if runner is not None else _default_runner
     if progress is not None:
-        progress(0.15, "Downloading Faster Whisper (this can take a few minutes)...")
+        label = (
+            "Installing Faster Whisper from the offline bundle..."
+            if wheelhouse is not None
+            else "Downloading Faster Whisper (this can take a few minutes)..."
+        )
+        progress(0.15, label)
 
     try:
         result = run(command, timeout_seconds=timeout_seconds)

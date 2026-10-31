@@ -145,6 +145,55 @@ def test_settings_dictation_policy_round_trip(
     assert loaded.dictation_min_hold_seconds == 0.25
 
 
+def test_settings_vault_config_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    save_settings(
+        Settings(
+            vault_root=str(tmp_path),
+            vault_templates_folder="_templates",
+            vault_daily_pattern="Diary/{{date:YYYY-MM-DD}}.md",
+        )
+    )
+    loaded = load_settings()
+    assert loaded.vault_templates_folder == "_templates"
+    assert loaded.vault_daily_pattern == "Diary/{{date:YYYY-MM-DD}}.md"
+
+
+def test_reading_order_max_pages_round_trip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    save_settings(Settings(reading_order_max_pages=80))
+    assert load_settings().reading_order_max_pages == 80
+
+
+def test_reading_order_max_pages_defaults_to_forty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    assert load_settings().reading_order_max_pages == 40
+
+
+def test_reading_order_max_pages_is_clamped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text('{"reading_order_max_pages": 99999}', encoding="utf-8")
+    assert load_settings().reading_order_max_pages == 500  # clamped to the ceiling
+    (tmp_path / "settings.json").write_text('{"reading_order_max_pages": "oops"}', encoding="utf-8")
+    assert load_settings().reading_order_max_pages == 40  # malformed -> default
+
+
+def test_settings_vault_config_defaults_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    loaded = load_settings()
+    # Empty means "use the convention" (Templates/ and Journal/{{date}}.md).
+    assert loaded.vault_templates_folder == ""
+    assert loaded.vault_daily_pattern == ""
+
+
 def test_settings_clamp_negative_dictation_durations(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -175,6 +224,53 @@ def test_settings_list_studio_settings_defaults_empty_and_ignores_garbage(
         '{"list_studio_settings": "not-a-dict"}', encoding="utf-8"
     )
     assert load_settings().list_studio_settings == {}
+
+
+def test_content_handoff_format_defaults_and_round_trips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    assert Settings().content_handoff_format == "text"
+    save_settings(Settings(content_handoff_format="html"))
+    assert load_settings().content_handoff_format == "html"
+
+
+def test_content_handoff_format_invalid_value_falls_back_to_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text(
+        '{"content_handoff_format": "not-a-format"}', encoding="utf-8"
+    )
+    assert load_settings().content_handoff_format == "text"
+
+
+def test_auto_outline_style_defaults_and_round_trips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    assert Settings().auto_outline_style == "numeric"
+    save_settings(Settings(auto_outline_style="legal"))
+    assert load_settings().auto_outline_style == "legal"
+
+
+def test_auto_outline_style_invalid_value_falls_back_to_numeric(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text(
+        '{"auto_outline_style": "not-a-style"}', encoding="utf-8"
+    )
+    assert load_settings().auto_outline_style == "numeric"
+
+
+def test_clip_library_autocapture_defaults_off_and_round_trips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    assert Settings().clip_library_autocapture is False
+    save_settings(Settings(clip_library_autocapture=True))
+    assert load_settings().clip_library_autocapture is True
 
 
 def test_settings_persists_tts_normalization(
@@ -210,6 +306,17 @@ def test_settings_persists_batch_speech_chapter_fields(
     assert loaded.batch_speech_chapter_sound_volume == 60
     assert loaded.batch_speech_article_gap_ms == 2500
     assert loaded.batch_speech_intro_section_title == "Lead"
+
+
+def test_voice_preview_announce_generating_defaults_true_and_round_trips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    assert Settings().voice_preview_announce_generating is True
+
+    save_settings(Settings(voice_preview_announce_generating=False))
+    loaded = load_settings()
+    assert loaded.voice_preview_announce_generating is False
 
 
 def test_settings_batch_speech_chapter_defaults_and_clamps(
@@ -248,6 +355,37 @@ def test_settings_clamps_indent_size(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     loaded = load_settings()
     assert loaded.indent_size == 1
     assert loaded.indent_with_tabs is True
+
+
+def test_settings_speech_provider_vosk_migrates_to_the_default_with_a_notice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Vosk is no dictation engine since 2026-10-13 (it stays as the podcast
+    # chapter engine). A saved choice follows the default ladder, and is never
+    # dropped silently: the one-time dictation notice is left pending.
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text('{"speech_provider":"vosk"}', encoding="utf-8")
+    loaded = load_settings()
+    assert loaded.speech_provider == ""
+    assert loaded.vosk_retirement_notice == "dictation"
+
+
+def test_settings_speech_provider_rejects_unknown_value(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text('{"speech_provider":"bogus"}', encoding="utf-8")
+    loaded = load_settings()
+    assert loaded.speech_provider == ""
+
+
+def test_settings_speech_default_model_id_round_trips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    save_settings(Settings(speech_default_model_id="small"))
+    loaded = load_settings()
+    assert loaded.speech_default_model_id == "small"
 
 
 def test_settings_normalize_status_bar_layout(
@@ -509,7 +647,7 @@ def test_settings_normalize_invalid_shell_file_types(
         encoding="utf-8",
     )
     loaded = load_settings()
-    assert loaded.shell_file_types == "images_pdf"
+    assert loaded.shell_file_types == "images_pdf_docs"
 
 
 def test_settings_defaults_announcement_startup_tips_to_off(
@@ -580,6 +718,17 @@ def test_settings_round_trip_announce_screen_reader_detected(
     save_settings(Settings(announce_screen_reader_detected=True))
     loaded = load_settings()
     assert loaded.announce_screen_reader_detected is True
+
+
+def test_settings_round_trip_upgrade_prompt_kokoro_onnx(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # #kokoro-onnx: the one-time startup prompt persists that it has been shown
+    # so it never nags across launches. Defaults off; survives a round trip.
+    assert Settings().upgrade_prompt_kokoro_onnx is False
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    save_settings(Settings(upgrade_prompt_kokoro_onnx=True))
+    assert load_settings().upgrade_prompt_kokoro_onnx is True
 
 
 def test_verbosity_speech_setting_is_registered() -> None:
@@ -766,10 +915,89 @@ def test_corrupt_settings_file_is_quarantined_then_defaults(
     assert backups[0].read_text(encoding="utf-8") == "{ this is not valid json"
 
 
-def test_first_line_as_title_defaults_off_and_round_trips(
+def test_auto_check_updates_defaults_on_for_safety_advisories() -> None:
+    # Signed safety advisories (the remote feature kill switch) ride the
+    # update check, so delivery must be on by default; an explicit stored
+    # False is still honored by the loader.
+    assert Settings().auto_check_updates is True
+
+
+def test_restore_points_settings_default_and_clamp(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    assert Settings().first_line_as_title is False
+    assert Settings().restore_points_enabled is True
+    assert Settings().restore_points_max_mb == 200
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
-    save_settings(Settings(first_line_as_title=True))
-    assert load_settings().first_line_as_title is True
+    save_settings(Settings(restore_points_enabled=False, restore_points_max_mb=9999999))
+    loaded = load_settings()
+    assert loaded.restore_points_enabled is False
+    assert loaded.restore_points_max_mb == 5000  # clamped to the sane ceiling
+
+
+def test_docx_engine_settings_default_and_round_trip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # "auto" keeps QUILL's default chains (MarkItDown-first read,
+    # python-docx-first write); explicit engines survive the round trip and
+    # unknown stored values fall back to auto rather than crash.
+    assert Settings().docx_read_engine == "auto"
+    assert Settings().docx_write_engine == "auto"
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    save_settings(Settings(docx_read_engine="pandoc", docx_write_engine="pandoc"))
+    loaded = load_settings()
+    assert loaded.docx_read_engine == "pandoc"
+    assert loaded.docx_write_engine == "pandoc"
+    save_settings(Settings(docx_read_engine="bogus", docx_write_engine="bogus"))
+    loaded = load_settings()
+    assert loaded.docx_read_engine == "auto"
+    assert loaded.docx_write_engine == "auto"
+
+
+def test_first_line_as_title_defaults_on_and_round_trips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # On by default: it only ever pre-fills the name for an *untitled* document,
+    # turning a blank Save As name box into a meaningful proposal.
+    assert Settings().first_line_as_title is True
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    # An explicit opt-out survives the round trip; the default only applies
+    # when the key is absent.
+    save_settings(Settings(first_line_as_title=False))
+    assert load_settings().first_line_as_title is False
+
+
+def test_page_estimate_words_per_page_defaults_to_300() -> None:
+    assert Settings().page_estimate_words_per_page == 300
+
+
+def test_page_estimate_words_per_page_clamps_on_load(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text(
+        '{"page_estimate_words_per_page": 5000}', encoding="utf-8"
+    )
+    loaded = load_settings()
+    assert loaded.page_estimate_words_per_page == 600
+
+
+def test_page_estimate_words_per_page_invalid_value_falls_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    (tmp_path / "settings.json").write_text(
+        '{"page_estimate_words_per_page": "not a number"}', encoding="utf-8"
+    )
+    loaded = load_settings()
+    assert loaded.page_estimate_words_per_page == 300
+
+
+def test_page_is_a_status_bar_item_right_after_line_column() -> None:
+    from quill.core.settings_normalizers import STATUS_BAR_ITEMS as _ITEMS
+
+    assert "page" in _ITEMS
+    assert _ITEMS.index("page") == _ITEMS.index("line_column") + 1
+
+
+def test_page_is_visible_by_default() -> None:
+    assert "page" not in Settings().status_bar_hidden

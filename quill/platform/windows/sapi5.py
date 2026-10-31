@@ -31,6 +31,26 @@ try:  # comtypes is Windows-only and is a direct dependency on Windows.
 except Exception:  # noqa: BLE001 - any import failure means SAPI is unavailable
     _cc = None
 
+
+def _redirect_comtypes_gen_dir() -> None:
+    """Point comtypes' generated-wrapper cache at a writable per-user folder.
+
+    On first ``CreateObject("SAPI.SpVoice")`` comtypes generates Python wrappers
+    for the SAPI type library and writes them to disk. Its default location is
+    inside the comtypes package, which is read-only under a per-machine install
+    (e.g. Program Files) -- the write fails and SAPI init raises, so QUILL falls
+    back to the screen reader for no good reason. Thin wrapper over the shared
+    ``comtypes_setup`` redirect (every comtypes call site in QUILL calls it, not
+    just this one -- see that module's docstring for why relying on this
+    function alone, via import-order side effect, was not robust enough).
+    """
+    from quill.platform.windows.comtypes_setup import ensure_comtypes_gen_dir_redirected
+
+    ensure_comtypes_gen_dir_redirected()
+
+
+_redirect_comtypes_gen_dir()
+
 # SpFileStream.Open mode and SpeechVoiceSpeakFlags / SpeechStreamFileMode.
 _SSFM_CREATE_FOR_WRITE = 3
 _SVSF_IS_XML = 8  # speak the argument as SSML

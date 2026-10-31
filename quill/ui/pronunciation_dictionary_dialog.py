@@ -30,8 +30,10 @@ from quill.core.speech.pronunciation import (
 from quill.ui.dialog_contract import (
     apply_listbox_activation,
     apply_modal_ids,
+    set_accessible_name,
     show_message_box,
 )
+from quill.ui.dpi import dip_size
 
 
 class PronunciationEntryDialog:
@@ -53,8 +55,9 @@ class PronunciationEntryDialog:
         self.dialog = wx.Dialog(parent, title="Pronunciation Entry")
         root = wx.BoxSizer(wx.VERTICAL)
 
-        root.Add(wx.StaticText(self.dialog, label="&Word or phrase:"), 0, wx.ALL, 6)
+        root.Add(wx.StaticText(self.dialog, label="Word or &phrase:"), 0, wx.ALL, 6)
         self._term = wx.TextCtrl(self.dialog, value=entry.term)
+        set_accessible_name(self._term, "Word or phrase")
         root.Add(self._term, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 6)
 
         # SSML entries keep their markup in `replacement`; the visible field shows
@@ -65,9 +68,10 @@ class PronunciationEntryDialog:
         spoken_value = entry.plain_fallback if self._mode == "ssml" else entry.replacement
 
         root.Add(
-            wx.StaticText(self.dialog, label="&Spoken as (spell it how it sounds):"), 0, wx.ALL, 6
+            wx.StaticText(self.dialog, label="Spoken as (spell &it how it sounds):"), 0, wx.ALL, 6
         )
         self._spoken = wx.TextCtrl(self.dialog, value=spoken_value)
+        set_accessible_name(self._spoken, "Spoken as, spell it how it sounds")
         root.Add(self._spoken, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 6)
 
         ssml_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -105,7 +109,7 @@ class PronunciationEntryDialog:
             root.Add(hear, 0, wx.LEFT | wx.BOTTOM, 6)
 
         btns = wx.BoxSizer(wx.HORIZONTAL)
-        ok = wx.Button(self.dialog, id=wx.ID_OK, label="&Save")
+        ok = wx.Button(self.dialog, id=wx.ID_OK, label="S&ave")
         cancel = wx.Button(self.dialog, id=wx.ID_CANCEL)
         ok.Bind(wx.EVT_BUTTON, self._on_ok)
         btns.AddStretchSpacer()
@@ -213,7 +217,7 @@ class PronunciationDictionaryDialog:
             title="Pronunciation Dictionaries",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(640, 480))
+        self.dialog.SetMinSize(dip_size(self.dialog, 640, 480))
 
         # Load a working copy; enabled flag is seeded from the saved selection.
         self._dicts: list[PronunciationDictionary] = load_dictionaries(project_dir)
@@ -229,6 +233,7 @@ class PronunciationDictionaryDialog:
         left = wx.BoxSizer(wx.VERTICAL)
         left.Add(wx.StaticText(self.dialog, label="&Dictionaries:"), 0, wx.BOTTOM, 4)
         self._dict_list = wx.ListBox(self.dialog, choices=[])
+        set_accessible_name(self._dict_list, "Dictionaries")
         self._dict_list.Bind(wx.EVT_LISTBOX, lambda _e: self._on_select_dict())
         left.Add(self._dict_list, 1, wx.EXPAND)
         self._enabled = wx.CheckBox(self.dialog, label="&Enabled for export")
@@ -250,6 +255,7 @@ class PronunciationDictionaryDialog:
         right = wx.BoxSizer(wx.VERTICAL)
         right.Add(wx.StaticText(self.dialog, label="&Words in this dictionary:"), 0, wx.BOTTOM, 4)
         self._entry_list = wx.ListBox(self.dialog, choices=[])
+        set_accessible_name(self._entry_list, "Words in this dictionary")
         apply_listbox_activation(self._entry_list, lambda _e: self._on_edit_entry(None))
         right.Add(self._entry_list, 1, wx.EXPAND)
         e_btns = wx.BoxSizer(wx.HORIZONTAL)
@@ -408,23 +414,41 @@ class PronunciationDictionaryDialog:
     def enabled_ids(self) -> list[str]:
         return [d.id for d in self._dicts if d.enabled]
 
-    def save_all(self) -> None:
+    def save_all(self) -> list[str]:
+        """Persist all changes; return the names of any that failed to save.
+
+        The user closed with OK expecting their edits saved, so a per-dictionary
+        write failure must be surfaced (see ``show``) rather than silently losing
+        their pronunciation changes.
+        """
+        failures: list[str] = []
         for d in self._deleted:
             try:
                 delete_dictionary(d, self._project_dir)
             except OSError:
-                pass
+                failures.append(getattr(d, "name", getattr(d, "id", "a dictionary")))
         for d in self._dicts:
             try:
                 save_dictionary(d, self._project_dir if d.scope == "project" else None)
             except (OSError, ValueError):
-                pass
+                failures.append(getattr(d, "name", getattr(d, "id", "a dictionary")))
+        return failures
 
     def show(self, show_modal_dialog: Any) -> bool:
         code = show_modal_dialog(self.dialog, "Pronunciation Dictionaries")
         saved = code == self._wx.ID_OK
         if saved:
-            self.save_all()
+            failures = self.save_all()
+            if failures:
+                show_message_box(
+                    "Some pronunciation dictionaries could not be saved:\n"
+                    + "\n".join(f"  - {name}" for name in failures)
+                    + "\n\nYour changes to those may be lost. Check the folder "
+                    "permissions and try again.",
+                    "Pronunciation Dictionaries",
+                    self._wx.OK | self._wx.ICON_WARNING,
+                    self.dialog,
+                )
         ids = self.enabled_ids()
         self.dialog.Destroy()
         self._saved_enabled_ids = ids

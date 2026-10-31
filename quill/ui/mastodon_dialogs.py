@@ -20,6 +20,30 @@ import webbrowser
 from quill.core.mastodon import accounts as account_store
 from quill.core.mastodon import client
 from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
+from quill.ui.dpi import dip_size
+
+#: Post language presets offered in the compose dialog (#922). The first entry
+#: is the "let the instance decide" default (no language field sent). The rest
+#: are common ISO 639-1 two-letter codes; Mastodon files a post under the chosen
+#: language's preset so a post written in one language is not mis-shelved under
+#: the account's default. Kept short on purpose -- the field is a hint, not a
+#: full locale picker.
+LANGUAGES: tuple[tuple[str | None, str], ...] = (
+    (None, "Default (instance)"),
+    ("en", "English"),
+    ("it", "Italian"),
+    ("fr", "French"),
+    ("es", "Spanish"),
+    ("de", "German"),
+    ("pt", "Portuguese"),
+    ("nl", "Dutch"),
+    ("pl", "Polish"),
+    ("ru", "Russian"),
+    ("ja", "Japanese"),
+    ("zh", "Chinese"),
+    ("ar", "Arabic"),
+    ("hi", "Hindi"),
+)
 
 
 class MastodonComposeDialog:
@@ -33,20 +57,28 @@ class MastodonComposeDialog:
         accounts: list[account_store.MastodonAccount],
         default_account_id: str | None,
         announce=None,
+        spell_review=None,
     ) -> None:
         import wx
 
         self._wx = wx
         self._announce = announce or (lambda _m: None)
+        # Optional callable(text_ctrl) -> None that runs the F7 spelling review
+        # over the post text. Provided by MainFrame; None in tests / headless use.
+        self._spell_review = spell_review
         self._accounts = accounts
         self.posted_url: str | None = None
+        # Per-instance character limit for the selected account (#922). Starts at
+        # the classic default; _refresh_character_limit updates it from the
+        # instance's own /api/v2/instance when an account is selected.
+        self._character_limit = client.DEFAULT_CHARACTER_LIMIT
 
         self.dialog = wx.Dialog(
             parent,
             title="Post to Mastodon",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((560, 470))
+        self.dialog.SetSize(dip_size(self.dialog, 560, 520))
         root = wx.BoxSizer(wx.VERTICAL)
 
         root.Add(wx.StaticText(self.dialog, label="Post from &account:"), 0, wx.LEFT | wx.TOP, 12)
@@ -65,13 +97,32 @@ class MastodonComposeDialog:
         self._count = wx.StaticText(self.dialog, label="")
         root.Add(self._count, 0, wx.LEFT | wx.BOTTOM, 12)
 
-        root.Add(wx.StaticText(self.dialog, label="&Visibility:"), 0, wx.LEFT, 12)
+        # On-demand spell check (F7 or the button), not only the per-account
+        # check-before-post: run the shared review, which speaks the misspelled
+        # word first and never over-talks.
+        spell_button = wx.Button(self.dialog, label="Check &Spelling (F7)")
+        spell_button.SetName("Check the spelling of the post")
+        spell_button.Bind(wx.EVT_BUTTON, self._on_spell_check)
+        root.Add(spell_button, 0, wx.LEFT | wx.BOTTOM, 12)
+
+        # Visibility and language sit side by side so the dialog does not grow
+        # taller just for the new chooser (#922).
+        options_row = wx.BoxSizer(wx.HORIZONTAL)
+
+        options_row.Add(wx.StaticText(self.dialog, label="&Visibility:"), 0, wx.RIGHT, 8)
         self._visibility = wx.Choice(
             self.dialog, choices=[label for _, label in client.VISIBILITIES]
         )
         self._visibility.SetName("Visibility")
         self._visibility.SetSelection(0)
-        root.Add(self._visibility, 0, wx.EXPAND | wx.ALL, 12)
+        options_row.Add(self._visibility, 1, wx.EXPAND | wx.RIGHT, 12)
+
+        options_row.Add(wx.StaticText(self.dialog, label="&Language:"), 0, wx.RIGHT, 8)
+        self._language = wx.Choice(self.dialog, choices=[label for _, label in LANGUAGES])
+        self._language.SetName("Post language")
+        self._language.SetSelection(0)
+        options_row.Add(self._language, 1, wx.EXPAND)
+        root.Add(options_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
 
         buttons = wx.StdDialogButtonSizer()
         post_button = wx.Button(self.dialog, wx.ID_OK, "&Post")
@@ -91,21 +142,64 @@ class MastodonComposeDialog:
             escape_id=wx.ID_CANCEL,
         )
         self._text.Bind(wx.EVT_TEXT, lambda _e: self._update_count())
+        self._account_choice.Bind(wx.EVT_CHOICE, lambda _e: self._refresh_character_limit())
         post_button.Bind(wx.EVT_BUTTON, self._on_post)
-        self._update_count()
+        # F7 runs the spelling review from anywhere in the dialog.
+        spell_accel_id = wx.NewIdRef()
+        self.dialog.Bind(wx.EVT_MENU, self._on_spell_check, id=spell_accel_id)
+        self.dialog.SetAcceleratorTable(
+            wx.AcceleratorTable([wx.AcceleratorEntry(wx.ACCEL_NORMAL, wx.WXK_F7, spell_accel_id)])
+        )
+        # Fetch the selected account's real per-instance limit now, then update
+        # the counter against it. Best-effort: a failed lookup keeps the default.
+        self._refresh_character_limit()
         self._text.SetInsertionPointEnd()
         self._text.SetFocus()
 
+    def _refresh_character_limit(self) -> None:
+        """Look up the selected account's instance character limit (#922).
+
+        Runs a one-time unauthenticated GET /api/v2/instance (cached per instance
+        for the process lifetime) under a busy cursor so the live counter
+        reflects e.g. poliversity.it's 9999 instead of the classic 500. Any
+        failure leaves the default in place and never blocks posting.
+        """
+        account = self._selected_account()
+        if account is None:
+            self._character_limit = client.DEFAULT_CHARACTER_LIMIT
+            self._update_count()
+            return
+        try:
+            with self._wx.BusyCursor():
+                self._character_limit = client.instance_character_limit(account.instance_url)
+        except client.MastodonError:
+            self._character_limit = client.DEFAULT_CHARACTER_LIMIT
+        self._update_count()
+
     def _update_count(self) -> None:
         used = len(self._text.GetValue())
-        remaining = client.DEFAULT_CHARACTER_LIMIT - used
-        self._count.SetLabel(f"{used} characters, {remaining} remaining")
+        remaining = self._character_limit - used
+        limit = self._character_limit
+        self._count.SetLabel(f"{used} characters, {remaining} remaining (limit {limit})")
 
     def _selected_account(self) -> account_store.MastodonAccount | None:
         if not self._accounts:
             return None
         index = max(0, self._account_choice.GetSelection())
         return self._accounts[index]
+
+    def _on_spell_check(self, _event: object) -> None:
+        """F7 / Check Spelling: run the shared spelling review over the post text
+        now. The review speaks the misspelled word first, then spells it, and
+        cancels pending speech so it never over-talks."""
+        if self._spell_review is None:
+            self._announce("Spell check is not available here.")
+            return
+        if not self._text.GetValue().strip():
+            self._announce("Nothing to check: the post is empty.")
+            self._text.SetFocus()
+            return
+        self._spell_review(self._text)
 
     def _on_post(self, _event: object) -> None:
         text = self._text.GetValue()
@@ -117,14 +211,30 @@ class MastodonComposeDialog:
         if account is None:
             self._announce("Add an account first.")
             return
+        # Proofread before sending when this account opts in (off by default).
+        # The review edits the post text in place; re-read it afterwards.
+        if account.spell_check_before_post and self._spell_review is not None:
+            self._spell_review(self._text)
+            text = self._text.GetValue()
+            if not text.strip():
+                self._announce("Cannot post: the text is empty.")
+                self._text.SetFocus()
+                return
         visibility = client.VISIBILITIES[max(0, self._visibility.GetSelection())][0]
+        # None (the first "Default (instance)" entry) omits the language field so
+        # the instance keeps its default; any other choice sends the ISO 639-1
+        # code so a post written in one language is not mis-shelved under the
+        # account's default language (#922).
+        language = LANGUAGES[max(0, self._language.GetSelection())][0]
         token = account_store.access_token_for(account.id)
         if not token:
             self._announce("That account is not signed in. Remove and re-add it.")
             return
         try:
             with self._wx.BusyCursor():
-                self.posted_url = client.post_status(account.instance_url, token, text, visibility)
+                self.posted_url = client.post_status(
+                    account.instance_url, token, text, visibility, language=language
+                )
         except client.MastodonError as error:
             self._announce(f"Could not post: {error}")
             return
@@ -149,12 +259,18 @@ class MastodonAccountsDialog:
             title="Mastodon Accounts",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((520, 360))
+        self.dialog.SetSize(dip_size(self.dialog, 520, 360))
         root = wx.BoxSizer(wx.VERTICAL)
-        root.Add(wx.StaticText(self.dialog, label="&Accounts:"), 0, wx.LEFT | wx.TOP, 12)
+        root.Add(wx.StaticText(self.dialog, label="Acc&ounts:"), 0, wx.LEFT | wx.TOP, 12)
         self._list = wx.ListBox(self.dialog)
         self._list.SetName("Mastodon accounts")
         root.Add(self._list, 1, wx.EXPAND | wx.ALL, 12)
+
+        self._spellcheck_check = wx.CheckBox(
+            self.dialog, label="Spell-check &posts before sending (selected account)"
+        )
+        self._spellcheck_check.SetName("Spell-check posts before sending")
+        root.Add(self._spellcheck_check, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
 
         row = wx.BoxSizer(wx.HORIZONTAL)
         add_button = wx.Button(self.dialog, label="&Add Account...")
@@ -181,14 +297,36 @@ class MastodonAccountsDialog:
         self._remove_button.Bind(wx.EVT_BUTTON, lambda _e: self._on_remove())
         self._default_button.Bind(wx.EVT_BUTTON, lambda _e: self._on_set_default())
         self._list.Bind(wx.EVT_LISTBOX, lambda _e: self._update_button_states())
+        self._spellcheck_check.Bind(wx.EVT_CHECKBOX, lambda _e: self._on_toggle_spellcheck())
         self._refresh()
         self._list.SetFocus()
 
     def _update_button_states(self) -> None:
-        """Enable Remove / Set as Default only when an account is selected."""
-        has_selection = self._selected_id() is not None
+        """Enable Remove / Set as Default and sync the spell-check box to selection."""
+        account = self._selected_account_obj()
+        has_selection = account is not None
         self._remove_button.Enable(has_selection)
         self._default_button.Enable(has_selection)
+        # Read the flag fresh from the store so it is always correct regardless of
+        # toggles, and never resets the list selection (unlike _refresh).
+        self._spellcheck_check.Enable(has_selection)
+        self._spellcheck_check.SetValue(bool(account and account.spell_check_before_post))
+
+    def _selected_account_obj(self) -> account_store.MastodonAccount | None:
+        account_id = self._selected_id()
+        return account_store.get_account(account_id) if account_id else None
+
+    def _on_toggle_spellcheck(self) -> None:
+        account_id = self._selected_id()
+        if account_id is None:
+            return
+        enabled = bool(self._spellcheck_check.GetValue())
+        account_store.set_spell_check_before_post(account_id, enabled)
+        self._announce(
+            "Spell-check before posting turned on for this account."
+            if enabled
+            else "Spell-check before posting turned off for this account."
+        )
 
     def _refresh(self) -> None:
         accounts = account_store.list_accounts()

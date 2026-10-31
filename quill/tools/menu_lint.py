@@ -56,6 +56,22 @@ _MENU_PATH = _REPO_ROOT / "quill" / "ui" / "main_frame_menu.py"
 # predate the escape-hatch mechanism but have equivalent justification.
 _CTRL_ALT_DOCUMENTED: frozenset[str] = frozenset({
     "view.send_to_tray",  # legacy Ctrl+Alt+T allowance; now a QUILL-key chord
+    # The guided tutorials (2026-08-28). Ctrl+Alt+F1 is the family key: the same
+    # chord opens the lessons in Quill Radio, QUILL Cast and Quill Weather, and
+    # keeping it identical across the four apps is worth more than avoiding the
+    # Ctrl+Alt class here. It is also outside what the policy is actually about:
+    # the hostility of Ctrl+Alt is AltGr on European layouts (a *character* key
+    # problem) and the screen readers' Ctrl+Alt+letter/arrow commands. F1 is
+    # neither -- no default JAWS or NVDA command uses Ctrl+Alt+F1, and AltGr
+    # cannot produce a function key.
+    "help.tutorials",  # Ctrl+Alt+F1
+    # Get Help from Support (2026-09-11), one key along from Tutorials and
+    # the family key for the same reason: every app answers it with the same
+    # door to a person who can reply, and a support key that differs per app
+    # is one nobody remembers on the day they need it. Same exemption as
+    # above -- a function key is neither an AltGr character nor a default
+    # JAWS or NVDA command.
+    "help.report_bug",  # Ctrl+Alt+F2
     "view.toggle_tab_control",  # legacy Ctrl+Alt+Shift+T allowance; now a QUILL-key chord
     # EdSharp port: heading shortcuts override NVDA switch-to-synth-N (Ctrl+Alt+1..6).
     "format.heading_1",
@@ -64,9 +80,29 @@ _CTRL_ALT_DOCUMENTED: frozenset[str] = frozenset({
     "format.heading_4",
     "format.heading_5",
     "format.heading_6",
-    # EdSharp port: list-toggle shortcuts override NVDA review-cursor.
-    "format.toggle_bullet_list",  # Ctrl+Alt+7
-    "format.toggle_numbered_list",  # Ctrl+Alt+8
+    # Ctrl+Alt+0, the seventh row of the same ladder: the way back to body text.
+    # Same justification as the six above it -- it overrides NVDA's
+    # switch-to-synth-N, deliberately, and a heading ladder with a hole where
+    # "not a heading" belongs is a ladder you cannot come down (bad.md P1.4).
+    "format.body_text",
+    # Format-aware structured inserts / authoring chords
+    # (x.md "Authoring"), user-authorized as in-app Ctrl+Alt chords. None
+    # collides with a default NVDA/JAWS command.
+    "format.toggle_bullet_list",  # Ctrl+Alt+B
+    "file.new_plain_text_document",  # Ctrl+Alt+N, QUILL Lite's chord (bad.md P1.13)
+    "format.insert_table",  # Ctrl+Alt+T
+    "format.blockquote",  # Ctrl+Alt+Q
+    "format.horizontal_rule",  # Ctrl+Alt+H
+    "edit.insert_link",  # Ctrl+Alt+K
+    "format.insert_markdown_tag",  # Ctrl+Alt+I, QUILL Lite's chord (bad.md P1.1)
+    # Table cell navigation: Ctrl+Alt+arrow/Home/End move
+    # cell by cell; context-sensitive and harmless outside a table.
+    "table.next_cell",  # Ctrl+Alt+Right
+    "table.previous_cell",  # Ctrl+Alt+Left
+    "table.cell_below",  # Ctrl+Alt+Down
+    "table.cell_above",  # Ctrl+Alt+Up
+    "table.first_cell",  # Ctrl+Alt+Home
+    "table.last_cell",  # Ctrl+Alt+End
     # #357 keymap consolidation: AI commands use Ctrl+Alt+Shift+<letter> as
     # their chord class. Inline accelerators were stripped from main_frame_menu
     # because they collided with the F7/F8 selection bindings. The chord class
@@ -83,21 +119,100 @@ _CTRL_ALT_DOCUMENTED: frozenset[str] = frozenset({
     "tools.compare_next_difference",  # Ctrl+Alt+Shift+.
     "tools.compare_previous_difference",  # Ctrl+Alt+Shift+,
     "tools.compare_announce_difference",  # Ctrl+Alt+Shift+D
+    # ------------------------------------------------------------------ #
+    # The 2026-09 keyless-command sweep (bad.md P1.1, 4452595 and after).
+    #
+    # Eighteen chords arrived in one round, and they are listed here rather
+    # than carrying eighteen inline "# §edsharp-ok" comments because the
+    # reasoning divides cleanly into two cases and is worth writing once.
+    #
+    # **Ctrl+Alt+<function key> is outside what the policy is about.** The
+    # policy has two real grounds: Ctrl+Alt is AltGr on European layouts, so
+    # the chord *types a character* instead of firing; and JAWS and NVDA both
+    # own a spread of Ctrl+Alt+<letter> and Ctrl+Alt+<arrow> commands. Neither
+    # ground reaches a function key -- AltGr cannot produce F6, and no default
+    # JAWS or NVDA command uses Ctrl+Alt+F6 through F12. This is the same
+    # exemption already granted above to help.tutorials (Ctrl+Alt+F1) and
+    # help.report_bug (Ctrl+Alt+F2), and it is the whole justification for:
+    "navigate.set_language",  # Ctrl+Alt+F6
+    "view.toggle_spellcheck_as_you_type",  # Ctrl+Alt+F7
+    "tools.add_word_to_dictionary",  # Ctrl+Alt+F9
+    "tools.individual_feature_toggles",  # Ctrl+Alt+F10
+    "tools.share_export",  # Ctrl+Alt+F11
+    "tools.share_import",  # Ctrl+Alt+F12
+    #
+    # **Ctrl+Alt+<letter> is a real cost, and these twelve are worth it.**
+    # Each overrides nothing in a default JAWS or NVDA layer: both readers
+    # reserve Insert+<key> for their own commands and use Ctrl+Alt only for
+    # NVDA's table navigation (Ctrl+Alt+<arrow>, already allowed above for
+    # QUILL's own table cells) and NVDA's Ctrl+Alt+<digit> synthesiser switch
+    # (already allowed above for the heading chords, which deliberately take
+    # it). No letter below collides with either.
+    #
+    # The AltGr cost is real and is accepted knowingly: on a European layout
+    # these chords may type a character instead of firing, which is exactly
+    # what the Keyboard Manager exists to let somebody rebind. The trade is
+    # that the alternative was **no key at all** -- every one of these twelve
+    # was reachable only by walking the menu bar, which is a cost a
+    # screen-reader user pays on every single visit, not once per layout.
+    # bad.md 3.9 decided that trade; this table records it.
+    "navigate.clear_numbered_bookmarks",  # Ctrl+Alt+B (Ctrl+Shift+B sets)
+    "edit.remove_duplicate_lines",  # Ctrl+Alt+D
+    "format.editor_font",  # Ctrl+Alt+F -- the editor's own face and size
+    "navigate.next_heading",  # Ctrl+Alt+H (Ctrl+Alt+Shift+H goes back)
+    "navigate.set_temp_bookmark",  # Ctrl+Alt+J (Ctrl+J is Word's Justify)
+    "power.remove_blank_lines",  # Ctrl+Alt+K
+    "file.page_setup",  # Ctrl+Alt+P, one modifier off Ctrl+P
+    "edit.trim_trailing_whitespace",  # Ctrl+Alt+R
+    "edit.sort_lines_ascending",  # Ctrl+Alt+S
+    "tools.check_updates",  # Ctrl+Alt+U
+    "edit.open_copy_tray",  # Ctrl+Alt+V, one modifier off Ctrl+V
+    "edit.copy_to_next_slot",  # Ctrl+Alt+Y
+    # 2026-09-17, all three on QUILL Lite's chords (bad.md 3.7, P1.12).
+    "power.compute_line_statistics",  # Ctrl+Alt+W
+    "power.toggle_clipboard_collector",  # Ctrl+Alt+G
+    "edit.keep_selection_in_clip_library",  # Ctrl+Alt+M
+    "power.describe_character_detail",  # Ctrl+Alt+C, QUILL Lite's chord (bad.md P1.13)
+    "power.toggle_read_only_guard",  # Ctrl+Alt+Backspace: AltGr types nothing, no reader key
+    # Ctrl+Alt+= and Ctrl+Alt+E, 2026-09-17 (bad.md 3.3, 3.7, P1.8): File Format takes QUILL Lite's
+    # Ctrl+Alt+E, Select Line takes Word-shaped Ctrl+Shift+E, and Insert Equation moves to the sign
+    # it draws. Neither new chord is a letter any screen reader claims with Ctrl+Alt.
+    "edit.insert_equation",  # Ctrl+Alt+=
+    "file.file_format",  # Ctrl+Alt+E
+    # 2026-09-18, the structural six converging on QUILL Lite's chords (bad.md
+    # 3.3, P1.2, P2.5): Duplicate Selection took Ctrl+Alt+Q from the retired
+    # Block Quote, and Exchange Cursor and Mark took Ctrl+Alt+X so Expand
+    # Selection could have QUILL Lite's Ctrl+Shift+X. Neither letter is one a
+    # default JAWS or NVDA command claims with Ctrl+Alt.
+    "edit.duplicate_selection",  # Ctrl+Alt+Q
+    "edit.exchange_point_mark",  # Ctrl+Alt+X
+    # Ctrl+Alt+Space, 2026-09-17: Select Token gave up Ctrl+Space to Select
+    # Sentence, which is what that chord means in QUILL Lite and now means in
+    # both (bad.md P1.2b, 5.3a). Ctrl+Alt+Space is the nearest free
+    # neighbour, and Space is not a letter any screen reader claims with
+    # Ctrl+Alt -- the §10.8 concern is the letter rows.
+    "edit.select_chunk",
 })
 
 # §10.3 binding-spec cluster labels that must appear as the label argument
 # of an AppendSubMenu(...) call in main_frame_menu.py.  Checks walk the AST
 # (see _check_required_clusters) so a comment mentioning a cluster name
 # cannot satisfy the gate.
+#
+# The Alt letters moved on 2026-09-18 (bad.md H5): Tools already claimed A and
+# C, and Windows does not press a duplicated mnemonic -- it cycles focus
+# between the two and waits. The cluster must exist; which letter it holds is
+# the menu-item access-key gate's business, not this one's.
 _REQUIRED_CLUSTER_LABELS: tuple[tuple[str, str], ...] = (
-    ("Reading & Dictation", "R&eading && Dictation"),
+    ("Reading & Dictation", "R&eading and Dictation"),
     ("Comparison", "C&omparison"),
     ("Watch Folder", "&Watch Folder"),
-    ("AI Assistant", "AI &Assistant"),
-    ("Advanced", "&Advanced"),
+    # AI was promoted from a Tools cluster to a top-level "&AI" menu (2026-06-27;
+    # see PRD section 5.84a), so it is no longer a required Tools-menu cluster.
+    ("Advanced", "A&dvanced"),
     ("Quillins", "&Quillins"),
-    ("Customize & Support", "&Customize && Support"),
-    ("Writing & Language", "&Writing && Language"),
+    ("Customize & Support", "C&ustomize and Support"),
+    ("Writing & Language", "&Writing and Language"),
 )
 
 
@@ -223,6 +338,39 @@ def _check_required_clusters(menu_source: str) -> list[str]:
     return errors
 
 
+def _check_no_literal_double_ampersand(menu_source: str) -> list[str]:
+    """Return error strings for AppendSubMenu labels containing a literal "&&".
+
+    #876: NVDA read submenu headers such as "Writing & Language" as literal
+    "Writing && Language" -- wx's usual "&&" -> "&" escape did not collapse
+    for these submenu-header labels the way it does for leaf menu items with
+    a single "&" mnemonic. Rather than depend on an escape sequence whose
+    behavior isn't reliable for this call site, submenu headers must spell a
+    literal ampersand out as "and" instead of "&&".
+    """
+    errors: list[str] = []
+    try:
+        tree = ast.parse(menu_source, filename=str(_MENU_PATH))
+    except SyntaxError as exc:
+        return [f"  SyntaxError parsing main_frame_menu.py: {exc}"]
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "AppendSubMenu"):
+            continue
+        if len(node.args) < 2:
+            continue
+        label = _label_text(node.args[1])
+        if label is not None and "&&" in label:
+            errors.append(
+                f"  AppendSubMenu label {label!r} contains a literal '&&' "
+                "(#876) -- spell it as 'and' instead."
+            )
+    return errors
+
+
 def _check_depth(menu_source: str) -> list[str]:
     """Return error strings for menus that create three or more submenu levels.
 
@@ -324,6 +472,11 @@ def run_checks() -> list[str]:
     if depth:
         errors.append("Three-level nesting violations (§10.4 two-level cap):")
         errors.extend(depth)
+
+    double_ampersand = _check_no_literal_double_ampersand(menu_source)
+    if double_ampersand:
+        errors.append("Submenu labels with a literal '&&' (#876):")
+        errors.extend(double_ampersand)
 
     # Delegate the binding/label consistency check (4th invariant) so the
     # gate catches label/binding drift between main_frame_menu.py and

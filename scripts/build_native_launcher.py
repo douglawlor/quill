@@ -1,0 +1,586 @@
+"""Compile the native QuillVille launcher for one product.
+
+Each QuillVille app ships a tiny native ``.exe`` (50-200 KB) compiled from
+``quill/native/launcher/``: it locates the shared QuillVille Runtime, downloads
+and runs the runtime installer if none is present, and then launches
+``pythonw.exe -m <module>``. The alternative -- a stamped copy of
+``pythonw.exe`` -- is a pattern antivirus engines flag, which is why the
+per-product build scripts refuse to fall back to it.
+
+This wrapper is the piece the per-product builds call. It reads the product's
+identity, configures the CMake project once per product, builds Release, and
+copies the resulting executable to ``--out``::
+
+    python scripts/build_native_launcher.py --product radio  --out dist\\QuillRadio
+    python scripts/build_native_launcher.py --product quill  --out dist\\windows\\portable
+
+**The build is best-effort by design.** With no MSVC or CMake on the machine it
+prints what is missing and exits 0 without producing an exe, leaving the caller
+to decide whether that is fatal -- and the per-product builds do treat it as
+fatal, checking for the exe themselves. Splitting it that way means this script
+stays usable on a developer machine with no C toolchain (where a missing
+launcher is expected) while a release build still cannot silently ship without
+one.
+
+The executable's basename is the product's ``PRODUCT_NAME``, and it must match
+what the Inno installer copies and what ``quill.core.storage_mode`` looks for
+when deciding a portable install.
+
+**A portable launcher never offers the runtime download.** ``--no-runtime-download``
+compiles an empty ``PRODUCT_RUNTIME_URL``, so a portable bundle that has lost
+its own ``pythonw.exe`` says the copy is incomplete instead of offering a
+230 MB download (owner's rule, 2026-09-27: nothing downloads at install or
+first use). Installed apps keep the self-healing URL. The two flavours build in
+separate CMake trees, because a ``-D`` value persists in the cache.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_LAUNCHER_SRC = _REPO_ROOT / "quill" / "native" / "launcher"
+
+#: The GitHub repo the launcher's in-app updater points at.
+_REPO = "Community-Access/quill"
+
+#: Where an installed launcher self-heals a missing shared runtime from (the
+#: slot-named ``runtime-3.14`` tag, the launcher swapping in its own slot;
+#: mirrors CMakeLists.txt's default -- see runtime_slots.self_heal_tag). Always
+#: passed explicitly, never left to the CMake cache.
+DEFAULT_RUNTIME_URL = (
+    "https://github.com/Community-Access/quill/releases/download/runtime-3.14/"
+    "QuillVille-Runtime-Setup.exe"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Product:
+    """One launcher build's identity.
+
+    ``name`` is authoritative: it becomes ``PRODUCT_NAME``, the CMake target,
+    and therefore the executable filename the installer expects.
+    """
+
+    key: str
+    name: str
+    display: str
+    module: str
+    #: ``quill/apps/<version_from>.py`` supplies ``_VERSION``; empty means the
+    #: product versions with QUILL itself.
+    version_from: str = ""
+    #: ``standalone/<icon_dir>/assets/<icon_name>.ico``; empty means no icon.
+    icon_dir: str = ""
+    icon_name: str = ""
+
+    @property
+    def app_id(self) -> str:
+        """AppUserModelID, for Windows taskbar grouping."""
+        return f"CommunityAccess.{self.name}"
+
+
+PRODUCTS: dict[str, Product] = {
+    "radio": Product(
+        key="radio",
+        name="QuillRadio",
+        display="Quill Radio",
+        module="quill.apps.radio",
+        version_from="radio",
+        icon_dir="radio",
+        icon_name="quill-radio",
+    ),
+    "weather": Product(
+        key="weather",
+        name="QuillWeather",
+        display="Quill Weather",
+        module="quill.apps.weather",
+        version_from="weather",
+        icon_dir="weather",
+        icon_name="quill-weather",
+    ),
+    "studio": Product(
+        key="studio",
+        name="QuillAudioStudio",
+        display="QUILL Studio",
+        module="quill.apps.studio",
+        version_from="studio",
+        icon_dir="studio",
+        icon_name="quill-audio-studio",
+    ),
+    "converter": Product(
+        key="converter",
+        name="QuillConverter",
+        display="Quill Converter",
+        module="quill.apps.converter",
+        version_from="converter",
+        icon_dir="converter",
+        icon_name="quill-converter",
+    ),
+    "cast": Product(
+        key="cast",
+        name="QuillCast",
+        display="QUILL Cast",
+        module="quill.apps.podcasts",
+        version_from="podcasts_menu",
+        icon_dir="cast",
+        icon_name="quill-cast",
+    ),
+    # Inkwell's build_release.ps1 has always asked for this product; until
+    # 2026-08-18 the entry did not exist, so Inkwell's portable bundle could
+    # not build on any machine.
+    "inkwell": Product(
+        key="inkwell",
+        name="QuillInkwell",
+        display="Quill Inkwell",
+        module="quill.apps.inkwell",
+        version_from="inkwell",
+        icon_dir="inkwell",
+        icon_name="quill-inkwell",
+    ),
+    "transcribe": Product(
+        key="transcribe",
+        name="QuillTranscribe",
+        display="QUILL Transcribe",
+        module="quill.apps.transcribe",
+        version_from="transcribe",
+        icon_dir="transcribe",
+        icon_name="quill-transcribe",
+    ),
+    "beacon": Product(
+        key="beacon",
+        name="QuillBeacon",
+        display="Quill Beacon",
+        module="quill.apps.beacon",
+        version_from="beacon",  # a package: quill/apps/beacon/__init__.py
+        icon_dir="beacon",
+        icon_name="quill-beacon",
+    ),
+    # Social's application package lives at standalone/social/quill_social and
+    # ships inside the shared runtime as the quill-social wheel; the launcher
+    # runs it as `-m quill_social`.
+    "social": Product(
+        key="social",
+        name="QuillSocial",
+        display="QUILL Social",
+        module="quill_social",
+        version_from="standalone/social/quill_social/__init__.py",
+        icon_dir="social",
+        icon_name="quill-social",
+    ),
+    # QUILL Lite: the editor-only sibling. Its module is quill.apps.lite and its
+    # version comes from quill/core/lite/__init__.py rather than a quill/apps
+    # module, so version_from is left empty and the version is passed by the
+    # build script -- see the note on version_from above.
+    "quilllite": Product(
+        key="quilllite",
+        # The exe keeps its one-word name; the description Windows reads in a
+        # UAC prompt and Task Manager is the display name (2026-09-25).
+        name="QuillLite",
+        display="QUILL Lite",
+        module="quill.apps.lite",
+        icon_dir="quilllite",
+        icon_name="quill-lite",
+    ),
+    # Main QUILL: the launcher sits at the portable bundle root as quill.exe,
+    # which is also the name storage_mode's portable detection looks for.
+    "quill": Product(
+        key="quill",
+        name="quill",
+        display="QUILL for All",
+        module="quill",
+    ),
+}
+
+
+class LauncherToolchainMissing(RuntimeError):
+    """No usable C toolchain. Reported, not raised at the user."""
+
+
+# -- toolchain discovery ------------------------------------------------------
+
+
+def _vswhere() -> Path | None:
+    """Microsoft's own VS locator, installed with any modern VS/Build Tools."""
+    for root_var in ("ProgramFiles(x86)", "ProgramFiles"):
+        root = os.environ.get(root_var, "").strip()
+        if not root:
+            continue
+        candidate = Path(root) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_msvc() -> Path | None:
+    """The install path of a Visual Studio 2022 with the C++ toolset, or None.
+
+    Asks ``vswhere`` for an installation that actually has
+    ``VC.Tools.x86.x64`` rather than guessing directory names -- Build Tools
+    lands under ``Program Files (x86)`` while the IDE editions land under
+    ``Program Files``, and only requiring the component avoids picking a VS
+    install that cannot compile C at all.
+    """
+    locator = _vswhere()
+    if locator is None:
+        return None
+    try:
+        result = subprocess.run(
+            [
+                str(locator),
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationPath",
+                "-latest",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = (result.stdout or "").strip().splitlines()
+    return Path(path[0]) if path else None
+
+
+#: CMake's Visual Studio generator for each Visual Studio major version. GitHub's
+#: Windows images move to a new Visual Studio before anybody here does, and a
+#: hard-coded "Visual Studio 17 2022" stops configuring on an image that has only
+#: the next one -- so the generator follows whatever ``vswhere`` found.
+_VS_GENERATORS = {
+    "17": "Visual Studio 17 2022",
+    "18": "Visual Studio 18 2026",
+}
+DEFAULT_GENERATOR = _VS_GENERATORS["17"]
+
+
+def generator_for_version(installation_version: str) -> str:
+    """The CMake generator for a ``vswhere`` ``installationVersion`` (``17.14.37216.2``).
+
+    An unknown or empty version keeps the Visual Studio 2022 generator, which is
+    what every build used before the generator was chosen at all.
+    """
+    major = installation_version.strip().split(".", 1)[0]
+    return _VS_GENERATORS.get(major, DEFAULT_GENERATOR)
+
+
+def msvc_generator() -> str:
+    """The CMake generator for the Visual Studio :func:`find_msvc` would use."""
+    locator = _vswhere()
+    if locator is None:
+        return DEFAULT_GENERATOR
+    try:
+        result = subprocess.run(
+            [
+                str(locator),
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationVersion",
+                "-latest",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return DEFAULT_GENERATOR
+    lines = (getattr(result, "stdout", None) or "").strip().splitlines()
+    return generator_for_version(lines[0] if lines else "")
+
+
+def _discard_relocated_cmake_cache(build_dir: Path, generator: str = "") -> bool:
+    """Delete a CMake cache that was generated for a different path.
+
+    CMakeCache.txt records the absolute source and binary directories it was
+    configured with, and CMake hard-errors rather than reusing a cache whose
+    recorded paths differ ("the current CMakeCache.txt directory ... is
+    different than the directory ... where CMakeCache.txt was created"). That
+    is exactly what a checkout moved between drives produces: caches written
+    when this repo lived on S:\\ stopped every Radio and Weather build on D:\\,
+    and because build/ is gitignored the stale files were invisible.
+
+    The cache is a pure build artifact, so discarding it costs one reconfigure.
+    A cache made by another *generator* (Visual Studio 2022 before the machine
+    moved to 2026) is discarded for the same reason: CMake refuses to switch.
+    Returns True when a stale cache was removed.
+    """
+    cache = build_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        return False
+    expected = _LAUNCHER_SRC.as_posix().casefold()
+    try:
+        text = cache.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        text = ""
+    # Compared as a whole value rather than as a substring of the file: a cache
+    # recording ".../launcher-old" contains ".../launcher", so a substring test
+    # keeps a genuinely foreign cache and the build fails with CMake's own
+    # error instead -- which is the failure this function exists to prevent.
+    recorded = ""
+    recorded_generator = ""
+    for line in text.splitlines():
+        key, _, value = line.partition("=")
+        if key.strip().casefold() == "cmake_home_directory:internal":
+            recorded = value.strip().casefold()
+        elif key.strip().casefold() == "cmake_generator:internal":
+            recorded_generator = value.strip()
+    if recorded == expected and (not generator or recorded_generator in ("", generator)):
+        return False
+    print(f"Discarding CMake cache configured for another path or generator: {build_dir}")
+    shutil.rmtree(build_dir, ignore_errors=True)
+    return True
+
+
+def find_cmake() -> str | None:
+    found = shutil.which("cmake")
+    if found:
+        return found
+    for root_var in ("ProgramFiles", "ProgramFiles(x86)"):
+        root = os.environ.get(root_var, "").strip()
+        if not root:
+            continue
+        candidate = Path(root) / "CMake" / "bin" / "cmake.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+# -- product identity ---------------------------------------------------------
+
+
+def product_version(product: Product) -> str:
+    """The dotted version compiled into the launcher's VERSIONINFO.
+
+    Read from ``quill/apps/<module>.py``'s ``_VERSION`` or ``APP_VERSION`` so a launcher can never
+    disagree with the app it starts. Products that version in lockstep with
+    QUILL (and any app whose ``_VERSION`` is just ``__version__``) fall through
+    to ``quill.__version__``.
+    """
+    if product.version_from:
+        # ``<x>.py`` for module apps; ``<x>/__init__.py`` for package apps
+        # (Beacon); an explicit repo-relative path for apps whose code lives
+        # outside quill/apps entirely (Social's quill_social package).
+        candidates = [
+            _REPO_ROOT / "quill" / "apps" / f"{product.version_from}.py",
+            _REPO_ROOT / "quill" / "apps" / product.version_from / "__init__.py",
+            _REPO_ROOT / product.version_from,
+        ]
+        for source in candidates:
+            if not source.is_file():
+                continue
+            match = re.search(
+                r'^(?:_VERSION|APP_VERSION|__version__)\s*=\s*["\']([0-9][0-9A-Za-z.\-]*)["\']',
+                source.read_text(encoding="utf-8"),
+                re.MULTILINE,
+            )
+            if match:
+                return match.group(1)
+    sys.path.insert(0, str(_REPO_ROOT))
+    from quill import __version__
+
+    return str(__version__)
+
+
+def product_file_version(product: Product) -> str:
+    """The four-part Windows file version, ``X.Y.Z.B``, for the launcher's VERSIONINFO.
+
+    ``B`` is the app's build number (``_BUILD`` / ``APP_BUILD`` / ``__build__`` beside its version;
+    docs/release/RELEASE.md, "Build numbers"), so Explorer's Details tab says which
+    build of a version is installed. 0 when the app has no build constant.
+    """
+    version = re.match(r"\d+(?:\.\d+){0,2}", product_version(product))
+    parts = (version.group(0) if version else "0").split(".")
+    parts += ["0"] * (3 - len(parts))
+    build = 0
+    sources = []
+    if product.version_from:
+        sources = [
+            _REPO_ROOT / "quill" / "apps" / f"{product.version_from}.py",
+            _REPO_ROOT / "quill" / "apps" / product.version_from / "__init__.py",
+            _REPO_ROOT / product.version_from,
+        ]
+    sources.append(_REPO_ROOT / "quill" / "__init__.py")
+    for source in sources:
+        if not source.is_file():
+            continue
+        match = re.search(
+            r"^(?:_BUILD|APP_BUILD|__build__)\s*=\s*(\d+)",
+            source.read_text(encoding="utf-8"),
+            re.M,
+        )
+        if match:
+            build = int(match.group(1))
+            break
+    return ".".join([*parts[:3], str(build)])
+
+
+def product_icon(product: Product) -> Path | None:
+    if not product.icon_dir:
+        return None
+    icon = _REPO_ROOT / "standalone" / product.icon_dir / "assets" / f"{product.icon_name}.ico"
+    return icon if icon.is_file() else None
+
+
+# -- build --------------------------------------------------------------------
+
+
+def launcher_build_dir(product: Product, build_root: Path, *, runtime_url: str) -> Path:
+    """One CMake tree per product and flavour (a cached -D value persists)."""
+    return build_root / (product.key if runtime_url else f"{product.key}-portable")
+
+
+def configure_args(
+    cmake: str,
+    product: Product,
+    build_dir: Path,
+    *,
+    version: str,
+    runtime_url: str,
+    icon: Path | None = None,
+    generator: str = DEFAULT_GENERATOR,
+) -> list[str]:
+    """The CMake configure command line (pure, so the plumbing is testable).
+
+    ``PRODUCT_RUNTIME_URL`` is always passed, empty for a portable launcher:
+    left out, CMake would reuse whatever the cache last held. *generator* is
+    :func:`msvc_generator`'s answer when building for real.
+    """
+    args = [
+        cmake,
+        "-S",
+        str(_LAUNCHER_SRC),
+        "-B",
+        str(build_dir),
+        "-G",
+        generator,
+        "-A",
+        "x64",
+        f"-DPRODUCT_NAME={product.name}",
+        f"-DPRODUCT_DISPLAY_NAME={product.display}",
+        f"-DPRODUCT_VERSION={version}",
+        f"-DPRODUCT_FILE_VERSION={product_file_version(product)}",
+        f"-DPRODUCT_PYTHON_MODULE={product.module}",
+        f"-DPRODUCT_REPO={_REPO}",
+        f"-DPRODUCT_APP_ID={product.app_id}",
+        f"-DPRODUCT_RUNTIME_URL={runtime_url}",
+    ]
+    if icon is not None:
+        # Forward slashes: CMake treats a backslash as an escape in -D values.
+        args.append(f"-DPRODUCT_ICON={icon.as_posix()}")
+    return args
+
+
+def build_launcher(
+    product: Product,
+    out_dir: Path,
+    *,
+    build_root: Path | None = None,
+    runtime_url: str = DEFAULT_RUNTIME_URL,
+) -> Path:
+    """Configure, build, and stage the launcher. Returns the copied exe path.
+
+    Raises :class:`LauncherToolchainMissing` when MSVC or CMake is absent, so
+    the caller can decide whether that is fatal.
+    """
+    cmake = find_cmake()
+    if cmake is None:
+        raise LauncherToolchainMissing(
+            "CMake 3.20+ was not found. Install it from https://cmake.org/download/ "
+            "(or 'winget install Kitware.CMake') and re-run."
+        )
+    if find_msvc() is None:
+        raise LauncherToolchainMissing(
+            "Visual Studio 2022 with the C++ workload was not found. Install "
+            "'Visual Studio 2022 Build Tools' with 'Desktop development with C++' "
+            "(or 'winget install Microsoft.VisualStudio.2022.BuildTools') and re-run."
+        )
+
+    version = product_version(product)
+    build_dir = launcher_build_dir(
+        product, build_root or _REPO_ROOT / "build" / "launcher", runtime_url=runtime_url
+    )
+    generator = msvc_generator()
+    _discard_relocated_cmake_cache(build_dir, generator)
+    build_dir.mkdir(parents=True, exist_ok=True)
+
+    configure = configure_args(
+        cmake,
+        product,
+        build_dir,
+        version=version,
+        runtime_url=runtime_url,
+        icon=product_icon(product),
+        generator=generator,
+    )
+
+    print(f"  configuring {product.name} {version}")
+    subprocess.run(configure, check=True)
+    print(f"  building {product.name}")
+    subprocess.run([cmake, "--build", str(build_dir), "--config", "Release"], check=True)
+
+    exe_name = f"{product.name}.exe"
+    built = build_dir / "Release" / exe_name
+    if not built.is_file():  # single-config generators put it at the root
+        alternative = build_dir / exe_name
+        if alternative.is_file():
+            built = alternative
+    if not built.is_file():
+        raise RuntimeError(f"CMake reported success but {exe_name} is not in {build_dir}.")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    staged = out_dir / exe_name
+    shutil.copy2(built, staged)
+    size_kb = staged.stat().st_size // 1024
+    print(f"  staged {staged} ({size_kb} KB)")
+    return staged
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--product", required=True, choices=sorted(PRODUCTS), help="Product key.")
+    parser.add_argument("--out", required=True, type=Path, help="Directory to copy the exe into.")
+    parser.add_argument(
+        "--require-toolchain",
+        action="store_true",
+        help="Exit non-zero when the C toolchain is missing instead of skipping.",
+    )
+    parser.add_argument(
+        "--no-runtime-download",
+        action="store_true",
+        help=(
+            "Portable launcher: compile no runtime URL, so a damaged portable says "
+            "it is incomplete instead of offering to download the shared runtime."
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    product = PRODUCTS[args.product]
+    runtime_url = "" if args.no_runtime_download else DEFAULT_RUNTIME_URL
+    try:
+        build_launcher(product, args.out, runtime_url=runtime_url)
+    except LauncherToolchainMissing as exc:
+        # Best-effort by design: the caller checks for the exe and decides.
+        print(f"Skipping the native launcher for {product.name}: {exc}", file=sys.stderr)
+        return 1 if args.require_toolchain else 0
+    except subprocess.CalledProcessError as exc:
+        print(f"Native launcher build failed for {product.name}: {exc}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

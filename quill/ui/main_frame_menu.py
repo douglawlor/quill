@@ -10,26 +10,28 @@ reaches every menu id, submenu, label helper, and refresh routine through
 
 from __future__ import annotations
 
-import platform
+import sys
 
+from quill.core.app_launcher import is_app_released, is_dev_build
 from quill.core.i18n import _
-from quill.ui.batch_speech_runner import run_batch_export_to_speech
-from quill.ui.pronunciation_dictionary_dialog import run_pronunciation_manager
-from quill.ui.translated_speech_runner import run_translated_speech_export
+from quill.ui import app_sounds
+from quill.ui.menu_routes import apply_menu_routes
+
+
+def _tray_slot_accel(n: int) -> str:
+    """Menu-mnemonic form of a copy-tray slot number.
+
+    ``&1``-``&9`` for the first nine, ``1&0`` for slot ten, plain ``11``/``12``
+    beyond that -- ``&10`` would collide with slot 1 on the "1" mnemonic.
+    """
+    if n <= 9:
+        return f"&{n}"
+    if n == 10:
+        return "1&0"
+    return str(n)
 
 
 class MenuBuilderMixin:
-    def _register_voice_commands_check_menu(self, menu: object) -> None:
-        """Track the menu holding the Hey QUILL Commands check item (#7).
-
-        The checkable item can flip from the menu, the keymap/command palette, or
-        the Settings dialog, so the handler needs a handle to re-sync the visual
-        check wherever it lives (basic and full profiles build different menus)."""
-        menus = getattr(self, "_voice_commands_check_menus", None)
-        if menus is None:
-            menus = self._voice_commands_check_menus = []
-        menus.append(menu)
-
     def _prune_menu_separators(self, menu: object) -> None:
         """Remove dangling separators from a built menu (#15).
 
@@ -61,6 +63,30 @@ class MenuBuilderMixin:
             if item is not None:
                 menu.DestroyItem(item)
 
+    def _build_search_menu(self):
+        """The Search menu, which is Edit > Search Tools since 2026-09-17.
+
+        Lifted out of the menu-bar builder unchanged (bad.md M1, P1.20): Word
+        has no Search menu, and the two rows this held were a top-level item to
+        walk past on the way to Tools. "Search" remains the contribution parent
+        name, so a Quillin declaring ``"parent": "Search"`` still lands in it.
+        """
+        wx = self._wx
+        search_menu = wx.Menu()
+        # Search in Files and Replace Across Files left this submenu on
+        # 2026-10-16 for Edit itself (_append_cross_document_search_items).
+        # Regular Expression match count/extract and block set-ops make this the
+        # single find / filter / extract-lines hub (Power Tools recirculation,
+        # menus.md Phase 4).
+        self._append_power_tools_search_items(search_menu)
+        self._append_quillin_menu_items(search_menu, "Search")
+        # #15: the power-tools group's first item declares a separator_before, so
+        # when the regex Find/Replace items above are feature-gated off (basic
+        # profiles) the menu opens with a leading separator the screen reader
+        # reads but can't arrow to. Prune leading/trailing/doubled separators.
+        self._prune_menu_separators(search_menu)
+        return search_menu
+
     def _build_menu(self) -> None:
         wx = self._wx
         menu_bar = wx.MenuBar()
@@ -71,9 +97,11 @@ class MenuBuilderMixin:
         self._id_save_as = wx.ID_SAVEAS
         self._id_exit = wx.ID_EXIT
         self._id_palette = wx.NewIdRef()
-        self._id_preferences = wx.NewIdRef()
+        self._id_preferences = wx.ID_PREFERENCES
+        self._id_preferences_hub = wx.NewIdRef()
         self._id_menu_editor = wx.NewIdRef()
         self._id_open_url = wx.NewIdRef()
+        self._id_open_from_clipboard = wx.NewIdRef()
         self._id_open_remote = wx.NewIdRef()
         self._id_save_to_remote = wx.NewIdRef()
         self._id_save_copy_to_remote = wx.NewIdRef()
@@ -82,18 +110,27 @@ class MenuBuilderMixin:
         self._id_github_file_url = wx.NewIdRef()
         self._id_github_save_back = wx.NewIdRef()
         self._id_github_manage_accounts = wx.NewIdRef()
+        self._id_github_items = wx.NewIdRef()
         self._id_ssh_quick_connect = wx.NewIdRef()
         self._id_ssh_site_manager = wx.NewIdRef()
         self._id_close_document = wx.NewIdRef()
         self._id_save_all = wx.NewIdRef()
         self._id_reload_from_disk = wx.NewIdRef()
         self._id_check_external_changes = wx.NewIdRef()
+        self._id_forget_external_change_answers = wx.NewIdRef()
+        self._id_bring_from_quilllite = wx.NewIdRef()
+        self._id_describe_this_document = wx.NewIdRef()
+        self._id_describe_last_change = wx.NewIdRef()
+        self._id_undo_and_say = wx.NewIdRef()
         self._id_restore_backup = wx.NewIdRef()
+        self._id_restore_previous_version = wx.NewIdRef()
         self._id_save_session = wx.NewIdRef()
         self._id_open_session = wx.NewIdRef()
         self._id_clear_recent_sessions = wx.NewIdRef()
         self._id_page_setup = wx.NewIdRef()
         self._id_print = wx.NewIdRef()
+        self._id_print_studio = wx.NewIdRef()
+        self._id_header_footer = wx.NewIdRef()
         self._id_save_plain_text = wx.NewIdRef()
         self._id_clear_recent = wx.NewIdRef()
         # #262: Pandoc Import / Export menu ids (one per Tier-1 format).
@@ -107,6 +144,15 @@ class MenuBuilderMixin:
         self._id_import_csv = wx.NewIdRef()
         self._id_import_latex = wx.NewIdRef()
         self._id_import_other = wx.NewIdRef()  # "Other Pandoc Format..."
+        # Free-first Import / Convert Document tool (MarkItDown -> local OCR
+        # -> consent-gated cloud OCR) and its OCR and Document Conversion
+        # submenu (review, service settings, temp cleanup).
+        self._id_import_convert = wx.NewIdRef()
+        self._id_install_local_ocr = wx.NewIdRef()
+        self._id_ocr_services = wx.NewIdRef()
+        self._id_review_last_ocr = wx.NewIdRef()
+        self._id_ocr_service_settings = wx.NewIdRef()
+        self._id_delete_ocr_temp = wx.NewIdRef()
         self._id_export_markdown = wx.NewIdRef()
         self._id_export_html = wx.NewIdRef()
         self._id_export_docx = wx.NewIdRef()
@@ -142,10 +188,51 @@ class MenuBuilderMixin:
         file_menu = wx.Menu()
         # --- Create / open ---
         file_menu.Append(self._id_new, self._menu_label(_("&New"), "file.new"))
+        self._id_new_rich_document = wx.NewIdRef()
+        self._id_new_plain_text_document = wx.NewIdRef()
+        file_menu.Append(
+            self._id_new_rich_document,
+            self._menu_label(_("New &Rich Text Document"), "file.new_rich_document"),
+        )
+        file_menu.Append(
+            self._id_new_plain_text_document,
+            self._menu_label(_("New P&lain Text Document"), "file.new_plain_text_document"),
+        )
         file_menu.Append(self._id_open, self._menu_label(_("&Open..."), "file.open"))
+        file_menu.Append(
+            self._id_open_from_clipboard,
+            # No letter written in: none of its name is free, so menu_routes
+            # seats it on a spare one; Ctrl+Alt+Shift+Enter is its real route.
+            self._menu_label(_("Open from Clipboard"), "file.open_from_clipboard"),
+        )
+        self._id_file_format = wx.NewIdRef()
+        file_menu.Append(
+            self._id_file_format,
+            self._menu_label(_("&File Format..."), "file.file_format"),
+        )
         self._recent_menu = wx.Menu()
-        file_menu.AppendSubMenu(self._recent_menu, _("Open &Recent"))
+        # No letter of its own: P is Print's (rule 1) and every other letter of
+        # its name is taken, so menu_routes seats it on a free one.
+        file_menu.AppendSubMenu(self._recent_menu, _("Open Recent"))
+        self._prepare_recent_documents_item()
         self._refresh_recent_menu()
+        self._id_open_from_favorite_folder = wx.NewIdRef()
+        self._id_add_favorite_folder = wx.NewIdRef()
+        self._id_remove_favorite_folder = wx.NewIdRef()
+        favorites_menu = wx.Menu()
+        favorites_menu.Append(
+            self._id_open_from_favorite_folder,
+            self._menu_label(_("&Open From Favorite Folder..."), "file.open_from_favorite_folder"),
+        )
+        favorites_menu.Append(
+            self._id_add_favorite_folder,
+            self._menu_label(_("&Add Current Folder to Favorites"), "file.add_favorite_folder"),
+        )
+        favorites_menu.Append(
+            self._id_remove_favorite_folder,
+            self._menu_label(_("&Remove Favorite Folder..."), "file.remove_favorite_folder"),
+        )
+        file_menu.AppendSubMenu(favorites_menu, _("F&avorite Folders"))
         file_menu.Append(self._id_open_url, _("Open from &URL..."))
         ssh_menu = wx.Menu()
         ssh_menu.Append(self._id_ssh_quick_connect, _("&Quick Connect..."))
@@ -175,7 +262,11 @@ class MenuBuilderMixin:
         )
         remote_menu.Append(
             self._id_github_save_back,
-            self._menu_label(_("&Save to GitHub..."), "file.github_save_back"),
+            self._menu_label(_("S&ave to GitHub..."), "file.github_save_back"),
+        )
+        remote_menu.Append(
+            self._id_github_items,
+            self._menu_label(_("GitHub &Items..."), "file.open_github_items"),
         )
         remote_menu.AppendSeparator()
         remote_menu.Append(
@@ -184,9 +275,9 @@ class MenuBuilderMixin:
         )
         remote_menu.Append(
             self._id_github_manage_accounts,
-            self._menu_label(_("Manage &GitHub Accounts..."), "file.github_manage_accounts"),
+            self._menu_label(_("Ma&nage GitHub Accounts..."), "file.github_manage_accounts"),
         )
-        file_menu.AppendSubMenu(remote_menu, _("Open from &Remote"))
+        file_menu.AppendSubMenu(remote_menu, _("Open from Remote"))  # E is Export's
         file_menu.AppendSubMenu(self._sessions_menu, _("&Snapshots"))
         self._id_publishing_connections = wx.NewIdRef()
         self._id_publishing_verify_connection = wx.NewIdRef()
@@ -199,13 +290,16 @@ class MenuBuilderMixin:
         self._id_publishing_update_remote_item = wx.NewIdRef()
         self._id_publishing_publish_remote_item = wx.NewIdRef()
         self._id_publishing_schedule_publish = wx.NewIdRef()
-        # future.publishing is locked off (quill/core/feature_catalog.py) while
-        # the publishing-providers-framework branch is under review, so the
-        # whole Publish submenu is omitted from a default build. IDs above
-        # stay unconditional (matching the core.glow precedent) so binding
-        # them below is harmless even when the menu is never built.
-        if self._feature_enabled("future.publishing"):
+        # The Publish submenu is split into two independently gated halves:
+        # future.publishing_read (not locked) for the read-only inbound tools,
+        # and future.publishing (locked off) for the create/update/publish/
+        # schedule send commands. IDs above stay unconditional (core.glow
+        # precedent) so binding them below is harmless when the menu is unbuilt.
+        publishing_read_enabled = self._feature_enabled("future.publishing_read")
+        publishing_send_enabled = self._feature_enabled("future.publishing")
+        if publishing_read_enabled or publishing_send_enabled:
             self._publishing_file_menu = wx.Menu()
+        if publishing_read_enabled:
             self._publishing_file_menu.Append(
                 self._id_publishing_connections,
                 self._menu_label("Publishing &Connections...", "publishing.connections"),
@@ -221,6 +315,7 @@ class MenuBuilderMixin:
                 self._id_publishing_browse_content,
                 self._menu_label("&Browse Publishing Content...", "publishing.browse_content"),
             )
+        if publishing_send_enabled:
             self._publishing_file_menu.Append(
                 self._id_publishing_create_draft,
                 self._menu_label("Create Post &Draft...", "publishing.create_draft"),
@@ -256,20 +351,29 @@ class MenuBuilderMixin:
                 self._id_publishing_schedule_publish,
                 self._menu_label("&Schedule Publish...", "publishing.schedule_publish"),
             )
+        if publishing_read_enabled or publishing_send_enabled:
             file_menu.AppendSeparator()
-            file_menu.AppendSubMenu(self._publishing_file_menu, _("P&ublish"))
+            file_menu.AppendSubMenu(self._publishing_file_menu, _("Publish"))
         # New document from clipboard sits beside New (Power Tools recirculation,
         # menus.md Phase 4).
         self._append_power_tools_file_create_items(file_menu)
         file_menu.AppendSeparator()
         # --- Save ---
-        file_menu.Append(self._id_save, self._menu_label(_("&Save"), "file.save"))
-        file_menu.Append(self._id_save_as, self._menu_label(_("Save &As..."), "file.save_as"))
-        file_menu.Append(self._id_save_all, _("Save A&ll"))
+        file_menu.Append(self._id_save, self._menu_label(_("Sa&ve"), "file.save"))
+        file_menu.Append(self._id_save_as, self._menu_label(_("Save As..."), "file.save_as"))
+        file_menu.Append(self._id_save_all, _("Save All"))
         file_menu.Append(self._id_save_plain_text, _("Save As Plain &Text..."))
         file_menu.AppendSeparator()
         # --- Import / Export (issue #262) -----------------------------------
         import_menu = wx.Menu()
+        # The free-first conversion tool leads the submenu: it routes any
+        # supported document (including scanned PDFs and images) through the
+        # local no-upload tiers, prompting before OCR ever runs.
+        import_menu.Append(
+            self._id_import_convert,
+            self._menu_label(_("Import / Convert &Document (OCR)..."), "file.import_convert"),
+        )
+        import_menu.AppendSeparator()
         import_menu.Append(
             self._id_import_markdown,
             self._menu_label(_("&Markdown..."), "file.import_markdown"),
@@ -361,18 +465,37 @@ class MenuBuilderMixin:
             self._id_export_other,
             self._menu_label(_("Other Pandoc Format..."), "file.export_other_pandoc"),
         )
-        file_menu.AppendSubMenu(export_menu, _("&Export"))
+        file_menu.AppendSubMenu(export_menu, _("&Export"))  # X belongs to Exit
 
         file_menu.Append(
             self._id_convert_file,
-            self._menu_label(_("Con&vert File..."), "file.convert_file"),
+            self._menu_label(_("&Convert File..."), "file.convert_file"),
         )
 
         file_menu.AppendSeparator()
         # --- Restore / reload ---
-        file_menu.Append(self._id_reload_from_disk, _("&Reload from Disk"))
-        file_menu.Append(self._id_check_external_changes, _("Check for E&xternal Changes..."))
+        file_menu.Append(self._id_reload_from_disk, _("Reloa&d from Disk"))
+        file_menu.Append(self._id_check_external_changes, _("Chec&k for External Changes..."))
+        file_menu.Append(
+            self._id_forget_external_change_answers,
+            self._menu_label(
+                _("For&get Remembered File-Change Answers"),
+                "file.forget_external_change_answers",
+            ),
+        )
+        self._id_reopen_last_session = wx.NewIdRef()
+        # No access key: this menu claims 21 of 26 letters and every one in the
+        # phrase is taken (S is Snapshots), so GATE-14's out-of-letters rule
+        # applies -- silence beats a duplicate. Alt+Shift+F12 is in the label.
+        file_menu.Append(
+            self._id_reopen_last_session,
+            self._menu_label(_("Reopen Last Session..."), "file.reopen_last_session"),
+        )
         file_menu.Append(self._id_restore_backup, _("Restore &Backup..."))
+        file_menu.Append(
+            self._id_restore_previous_version,
+            self._menu_label(_("Restore Previous Version..."), "file.restore_previous_version"),
+        )
         file_menu.AppendSeparator()
         # --- Current-file operations (Power Tools recirculation, menus.md Phase 4) ---
         self._append_power_tools_file_ops_items(file_menu)
@@ -404,16 +527,27 @@ class MenuBuilderMixin:
             self._id_manage_notebook_snapshots,
             self._menu_label(_("&Manage Versions..."), "file.manage_snapshots"),
         )
-        file_menu.AppendSubMenu(notebook_menu, _("&Notebook"))
+        file_menu.AppendSubMenu(notebook_menu, _("Notebook"))
         file_menu.AppendSeparator()
         # --- Print ---
-        file_menu.Append(self._id_page_setup, _("Pa&ge Setup..."))
+        file_menu.Append(self._id_page_setup, _("Page Setup..."))
+        # Alt+F, P is Windows' Print (family rule 1). It is explicit because the
+        # File menu holds more rows than there are letters and digits, and
+        # menu_routes seats explicit accelerator-holding letters first.
         file_menu.Append(self._id_print, self._menu_label(_("&Print..."), "file.print"))
+        file_menu.Append(
+            self._id_print_studio,
+            self._menu_label(_("Print Studio..."), "file.print_studio"),
+        )
+        file_menu.Append(
+            self._id_header_footer,
+            self._menu_label(_("Header and Footer..."), "file.header_footer"),
+        )
         file_menu.AppendSeparator()
         # --- Close ---
         file_menu.Append(
             self._id_close_document,
-            self._menu_label(_("&Close Document"), "file.close_document"),
+            self._menu_label(_("Close Docu&ment"), "file.close_document"),
         )
         file_menu.Append(self._id_exit, self._menu_label(_("E&xit"), "app.exit"))
 
@@ -438,10 +572,12 @@ class MenuBuilderMixin:
         self._id_search_in_files = wx.NewIdRef()
         self._id_replace_in_files = wx.NewIdRef()
         self._id_insert_link = wx.NewIdRef()
+        self._id_insert_equation = wx.NewIdRef()
         self._id_insert_citation = wx.NewIdRef()
         self._id_snippet_gallery = wx.NewIdRef()
         self._id_follow_link = wx.NewIdRef()
         self._id_word_prediction = wx.NewIdRef()
+        self._id_select_word = wx.NewIdRef()
         self._id_select_line = wx.NewIdRef()
         self._id_select_paragraph = wx.NewIdRef()
         self._id_select_block = wx.NewIdRef()
@@ -473,6 +609,10 @@ class MenuBuilderMixin:
         self._id_clear_all_tray_slots = wx.NewIdRef()
         self._id_copy_to_next_slot = wx.NewIdRef()
         self._id_search_tray_slots = wx.NewIdRef()
+        search_menu = self._build_search_menu()
+        # Go To is an Edit row now (bad.md M4), so its id is created here rather
+        # than in the Navigate block that used to own it.
+        self._id_go_to_line = wx.NewIdRef()
         edit_menu = wx.Menu()
         edit_menu.Append(self._id_undo, self._menu_label(_("&Undo"), "edit.undo"))
         edit_menu.Append(self._id_redo, self._menu_label(_("&Redo"), "edit.redo"))
@@ -482,23 +622,38 @@ class MenuBuilderMixin:
         edit_menu.Append(wx.ID_CUT, _("Cu&t\tCtrl+X"))
         edit_menu.Append(wx.ID_COPY, _("&Copy\tCtrl+C"))
         edit_menu.Append(wx.ID_PASTE, _("&Paste\tCtrl+V"))
+        # Word's Paste Special, by its plain name. It has had Ctrl+Shift+V since
+        # the rich-paragraph work and no menu row anywhere, so the only way to
+        # find it was to know it existed (bad.md M7, P1.20).
+        self._id_paste_plain_text = wx.NewIdRef()
+        edit_menu.Append(
+            self._id_paste_plain_text,
+            self._menu_label(_("Paste Te&xt Only"), "edit.paste_plain_text"),
+        )
         # Paste variants and New Document from Clipboard (power tools)
         self._append_power_tools_edit_items(edit_menu)
         # Copy Tray submenu — per-slot items use explicit IDs for direct bindings;
         # open/clear dialog commands are recirculated from the manifest via the
         # helper (menus.md Phase 4 pattern).
         tray_menu = wx.Menu()
+        # Slot accelerators: &1-&9 for the first nine, 1&0 for slot ten (the
+        # standard recent-files convention), plain numbers for 11-12 -- "&10"
+        # would collide with slot 1 on the "1" mnemonic.
         for _n in range(1, 13):
             tray_menu.Append(
                 self._id_copy_tray_slots[_n - 1],
-                self._menu_label(_("Copy to Slot &{n}").format(n=_n), f"edit.copy_to_tray_{_n}"),
+                self._menu_label(
+                    _("Copy to Slot {n}").format(n=_tray_slot_accel(_n)),
+                    f"edit.copy_to_tray_{_n}",
+                ),
             )
         tray_menu.AppendSeparator()
         for _n in range(1, 13):
             tray_menu.Append(
                 self._id_paste_tray_slots[_n - 1],
                 self._menu_label(
-                    _("Paste from Slot &{n}").format(n=_n), f"edit.paste_from_tray_{_n}"
+                    _("Paste from Slot {n}").format(n=_tray_slot_accel(_n)),
+                    f"edit.paste_from_tray_{_n}",
                 ),
             )
         tray_menu.AppendSeparator()
@@ -512,18 +667,22 @@ class MenuBuilderMixin:
         )
         tray_menu.AppendSeparator()
         self._append_power_tools_copy_tray_items(tray_menu)
-        edit_menu.AppendSubMenu(tray_menu, _("Copy &Tray"))
+        edit_menu.AppendSubMenu(tray_menu, _("C&opy Tray"))
         edit_menu.Append(
             self._id_copy_with_source,
             self._menu_label(_("Copy With &Attribution"), "edit.copy_with_source"),
         )
         edit_menu.AppendSeparator()
-        edit_menu.Append(wx.ID_SELECTALL, _("Select &All\tCtrl+A"))
+        edit_menu.Append(wx.ID_SELECTALL, _("&Select All\tCtrl+A"))
         edit_menu.AppendSeparator()
         # Find / Replace and the find-navigation commands live in Edit (their
         # conventional home and their edit.* command ids); the Search menu is
         # reserved for cross-file search (menus.md Phase 3).
-        edit_menu.Append(self._id_find, self._menu_label(_("Fin&d..."), "edit.find"))
+        # &F, Notepad's letter and QUILL Lite's. It was Fin&d, which Restore
+        # Deleted Text holds, so the route pass seated Find on whatever was left
+        # -- and once Replace Across Files joined this menu (2026-10-16) that
+        # was Q, which nobody would guess. Claimed here, it is kept in round one.
+        edit_menu.Append(self._id_find, self._menu_label(_("&Find..."), "edit.find"))
         edit_menu.Append(
             self._id_replace,
             self._menu_label(_("Rep&lace..."), "edit.replace"),
@@ -540,6 +699,23 @@ class MenuBuilderMixin:
             self._id_find_all_matches,
             self._menu_label(_("Find All &Matches"), "edit.find_all_matches"),
         )
+        self._append_open_documents_item(edit_menu)  # main_frame_open_documents
+        self._append_cross_document_search_items(edit_menu)
+        # Word puts Go To under Edit, beneath Find and Replace, and it is one
+        # window with a target kind now (bad.md 5.4, M4, P1.20). It is here
+        # rather than in both places because two menu rows on one chord means
+        # one of them silently never fires, which the accelerator gate rejects
+        # -- so "Go To in Edit as well as Navigate" became "Go To in Edit".
+        edit_menu.Append(
+            self._id_go_to_line,
+            self._menu_label(_("&Go To..."), "navigate.go_to_line"),
+        )
+        # M1: cross-file search and the regular-expression tools, as a submenu
+        # rather than a top-level Search menu. Word has no Search menu and the
+        # two rows it held were a thin top-level item to walk past on the way
+        # to Tools. "Search" stays the contribution parent name, so every
+        # Quillin that declares `"parent": "Search"` still lands here.
+        edit_menu.AppendSubMenu(search_menu, _("S&earch Tools"))
         edit_menu.AppendSeparator()
         edit_menu.Append(
             self._id_word_prediction,
@@ -574,6 +750,10 @@ class MenuBuilderMixin:
         )
         selection_menu.AppendSeparator()
         selection_menu.Append(
+            self._id_select_word,
+            self._menu_label(_("Select &Word"), "edit.select_word"),
+        )
+        selection_menu.Append(
             self._id_select_line,
             self._menu_label(_("Select &Line"), "edit.select_line"),
         )
@@ -587,7 +767,7 @@ class MenuBuilderMixin:
         )
         selection_menu.Append(
             self._id_expand_selection,
-            self._menu_label(_("E&xpand Selection"), "edit.expand_selection"),
+            self._menu_label(_("&Expand Selection"), "edit.expand_selection"),
         )
         selection_menu.Append(
             self._id_shrink_selection,
@@ -596,7 +776,7 @@ class MenuBuilderMixin:
         selection_menu.AppendSeparator()
         selection_menu.Append(
             self._id_select_to_end_of_line,
-            self._menu_label(_("Select to End of &Line"), "edit.select_to_end_of_line"),
+            self._menu_label(_("Selec&t to End of Line"), "edit.select_to_end_of_line"),
         )
         selection_menu.Append(
             self._id_select_to_start_of_line,
@@ -622,7 +802,7 @@ class MenuBuilderMixin:
         selection_menu.AppendSeparator()
         selection_menu.Append(
             self._id_set_mark,
-            self._menu_label(_("&Set Temporary Mark"), "edit.set_mark"),
+            self._menu_label(_("Set Te&mporary Mark"), "edit.set_mark"),
         )
         selection_menu.Append(
             self._id_pop_mark,
@@ -631,56 +811,36 @@ class MenuBuilderMixin:
         selection_menu.Append(
             self._id_exchange_point_mark,
             self._menu_label(
-                _("&Swap Cursor and Mark"),
+                _("Sw&ap Cursor and Mark"),
                 "edit.exchange_point_mark",
             ),
         )
         selection_menu.Append(
             self._id_list_marks,
-            self._menu_label(_("&List Recent Marks"), "edit.list_marks"),
+            self._menu_label(_("L&ist Recent Marks"), "edit.list_marks"),
         )
         selection_menu.AppendSeparator()
         selection_menu.Append(
             self._id_set_named_mark,
-            self._menu_label(_("&Set Named Mark..."), "edit.set_named_mark"),
+            self._menu_label(_("Set Named Mar&k..."), "edit.set_named_mark"),
         )
         selection_menu.Append(
             self._id_jump_to_named_mark,
-            self._menu_label(_("&Jump to Named Mark..."), "edit.jump_to_named_mark"),
+            self._menu_label(_("J&ump to Named Mark..."), "edit.jump_to_named_mark"),
         )
         selection_menu.Append(
             self._id_open_review_buffer,
-            self._menu_label(_("&Review Buffer"), "edit.open_review_buffer"),
+            self._menu_label(_("Re&view Buffer"), "edit.open_review_buffer"),
         )
-        edit_menu.AppendSubMenu(selection_menu, _("&Selection"))
+        edit_menu.AppendSubMenu(selection_menu, _("Select&ion"))
         insert_menu = wx.Menu()
-
-        search_menu = wx.Menu()
-        # Cross-file search is a regex-level feature; basic profiles only have
-        # in-document Find/Replace (Edit menu). Show Search in Files and Replace
-        # Across Files only when core.search.regex is enabled.
-        if self._feature_enabled("core.search.regex"):
-            search_menu.Append(
-                self._id_search_in_files,
-                self._menu_label(_("Search in &Files..."), "tools.search_in_files"),
-            )
-            search_menu.Append(
-                self._id_replace_in_files,
-                self._menu_label(_("&Replace Across Files..."), "tools.replace_in_files"),
-            )
-        # Regular Expression match count/extract and block set-ops make Search the single
-        # find / filter / extract-lines hub (Power Tools recirculation, menus.md
-        # Phase 4).
-        self._append_power_tools_search_items(search_menu)
-        self._append_quillin_menu_items(search_menu, "Search")
-        # #15: the power-tools group's first item declares a separator_before, so
-        # when the regex Find/Replace items above are feature-gated off (basic
-        # profiles) the menu opens with a leading separator the screen reader
-        # reads but can't arrow to. Prune leading/trailing/doubled separators.
-        self._prune_menu_separators(search_menu)
         self._id_send_to_tray = wx.NewIdRef()
         self._id_toggle_tray_mode = wx.NewIdRef()
         self._id_toggle_soft_wrap = wx.NewIdRef()
+        self._id_toggle_status_bar = wx.NewIdRef()
+        self._id_text_size_up = wx.NewIdRef()
+        self._id_text_size_down = wx.NewIdRef()
+        self._id_text_size_reset = wx.NewIdRef()
         self._id_toggle_tab_control = wx.NewIdRef()
         self._id_toggle_find_wrap = wx.NewIdRef()
         self._id_toggle_title_full_path = wx.NewIdRef()
@@ -693,6 +853,8 @@ class MenuBuilderMixin:
         self._id_preview = wx.NewIdRef()
         self._id_split_preview = wx.NewIdRef()
         self._id_focus_preview = wx.NewIdRef()
+        self._id_announce_headings = wx.NewIdRef()
+        self._id_announce_lists = wx.NewIdRef()
         self._id_toggle_auto_side_preview = wx.NewIdRef()
         self._id_start_with_no_document_open = wx.NewIdRef()
         self._id_dirty_title_text = wx.NewIdRef()
@@ -711,6 +873,28 @@ class MenuBuilderMixin:
         view_menu.Check(self._id_toggle_soft_wrap, self.settings.soft_wrap)
         view_menu.AppendCheckItem(self._id_toggle_tab_control, _("Show &Tab Control"))
         view_menu.Check(self._id_toggle_tab_control, self.settings.show_tab_control)
+        # Notepad's View > Status Bar, the whole bar rather than a cell of it.
+        view_menu.AppendCheckItem(
+            self._id_toggle_status_bar,
+            self._menu_label(_("&Status Bar"), "view.toggle_status_bar"),
+        )
+        view_menu.Check(self._id_toggle_status_bar, self.settings.show_status_bar)
+        view_menu.AppendSeparator()
+        # Notepad's three, and QUILL Lite's. There was no way to change the size
+        # of QUILL's text at all before 2026-09-16, which for an audience that
+        # includes low-vision users is the product not working (bad.md 4.3).
+        view_menu.Append(
+            self._id_text_size_up,
+            self._menu_label(_("&Increase Text Size"), "view.text_size_up"),
+        )
+        view_menu.Append(
+            self._id_text_size_down,
+            self._menu_label(_("D&ecrease Text Size"), "view.text_size_down"),
+        )
+        view_menu.Append(
+            self._id_text_size_reset,
+            self._menu_label(_("&Reset Text Size"), "view.text_size_reset"),
+        )
         view_menu.AppendSeparator()
         view_menu.Append(
             self._id_preview,
@@ -718,11 +902,45 @@ class MenuBuilderMixin:
         )
         view_menu.Append(
             self._id_split_preview,
-            self._menu_label(_("Preview &Side by Side"), "view.split_preview"),
+            self._menu_label(_("Pre&view Side by Side"), "view.split_preview"),
         )
         view_menu.Append(
             self._id_focus_preview,
             self._menu_label(_("&Focus Preview"), "view.focus_preview"),
+        )
+        # A state rather than an action, so a check item: you need to be able to
+        # find out whether headings are being announced without pressing the key
+        # and listening for what changed.
+        self._announce_headings_item = view_menu.AppendCheckItem(
+            self._id_announce_headings,
+            self._menu_label(_("Announce Hea&dings"), "view.toggle_heading_announcements"),
+        )
+        self._announce_headings_item.Check(bool(getattr(self.settings, "announce_headings", True)))
+        # Its own row and its own switch, next to its sibling. A list cue and a
+        # heading cue answer different questions -- reorganising an outline the
+        # list level is the work, proof-reading it the phrase is in the way --
+        # and one switch for both would mean giving up the half you wanted.
+        self._announce_lists_item = view_menu.AppendCheckItem(
+            self._id_announce_lists,
+            self._menu_label(_("Announce &Lists"), "view.toggle_list_announcements"),
+        )
+        self._announce_lists_item.Check(bool(getattr(self.settings, "announce_lists", True)))
+        view_menu.AppendSeparator()
+        # The three things a reader cannot say for itself (bad.md P3.7). In View
+        # rather than Tools because every one of them is a way of looking at the
+        # document you already have, and next to the two Announce switches
+        # because that is where somebody goes to change what they are told.
+        view_menu.Append(
+            self._id_describe_this_document,
+            self._menu_label(_("What Is This Document?"), "view.describe_this_document"),
+        )
+        view_menu.Append(
+            self._id_describe_last_change,
+            self._menu_label(_("What Changed?"), "view.describe_last_change"),
+        )
+        view_menu.Append(
+            self._id_undo_and_say,
+            self._menu_label(_("Undo and Say What Changed"), "edit.undo_and_say"),
         )
         view_menu.Append(
             self._id_browser_preview,
@@ -735,14 +953,22 @@ class MenuBuilderMixin:
         view_menu.AppendSeparator()
         view_menu.AppendCheckItem(
             self._id_toggle_entries_panel,
-            self._menu_label(_("Show &Entries Panel"), "view.toggle_entries_panel"),
+            self._menu_label(_("S&how Entries Panel"), "view.toggle_entries_panel"),
+        )
+        self._id_reveal_codes = wx.NewIdRef()
+        view_menu.AppendCheckItem(
+            self._id_reveal_codes,
+            self._menu_label(_("Reveal &Codes"), "view.reveal_codes_toggle"),
+        )
+        view_menu.Check(
+            self._id_reveal_codes, bool(getattr(self.settings, "reveal_codes_visible", False))
         )
         navigate_menu = wx.Menu()
-        self._id_go_to_line = wx.NewIdRef()
         self._id_set_bookmark = wx.NewIdRef()
         self._id_go_to_bookmark = wx.NewIdRef()
         self._id_list_bookmarks = wx.NewIdRef()
-        self._id_go_to_page = wx.NewIdRef()
+        self._id_set_temp_bookmark = wx.NewIdRef()
+        self._id_go_to_temp_bookmark = wx.NewIdRef()
         self._id_back_location = wx.NewIdRef()
         self._id_forward_location = wx.NewIdRef()
         self._id_next_heading = wx.NewIdRef()
@@ -750,6 +976,10 @@ class MenuBuilderMixin:
         self._id_next_block = wx.NewIdRef()
         self._id_previous_block = wx.NewIdRef()
         self._id_outline_navigator = wx.NewIdRef()
+        self._id_toggle_fold = wx.NewIdRef()
+        self._id_next_fold = wx.NewIdRef()
+        self._id_previous_fold = wx.NewIdRef()
+        self._id_list_folds = wx.NewIdRef()
         self._id_heading_organizer = wx.NewIdRef()
         self._id_match_bracket = wx.NewIdRef()
         self._id_next_token = wx.NewIdRef()
@@ -758,10 +988,6 @@ class MenuBuilderMixin:
         self._id_speak_window_title = wx.NewIdRef()
         self._id_speak_full_path = wx.NewIdRef()
         self._id_speak_status_summary = wx.NewIdRef()
-        self._id_compare_start_with_file = wx.NewIdRef()
-        self._id_compare_next = wx.NewIdRef()
-        self._id_compare_previous = wx.NewIdRef()
-        self._id_compare_current = wx.NewIdRef()
         self._id_compare_toggle_whitespace = wx.NewIdRef()
         self._id_compare_generate_report = wx.NewIdRef()
         self._id_next_structure = wx.NewIdRef()
@@ -777,14 +1003,6 @@ class MenuBuilderMixin:
             self._menu_label(_("&Forward Location"), "navigate.forward_location"),
         )
         navigate_menu.AppendSeparator()
-        navigate_menu.Append(
-            self._id_go_to_line,
-            self._menu_label(_("&Go To Line..."), "navigate.go_to_line"),
-        )
-        navigate_menu.Append(
-            self._id_go_to_page,
-            self._menu_label(_("Go To &Page..."), "navigate.go_to_page"),
-        )
         # Go to Percent, First/Last Non-Blank, Open Target at Cursor (power tools navigate group)
         self._append_power_tools_navigate_items(navigate_menu)
         navigate_menu.AppendSeparator()
@@ -798,7 +1016,7 @@ class MenuBuilderMixin:
         )
         navigate_menu.Append(
             self._id_next_block,
-            self._menu_label(_("Next &Block"), "navigate.next_block"),
+            self._menu_label(_("&Next Block"), "navigate.next_block"),
         )
         navigate_menu.Append(
             self._id_previous_block,
@@ -818,11 +1036,11 @@ class MenuBuilderMixin:
         )
         navigate_menu.Append(
             self._id_previous_region,
-            self._menu_label(_("Previous Regio&n"), "navigate.previous_region"),
+            self._menu_label(_("&Previous Region"), "navigate.previous_region"),
         )
         navigate_menu.Append(
             self._id_match_bracket,
-            self._menu_label(_("Match &Bracket"), "navigate.match_bracket"),
+            self._menu_label(_("&Match Bracket"), "navigate.match_bracket"),
         )
         navigate_menu.Append(
             self._id_next_token,
@@ -830,7 +1048,7 @@ class MenuBuilderMixin:
         )
         navigate_menu.Append(
             self._id_previous_token,
-            self._menu_label(_("P&revious Token"), "navigate.previous_token"),
+            self._menu_label(_("Pr&evious Token"), "navigate.previous_token"),
         )
         navigate_menu.AppendSeparator()
         navigate_menu.Append(
@@ -844,108 +1062,137 @@ class MenuBuilderMixin:
         )
         navigate_menu.Append(
             self._id_speak_full_path,
-            self._menu_label(_("Speak &Full Path"), "navigate.speak_full_path"),
+            self._menu_label(_("&Speak Full Path"), "navigate.speak_full_path"),
         )
         navigate_menu.Append(
             self._id_speak_status_summary,
-            self._menu_label(_("Speak &Status Summary"), "navigate.speak_status_summary"),
+            self._menu_label(_("Spe&ak Status Summary"), "navigate.speak_status_summary"),
         )
         navigate_menu.AppendSeparator()
-        compare_menu = wx.Menu()
-        compare_menu.Append(
-            self._id_compare_start_with_file,
-            self._menu_label(_("&Compare with File..."), "tools.compare_with_file"),
-        )
-        compare_menu.AppendSeparator()
-        # #357 keymap consolidation: command ids use the tools.compare_*
-        # namespace and the F8/Shift+F8/Ctrl+F8 inline accelerators were
-        # stripped; the canonical bindings now live in DEFAULT_KEYMAP as
-        # Ctrl+Alt+Shift+> / < / D (see quill/core/keymap.py).
-        compare_menu.Append(
-            self._id_compare_next,
-            self._menu_label(_("&Next Difference"), "tools.compare_next_difference"),
-        )
-        compare_menu.Append(
-            self._id_compare_previous,
-            self._menu_label(_("&Previous Difference"), "tools.compare_previous_difference"),
-        )
-        compare_menu.Append(
-            self._id_compare_current,
-            self._menu_label(
-                _("Read &Current Difference"),
-                "tools.compare_announce_difference",
-            ),
-        )
-        compare_menu.AppendSeparator()
-        compare_menu.Append(
-            self._id_compare_toggle_whitespace,
-            self._menu_label(_("Toggle &Ignore Whitespace"), "tools.compare_toggle_sync"),
-        )
-        compare_menu.Append(
-            self._id_compare_generate_report,
-            self._menu_label(_("&Generate Accessible Report"), "tools.compare_options"),
-        )
-        navigate_menu.AppendSubMenu(compare_menu, _("&Compare"))
-        navigate_menu.AppendSeparator()
+        # Compare lives only under Tools > Comparison (the canonical, complete
+        # submenu); the old Navigate > Compare duplicate is gone.
         navigate_menu.Append(
             self._id_outline_navigator,
-            self._menu_label(_("Outline &Navigator..."), "navigate.outline_navigator"),
+            self._menu_label(_("Outl&ine Navigator..."), "navigate.outline_navigator"),
         )
         navigate_menu.Append(
             self._id_heading_organizer,
-            self._menu_label(_("&Heading Organizer..."), "navigate.heading_organizer"),
+            self._menu_label(_("Hea&ding Organizer..."), "navigate.heading_organizer"),
         )
+        navigate_menu.AppendSeparator()
+        folding_menu = wx.Menu()
+        folding_menu.Append(
+            self._id_toggle_fold,
+            self._menu_label(_("Toggle &Fold"), "edit.toggle_fold"),
+        )
+        folding_menu.Append(
+            self._id_next_fold,
+            self._menu_label(_("Ne&xt Fold"), "navigate.next_fold"),
+        )
+        folding_menu.Append(
+            self._id_previous_fold,
+            self._menu_label(_("Pre&vious Fold"), "navigate.previous_fold"),
+        )
+        folding_menu.Append(
+            self._id_list_folds,
+            self._menu_label(_("&List Folds..."), "tools.list_folds"),
+        )
+        navigate_menu.AppendSubMenu(folding_menu, _("Folding"))
+        # Sticky Notes are position-anchored annotations, so they live with the
+        # navigation surfaces rather than under Tools.
+        self._id_sticky_notes = wx.NewIdRef()
+        self._id_new_sticky_note = wx.NewIdRef()
+        sticky_menu = wx.Menu()
+        sticky_menu.Append(
+            self._id_sticky_notes,
+            self._menu_label(_("&Sticky Notes..."), "tools.sticky_notes"),
+        )
+        sticky_menu.Append(
+            self._id_new_sticky_note,
+            self._menu_label(_("&New Sticky Note..."), "tools.sticky_note_capture"),
+        )
+        self._id_sticky_browser = wx.NewIdRef()
+        sticky_menu.Append(
+            self._id_sticky_browser,
+            self._menu_label(_("Sticky Notes &Browser..."), "notes.sticky_browser"),
+        )
+        navigate_menu.AppendSubMenu(sticky_menu, _("Stick&y Notes"))
         navigate_menu.AppendSeparator()
         navigate_menu.Append(
             self._id_follow_link,
-            self._menu_label(_("&Follow Link"), "edit.follow_link"),
+            self._menu_label(_("Follow Lin&k"), "edit.follow_link"),
         )
         navigate_menu.AppendSeparator()
-        navigate_menu.Append(
+        bookmarks_menu = wx.Menu()
+        # Numbered bookmarks first: nine slots addressed by digit, which is what
+        # "bookmark" means in QUILL Lite and in the editors people arrive from.
+        # Built by their own mixin (main_frame_numbered_bookmarks.py), which
+        # also binds them. The named vault below is QUILL's extra and says so
+        # in its labels -- before 2026-09-16 there was only one kind here and
+        # "Set Bookmark..." was unambiguous; now it would not be.
+        self.build_numbered_bookmarks_menu(bookmarks_menu)
+        bookmarks_menu.AppendSeparator()
+        bookmarks_menu.Append(
             self._id_set_bookmark,
-            self._menu_label(_("Set &Bookmark..."), "navigate.set_bookmark"),
+            self._menu_label(_("Set N&amed Bookmark..."), "navigate.set_bookmark"),
         )
-        navigate_menu.Append(
+        bookmarks_menu.Append(
             self._id_go_to_bookmark,
-            self._menu_label(_("Go To &Bookmark..."), "navigate.go_to_bookmark"),
+            self._menu_label(_("&Go To Named Bookmark..."), "navigate.go_to_bookmark"),
         )
-        navigate_menu.Append(
+        bookmarks_menu.Append(
             self._id_list_bookmarks,
-            self._menu_label(_("List B&ookmarks..."), "navigate.list_bookmarks"),
+            self._menu_label(_("&List Named Bookmarks..."), "navigate.list_bookmarks"),
         )
+        bookmarks_menu.AppendSeparator()
+        bookmarks_menu.Append(
+            self._id_set_temp_bookmark,
+            self._menu_label(_("Set &Temporary Bookmark"), "navigate.set_temp_bookmark"),
+        )
+        bookmarks_menu.Append(
+            self._id_go_to_temp_bookmark,
+            self._menu_label(_("Go to Temporar&y Bookmark"), "navigate.go_to_temp_bookmark"),
+        )
+        navigate_menu.AppendSubMenu(bookmarks_menu, _("Bookmarks"))
+        self._append_highlight_submenu(navigate_menu)  # main_frame_highlights
+        self._append_table_submenu(navigate_menu)  # main_frame_table_nav, as in QUILL Lite
         navigate_menu.AppendSeparator()
-        navigate_menu.Append(
+        notebook_nav_menu = wx.Menu()
+        notebook_nav_menu.Append(
             self._id_go_to_entry_in_notebook,
-            self._menu_label(_("Go to &Entry in Notebook..."), "navigate.go_to_entry_in_notebook"),
+            self._menu_label(_("Go to &Entry..."), "navigate.go_to_entry_in_notebook"),
         )
-        navigate_menu.Append(
+        notebook_nav_menu.Append(
             self._id_go_to_heading_in_notebook,
-            self._menu_label(
-                _("Go to &Heading in Notebook..."), "navigate.go_to_heading_in_notebook"
-            ),
+            self._menu_label(_("Go to &Heading..."), "navigate.go_to_heading_in_notebook"),
         )
-        navigate_menu.Append(
+        notebook_nav_menu.Append(
             self._id_go_to_bookmark_in_notebook,
-            self._menu_label(
-                _("Go to &Bookmark in Notebook..."), "navigate.go_to_bookmark_in_notebook"
-            ),
+            self._menu_label(_("Go to &Bookmark..."), "navigate.go_to_bookmark_in_notebook"),
         )
-        navigate_menu.Append(
+        notebook_nav_menu.Append(
             self._id_go_to_sticky_note_in_notebook,
-            self._menu_label(
-                _("Go to Sticky &Note in Notebook..."), "navigate.go_to_sticky_note_in_notebook"
-            ),
+            self._menu_label(_("Go to Sticky &Note..."), "navigate.go_to_sticky_note_in_notebook"),
         )
+        navigate_menu.AppendSubMenu(notebook_nav_menu, _("Notebook"))
         self._id_insert_html_tag = wx.NewIdRef()
         self._id_insert_markdown_tag = wx.NewIdRef()
         self._id_insert_snippet = wx.NewIdRef()
         self._id_manage_snippets = wx.NewIdRef()
         self._id_expand_abbreviation = wx.NewIdRef()
         self._id_manage_abbreviations = wx.NewIdRef()
+        self._id_quick_insert = wx.NewIdRef()
+        self._id_new_abbreviation_from_clipboard = wx.NewIdRef()
         self._id_toggle_abbreviation_expansion = wx.NewIdRef()
         self._id_format_bold = wx.NewIdRef()
         self._id_format_italic = wx.NewIdRef()
         self._id_format_underline = wx.NewIdRef()
+        self._id_format_grow_font = wx.NewIdRef()
+        self._id_format_shrink_font = wx.NewIdRef()
+        self._id_format_spacing_single = wx.NewIdRef()
+        self._id_format_spacing_one_and_a_half = wx.NewIdRef()
+        self._id_format_spacing_double = wx.NewIdRef()
+        self._id_body_text = wx.NewIdRef()
         self._id_heading_1 = wx.NewIdRef()
         self._id_heading_2 = wx.NewIdRef()
         self._id_heading_3 = wx.NewIdRef()
@@ -964,12 +1211,13 @@ class MenuBuilderMixin:
         self._id_toggle_block_comment = wx.NewIdRef()
         self._id_indent = wx.NewIdRef()
         self._id_outdent = wx.NewIdRef()
-        self._id_toggle_tab_mode = wx.NewIdRef()
         self._id_move_line_up = wx.NewIdRef()
         self._id_move_line_down = wx.NewIdRef()
         # PR1 (EdSharp port): section-move ids, distinct from move-line.
         self._id_move_section_up = wx.NewIdRef()
         self._id_move_section_down = wx.NewIdRef()
+        self._id_select_section = wx.NewIdRef()
+        self._id_move_section_to = wx.NewIdRef()
         self._id_duplicate_line = wx.NewIdRef()
         self._id_delete_line = wx.NewIdRef()
         self._id_join_lines = wx.NewIdRef()
@@ -987,7 +1235,22 @@ class MenuBuilderMixin:
         self._id_insert_code_block = wx.NewIdRef()
         self._id_insert_footnote = wx.NewIdRef()
         self._id_insert_table = wx.NewIdRef()
+        self._id_insert_blockquote = wx.NewIdRef()
+        self._id_insert_horizontal_rule = wx.NewIdRef()
+        self._id_insert_emoji = wx.NewIdRef()
         format_menu = wx.Menu()
+
+        # --- Document Format (One Editor, Every Format) ---
+        # The switcher leads the menu: it decides what every command below
+        # *means* (rich mode applies real formatting; markup modes insert
+        # tags). Also reachable from the palette, the Ctrl+Shift+Grave, K
+        # chord, and the status bar Format cell — one handler behind all four.
+        self._id_switch_document_format = wx.NewIdRef()
+        format_menu.Append(
+            self._id_switch_document_format,
+            self._menu_label(_("&Document Format..."), "format.switch_document_format"),
+        )
+        format_menu.AppendSeparator()
 
         # --- Character formatting (most common) ---
         format_menu.Append(self._id_format_bold, self._menu_label(_("&Bold"), "format.bold"))
@@ -996,22 +1259,29 @@ class MenuBuilderMixin:
             self._id_format_underline,
             self._menu_label(_("&Underline"), "format.underline"),
         )
+        # Paragraph and run formatting the editor was missing until QUILL Lite
+        # needed it. Every label goes through _menu_label so it advertises
+        # whatever is actually bound, and follows a rebinding.
+        # Grow/Shrink Font and the three keyed line spacings used to sit here,
+        # flat, beside the submenus holding the same two concepts. They are now
+        # inside them (see build_format_codes_submenus and PRD 8.14a).
+        #
+        # Hidden-codes run/paragraph formatting (font, size, align, color,
+        # highlight) plus the describe-formatting interrogation item. Built by
+        # FormatCodesMixin so the bulk stays out of this monolith (GATE-11).
+        self.build_format_codes_submenus(format_menu, wx)
         format_menu.AppendSeparator()
 
         # --- Structural formatting ---
         format_menu.Append(
             self._id_indent,
-            self._menu_label(_("&Indent"), "format.indent"),
+            self._menu_label(_("I&ndent"), "format.indent"),
         )
         format_menu.Append(
             self._id_outdent,
-            self._menu_label(_("O&utdent"), "format.outdent"),
+            self._menu_label(_("&Outdent"), "format.outdent"),
         )
-        format_menu.AppendCheckItem(
-            self._id_toggle_tab_mode,
-            self._menu_label(_("Tab Key Inserts Tab &Character"), "format.toggle_tab_insert_mode"),
-        )
-        format_menu.Check(self._id_toggle_tab_mode, getattr(self, "_tab_inserts_literal", False))
+        self.build_indent_mode_items(format_menu)
         format_menu.AppendSeparator()
 
         # --- Case ---
@@ -1042,14 +1312,14 @@ class MenuBuilderMixin:
         format_menu.Append(
             self._id_toggle_line_comment,
             self._menu_label(
-                _("Toggle Line &Comment"),
+                _("&Toggle Line Comment"),
                 "format.toggle_line_comment",
             ),
         )
         format_menu.Append(
             self._id_toggle_block_comment,
             self._menu_label(
-                _("Toggle &Block Comment"),
+                _("To&ggle Block Comment"),
                 "format.toggle_block_comment",
             ),
         )
@@ -1073,10 +1343,27 @@ class MenuBuilderMixin:
             self._id_move_section_down,
             self._menu_label(_("Move Section Do&wn"), "format.move_section_down"),
         )
+        line_menu.Append(
+            self._id_select_section,
+            # "&Select Section", not "Se&lect Section": L was claimed twice in
+            # this menu, by Select Section and by De&lete Line, and Windows
+            # cycles focus between duplicates instead of pressing -- so one of
+            # the pair could not be reached and nothing announced the loss
+            # (GATE-14's rule, inside a menu). S was free.
+            self._menu_label(_("&Select Section"), "edit.select_section"),
+        )
+        # Move Section To sits with the other section rows rather than in a
+        # submenu of its own: it is the same operation as the two Move Section
+        # keys above it, asked a different way, and somebody looking for "how do
+        # I move this further than one step" looks where the one-step rows are.
+        line_menu.Append(
+            self._id_move_section_to,
+            self._menu_label(_("Move Section &To..."), "format.move_section_to"),
+        )
         line_menu.AppendSeparator()
         line_menu.Append(
             self._id_duplicate_line,
-            self._menu_label(_("D&uplicate Line"), "format.duplicate_line"),
+            self._menu_label(_("Du&plicate Line"), "format.duplicate_line"),
         )
         line_menu.Append(
             self._id_delete_line,
@@ -1094,7 +1381,7 @@ class MenuBuilderMixin:
             self._id_quote_lines, self._menu_label(_("&Quote Lines"), "edit.quote_lines")
         )
         line_menu.Append(
-            self._id_unquote_lines, self._menu_label(_("&Unquote Lines"), "edit.unquote_lines")
+            self._id_unquote_lines, self._menu_label(_("U&nquote Lines"), "edit.unquote_lines")
         )
         format_menu.AppendSubMenu(line_menu, _("&Line"))
 
@@ -1120,7 +1407,7 @@ class MenuBuilderMixin:
             self._id_remove_duplicate_lines,
             self._menu_label(_("Remove &Duplicate Lines"), "edit.remove_duplicate_lines"),
         )
-        format_menu.AppendSubMenu(sort_menu, _("Sort && &Filter"))
+        format_menu.AppendSubMenu(sort_menu, _("Sort and &Filter"))
 
         # --- Whitespace submenu ---
         ws_menu = wx.Menu()
@@ -1154,7 +1441,7 @@ class MenuBuilderMixin:
         # --- HTML & Encoding submenu ---
         html_menu = wx.Menu()
         self._append_power_tools_html_encoding_items(html_menu)
-        format_menu.AppendSubMenu(html_menu, _("&HTML && Encoding"))
+        format_menu.AppendSubMenu(html_menu, _("&HTML and Encoding"))
 
         # --- Markdown submenu (#257: profiles, table of contents, line breaks) ---
         markdown_menu = wx.Menu()
@@ -1179,7 +1466,7 @@ class MenuBuilderMixin:
         self._language_menu_item_ids[plain_item.GetId()] = "Plain text"
         for _lang_id in self._language_menu_item_ids:
             self.frame.Bind(wx.EVT_MENU, self._on_document_language_menu, id=_lang_id)
-        format_menu.AppendSubMenu(language_menu, _("Document &Language"))
+        format_menu.AppendSubMenu(language_menu, _("Docum&ent Language"))
 
         # Quillin-contributed Format items
         self._append_quillin_menu_items(format_menu, "Format")
@@ -1202,6 +1489,10 @@ class MenuBuilderMixin:
         )
         heading_menu.Append(
             self._id_heading_6, self._menu_label(_("Heading &6"), "format.heading_6")
+        )
+        # The way back down; QUILL had no Body Text at all (bad.md P1.4).
+        heading_menu.Append(
+            self._id_body_text, self._menu_label(_("&Body Text"), "format.body_text")
         )
         heading_menu.AppendSeparator()
         heading_menu.Append(
@@ -1226,6 +1517,10 @@ class MenuBuilderMixin:
         insert_menu.Append(
             self._id_insert_link,
             self._menu_label(_("Insert &Link..."), "edit.insert_link"),
+        )
+        insert_menu.Append(
+            self._id_insert_equation,
+            self._menu_label(_("Insert &Equation..."), "edit.insert_equation"),
         )
         insert_menu.Append(
             self._id_insert_citation,
@@ -1254,12 +1549,13 @@ class MenuBuilderMixin:
         )
         list_menu.Append(
             self._id_toggle_numbered_list,
-            self._menu_label(_("Toggle &Numbered"), "format.toggle_numbered_list"),
+            self._menu_label(_("&Toggle Numbered"), "format.toggle_numbered_list"),
         )
         list_menu.Append(
             self._id_insert_task_list,
-            self._menu_label(_("&Task"), "format.insert_task_list"),
+            self._menu_label(_("T&ask"), "format.insert_task_list"),
         )
+        self._append_task_toggle_row(list_menu)  # main_frame_review (shared command)
         list_menu.AppendSeparator()
         list_menu.Append(
             self._id_open_list_manager,
@@ -1271,9 +1567,9 @@ class MenuBuilderMixin:
         )
         list_menu.Append(
             self._id_list_studio_settings,
-            self._menu_label(_("List Studio Se&ttings..."), "format.list_studio_settings"),
+            self._menu_label(_("&List Studio Settings..."), "format.list_studio_settings"),
         )
-        insert_menu.AppendSubMenu(list_menu, _("&List"))
+        insert_menu.AppendSubMenu(list_menu, _("L&ist"))
         insert_menu.Append(
             self._id_insert_code_block,
             self._menu_label(_("Insert Code &Block"), "format.insert_code_block"),
@@ -1286,10 +1582,18 @@ class MenuBuilderMixin:
             self._id_insert_table,
             self._menu_label(_("Insert &Table..."), "format.insert_table"),
         )
+        insert_menu.Append(
+            self._id_insert_blockquote,
+            self._menu_label(_("Insert Block &Quote"), "format.blockquote"),
+        )
+        insert_menu.Append(
+            self._id_insert_horizontal_rule,
+            self._menu_label(_("Insert Horizontal &Rule"), "format.horizontal_rule"),
+        )
         insert_menu.AppendSeparator()
         insert_menu.Append(
             self._id_insert_html_tag,
-            self._menu_label(_("Insert &HTML Tag..."), "format.insert_html_tag"),
+            self._menu_label(_("I&nsert HTML Tag..."), "format.insert_html_tag"),
         )
         insert_menu.Append(
             self._id_insert_markdown_tag,
@@ -1297,7 +1601,7 @@ class MenuBuilderMixin:
         )
         insert_menu.Append(
             self._id_insert_snippet,
-            self._menu_label(_("Insert S&nippet..."), "format.insert_snippet"),
+            self._menu_label(_("In&sert Snippet..."), "format.insert_snippet"),
         )
         insert_menu.Append(
             self._id_manage_snippets,
@@ -1310,15 +1614,27 @@ class MenuBuilderMixin:
                 self._menu_label(_("E&xpand Abbreviation"), "format.expand_abbreviation"),
             )
             insert_menu.Append(
+                self._id_quick_insert,
+                self._menu_label(_("Q&uick Insert..."), "format.quick_insert"),
+            )
+            insert_menu.Append(
+                self._id_new_abbreviation_from_clipboard,
+                self._menu_label(
+                    _("New Abbreviation from Cli&pboard..."),
+                    "format.new_abbreviation_from_clipboard",
+                ),
+            )
+            insert_menu.Append(
                 self._id_manage_abbreviations,
                 self._menu_label(_("Manage Abbrevi&ations..."), "format.manage_abbreviations"),
             )
             insert_menu.Append(
                 self._id_toggle_abbreviation_expansion,
                 self._menu_label(
-                    _("&Toggle Abbreviation Expansion"), "format.toggle_abbreviation_expansion"
+                    _("Toggle Abbre&viation Expansion"), "format.toggle_abbreviation_expansion"
                 ),
             )
+        self._append_autocorrect_entries_item(insert_menu)  # main_frame_typing_assist
         # Power Tools recirculation (menus.md Phase 4). The power-tool date/time
         # entries were removed: the bundled ``com.quill.bundled.insert-tools``
         # Quillin is now the single home for Insert Date / Insert Time / Insert
@@ -1329,7 +1645,13 @@ class MenuBuilderMixin:
         # below and routes Quillin contributions whose parent matches its name.
         self._append_quillin_menu_items(insert_menu, "Insert")
         date_time_menu = wx.Menu()
-        # No separator-before: this is the first item of a new submenu.
+        # The core one leads, because it is the one with a key and the one that
+        # works in Safe Mode; the Quillin's three variants follow (bad.md P1.9).
+        self._id_insert_date_time = wx.NewIdRef()
+        date_time_menu.Append(
+            self._id_insert_date_time,
+            self._menu_label(_("Date and &Time"), "edit.insert_date_time"),
+        )
         self._append_quillin_menu_items(date_time_menu, "Date and Time", prepend_separator=False)
         # Always show the submenu, even when no Quillin contributes a date/time
         # item (the bundled ``insert-tools`` Quillin is enabled by default and
@@ -1337,11 +1659,23 @@ class MenuBuilderMixin:
         # case is the only one that surfaces an empty submenu, and a stock
         # ``wx.Menu`` with a single visible item is still a navigable
         # submenu, not a bug.
-        insert_menu.AppendSubMenu(date_time_menu, _("Date and &Time"))
+        insert_menu.AppendSubMenu(date_time_menu, _("&Date and Time"))
+        insert_menu.Append(
+            self._id_insert_emoji,
+            self._menu_label(_("Insert Em&oji..."), "edit.insert_emoji"),
+        )
+        self._id_new_tab = wx.NewIdRef()  # #1246: Ctrl+T new document tab
         self._id_next_document = wx.NewIdRef()
         self._id_previous_document = wx.NewIdRef()
+        # Accelerator-only ids for Go to Document 1..10 (Alt+1..Alt+9, Alt+0).
+        # They carry the Alt+digit accelerators in the table; no menu items.
+        self._id_go_to_document = [wx.NewIdRef() for _ in range(10)]
         self._id_close_other_documents = wx.NewIdRef()
         window_menu = wx.Menu()
+        window_menu.Append(
+            self._id_new_tab,
+            self._menu_label(_("New &Tab"), "window.new_document_tab"),
+        )
         window_menu.Append(
             self._id_next_document,
             self._menu_label(_("&Next Document"), "window.next_document"),
@@ -1352,9 +1686,7 @@ class MenuBuilderMixin:
         )
         window_menu.Append(
             self._id_close_other_documents,
-            self._menu_label(
-                _("Close &Other Documents\tCtrl+Shift+F4"), "window.close_other_documents"
-            ),
+            self._menu_label(_("Close &Other Documents"), "window.close_other_documents"),
         )
         window_menu.AppendSeparator()
         window_menu.Append(
@@ -1367,14 +1699,16 @@ class MenuBuilderMixin:
         self._id_word_count = wx.NewIdRef()
         self._id_quill_eraser = wx.NewIdRef()
         self._id_quill_eraser_selection = wx.NewIdRef()
-        self._id_sticky_notes = wx.NewIdRef()
-        self._id_new_sticky_note = wx.NewIdRef()
         self._id_spell_check = wx.NewIdRef()
+        self._id_spell_check_word = wx.NewIdRef()
         self._id_previous_misspelling = wx.NewIdRef()
         self._id_next_misspelling = wx.NewIdRef()
         self._id_misspelling_list = wx.NewIdRef()
+        self._id_misspelling_list_ranked = wx.NewIdRef()
         self._id_dictionary_status = wx.NewIdRef()
         self._id_ocr_image = wx.NewIdRef()
+        self._id_table_studio = wx.NewIdRef()
+        self._id_csv_studio = wx.NewIdRef()
         self._id_ocr_clipboard = wx.NewIdRef()
         self._id_ocr_screen = wx.NewIdRef()
         self._id_describe_image = wx.NewIdRef()
@@ -1385,6 +1719,7 @@ class MenuBuilderMixin:
         self._id_read_aloud_voice = wx.NewIdRef()
         self._id_read_aloud_settings = wx.NewIdRef()
         self._id_read_aloud_generate_audio = wx.NewIdRef()
+        self._id_read_aloud_edge = wx.NewIdRef()
         self._id_announcement_backend = wx.NewIdRef()
         self._id_announcement_backend_auto = wx.NewIdRef()
         self._id_announcement_backend_prism = wx.NewIdRef()
@@ -1393,7 +1728,6 @@ class MenuBuilderMixin:
         self._id_toggle_sound = wx.NewIdRef()
         self._id_sound_events = wx.NewIdRef()
         self._id_dictation = wx.NewIdRef()
-        self._id_dictation_voice_commands = wx.NewIdRef()
         self._id_bw_model_manager = wx.NewIdRef()
         self._id_bw_model_status = wx.NewIdRef()
         self._id_bw_model_recommend = wx.NewIdRef()
@@ -1433,11 +1767,21 @@ class MenuBuilderMixin:
         self._id_glow_fix_document = wx.NewIdRef()
         self._id_glow_fix_selection = wx.NewIdRef()
         self._id_ai_hub = wx.NewIdRef()
+        # The hosted AI: the five rows the AI menu now opens with, in Basic
+        # and Advanced alike. See _build_hosted_ai_rows.
+        self._id_hosted_ai_assistant = wx.NewIdRef()
+        self._id_hosted_ai_ask_document = wx.NewIdRef()
+        self._id_hosted_ai_usage = wx.NewIdRef()
+        self._id_hosted_ai_sign_in = wx.NewIdRef()
+        self._id_hosted_ai_privacy = wx.NewIdRef()
         self._id_ai_assistant = wx.NewIdRef()
         self._id_ai_prompt_studio = wx.NewIdRef()
         self._id_ai_agent_center = wx.NewIdRef()
         self._id_ai_accessibility_agent = wx.NewIdRef()
         self._id_ask_quill_chat = wx.NewIdRef()
+        self._id_ask_quill_voice = wx.NewIdRef()
+        self._id_voice_reply_settings = wx.NewIdRef()
+        self._id_ai_library = wx.NewIdRef()
         self._id_prompt_library = wx.NewIdRef()
         self._id_skill_library = wx.NewIdRef()
         self._id_check_grammar_ai = wx.NewIdRef()
@@ -1445,6 +1789,9 @@ class MenuBuilderMixin:
         self._id_ai_status_badge = wx.NewIdRef()
         self._id_ai_status_detail = wx.NewIdRef()
         self._id_ai_model = wx.NewIdRef()
+        self._id_ai_switch_engine = wx.NewIdRef()
+        self._id_ai_copilot_setup = wx.NewIdRef()
+        self._id_ai_validate_agents = wx.NewIdRef()
         self._id_ai_session_browser = wx.NewIdRef()
         self._id_speech_models = wx.NewIdRef()
         self._id_speech_voices = wx.NewIdRef()
@@ -1452,6 +1799,9 @@ class MenuBuilderMixin:
         self._id_speech_captions = wx.NewIdRef()
         self._id_speech_dictate = wx.NewIdRef()
         self._id_speech_voice_command = wx.NewIdRef()
+        self._id_speech_voice_conversation = wx.NewIdRef()
+        self._id_speech_wakeword = wx.NewIdRef()
+        self._id_speech_voice_status = wx.NewIdRef()
         self._id_speech_microphone = wx.NewIdRef()
         # Locked Dictation menu items (the commands are the remappable Ctrl+F9 family).
         self._id_dictation_lock = wx.NewIdRef()
@@ -1461,8 +1811,6 @@ class MenuBuilderMixin:
         self._id_dictation_cancel = wx.NewIdRef()
         self._id_dictation_settings = wx.NewIdRef()
         self._id_dictation_history = wx.NewIdRef()
-        self._id_speech_ffmpeg = wx.NewIdRef()
-        self._id_speech_engine_dl = wx.NewIdRef()
         self._id_speech_hf_token = wx.NewIdRef()
         self._id_speech_export_audio = wx.NewIdRef()
         self._id_speech_export_translated = wx.NewIdRef()
@@ -1485,7 +1833,6 @@ class MenuBuilderMixin:
         self._id_ai_translate_selection = wx.NewIdRef()
         self._id_ai_translate_document = wx.NewIdRef()
         self._id_ai_transcribe_audio = wx.NewIdRef()
-        self._id_ai_translate_audio = wx.NewIdRef()
         self._id_ai_tts_read_selection = wx.NewIdRef()
         self._id_ai_tts_read_document = wx.NewIdRef()
         self._id_ai_tts_stop = wx.NewIdRef()
@@ -1493,6 +1840,7 @@ class MenuBuilderMixin:
         self._id_ai_expand_selection = wx.NewIdRef()
         self._id_ai_generate_toc = wx.NewIdRef()
         self._id_ai_thesaurus = wx.NewIdRef()
+        self._id_ai_reading_order = wx.NewIdRef()
         self._id_ai_document_qa = wx.NewIdRef()
         self._id_train_style = wx.NewIdRef()
         self._id_writing_instructions = wx.NewIdRef()
@@ -1522,6 +1870,7 @@ class MenuBuilderMixin:
         self._id_help_on_control = wx.NewIdRef()
         self._id_context_help = wx.NewIdRef()
         self._id_announce_context_shortcuts = wx.NewIdRef()
+        self._id_show_spoken_echo = wx.NewIdRef()
         self._id_help_status_page = wx.NewIdRef()
         self._id_why_dont_i_see_feature = wx.NewIdRef()
         self._id_switch_feature_profile = wx.NewIdRef()
@@ -1535,26 +1884,314 @@ class MenuBuilderMixin:
         self._id_dev_console_ts = wx.NewIdRef()
         self._id_dev_copy_diagnostic = wx.NewIdRef()
         self._id_dev_restart_ts_worker = wx.NewIdRef()
+        self._id_open_story_studio = wx.NewIdRef()
+        self._id_work_personas = wx.NewIdRef()
+        self._id_calculator = wx.NewIdRef()
+        self._id_vault_open = wx.NewIdRef()
+        self._id_vault_follow_link = wx.NewIdRef()
+        self._id_vault_backlinks = wx.NewIdRef()
+        self._id_vault_explorer = wx.NewIdRef()
+        self._id_vault_neighborhood = wx.NewIdRef()
+        self._id_vault_unlinked = wx.NewIdRef()
+        self._id_vault_insert_link = wx.NewIdRef()
+        self._id_vault_complete = wx.NewIdRef()
+        self._id_vault_rename = wx.NewIdRef()
+        self._id_vault_quick_switch = wx.NewIdRef()
+        self._id_vault_search = wx.NewIdRef()
+        self._id_vault_tags = wx.NewIdRef()
+        self._id_vault_speak_embed = wx.NewIdRef()
+        self._id_vault_resolve_embed = wx.NewIdRef()
+        self._id_vault_insert_template = wx.NewIdRef()
+        self._id_vault_today = wx.NewIdRef()
+        self._id_vault_prev_daily = wx.NewIdRef()
+        self._id_vault_next_daily = wx.NewIdRef()
+        self._id_vault_export_site = wx.NewIdRef()
+        self._id_vault_sync = wx.NewIdRef()
+        self._id_vault_settings = wx.NewIdRef()
+        self._id_git_sync_folder = wx.NewIdRef()
+        self._id_github_create_repo = wx.NewIdRef()
+        self._id_github_fork_repo = wx.NewIdRef()
+        self._id_github_rename_repo = wx.NewIdRef()
+        self._id_github_change_visibility = wx.NewIdRef()
+        self._id_github_change_default_branch = wx.NewIdRef()
+        self._id_github_branch_protection = wx.NewIdRef()
+        self._id_github_delete_branch = wx.NewIdRef()
+        self._id_github_commit_multiple = wx.NewIdRef()
+        self._id_github_browse_org = wx.NewIdRef()
+        self._id_github_create_release = wx.NewIdRef()
+        self._id_github_dispatch_workflow = wx.NewIdRef()
+        self._id_github_notifications = wx.NewIdRef()
+        self._id_github_security_alerts = wx.NewIdRef()
+        self._id_github_list_codespaces = wx.NewIdRef()
+        self._id_github_create_codespace = wx.NewIdRef()
+        self._id_github_copilot_suggest = wx.NewIdRef()
+        self._id_github_copilot_explain = wx.NewIdRef()
+        self._id_localgit_uncommitted = wx.NewIdRef()
+        self._id_localgit_switch_branch = wx.NewIdRef()
+        self._id_localgit_stash_changes = wx.NewIdRef()
+        self._id_localgit_manage_stashes = wx.NewIdRef()
+        self._id_localgit_blame = wx.NewIdRef()
+        self._id_localgit_bisect_start = wx.NewIdRef()
+        self._id_localgit_bisect_reset = wx.NewIdRef()
+        self._id_localgit_resolve_conflicts = wx.NewIdRef()
+        self._id_localgit_interactive_rebase = wx.NewIdRef()
+        self._id_localgit_rebase_abort = wx.NewIdRef()
+        self._id_localgit_worktrees = wx.NewIdRef()
+        self._id_localgit_new_worktree = wx.NewIdRef()
         tools_menu = wx.Menu()
         tools_menu.Append(
             self._id_palette,
             self._menu_label(_("&Command Palette..."), "app.command_palette"),
         )
+        tools_menu.Append(
+            self._id_open_story_studio,
+            self._menu_label(_("Story &Studio..."), "story.open_studio"),
+        )
+        tools_menu.Append(
+            self._id_work_personas,
+            self._menu_label(_("Work &Personas..."), "tools.work_personas"),
+        )
+        tools_menu.Append(
+            self._id_calculator,
+            self._menu_label(_("Ca&lculator..."), "tools.calculator"),
+        )
+        # (The cross-app launchers live in the top-level QuillVille menu, built
+        # near the end of the menu bar -- see the QuillVille append below.)
+        vault_menu = wx.Menu()
+        vault_menu.Append(self._id_vault_open, self._menu_label(_("&Open Vault..."), "vault.open"))
+        vault_menu.Append(
+            self._id_vault_explorer, self._menu_label(_("Vault E&xplorer..."), "vault.explorer")
+        )
+        vault_menu.Append(
+            self._id_vault_follow_link,
+            self._menu_label(_("&Follow Wikilink"), "vault.follow_link"),
+        )
+        vault_menu.Append(
+            self._id_vault_backlinks, self._menu_label(_("Show &Backlinks"), "vault.backlinks")
+        )
+        vault_menu.Append(
+            self._id_vault_neighborhood,
+            self._menu_label(_("Note &Neighborhood"), "vault.neighborhood"),
+        )
+        vault_menu.Append(
+            self._id_vault_unlinked,
+            self._menu_label(_("&Unlinked Mentions"), "vault.unlinked_mentions"),
+        )
+        vault_menu.Append(
+            self._id_vault_insert_link,
+            self._menu_label(_("&Insert Link to Note..."), "vault.insert_link"),
+        )
+        vault_menu.Append(
+            self._id_vault_complete,
+            self._menu_label(_("&Complete Link or Tag..."), "vault.complete"),
+        )
+        vault_menu.Append(
+            self._id_vault_rename, self._menu_label(_("&Rename Note..."), "vault.rename")
+        )
+        vault_menu.Append(
+            self._id_vault_quick_switch, self._menu_label(_("&Go to Note..."), "vault.quick_switch")
+        )
+        vault_menu.Append(
+            self._id_vault_search, self._menu_label(_("&Search Vault..."), "vault.search")
+        )
+        vault_menu.Append(self._id_vault_tags, self._menu_label(_("Show &Tags..."), "vault.tags"))
+        vault_menu.AppendSeparator()
+        vault_menu.Append(
+            self._id_vault_speak_embed,
+            self._menu_label(_("Spea&k Embed at Cursor"), "vault.speak_embed"),
+        )
+        vault_menu.Append(
+            self._id_vault_resolve_embed,
+            self._menu_label(_("R&esolve Embed Inline"), "vault.resolve_embed"),
+        )
+        vault_menu.Append(
+            self._id_vault_insert_template,
+            self._menu_label(_("Insert Te&mplate..."), "vault.insert_template"),
+        )
+        vault_menu.Append(
+            self._id_vault_today, self._menu_label(_("Open Toda&y's Note"), "vault.today")
+        )
+        vault_menu.Append(
+            self._id_vault_prev_daily,
+            self._menu_label(_("&Previous Daily Note"), "vault.prev_daily"),
+        )
+        vault_menu.Append(
+            self._id_vault_next_daily, self._menu_label(_("Next &Daily Note"), "vault.next_daily")
+        )
+        vault_menu.AppendSeparator()
+        vault_menu.Append(
+            self._id_vault_export_site,
+            self._menu_label(_("Export &Vault as Website..."), "vault.export_site"),
+        )
+        vault_menu.Append(self._id_vault_sync, self._menu_label(_("Sync V&ault"), "vault.sync"))
+        vault_menu.Append(
+            self._id_vault_settings, self._menu_label(_("Vau&lt Settings..."), "vault.settings")
+        )
+        tools_menu.AppendSubMenu(vault_menu, _("&Vault"))
+        github_admin_menu = wx.Menu()
+        # Open/browse a repository -- the everyday "I just want to open a repo"
+        # action, alongside the admin operations. Reuses the same command (and its
+        # existing binding) as File > Open Remote > GitHub Repository.
+        github_admin_menu.Append(
+            self._id_github_repository,
+            self._menu_label(_("&Open a Repository..."), "file.open_github_repository"),
+        )
+        github_admin_menu.Append(
+            self._id_git_sync_folder,
+            self._menu_label(_("S&ync Folder with GitHub..."), "sync.sync_folder"),
+        )
+        github_admin_menu.AppendSeparator()
+        github_admin_menu.Append(
+            self._id_github_create_repo,
+            self._menu_label(_("&Create Repository..."), "github.create_repository"),
+        )
+        github_admin_menu.Append(
+            self._id_github_fork_repo,
+            self._menu_label(_("&Fork Repository..."), "github.fork_repository"),
+        )
+        github_admin_menu.Append(
+            self._id_github_rename_repo,
+            self._menu_label(_("&Rename Repository..."), "github.rename_repository"),
+        )
+        github_admin_menu.Append(
+            self._id_github_change_visibility,
+            self._menu_label(_("Change &Visibility..."), "github.change_repository_visibility"),
+        )
+        github_admin_menu.Append(
+            self._id_github_change_default_branch,
+            self._menu_label(_("Change &Default Branch..."), "github.change_default_branch"),
+        )
+        github_admin_menu.Append(
+            self._id_github_branch_protection,
+            self._menu_label(
+                _("Configure Branch &Protection..."), "github.configure_branch_protection"
+            ),
+        )
+        github_admin_menu.Append(
+            self._id_github_delete_branch,
+            self._menu_label(_("D&elete Branch..."), "github.delete_branch"),
+        )
+        github_admin_menu.Append(
+            self._id_github_commit_multiple,
+            self._menu_label(_("Commit &Multiple Files..."), "github.commit_multiple_files"),
+        )
+        github_admin_menu.AppendSeparator()
+        github_admin_menu.Append(
+            self._id_github_browse_org,
+            self._menu_label(
+                _("&Browse Organization Repositories..."), "github.browse_organization"
+            ),
+        )
+        github_admin_menu.Append(
+            self._id_github_create_release,
+            self._menu_label(_("Cre&ate Release..."), "github.create_release"),
+        )
+        github_admin_menu.Append(
+            self._id_github_dispatch_workflow,
+            self._menu_label(_("Dispatch &Workflow..."), "github.dispatch_workflow"),
+        )
+        github_admin_menu.Append(
+            self._id_github_notifications,
+            self._menu_label(_("&Notifications..."), "github.view_notifications"),
+        )
+        github_admin_menu.Append(
+            self._id_github_security_alerts,
+            self._menu_label(_("&Security Alerts..."), "github.view_security_alerts"),
+        )
+        github_admin_menu.AppendSeparator()
+        github_admin_menu.Append(
+            self._id_github_list_codespaces,
+            self._menu_label(_("Codespaces..."), "github.list_codespaces"),
+        )
+        github_admin_menu.Append(
+            self._id_github_create_codespace,
+            self._menu_label(_("Create Codespace..."), "github.create_codespace"),
+        )
+        github_admin_menu.Append(
+            self._id_github_copilot_suggest,
+            self._menu_label(_("Ask Copilot for a Command..."), "github.copilot_suggest"),
+        )
+        github_admin_menu.Append(
+            self._id_github_copilot_explain,
+            self._menu_label(_("Explain a Command..."), "github.copilot_explain"),
+        )
+        git_family_menu = wx.Menu()
+        git_family_menu.AppendSubMenu(github_admin_menu, _("Git&Hub"))
+        local_git_menu = wx.Menu()
+        local_git_menu.Append(
+            self._id_localgit_uncommitted,
+            self._menu_label(_("&Uncommitted Changes..."), "localgit.uncommitted_changes"),
+        )
+        local_git_menu.Append(
+            self._id_localgit_switch_branch,
+            self._menu_label(_("Switch &Branch..."), "localgit.switch_branch"),
+        )
+        local_git_menu.AppendSeparator()
+        local_git_menu.Append(
+            self._id_localgit_stash_changes,
+            self._menu_label(_("&Stash Changes..."), "localgit.stash_changes"),
+        )
+        local_git_menu.Append(
+            self._id_localgit_manage_stashes,
+            self._menu_label(_("Manage St&ashes..."), "localgit.manage_stashes"),
+        )
+        local_git_menu.AppendSeparator()
+        local_git_menu.Append(
+            self._id_localgit_blame,
+            self._menu_label(_("&Who Wrote This Line..."), "localgit.blame_at_cursor"),
+        )
+        local_git_menu.AppendSeparator()
+        local_git_menu.Append(
+            self._id_localgit_bisect_start,
+            self._menu_label(_("S&tart Bisect..."), "localgit.bisect_start"),
+        )
+        local_git_menu.Append(
+            self._id_localgit_bisect_reset,
+            self._menu_label(_("&End Bisect"), "localgit.bisect_reset"),
+        )
+        local_git_menu.AppendSeparator()
+        local_git_menu.Append(
+            self._id_localgit_resolve_conflicts,
+            self._menu_label(_("&Resolve Conflicts..."), "localgit.resolve_conflicts"),
+        )
+        local_git_menu.Append(
+            self._id_localgit_interactive_rebase,
+            self._menu_label(_("&Interactive Rebase..."), "localgit.interactive_rebase"),
+        )
+        local_git_menu.Append(
+            self._id_localgit_rebase_abort,
+            self._menu_label(_("Ab&ort Rebase"), "localgit.rebase_abort"),
+        )
+        local_git_menu.AppendSeparator()
+        local_git_menu.Append(
+            self._id_localgit_worktrees,
+            self._menu_label(_("Wor&ktrees..."), "localgit.worktrees"),
+        )
+        local_git_menu.Append(
+            self._id_localgit_new_worktree,
+            self._menu_label(_("&New Worktree..."), "localgit.new_worktree"),
+        )
+        git_family_menu.AppendSubMenu(local_git_menu, _("&Local Git"))
+        tools_menu.AppendSubMenu(git_family_menu, _("&Git and GitHub"))
         tools_menu.AppendSeparator()
 
         # Writing & Language -----------------------------------------------
         writing_menu = wx.Menu()
         writing_menu.Append(
             self._id_word_count,
-            self._menu_label(_("&Word Count..."), "tools.word_count"),
+            self._menu_label(_("Do&cument Statistics..."), "tools.word_count"),
         )
         writing_menu.Append(
             self._id_spell_check,
             self._menu_label(_("&Spell Check..."), "tools.spell_check_dialog"),
         )
         writing_menu.Append(
+            self._id_spell_check_word,
+            self._menu_label(_("Spell Check &Word"), "tools.spell_check_word_at_cursor"),
+        )
+        writing_menu.Append(
             self._id_previous_misspelling,
-            self._menu_label(_("Previous Mi&sspelling"), "tools.previous_misspelling"),
+            self._menu_label(_("&Previous Misspelling"), "tools.previous_misspelling"),
         )
         writing_menu.Append(
             self._id_next_misspelling,
@@ -1562,34 +2199,51 @@ class MenuBuilderMixin:
         )
         writing_menu.Append(
             self._id_misspelling_list,
-            self._menu_label(_("&Misspelling List..."), "tools.misspelling_list"),
+            self._menu_label(_("M&isspelling List..."), "tools.misspelling_list"),
         )
+        writing_menu.Append(
+            self._id_misspelling_list_ranked,
+            self._menu_label(
+                _("Misspelling List (&Ranked by Frequency)..."), "tools.misspelling_list_ranked"
+            ),
+        )
+        self._id_spell_language = wx.NewIdRef()
+        writing_menu.Append(
+            self._id_spell_language,
+            self._menu_label(_("Spell Check &Language..."), "tools.spell_language"),
+        )
+        writing_menu.AppendSeparator()
+        self._append_inline_note_rows(writing_menu)  # main_frame_inline_notes (shared commands)
+        writing_menu.AppendSeparator()
         self._id_thesaurus = wx.NewIdRef()
         writing_menu.Append(
             self._id_thesaurus,
-            self._menu_label(_("&Thesaurus..."), "tools.thesaurus"),
+            self._menu_label(_("T&hesaurus..."), "tools.thesaurus"),
         )
+        self._append_look_up_row(writing_menu)  # main_frame_hosted_ai: the shared Look Up
         writing_menu.Append(
             self._id_dictionary_status,
-            self._menu_label(_("Dictionary &Status..."), "tools.dictionary_status"),
+            self._menu_label(_("&Dictionary Status..."), "tools.dictionary_status"),
         )
         writing_menu.AppendSeparator()
         self._id_display_language = wx.NewIdRef()
         writing_menu.Append(
             self._id_display_language,
-            self._menu_label(_("Change &Display Language..."), "app.display_language"),
+            self._menu_label(_("Chan&ge Display Language..."), "app.display_language"),
         )
-        # GLOW is hidden for now (core.glow is locked off pending completion).
-        # When re-enabled, these audit/fix items reappear automatically.
+        # GLOW is an experimental opt-in: _feature_enabled("core.glow") is true
+        # only when the profile flag AND the Experimental-tab gates (master
+        # switch + GLOW checkbox) are on. The items appear on the settings-apply
+        # menu rebuild — no restart.
         if self._feature_enabled("core.glow"):
             writing_menu.AppendSeparator()
             writing_menu.Append(
                 self._id_glow_audit_document,
-                self._menu_label(_("GLOW &Audit Document"), "tools.glow_audit_document"),
+                self._menu_label(_("GL&OW Audit Document"), "tools.glow_audit_document"),
             )
             writing_menu.Append(
                 self._id_glow_audit_selection,
-                self._menu_label(_("GLOW Audit &Selection"), "tools.glow_audit_selection"),
+                self._menu_label(_("GLOW Audit Selection"), "tools.glow_audit_selection"),
             )
             writing_menu.AppendSeparator()
             writing_menu.Append(
@@ -1598,7 +2252,20 @@ class MenuBuilderMixin:
             )
             writing_menu.Append(
                 self._id_glow_fix_selection,
-                self._menu_label(_("GLOW Fix &Selection"), "tools.glow_fix_selection"),
+                self._menu_label(_("GLOW Fi&x Selection"), "tools.glow_fix_selection"),
+            )
+        # Table Studio is an experimental opt-in (Preferences > Experimental):
+        # one accessible grid for a new table or an opened CSV. Appears on
+        # settings-apply.
+        if self._experimental_gate_on("table_studio_experimental_enabled"):
+            writing_menu.AppendSeparator()
+            writing_menu.Append(
+                self._id_table_studio,
+                self._menu_label(_("Ta&ble Studio..."), "tools.table_studio"),
+            )
+            writing_menu.Append(
+                self._id_csv_studio,
+                self._menu_label(_("Open CS&V in Table Studio..."), "tools.csv_studio"),
             )
         writing_menu.AppendSeparator()
         writing_menu.Append(
@@ -1607,9 +2274,9 @@ class MenuBuilderMixin:
         )
         writing_menu.Append(
             self._id_quill_eraser_selection,
-            self._menu_label(_("Quill Eraser on &Selection..."), "tools.quill_eraser_selection"),
+            self._menu_label(_("Q&uill Eraser on Selection..."), "tools.quill_eraser_selection"),
         )
-        tools_menu.AppendSubMenu(writing_menu, _("&Writing && Language"))
+        tools_menu.AppendSubMenu(writing_menu, _("&Writing and Language"))
 
         # Reading & Dictation (merges Read Aloud, Dictation, OCR) ------------
         read_aloud_menu = wx.Menu()
@@ -1629,13 +2296,25 @@ class MenuBuilderMixin:
             self._id_read_aloud_generate_audio,
             self._menu_label(_("Generate &Audio..."), "tools.read_aloud_generate_audio"),
         )
+        # Experimental in-browser reading: shown only after the user opts in
+        # under Preferences > Experimental (the command is likewise only
+        # registered then). Opens an accessible reader page in the real browser,
+        # where the full/online voices are available.
+        if getattr(self.settings, "edge_read_aloud_enabled", False) and getattr(
+            self.settings, "experimental_acknowledged", False
+        ):
+            read_aloud_menu.AppendSeparator()
+            read_aloud_menu.Append(
+                self._id_read_aloud_edge,
+                self._menu_label(_("R&ead in Browser (Experimental)"), "tools.read_aloud_edge"),
+            )
         read_aloud_menu.Append(
             self._id_announcement_backend,
             self._menu_label(_("Announcement &Backend..."), "tools.announcement_backend"),
         )
         read_aloud_menu.Append(
             self._id_toggle_announcement_trace,
-            _("Announcement &Trace (in Settings)..."),
+            _("A&nnouncement Trace (in Settings)..."),
         )
         reading_menu = wx.Menu()
         reading_menu.AppendSubMenu(read_aloud_menu, _("Read &Aloud"))
@@ -1645,20 +2324,22 @@ class MenuBuilderMixin:
         )
         reading_menu.Append(
             self._id_say_selected,
-            self._menu_label(_("&Say Selected"), "edit.say_selected"),
+            self._menu_label(_("Sa&y Selected"), "edit.say_selected"),
         )
         reading_menu.Append(
             self._id_read_all,
             self._menu_label(_("&Read All"), "edit.read_all"),
         )
         reading_menu.AppendSeparator()
-        reading_menu.Append(
-            self._id_toggle_sound,
-            self._menu_label(_("Toggle &Sound Notifications"), "tools.sound_toggle"),
+        # Alt+Shift+M: QUILL's own sounds, checked while on (ui/app_sounds).
+        reading_menu.AppendCheckItem(
+            self._id_toggle_sound, self._menu_label(_("App So&unds"), "tools.sound_toggle")
         )
+        self._app_sounds_menu_id = self._id_toggle_sound
+        reading_menu.Check(self._id_toggle_sound, app_sounds.sounds_on(self))
         reading_menu.Append(
             self._id_sound_events,
-            self._menu_label(_("&Manage Sound Events..."), "tools.sound_events"),
+            self._menu_label(_("S&ound Scheme..."), "tools.sound_events"),
         )
         reading_menu.AppendSeparator()
         reading_menu.Append(
@@ -1671,13 +2352,47 @@ class MenuBuilderMixin:
         )
         reading_menu.Append(
             self._id_ocr_screen,
-            self._menu_label(_("OCR &Screen Capture..."), "tools.ocr_screen"),
+            self._menu_label(_("OCR Scr&een Capture..."), "tools.ocr_screen"),
         )
         reading_menu.Append(
             self._id_describe_image,
             self._menu_label(_("&Describe Image..."), "tools.describe_image"),
         )
-        tools_menu.AppendSubMenu(reading_menu, _("R&eading && Dictation"))
+        reading_menu.AppendSeparator()
+        # The supported OCR / document-conversion tool (OCR PRD §4.2): one
+        # submenu holding the whole workflow, from import to review to service
+        # management, so it reads as a first-class QUILL tool.
+        conversion_menu = wx.Menu()
+        conversion_menu.Append(
+            self._id_import_convert,
+            self._menu_label(_("&Import / Convert Document..."), "file.import_convert"),
+        )
+        conversion_menu.Append(
+            self._id_review_last_ocr,
+            self._menu_label(_("&Review Last OCR Result..."), "tools.review_last_ocr"),
+        )
+        conversion_menu.AppendSeparator()
+        conversion_menu.Append(
+            self._id_install_local_ocr,
+            self._menu_label(
+                _("I&nstall Local OCR Engine (Tesseract)..."), "tools.install_local_ocr"
+            ),
+        )
+        conversion_menu.Append(
+            self._id_ocr_service_settings,
+            self._menu_label(_("OCR Service &Settings..."), "tools.ocr_service_settings"),
+        )
+        conversion_menu.Append(
+            self._id_ocr_services,
+            self._menu_label(_("OCR and Conversion Ser&vices..."), "tools.ocr_services"),
+        )
+        conversion_menu.AppendSeparator()
+        conversion_menu.Append(
+            self._id_delete_ocr_temp,
+            self._menu_label(_("&Delete OCR Temporary Files"), "tools.delete_ocr_temp"),
+        )
+        reading_menu.AppendSubMenu(conversion_menu, _("OCR a&nd Document Conversion"))
+        tools_menu.AppendSubMenu(reading_menu, _("R&eading and Dictation"))
         # Tools > Speech: flat menu consolidating offline speech, Windows dictation,
         # and model management (#669). Previously split across Reading & Dictation >
         # Dictation (Windows) and Speech > Whisperer (offline). One menu is simpler.
@@ -1693,13 +2408,29 @@ class MenuBuilderMixin:
             self._id_speech_dictate,
             self._menu_label(_("&Dictate (Offline)"), "tools.speech_dictate"),
         )
-        # Voice Command (Offline) is locked off for now (feature core.voice_commands,
-        # locked_off=True). The id, command, handler, and keymap entry all stay
-        # registered for easy re-enable -- restore this Append to surface it again.
-        # speech_menu.Append(
-        #     self._id_speech_voice_command,
-        #     self._menu_label(_("&Voice Command (Offline)"), "tools.voice_command"),
-        # )
+        # Hey QUILL Phase 1: push-to-talk voice command over the offline speech
+        # stack, bounded by the agent safe-tool allowlist. Off by default
+        # (settings.voice_commands_enabled); always off in Safe Mode. Plan:
+        # docs/planning/quill-hey-quill-voice-interaction-plan.md.
+        speech_menu.Append(
+            self._id_speech_voice_command,
+            self._menu_label(_("&Voice Command (Offline)"), "tools.voice_command"),
+        )
+        # Hey QUILL Phase 2: the hands-free conversation loop (warm cues,
+        # cancel window, follow-up) over the same on-device capture.
+        speech_menu.Append(
+            self._id_speech_voice_conversation,
+            self._menu_label(_("Voice &Conversation Mode"), "tools.voice_conversation"),
+        )
+        # Hey QUILL Phase 3: always-listening for the "Hey QUILL" wake phrase.
+        speech_menu.Append(
+            self._id_speech_wakeword,
+            self._menu_label(_("Listen for &Hey QUILL"), "tools.voice_wakeword"),
+        )
+        speech_menu.Append(
+            self._id_speech_voice_status,
+            self._menu_label(_("S&peak Voice Status"), "tools.voice_status"),
+        )
         # Windows (SAPI) dictation is no longer supported -- offline Whisper
         # Locked Dictation (Ctrl+F9) replaces it -- so it is not exposed in the
         # menu. The command machinery stays for back-compat.
@@ -1733,13 +2464,15 @@ class MenuBuilderMixin:
         dictation_menu.AppendSeparator()
         dictation_menu.Append(
             self._id_dictation_settings,
-            self._menu_label(_("Dictation &Settings..."), "tools.dictation_settings"),
+            self._menu_label(_("&Dictation Settings..."), "tools.dictation_settings"),
         )
         dictation_menu.Append(
             self._id_dictation_history,
             self._menu_label(_("Dictation &History && Review..."), "tools.dictation_history"),
         )
-        speech_menu.AppendSubMenu(dictation_menu, _("&Hold && Locked Dictation"))
+        # Hold-to-Dictate was removed (a held key repeats endlessly): Locked only.
+        speech_menu.AppendSubMenu(dictation_menu, _("&Locked Dictation"))
+        self._append_windows_dictation_menu(speech_menu)  # shared with QUILL Lite
         speech_menu.AppendSeparator()
         speech_menu.Append(
             self._id_speech_transcribe,
@@ -1749,22 +2482,16 @@ class MenuBuilderMixin:
         )
         speech_menu.Append(
             self._id_speech_captions,
-            self._menu_label(_("Generate &Captions (Offline)..."), "tools.speech_captions"),
+            self._menu_label(_("&Generate Captions (Offline)..."), "tools.speech_captions"),
         )
+        # The offline speech engine, Faster Whisper, and FFmpeg downloads used to
+        # live here as separate items; they are consolidated into Help > Download
+        # Optional Components (offline speech opens the guided engine+model picker),
+        # so they no longer clutter this menu.
         speech_menu.AppendSeparator()
         speech_menu.Append(
-            self._id_speech_ffmpeg,
-            self._menu_label(_("Download &FFmpeg..."), "tools.speech_ffmpeg"),
-        )
-        speech_menu.Append(
-            self._id_speech_engine_dl,
-            self._menu_label(
-                _("Download Faster Whisper &Engine..."), "tools.speech_engine_download"
-            ),
-        )
-        speech_menu.Append(
             self._id_speech_hf_token,
-            self._menu_label(_("&Hugging Face Token..."), "tools.speech_hf_token"),
+            self._menu_label(_("H&ugging Face Token..."), "tools.speech_hf_token"),
         )
         speech_menu.AppendSeparator()
         speech_menu.Append(
@@ -1774,18 +2501,383 @@ class MenuBuilderMixin:
         speech_menu.Append(
             self._id_speech_export_translated,
             self._menu_label(
-                _("Export to &Translated Speech Audio..."), "tools.speech_export_translated"
+                _("E&xport to Translated Speech Audio..."), "tools.speech_export_translated"
             ),
         )
         speech_menu.Append(
             self._id_speech_batch_export,
-            self._menu_label(_("&Batch Export to Speech Audio..."), "tools.speech_batch_export"),
+            self._menu_label(_("Audiobook && &Batch Speech..."), "tools.speech_batch_export"),
         )
+        self._append_recording_chapters_row(speech_menu)  # main_frame_recording_chapters
         speech_menu.Append(
             self._id_speech_pronunciations,
-            self._menu_label(_("Manage &Pronunciations..."), "tools.speech_pronunciations"),
+            self._menu_label(_("M&anage Pronunciations..."), "tools.speech_pronunciations"),
         )
-        tools_menu.AppendSubMenu(speech_menu, _("&Speech"))
+        tools_menu.AppendSubMenu(speech_menu, _("Speec&h"))
+        # Media (Internet Radio, Podcasts) -------------------------------------
+        radio_enabled = self._feature_enabled("core.radio")
+        podcasts_enabled = self._feature_enabled("core.podcasts")
+        library_enabled = self._feature_enabled("core.library")
+        if radio_enabled or podcasts_enabled or library_enabled or is_app_released("player"):
+            media_menu = wx.Menu()
+        if radio_enabled:
+            id_radio_browse = wx.NewIdRef()
+            id_radio_add_custom = wx.NewIdRef()
+            id_radio_find_streams = wx.NewIdRef()
+            id_radio_manage_favorites = wx.NewIdRef()
+            id_radio_play_pause = wx.NewIdRef()
+            id_radio_stop = wx.NewIdRef()
+            id_radio_mute = wx.NewIdRef()
+            id_radio_volume_up = wx.NewIdRef()
+            id_radio_volume_down = wx.NewIdRef()
+            media_menu.Append(
+                id_radio_browse, self._menu_label(_("&Browse Stations..."), "radio.browse")
+            )
+            media_menu.Append(
+                id_radio_add_custom,
+                self._menu_label(_("Add &Custom Station..."), "radio.add_custom_station"),
+            )
+            media_menu.Append(
+                id_radio_find_streams,
+                self._menu_label(_("&Find Streams from a Website..."), "radio.find_streams"),
+            )
+            media_menu.Append(
+                id_radio_manage_favorites,
+                self._menu_label(_("Manage Fa&vorites..."), "radio.manage_favorites"),
+            )
+            id_radio_play_last = wx.NewIdRef()
+            media_menu.Append(
+                id_radio_play_last,
+                self._menu_label(_("Play &Last Station"), "radio.play_last"),
+            )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_play_last(), id=id_radio_play_last)
+            id_radio_whats_playing = wx.NewIdRef()
+            media_menu.Append(
+                id_radio_whats_playing,
+                self._menu_label(_("&What's Playing?"), "radio.whats_playing"),
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.radio_whats_playing(), id=id_radio_whats_playing
+            )
+            id_radio_whats_playing_details = wx.NewIdRef()
+            media_menu.Append(
+                id_radio_whats_playing_details,
+                self._menu_label(
+                    _("W&hat's Playing - Review and Copy..."), "radio.whats_playing_details"
+                ),
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.radio_whats_playing_details(),
+                id=id_radio_whats_playing_details,
+            )
+            id_radio_song_history = wx.NewIdRef()
+            media_menu.Append(
+                id_radio_song_history,
+                self._menu_label(_("Son&g History..."), "radio.song_history"),
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.radio_song_history(), id=id_radio_song_history
+            )
+            self._global_volume_item_id = wx.NewIdRef()
+            media_menu.AppendCheckItem(
+                self._global_volume_item_id,
+                self._menu_label(
+                    _("&Use One Volume for All Stations"), "radio.toggle_global_volume"
+                ),
+            )
+            media_menu.Check(self._global_volume_item_id, self._radio_history.use_global_volume)
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.radio_toggle_global_volume(),
+                id=self._global_volume_item_id,
+            )
+            id_radio_announce_titles = wx.NewIdRef()
+            media_menu.AppendCheckItem(
+                id_radio_announce_titles,
+                self._menu_label(_("Announce Trac&k Titles"), "radio.toggle_title_announcements"),
+            )
+            media_menu.Check(id_radio_announce_titles, self._radio_history.announce_track_titles)
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.radio_toggle_title_announcements(),
+                id=id_radio_announce_titles,
+            )
+            media_menu.AppendSeparator()
+            media_menu.Append(
+                id_radio_play_pause, self._menu_label(_("&Play/Pause"), "radio.play_pause")
+            )
+            media_menu.Append(id_radio_stop, self._menu_label(_("&Stop"), "radio.stop"))
+            media_menu.Append(
+                id_radio_mute, self._menu_label(_("&Mute/Unmute"), "radio.mute_toggle")
+            )
+            media_menu.AppendSeparator()
+            media_menu.Append(
+                id_radio_volume_up, self._menu_label(_("V&olume Up"), "radio.volume_up")
+            )
+            media_menu.Append(
+                id_radio_volume_down, self._menu_label(_("Volume &Down"), "radio.volume_down")
+            )
+            id_radio_volume_boost = wx.NewIdRef()
+            media_menu.AppendCheckItem(
+                id_radio_volume_boost,
+                self._menu_label(_("Volum&e Boost"), "radio.volume_boost"),
+            )
+            media_menu.Check(id_radio_volume_boost, self._radio_history.volume_boost)
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.radio_toggle_volume_boost(),
+                id=id_radio_volume_boost,
+            )
+            # Live DVR (mpv engine): move within the buffered live window.
+            id_radio_rewind = wx.NewIdRef()
+            id_radio_forward = wx.NewIdRef()
+            id_radio_live = wx.NewIdRef()
+            media_menu.Append(id_radio_rewind, self._menu_label(_("&Rewind"), "radio.rewind"))
+            media_menu.Append(id_radio_forward, self._menu_label(_("Forw&ard"), "radio.forward"))
+            media_menu.Append(
+                id_radio_live, self._menu_label(_("Back &to Live"), "radio.jump_to_live")
+            )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_rewind(), id=id_radio_rewind)
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_forward(), id=id_radio_forward)
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_jump_to_live(), id=id_radio_live)
+            from quill.core.speech.ffmpeg import ffmpeg_available
+
+            if ffmpeg_available():
+                media_menu.AppendSeparator()
+                id_radio_record = wx.NewIdRef()
+                id_radio_schedule = wx.NewIdRef()
+                id_radio_rec_settings = wx.NewIdRef()
+                id_radio_recordings = wx.NewIdRef()
+                media_menu.Append(
+                    id_radio_record,
+                    self._menu_label(_("Record Now / Stop Recording"), "radio.record_toggle"),
+                )
+                media_menu.Append(
+                    id_radio_schedule,
+                    self._menu_label(_("Schedule Recording..."), "radio.schedule_recording"),
+                )
+                media_menu.Append(
+                    id_radio_rec_settings,
+                    self._menu_label(_("Recording Settings..."), "radio.recording_settings"),
+                )
+                media_menu.Append(
+                    id_radio_recordings,
+                    self._menu_label(_("Recordings..."), "radio.recordings"),
+                )
+                id_radio_record_station = wx.NewIdRef()
+                media_menu.Append(
+                    id_radio_record_station,
+                    self._menu_label(_("Record Station..."), "radio.record_station"),
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    lambda _e: self.open_record_station_dialog(),
+                    id=id_radio_record_station,
+                )
+                # Concurrent recording: stop every recording at once. Always
+                # present (it announces "Nothing is recording" when idle) so it
+                # has a stable place; most useful when several run together.
+                id_radio_stop_all = wx.NewIdRef()
+                media_menu.Append(
+                    id_radio_stop_all,
+                    self._menu_label(_("Stop All Recordings"), "radio.stop_all_recordings"),
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    lambda _e: self.radio_stop_all_recordings(),
+                    id=id_radio_stop_all,
+                )
+                id_radio_wake_timer = wx.NewIdRef()
+                media_menu.Append(
+                    id_radio_wake_timer,
+                    self._menu_label(_("Wake-Up Timer..."), "radio.wake_timer"),
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    lambda _e: self.open_wake_timer_dialog(),
+                    id=id_radio_wake_timer,
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU, lambda _e: self.radio_record_toggle(), id=id_radio_record
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    lambda _e: self._radio_open_schedule_recording(),
+                    id=id_radio_schedule,
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    lambda _e: self._radio_open_recording_settings(),
+                    id=id_radio_rec_settings,
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    lambda _e: self.open_radio_recordings(),
+                    id=id_radio_recordings,
+                )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_internet_radio(), id=id_radio_browse)
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self._radio_open_add_custom(None),
+                id=id_radio_add_custom,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self._radio_open_link_finder(), id=id_radio_find_streams
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.open_manage_radio_favorites(),
+                id=id_radio_manage_favorites,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.radio_toggle_play_pause(), id=id_radio_play_pause
+            )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_stop(), id=id_radio_stop)
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_mute_toggle(), id=id_radio_mute)
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.radio_volume_up(), id=id_radio_volume_up)
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.radio_volume_down(), id=id_radio_volume_down
+            )
+        if podcasts_enabled:
+            if radio_enabled:
+                media_menu.AppendSeparator()
+            id_podcasts_open = wx.NewIdRef()
+            id_podcasts_add = wx.NewIdRef()
+            id_podcasts_import_opml = wx.NewIdRef()
+            id_podcasts_export_opml = wx.NewIdRef()
+            id_podcasts_play_pause = wx.NewIdRef()
+            id_podcasts_stop = wx.NewIdRef()
+            id_podcasts_player_info = wx.NewIdRef()
+            id_podcasts_episode_notes = wx.NewIdRef()
+            id_podcasts_keep_episode = wx.NewIdRef()
+            id_media_sound_enhance = wx.NewIdRef()
+            id_podcasts_pause_downloads = wx.NewIdRef()
+            id_podcasts_resume_downloads = wx.NewIdRef()
+            media_menu.Append(
+                id_podcasts_open, self._menu_label(_("Podcasts..."), "podcasts.open_manager")
+            )
+            media_menu.Append(
+                id_podcasts_add, self._menu_label(_("Add Podcast..."), "podcasts.add")
+            )
+            media_menu.Append(
+                id_podcasts_import_opml,
+                self._menu_label(_("&Import OPML..."), "podcasts.import_opml"),
+            )
+            media_menu.Append(
+                id_podcasts_export_opml,
+                self._menu_label(_("E&xport OPML..."), "podcasts.export_opml"),
+            )
+            media_menu.AppendSeparator()
+            media_menu.Append(
+                id_podcasts_play_pause,
+                self._menu_label(_("Podcast Pla&y/Pause"), "podcasts.play_pause"),
+            )
+            media_menu.Append(
+                id_podcasts_stop, self._menu_label(_("Podcast Stop"), "podcasts.stop")
+            )
+            media_menu.Append(
+                id_podcasts_player_info,
+                self._menu_label(_("Player I&nformation..."), "podcasts.player_information"),
+            )
+            media_menu.Append(
+                id_podcasts_episode_notes,
+                self._menu_label(_("My Notes in This Episode..."), "podcasts.episode_notes"),
+            )
+            media_menu.Append(
+                id_podcasts_keep_episode,
+                self._menu_label(_("Keep This Episode"), "podcasts.keep_episode"),
+            )
+            media_menu.Append(
+                id_media_sound_enhance,
+                self._menu_label(_("Sound Enhancements..."), "media.sound_enhancements"),
+            )
+            media_menu.AppendSeparator()
+            media_menu.Append(
+                id_podcasts_pause_downloads,
+                self._menu_label(_("Pause All Downloads"), "podcasts.pause_all_downloads"),
+            )
+            media_menu.Append(
+                id_podcasts_resume_downloads,
+                self._menu_label(_("Resume All Downloads"), "podcasts.resume_all_downloads"),
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.open_podcast_manager(), id=id_podcasts_open
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self._podcast_open_add_dialog(), id=id_podcasts_add
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self._podcast_open_import_opml(),
+                id=id_podcasts_import_opml,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self._podcast_export_opml(), id=id_podcasts_export_opml
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.podcast_toggle_play_pause(),
+                id=id_podcasts_play_pause,
+            )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.podcast_stop(), id=id_podcasts_stop)
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.podcast_player_information(),
+                id=id_podcasts_player_info,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.open_podcast_episode_notes(),
+                id=id_podcasts_episode_notes,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.podcast_keep_episode(),
+                id=id_podcasts_keep_episode,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.open_media_sound_enhancements(),
+                id=id_media_sound_enhance,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.podcast_pause_all_downloads(),
+                id=id_podcasts_pause_downloads,
+            )
+            self.frame.Bind(
+                wx.EVT_MENU,
+                lambda _e: self.podcast_resume_all_downloads(),
+                id=id_podcasts_resume_downloads,
+            )
+        if library_enabled:
+            if radio_enabled or podcasts_enabled:
+                media_menu.AppendSeparator()
+            id_library_open = wx.NewIdRef()
+            media_menu.Append(
+                id_library_open, self._menu_label(_("Book Library..."), "library.open")
+            )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_library_dialog(), id=id_library_open)
+        if radio_enabled or podcasts_enabled:
+            media_menu.AppendSeparator()
+            id_sleep_timer = wx.NewIdRef()
+            media_menu.Append(
+                id_sleep_timer, self._menu_label(_("Sleep Timer..."), "media.sleep_timer")
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.open_sleep_timer_dialog(), id=id_sleep_timer
+            )
+        if is_app_released("player"):
+            if media_menu.GetMenuItemCount():
+                media_menu.AppendSeparator()
+            id_media_player = wx.NewIdRef()
+            media_menu.Append(
+                id_media_player, self._menu_label(_("Media Player..."), "app.open_media_player")
+            )
+            self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_media_player(), id=id_media_player)
+        if radio_enabled or podcasts_enabled or library_enabled or is_app_released("player"):
+            tools_menu.AppendSubMenu(media_menu, _("&Media"))
 
         # Comparison (was Compare Documents) ----------------------------------
         compare_menu = wx.Menu()
@@ -1797,15 +2889,17 @@ class MenuBuilderMixin:
         compare_menu.Append(self._id_compare_announce_difference, _("&Announce Current Difference"))
         compare_menu.Append(self._id_compare_difference_list, _("Difference &List..."))
         compare_menu.Append(self._id_compare_toggle_sync, _("Toggle &Synchronized Navigation"))
-        compare_menu.Append(self._id_compare_options, _("Compare O&ptions..."))
+        compare_menu.Append(self._id_compare_toggle_whitespace, _("Toggle &Ignore Whitespace"))
+        compare_menu.Append(self._id_compare_options, _("&Compare Options..."))
+        compare_menu.Append(self._id_compare_generate_report, _("&Generate Accessible Report"))
         compare_menu.AppendSeparator()
-        compare_menu.Append(self._id_compare_create_summary, _("Create Difference &Summary"))
-        compare_menu.Append(self._id_compare_copy_current, _("Copy &Current Difference"))
-        compare_menu.Append(self._id_compare_copy_all, _("Copy A&ll Differences"))
+        compare_menu.Append(self._id_compare_create_summary, _("C&reate Difference Summary"))
+        compare_menu.Append(self._id_compare_copy_current, _("Cop&y Current Difference"))
+        compare_menu.Append(self._id_compare_copy_all, _("Copy All &Differences"))
         tools_menu.AppendSubMenu(compare_menu, _("C&omparison"))
 
         # Braille -----------------------------------------------------------------
-        tools_menu.AppendSubMenu(self._build_braille_menu(), _("&Braille"))
+        tools_menu.AppendSubMenu(self._build_braille_menu_with_repair(), _("&Braille"))
 
         # Watch Folder (extracted from former Dictation submenu) --------------
         watch_folder_menu = wx.Menu()
@@ -1821,166 +2915,42 @@ class MenuBuilderMixin:
             self._id_watch_folder_status,
             self._menu_label(_("Watch Folder &Queue..."), "tools.watch_folder_status"),
         )
-        tools_menu.AppendSubMenu(watch_folder_menu, _("&Watch Folder"))
+        tools_menu.AppendSubMenu(watch_folder_menu, _("W&atch Folder"))
 
-        # AI Assistant (Speech submenu removed; read aloud is in Reading & Dictation)
+        # AI menu — promoted to a top-level "&AI" menu (was Tools > AI Assistant).
+        # Structured into four pillars: the conversation (Ask Quill), context
+        # actions + agents, task submenus, and the Library/Hub management surfaces.
+        # See PRD sections 5.84a (the four-pillar menu) and 5.84c (AI onboarding).
         ai_menu = wx.Menu()
         from quill.core.ai.model_manager import load_ai_enabled
+        from quill.core.ai.onboarding import is_basic_mode
 
-        ai_menu.AppendCheckItem(self._id_ai_enabled, _("Use Artificial &Intelligence"))
+        # -- QUILL's own free AI: the front door, in both modes --------------
+        # Five rows, no account to make, no key to paste, no company to choose.
+        # This is what the menu opens with because it is the answer to what
+        # almost everybody wants from AI in a word processor -- summarise this,
+        # tidy this, explain this -- and because the alternative front door
+        # (choose a provider, find an API key, paste it somewhere) is a wall.
+        #
+        # The whole of the rest of this menu is now behind "Show advanced AI
+        # features", which is remembered. Nothing was removed: Basic is a
+        # smaller door, not a smaller house.
+        self._build_hosted_ai_rows(ai_menu)
+        ai_menu.AppendSeparator()
+
+        # Everything from here to the Use AI switch is the advanced surface:
+        # provider setup, the conversation, the agents, the seven task
+        # submenus, the Library and the Hub. All of it assumes you have already
+        # decided which company sees your writing and found somewhere to paste
+        # a key, which is exactly the decision Basic mode exists to skip.
+        if not is_basic_mode():
+            self._build_advanced_ai_rows(ai_menu)
+
+        # -- Master switch ----------------------------------------------------
+        ai_menu.AppendCheckItem(self._id_ai_enabled, _("&Use Artificial Intelligence"))
         ai_menu.Check(self._id_ai_enabled, load_ai_enabled())
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ask_quill_chat,
-            self._menu_label(_("&Ask Quill..."), "tools.ask_quill_chat"),
-        )
-        ai_menu.Append(
-            self._id_prompt_library,
-            self._menu_label(_("&Prompt Library..."), "tools.prompt_library"),
-        )
-        ai_menu.Append(
-            self._id_skill_library,
-            self._menu_label(_("S&kill Library..."), "tools.skill_library"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_hub,
-            self._menu_label(_("AI &Hub..."), "tools.ai_hub"),
-        )
-        # AI Model and Connection were merged into the AI Hub (one place to
-        # configure every provider, its key, model, and run Test Chat).
-        ai_menu.Append(
-            self._id_ai_session_browser,
-            self._menu_label(_("Session &Branches..."), "tools.ai_session_browser"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_assistant,
-            self._menu_label(_("&Writing Assistant..."), "tools.ai_assistant"),
-        )
-        ai_menu.Append(
-            self._id_ai_prompt_studio,
-            self._menu_label(_("Prompt &Studio..."), "tools.ai_prompt_studio"),
-        )
-        ai_menu.Append(
-            self._id_ai_agent_center,
-            self._menu_label(_("Agent &Center..."), "tools.ai_agent_center"),
-        )
-        ai_menu.Append(
-            self._id_ai_accessibility_agent,
-            self._menu_label(_("Accessibility &Tune-Up..."), "tools.ai_accessibility_agent"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_rewrite_selection,
-            self._menu_label(_("&Rewrite Selection"), "tools.ai_rewrite_selection"),
-        )
-        ai_menu.Append(
-            self._id_ai_summarize_selection,
-            self._menu_label(_("&Summarize Selection"), "tools.ai_summarize_selection"),
-        )
-        ai_menu.Append(
-            self._id_ai_expand_selection,
-            self._menu_label(_("E&xpand Selection"), "tools.ai_expand_selection"),
-        )
-        ai_menu.Append(
-            self._id_ai_generate_toc,
-            self._menu_label(_("Generate &Table of Contents"), "tools.ai_generate_toc"),
-        )
-        ai_menu.Append(
-            self._id_ai_continue_writing,
-            self._menu_label(_("&Continue Writing"), "tools.ai_continue_writing"),
-        )
-        ai_menu.Append(
-            self._id_ai_fix_grammar,
-            self._menu_label(_("Fix &Grammar"), "tools.ai_fix_grammar"),
-        )
-        ai_menu.Append(
-            self._id_check_grammar_ai,
-            self._menu_label(_("Check Grammar with &AI..."), "tools.check_grammar_ai"),
-        )
-        # #357 keymap consolidation: the F7/Shift+F7/F8/Shift+F8/Ctrl+Shift+T
-        # inline accelerators were stripped; the canonical bindings now live
-        # in DEFAULT_KEYMAP as Ctrl+Alt+Shift+S/I/G/T/H (see
-        # quill/core/keymap.py).  Inline accelerators are kept only where
-        # they remain the canonical binding and no chord keymap entry
-        # exists for the command.
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_spell_check,
-            self._menu_label(_("AI &Spell Check..."), "tools.ai_spell_check"),
-        )
-        ai_menu.Append(
-            self._id_ai_spell_check_interactive,
-            self._menu_label(
-                _("AI Spell Check &Interactive..."), "tools.ai_spell_check_interactive"
-            ),
-        )
-        ai_menu.Append(
-            self._id_ai_grammar_style,
-            self._menu_label(_("AI &Grammar and Style Check..."), "tools.ai_grammar_style"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_translate_selection,
-            self._menu_label(_("Translate &Selection..."), "tools.ai_translate_selection"),
-        )
-        ai_menu.Append(
-            self._id_ai_translate_document,
-            self._menu_label(_("Translate &Document..."), "tools.ai_translate_document"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_transcribe_audio,
-            self._menu_label(_("Transcri&be Audio File..."), "tools.ai_transcribe_audio"),
-        )
-        ai_menu.Append(
-            self._id_ai_translate_audio,
-            self._menu_label(_("&Translate Audio File to English..."), "tools.ai_translate_audio"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_tts_read_selection,
-            self._menu_label(_("Read &Selection Aloud (AI Voice)"), "tools.ai_tts_read_selection"),
-        )
-        ai_menu.Append(
-            self._id_ai_tts_read_document,
-            self._menu_label(_("Read &Document Aloud (AI Voice)"), "tools.ai_tts_read_document"),
-        )
-        ai_menu.Append(
-            self._id_ai_tts_stop,
-            self._menu_label(_("Sto&p AI Reading"), "tools.ai_tts_stop"),
-        )
-        ai_menu.Append(
-            self._id_ai_tts_export_mp3,
-            self._menu_label(_("E&xport Document as Audio..."), "tools.ai_tts_export_mp3"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_ai_document_qa,
-            self._menu_label(_("Document &Q&&A..."), "tools.ai_document_qa"),
-        )
-        ai_menu.Append(
-            self._id_ai_thesaurus,
-            self._menu_label(_("AI &Thesaurus..."), "tools.ai_thesaurus"),
-        )
-        ai_menu.AppendSeparator()
-        ai_menu.Append(
-            self._id_train_style,
-            self._menu_label(_("&Train Writing Style..."), "tools.train_writing_style"),
-        )
-        ai_menu.Append(
-            self._id_writing_instructions,
-            self._menu_label(_("&Writing Instructions..."), "tools.writing_instructions"),
-        )
-        # "Forget API Key" moved into the AI Hub as a per-provider action
-        # ("Forget this provider's key"), since a single global forget is
-        # ambiguous once each provider keeps its own key.
-        _ai_top_level = self._feature_enabled("future.ai_menu_top_level")
-        if not _ai_top_level:
-            tools_menu.AppendSubMenu(ai_menu, _("AI &Assistant"))
-
-        # BITS Whisperer (conditional, deferred to QUILL 2.0) ----------------
+        self._append_ai_experience_toggle(ai_menu)
+        # QUILL Whisperer (conditional, deferred to QUILL 2.0) ----------------
         # "About Whisperer" was folded into the single About Quill dialog.
         whisperer_menu = wx.Menu()
         whisperer_menu.Append(
@@ -2043,7 +3013,7 @@ class MenuBuilderMixin:
         )
         bw_providers_menu.Append(
             self._id_bw_provider_select,
-            self._menu_label(_("&Select Provider..."), "whisperer.provider_select"),
+            self._menu_label(_("S&elect Provider..."), "whisperer.provider_select"),
         )
         whisperer_menu.AppendSubMenu(bw_providers_menu, _("&Providers"))
         bw_rollout_menu = wx.Menu()
@@ -2058,7 +3028,7 @@ class MenuBuilderMixin:
         )
         whisperer_menu.AppendSubMenu(bw_rollout_menu, _("&Rollout"))
         if self._feature_enabled("core.bw_whisperer"):
-            tools_menu.AppendSubMenu(whisperer_menu, _("&BITS Whisperer"))
+            tools_menu.AppendSubMenu(whisperer_menu, _("B&ITS Whisperer"))
 
         # Share (Mastodon) ---------------------------------------------------
         share_menu = wx.Menu()
@@ -2070,17 +3040,31 @@ class MenuBuilderMixin:
             self._id_mastodon_accounts,
             self._menu_label(_("Mastodon &Accounts..."), "tools.manage_mastodon_accounts"),
         )
-        tools_menu.AppendSubMenu(share_menu, _("&Share"))
-
-        # Sticky Notes -------------------------------------------------------
-        tools_menu.AppendSeparator()
-        tools_menu.Append(
-            self._id_sticky_notes,
-            self._menu_label(_("Sticky &Notes..."), "tools.sticky_notes"),
+        # Ids stored on self so the NewIdRefs stay alive for the frame's lifetime.
+        self._id_mastodon_profile = wx.NewIdRef()
+        share_menu.Append(
+            self._id_mastodon_profile,
+            self._menu_label(_("&View Mastodon Profile..."), "tools.view_mastodon_profile"),
         )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.view_mastodon_profile(), id=self._id_mastodon_profile
+        )
+        self._id_mastodon_add_list = wx.NewIdRef()
+        share_menu.Append(
+            self._id_mastodon_add_list,
+            self._menu_label(
+                _("Add a User to a Mastodon &List..."), "tools.mastodon_add_user_to_list"
+            ),
+        )
+        self.frame.Bind(
+            wx.EVT_MENU, lambda _e: self.mastodon_add_user_to_list(), id=self._id_mastodon_add_list
+        )
+        tools_menu.AppendSubMenu(share_menu, _("Sha&re"))
+
+        self._id_global_hotkeys = wx.NewIdRef()
         tools_menu.Append(
-            self._id_new_sticky_note,
-            self._menu_label(_("New Sticky &Note..."), "tools.sticky_note_capture"),
+            self._id_global_hotkeys,
+            self._menu_label(_("Global Ho&tkeys..."), "tools.global_hotkeys"),
         )
 
         # Advanced (expanded: power-tool utilities + Macros + Authoring +
@@ -2160,13 +3144,13 @@ class MenuBuilderMixin:
         power_tools_menu.AppendSeparator()
         power_tools_menu.Append(
             self._id_shell_install,
-            self._menu_label(_("&Install Shell Integration..."), "tools.shell_install"),
+            self._menu_label(_("I&nstall Shell Integration..."), "tools.shell_install"),
         )
         power_tools_menu.Append(
             self._id_shell_remove,
             self._menu_label(_("&Remove Shell Integration"), "tools.shell_remove"),
         )
-        tools_menu.AppendSubMenu(power_tools_menu, _("&Advanced"))
+        tools_menu.AppendSubMenu(power_tools_menu, _("A&dvanced"))
 
         # Quillins ------------------------------------------------------------
         tools_menu.AppendSubMenu(self._build_quillins_menu(), _("&Quillins"))
@@ -2178,8 +3162,16 @@ class MenuBuilderMixin:
             self._menu_label(_("Pre&ferences..."), "app.preferences"),
         )
         customize_support_menu.Append(
+            self._id_preferences_hub,
+            self._menu_label(_("More Preferen&ces..."), "app.preferences_hub"),
+        )
+        customize_support_menu.Append(
             self._id_menu_editor,
             self._menu_label(_("Customize &Menus..."), "app.menu_editor"),
+        )
+        customize_support_menu.Append(
+            self._id_bring_from_quilllite,
+            self._menu_label(_("Bring My QUILL &Lite Settings..."), "tools.bring_from_quilllite"),
         )
         customize_support_menu.AppendSeparator()
         customize_support_menu.Append(
@@ -2194,27 +3186,27 @@ class MenuBuilderMixin:
         customize_support_menu.Append(self._id_share_import, _("&Import or Restore..."))
         customize_support_menu.AppendSeparator()
         customize_support_menu.Append(self._id_keymap_editor, _("&Keymap Editor..."))
-        customize_support_menu.Append(self._id_export_keymap, _("&Export Keymap..."))
-        customize_support_menu.Append(self._id_import_keymap, _("&Import Keymap..."))
+        customize_support_menu.Append(self._id_export_keymap, _("E&xport Keymap..."))
+        customize_support_menu.Append(self._id_import_keymap, _("Imp&ort Keymap..."))
         customize_support_menu.Append(self._id_reset_keymap, _("&Reset Keymap"))
         customize_support_menu.Append(
-            self._id_reset_all_defaults, _("Reset &Everything to Factory Defaults...")
+            self._id_reset_all_defaults, _("Rese&t Everything to Factory Defaults...")
         )
         customize_support_menu.AppendSeparator()
         customize_support_menu.Append(self._id_notifications, _("Show &Notifications"))
         customize_support_menu.Append(self._id_save_diagnostics, _("Save &Diagnostics..."))
-        customize_support_menu.Append(self._id_open_logs_folder, _("Open &Logs Folder"))
+        customize_support_menu.Append(self._id_open_logs_folder, _("Open Lo&gs Folder"))
         self._id_view_startup_logs = wx.NewIdRef()
         customize_support_menu.Append(
             self._id_view_startup_logs,
-            self._menu_label(_("View &Startup Logs..."), "help.view_startup_logs"),
+            self._menu_label(_("&View Startup Logs..."), "help.view_startup_logs"),
         )
         customize_support_menu.Append(
             self._id_open_diagnostics_folder,
-            _("Open &Diagnostics Folder"),
+            _("Open Di&agnostics Folder"),
         )
         customize_support_menu.Append(self._id_check_updates, _("Check for &Updates"))
-        tools_menu.AppendSubMenu(customize_support_menu, _("&Customize && Support"))
+        tools_menu.AppendSubMenu(customize_support_menu, _("C&ustomize and Support"))
 
         # The former top-level "Settings" menu is gone. All configuration now
         # lives together under Tools > Customize (Preferences, Customize Menus,
@@ -2225,37 +3217,62 @@ class MenuBuilderMixin:
         help_menu = wx.Menu()
         help_menu.Append(
             self._id_help_on_control,
-            self._menu_label(_("Help on This &Control\tF1"), "help.help_on_control"),
+            self._menu_label(_("Help on This &Control"), "help.help_on_control"),
         )
         help_menu.Append(
             self._id_context_help,
-            self._menu_label(_("&What Can I Do Here?\tShift+F1"), "help.what_can_i_do_here"),
+            self._menu_label(_("&What Can I Do Here?"), "help.what_can_i_do_here"),
         )
         help_menu.Append(
             self._id_announce_context_shortcuts,
             self._menu_label(_("Announce Mode &Shortcuts"), "help.context_help"),
         )
         help_menu.Append(
+            self._id_show_spoken_echo,
+            self._menu_label(_("Show Spoken &Echo"), "view.spoken_echo"),
+        )
+        help_menu.Append(
             self._id_help_status_page,
             self._menu_label(_("Status &Page"), "help.status_page"),
         )
+        self._append_activity_rows(help_menu)  # F9 / Shift+F9 (main_frame_activity)
         help_menu.Append(
             self._id_why_dont_i_see_feature,
-            self._menu_label(_("&Why Don't I See a Feature?"), "help.why_dont_i_see_feature"),
+            self._menu_label(_("W&hy Don't I See a Feature?"), "help.why_dont_i_see_feature"),
         )
+        self._id_download_components = wx.NewIdRef()
+        help_menu.Append(
+            self._id_download_components,
+            self._menu_label(_("&Download Optional Components..."), "help.download_components"),
+        )
+        self._id_redeem_unlock_code = wx.NewIdRef()
+        if is_dev_build():
+            # Tester-only surface: redeemed codes are still honored everywhere,
+            # but the redeem entry is hidden from public builds (all apps).
+            help_menu.Append(
+                self._id_redeem_unlock_code,
+                self._menu_label(_("Redee&m Unlock Code..."), "help.redeem_unlock_code"),
+            )
         help_menu.AppendSeparator()
+        self._id_open_tutorials = wx.NewIdRef()  # leads the documents below it
+        help_menu.Append(
+            self._id_open_tutorials, self._menu_label(_("&Tutorials..."), "help.tutorials")
+        )
         self._id_open_user_guide = wx.NewIdRef()
         self._id_open_third_party_notices = wx.NewIdRef()
-        help_menu.Append(self._id_open_user_guide, _("Open User &Guide\tCtrl+F1"))
+        help_menu.Append(
+            self._id_open_user_guide,
+            self._menu_label(_("Open User &Guide"), "help.open_user_guide"),
+        )
         help_menu.Append(
             self._id_open_third_party_notices,
-            _("Open &Third-Party Notices"),
+            _("&Open Third-Party Notices"),
         )
-        help_menu.Append(self._id_open_welcome_guide, _("Open &Welcome Guide"))
+        help_menu.Append(self._id_open_welcome_guide, _("Ope&n Welcome Guide"))
         help_menu.Append(self._id_open_keyboard_reference, _("Open Keyboard &Reference"))
         help_menu.Append(
             self._id_profile_onboarding,
-            self._menu_label(_("&Personalise QUILL..."), "help.startup_wizard"),
+            self._menu_label(_("Person&alise QUILL..."), "help.startup_wizard"),
         )
         if not self._feature_enabled("core.braille"):
             help_menu.Append(
@@ -2265,7 +3282,7 @@ class MenuBuilderMixin:
         help_menu.AppendSeparator()
         help_menu.Append(
             self._id_save_diagnostics,
-            self._menu_label(_("Save &Diagnostics..."), "help.save_diagnostics"),
+            self._menu_label(_("Sa&ve Diagnostics..."), "help.save_diagnostics"),
         )
         help_menu.AppendSeparator()
         profiles_menu = wx.Menu()
@@ -2296,18 +3313,23 @@ class MenuBuilderMixin:
             self._id_reset_feature_profile,
             self._menu_label(_("Reset to &Essential Profile"), "help.reset_feature_profile"),
         )
-        help_menu.AppendSubMenu(profiles_menu, _("Feature &Profiles"))
-        help_menu.Append(
+        help_menu.AppendSubMenu(profiles_menu, _("&Feature Profiles"))
+        help_menu.Append(  # L, not Lite's G: Open User &Guide owns G here (GATE-14)
             self._id_report_bug,
-            self._menu_label(_("Report a &Bug..."), "help.report_bug"),
+            self._menu_label(_("Get He&lp from Support..."), "help.report_bug"),
         )
         # "Check for Updates on Startup" lives in Settings now (removed the
         # duplicate Help-menu toggle).
         help_menu.Append(self._id_check_updates, _("Check for &Updates..."))
-        help_menu.Append(self._id_whats_new, _("&What's New..."))
+        self._install_release_channel_item(help_menu)  # main_frame_updates.py
+        self._install_whats_new_item(help_menu)  # main_frame_updates.py
         if self._feature_enabled("core.glow"):
-            help_menu.Append(self._id_check_glow_updates, _("Check for &GLOW Updates..."))
-        help_menu.Append(self._id_about_quill, _("&About Quill"))
+            help_menu.Append(self._id_check_glow_updates, _("Chec&k for GLOW Updates..."))
+        # On macOS the Application menu already shows "About Quill" via the
+        # wx.ID_ABOUT binding below, so appending it to Help too produced a
+        # duplicate entry. Windows has no Application menu, so it stays here.
+        if sys.platform != "darwin":
+            help_menu.Append(self._id_about_quill, _("About &Quill"))
 
         # MENU-REORDER (menus.md Phase 1): every top-level menu is attached to the
         # bar here, in one place, in the conventional Windows order. Menu *content*
@@ -2319,12 +3341,38 @@ class MenuBuilderMixin:
         menu_bar.Append(insert_menu, _("&Insert"))
         menu_bar.Append(format_menu, _("F&ormat"))
         menu_bar.Append(navigate_menu, _("&Navigate"))
-        menu_bar.Append(search_menu, _("&Search"))
         menu_bar.Append(tools_menu, _("&Tools"))
-        if _ai_top_level:
-            menu_bar.Append(ai_menu, _("&AI"))
+        menu_bar.Append(ai_menu, _("&AI"))
         menu_bar.Append(window_menu, _("&Window"))
+        # The QuillVille cross-app switcher, just before Help, as in every app.
+        from quill.ui.quillville_menu import build_quillville_menu
+
+        self._quillville_menu_ids: list[object] = []
+        quillville_menu = build_quillville_menu(
+            wx,
+            self.frame,
+            self.open_companion_app,
+            exclude="quill",
+            retain=self._quillville_menu_ids.append,
+            host=self,
+        )
+        menu_bar.Append(quillville_menu, _("&QuillVille"))
         menu_bar.Append(help_menu, _("&Help"))
+
+        # #76: on macOS, tell wx this is the system Window menu. AppKit then
+        # moves it to its conventional slot (just left of Help) and merges in
+        # the standard items a Mac user expects -- Minimize (Cmd+M), Zoom,
+        # Bring All to Front, and the live window list -- alongside Quill's own
+        # Next/Previous/Close-Other/Send-to-Tray entries. Without SetWindowMenu
+        # the Window menu is an ordinary menu missing all the standard items.
+        # Guarded like the SetHelpMenu hint below so a wx build without the API
+        # degrades gracefully.
+        if sys.platform == "darwin":
+            try:
+                if hasattr(menu_bar, "SetWindowMenu"):
+                    menu_bar.SetWindowMenu(window_menu)
+            except Exception:  # noqa: BLE001
+                pass
 
         # #613: on macOS, tell wx that the "Help" menu is the system
         # Help menu so the OS moves it to the rightmost position (where
@@ -2336,7 +3384,7 @@ class MenuBuilderMixin:
         # try/except so a wx build without the API degrades gracefully
         # (and the dialog_inventory / module_size gates do not see an
         # attribute error).
-        if platform.system() == "Darwin":
+        if sys.platform == "darwin":
             try:
                 if hasattr(menu_bar, "SetHelpMenu"):
                     menu_bar.SetHelpMenu(help_menu)
@@ -2351,1603 +3399,12 @@ class MenuBuilderMixin:
         self.frame.SetMenuBar(menu_bar)
         self._refresh_contextual_menu_items()
         self._apply_ai_menu_enabled()
+        # Kill switch: dim menu items whose feature a safety advisory has locked.
+        self._apply_feature_lock_menu_state()
+        # Every item says how to reach it, last of all. The pass skips disabled
+        # rows on purpose, so it has to run *after* the three refreshes above --
+        # before them it would route rows that are about to be dimmed and miss
+        # rows that are about to be enabled.
+        apply_menu_routes(menu_bar)
 
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.new_file(), id=self._id_new)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_file(), id=self._id_open)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_url(), id=self._id_open_url)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_from_remote(),
-            id=self._id_open_remote,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.save_to_remote(),
-            id=self._id_save_to_remote,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.save_copy_to_remote(),
-            id=self._id_save_copy_to_remote,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_remote_sites(),
-            id=self._id_manage_remote_sites,
-        )
-        self._bind_ssh_file_menu()
-        self._bind_github_menu()
-        self._bind_braille_menu()
-        self._dt_bind_devtools_menu()
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.save_file(), id=self._id_save)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.save_file_as(), id=self._id_save_as)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.close_current_document(),
-            id=self._id_close_document,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.save_all_files(), id=self._id_save_all)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.reload_from_disk(),
-            id=self._id_reload_from_disk,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.check_external_changes_now(),
-            id=self._id_check_external_changes,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.restore_backup(),
-            id=self._id_restore_backup,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.save_session(), id=self._id_save_session)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_session(), id=self._id_open_session)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.page_setup(), id=self._id_page_setup)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.print_document(), id=self._id_print)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.save_as_plain_text(),
-            id=self._id_save_plain_text,
-        )
-        # #262: Pandoc Import / Export menu bindings.
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.import_document("markdown"), id=self._id_import_markdown
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.import_document("html"), id=self._id_import_html
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.import_document("docx"), id=self._id_import_docx
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.import_document("odt"), id=self._id_import_odt)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.import_document("rtf"), id=self._id_import_rtf)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.import_document("epub"), id=self._id_import_epub
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.import_document("csv"), id=self._id_import_csv)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.import_document("latex"), id=self._id_import_latex
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.import_document_other(), id=self._id_import_other
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.export_document("markdown"), id=self._id_export_markdown
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.export_document("html"), id=self._id_export_html
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.export_document("docx"), id=self._id_export_docx
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.export_document("odt"), id=self._id_export_odt)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.export_document("rtf"), id=self._id_export_rtf)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.export_document("epub"), id=self._id_export_epub
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.export_document("pdf"), id=self._id_export_pdf)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.export_document("plain_text"),
-            id=self._id_export_plain_text,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.export_daisy(), id=self._id_export_daisy)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.export_document_other(), id=self._id_export_other
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.run_batch_conversion_wizard(),
-            id=self._id_batch_convert_import,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.run_batch_conversion_wizard(),
-            id=self._id_batch_convert_export,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_palette(), id=self._id_palette)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.open_general_preferences(), id=self._id_preferences
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.open_menu_editor(), id=self._id_menu_editor)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.exit_app(), id=self._id_exit)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._open_publishing_connections(),
-            id=self._id_publishing_connections,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._verify_current_publishing_connection(),
-            id=self._id_publishing_verify_connection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._browse_publishing_content(),
-            id=self._id_publishing_browse_content,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._create_publishing_draft(),
-            id=self._id_publishing_create_draft,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._publish_current_document(),
-            id=self._id_publishing_publish_current,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._create_publishing_page_draft(),
-            id=self._id_publishing_create_page_draft,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._publish_current_page(),
-            id=self._id_publishing_publish_current_page,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._compare_publishing_remote_item(),
-            id=self._id_publishing_compare_remote_item,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._update_publishing_remote_item(),
-            id=self._id_publishing_update_remote_item,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._publish_open_remote_item(),
-            id=self._id_publishing_publish_remote_item,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._schedule_publishing_publish(),
-            id=self._id_publishing_schedule_publish,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=self._id_about_quill)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.enable_braille_mode(),
-            id=self._id_enable_braille_mode,
-        )
-        # macOS routes the application-menu "About" to wx.ID_ABOUT — wire it to
-        # the same custom dialog so the Apple-menu About shows the links too.
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_about_quill(), id=wx.ID_ABOUT)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_help_on_control(),
-            id=self._id_help_on_control,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_context_help(),
-            id=self._id_context_help,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.announce_context_mode_shortcuts(),
-            id=self._id_announce_context_shortcuts,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_help_status_page(),
-            id=self._id_help_status_page,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_feature_explanation(),
-            id=self._id_why_dont_i_see_feature,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.switch_feature_profile(),
-            id=self._id_switch_feature_profile,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_feature_profile_health_check(),
-            id=self._id_feature_profile_health_check,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_individual_feature_toggles(),
-            id=self._id_individual_feature_toggles,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.undo_last_profile_change(),
-            id=self._id_undo_profile_change,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.reset_feature_profile_to_essential(),
-            id=self._id_reset_feature_profile,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.run_startup_wizard(),
-            id=self._id_profile_onboarding,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_hub(),
-            id=self._id_ai_hub,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_writing_assistant(),
-            id=self._id_ai_assistant,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_prompt_studio(),
-            id=self._id_ai_prompt_studio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_agent_center(),
-            id=self._id_ai_agent_center,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.make_document_accessible(),
-            id=self._id_ai_accessibility_agent,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_prompt_library(),
-            id=self._id_prompt_library,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_skill_library(),
-            id=self._id_skill_library,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.check_grammar_with_ai(),
-            id=self._id_check_grammar_ai,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_spell_check(),
-            id=self._id_ai_spell_check,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_spell_check_interactive(),
-            id=self._id_ai_spell_check_interactive,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_grammar_style_check(),
-            id=self._id_ai_grammar_style,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_translate_selection(),
-            id=self._id_ai_translate_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_translate_document(),
-            id=self._id_ai_translate_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_transcribe_audio_file(),
-            id=self._id_ai_transcribe_audio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_translate_audio_file(),
-            id=self._id_ai_translate_audio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_tts_read_selection(),
-            id=self._id_ai_tts_read_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_tts_read_document(),
-            id=self._id_ai_tts_read_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_tts_stop(),
-            id=self._id_ai_tts_stop,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.ai_tts_export_mp3(),
-            id=self._id_ai_tts_export_mp3,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_document_qa(),
-            id=self._id_ai_document_qa,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ask_quill_chat(),
-            id=self._id_ask_quill_chat,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._refresh_ai_status(),
-            id=self._id_ai_status_badge,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._refresh_ai_status(),
-            id=self._id_ai_status_detail,
-        )
-        self.frame.Bind(wx.EVT_MENU, self._on_toggle_ai_enabled, id=self._id_ai_enabled)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_model_settings(),
-            id=self._id_ai_model,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self._forget_assistant_api_key(),
-            id=self._id_ai_forget_key,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_session_browser(),
-            id=self._id_ai_session_browser,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_speech_hub(0),
-            id=self._id_speech_models,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.transcribe_audio_offline(),
-            id=self._id_speech_transcribe,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.generate_captions_offline(),
-            id=self._id_speech_captions,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.dictate_offline_toggle(), id=self._id_speech_dictate
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.toggle_locked_dictation(), id=self._id_dictation_lock
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.toggle_dictation_pause(), id=self._id_dictation_pause
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.speak_dictation_status(), id=self._id_dictation_status
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.stop_dictation_keep_speech(), id=self._id_dictation_stop
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.cancel_dictation_discard(), id=self._id_dictation_cancel
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.open_dictation_settings(), id=self._id_dictation_settings
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.open_dictation_history(), id=self._id_dictation_history
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.voice_command_toggle(), id=self._id_speech_voice_command
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.choose_dictation_microphone(),
-            id=self._id_speech_microphone,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.download_ffmpeg(),
-            id=self._id_speech_ffmpeg,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.download_faster_whisper(),
-            id=self._id_speech_engine_dl,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_huggingface_token(),
-            id=self._id_speech_hf_token,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.generate_speech_audio(),
-            id=self._id_speech_export_audio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: run_translated_speech_export(self),
-            id=self._id_speech_export_translated,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: run_batch_export_to_speech(self),
-            id=self._id_speech_batch_export,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: run_pronunciation_manager(self),
-            id=self._id_speech_pronunciations,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_preferences(),
-            id=self._id_ai_connection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_rewrite_selection(),
-            id=self._id_ai_rewrite_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_summarize_selection(),
-            id=self._id_ai_summarize_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_expand_selection(),
-            id=self._id_ai_expand_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_toc(),
-            id=self._id_ai_generate_toc,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_thesaurus(),
-            id=self._id_ai_thesaurus,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_continue_writing(),
-            id=self._id_ai_continue_writing,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_ai_fix_grammar(),
-            id=self._id_ai_fix_grammar,
-        )
-        self._refresh_ai_status()
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.send_to_tray(), id=self._id_send_to_tray)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_tray_mode,
-            id=self._id_toggle_tray_mode,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_soft_wrap,
-            id=self._id_toggle_soft_wrap,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_auto_side_preview,
-            id=self._id_toggle_auto_side_preview,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_tab_control,
-            id=self._id_toggle_tab_control,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_find_wrap,
-            id=self._id_toggle_find_wrap,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_title_full_path,
-            id=self._id_toggle_title_full_path,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_auto_check_updates,
-            id=self._id_toggle_auto_check_updates,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_dirty_title_style("text"),
-            id=self._id_dirty_title_text,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_dirty_title_style("asterisk"),
-            id=self._id_dirty_title_asterisk,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_dirty_title_style("asterisk_text"),
-            id=self._id_dirty_title_asterisk_text,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_dark_mode,
-            id=self._id_toggle_dark_mode,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_persistent_undo,
-            id=self._id_toggle_persistent_undo,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_spellcheck_as_you_type,
-            id=self._id_toggle_spellcheck_as_you_type,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_intellisense_as_you_type,
-            id=self._id_toggle_intellisense_as_you_type,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.preview_in_app(),
-            id=self._id_preview,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_side_preview(),
-            id=self._id_split_preview,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.focus_preview(),
-            id=self._id_focus_preview,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.preview_in_browser(),
-            id=self._id_browser_preview,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_writing_assistant(),
-            id=self._id_ai_assistant,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_train_writing_style(),
-            id=self._id_train_style,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_writing_instructions(),
-            id=self._id_writing_instructions,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_start_with_no_document_open,
-            id=self._id_start_with_no_document_open,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.next_document(), id=self._id_next_document)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.previous_document(),
-            id=self._id_previous_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.close_other_documents(),
-            id=self._id_close_other_documents,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.insert_link(), id=self._id_insert_link)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.insert_citation(), id=self._id_insert_citation)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.open_snippet_gallery(), id=self._id_snippet_gallery
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.follow_link(), id=self._id_follow_link)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.start_selection(), id=self._id_start_selection)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.complete_selection(), id=self._id_complete_selection
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.reselect(), id=self._id_reselect)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.go_to_start_of_selection(),
-            id=self._id_go_to_start_of_selection,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.copy_all(), id=self._id_copy_all)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.unselect_all(), id=self._id_unselect_all)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.say_selected(), id=self._id_say_selected)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.read_all(), id=self._id_read_all)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.select_line(), id=self._id_select_line)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.select_paragraph(),
-            id=self._id_select_paragraph,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.select_block(), id=self._id_select_block)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.expand_selection(), id=self._id_expand_selection
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.shrink_selection(), id=self._id_shrink_selection
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.set_named_mark(), id=self._id_set_named_mark)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.jump_to_named_mark(), id=self._id_jump_to_named_mark
-        )
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.open_review_buffer(), id=self._id_open_review_buffer
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.select_to_start_of_line(),
-            id=self._id_select_to_start_of_line,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.select_to_end_of_line(),
-            id=self._id_select_to_end_of_line,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.select_to_start_of_document(),
-            id=self._id_select_to_start_of_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.select_to_end_of_document(),
-            id=self._id_select_to_end_of_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.sort_lines_ascending(),
-            id=self._id_sort_lines_ascending,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.sort_lines_descending(),
-            id=self._id_sort_lines_descending,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.reverse_lines(), id=self._id_reverse_lines)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.remove_duplicate_lines(),
-            id=self._id_remove_duplicate_lines,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.trim_trailing_whitespace(),
-            id=self._id_trim_trailing_whitespace,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.normalize_whitespace(),
-            id=self._id_normalize_whitespace,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.convert_indentation_to_spaces(),
-            id=self._id_convert_indentation_to_spaces,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.convert_indentation_to_tabs(),
-            id=self._id_convert_indentation_to_tabs,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.set_mark(), id=self._id_set_mark)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.pop_mark(), id=self._id_pop_mark)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.exchange_point_and_mark(),
-            id=self._id_exchange_point_mark,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.list_marks(), id=self._id_list_marks)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.undo(), id=self._id_undo)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.redo(), id=self._id_redo)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.copy_with_source(),
-            id=self._id_copy_with_source,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            self._on_toggle_extend_selection_mode,
-            id=self._id_toggle_extend_selection_mode,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.find_text(), id=self._id_find)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.replace_text(), id=self._id_replace)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.replace_all_text(), id=self._id_replace_all)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.go_to_line(), id=self._id_go_to_line)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.go_to_page(), id=self._id_go_to_page)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_back_location(),
-            id=self._id_back_location,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_forward_location(),
-            id=self._id_forward_location,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_next_heading(),
-            id=self._id_next_heading,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_previous_heading(),
-            id=self._id_previous_heading,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_next_block(),
-            id=self._id_next_block,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_previous_block(),
-            id=self._id_previous_block,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_outline_navigator(),
-            id=self._id_outline_navigator,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_heading_organizer(),
-            id=self._id_heading_organizer,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.match_bracket(),
-            id=self._id_match_bracket,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_next_token(),
-            id=self._id_next_token,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_previous_token(),
-            id=self._id_previous_token,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_document_language(),
-            id=self._id_set_language,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.speak_window_title(),
-            id=self._id_speak_window_title,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.speak_full_path(),
-            id=self._id_speak_full_path,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.speak_status_summary(),
-            id=self._id_speak_status_summary,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_start_with_file(),
-            id=self._id_compare_start_with_file,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_dialog_next(),
-            id=self._id_compare_next,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_dialog_previous(),
-            id=self._id_compare_previous,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_current_summary(),
-            id=self._id_compare_current,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_toggle_ignore_whitespace(),
-            id=self._id_compare_toggle_whitespace,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_generate_report(),
-            id=self._id_compare_generate_report,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_next_structure(),
-            id=self._id_next_structure,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_previous_structure(),
-            id=self._id_previous_structure,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_next_region(),
-            id=self._id_next_region,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.navigate_previous_region(),
-            id=self._id_previous_region,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.set_bookmark(), id=self._id_set_bookmark)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.go_to_bookmark(), id=self._id_go_to_bookmark)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.list_bookmarks(),
-            id=self._id_list_bookmarks,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.find_next(), id=self._id_find_next)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.find_previous(), id=self._id_find_previous)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.find_all_matches(),
-            id=self._id_find_all_matches,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.search_in_files(),
-            id=self._id_search_in_files,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.replace_in_files(),
-            id=self._id_replace_in_files,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_upper_case(), id=self._id_upper_case)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_lower_case(), id=self._id_lower_case)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_title_case(), id=self._id_title_case)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_sentence_case(),
-            id=self._id_sentence_case,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_toggle_case(), id=self._id_toggle_case)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_toggle_line_comment(),
-            id=self._id_toggle_line_comment,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_toggle_block_comment(),
-            id=self._id_toggle_block_comment,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_indent(), id=self._id_indent)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_outdent(), id=self._id_outdent)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.toggle_tab_insert_mode(), id=self._id_toggle_tab_mode
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.move_line_up(), id=self._id_move_line_up)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.move_line_down(), id=self._id_move_line_down)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.move_section_up(), id=self._id_move_section_up)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.move_section_down(), id=self._id_move_section_down
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.duplicate_line(), id=self._id_duplicate_line)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.delete_line(), id=self._id_delete_line)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.join_lines(), id=self._id_join_lines)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.quote_lines(), id=self._id_quote_lines)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.unquote_lines(), id=self._id_unquote_lines)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_bold(), id=self._id_format_bold)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_italic(), id=self._id_format_italic)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.format_underline(), id=self._id_format_underline
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_heading(1), id=self._id_heading_1)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_heading(2), id=self._id_heading_2)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_heading(3), id=self._id_heading_3)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_heading(4), id=self._id_heading_4)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_heading(5), id=self._id_heading_5)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.format_heading(6), id=self._id_heading_6)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.decrease_heading_level(),
-            id=self._id_decrease_heading_level,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.increase_heading_level(),
-            id=self._id_increase_heading_level,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.style_headings(), id=self._id_style_headings)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_insert_bullet_list(),
-            id=self._id_insert_bullet_list,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_insert_numbered_list(),
-            id=self._id_insert_numbered_list,
-        )
-        # EdSharp port: toggle variants bound to Ctrl+Alt+7/8.
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_bullet_list(),
-            id=self._id_toggle_bullet_list,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_numbered_list(),
-            id=self._id_toggle_numbered_list,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_insert_task_list(),
-            id=self._id_insert_task_list,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_list_manager(),
-            id=self._id_open_list_manager,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_list_studio(),
-            id=self._id_open_list_studio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_list_studio_settings(),
-            id=self._id_list_studio_settings,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_insert_code_block(),
-            id=self._id_insert_code_block,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_insert_footnote(),
-            id=self._id_insert_footnote,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.format_insert_table(),
-            id=self._id_insert_table,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.insert_html_tag(), id=self._id_insert_html_tag)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.insert_markdown_tag(),
-            id=self._id_insert_markdown_tag,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.insert_snippet(),
-            id=self._id_insert_snippet,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_snippets(),
-            id=self._id_manage_snippets,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.expand_abbreviation_at_cursor(),
-            id=self._id_expand_abbreviation,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_abbreviation_manager(),
-            id=self._id_manage_abbreviations,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_abbreviation_expansion(),
-            id=self._id_toggle_abbreviation_expansion,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_word_prediction(),
-            id=self._id_word_prediction,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_sticky_notes(),
-            id=self._id_sticky_notes,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.create_sticky_note(),
-            id=self._id_new_sticky_note,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_quill_eraser(),
-            id=self._id_quill_eraser,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_quill_eraser_selection(),
-            id=self._id_quill_eraser_selection,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_word_count(), id=self._id_word_count)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_spell_check_dialog(),
-            id=self._id_spell_check,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.previous_misspelling(),
-            id=self._id_previous_misspelling,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.next_misspelling(),
-            id=self._id_next_misspelling,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_misspelling_list(),
-            id=self._id_misspelling_list,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_thesaurus(),
-            id=self._id_thesaurus,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_dictionary_status(),
-            id=self._id_dictionary_status,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.change_display_language(),
-            id=self._id_display_language,
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.ocr_image_file(), id=self._id_ocr_image)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.ocr_clipboard_image(), id=self._id_ocr_clipboard
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.ocr_screen_capture(), id=self._id_ocr_screen)
-        self.frame.Bind(
-            wx.EVT_MENU, lambda _e: self.describe_image_with_ai(), id=self._id_describe_image
-        )
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.show_regex_helper(), id=self._id_regex_helper)
-        self.frame.Bind(wx.EVT_MENU, lambda _e: self.toggle_read_aloud(), id=self._id_read_aloud)
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.stop_read_aloud(),
-            id=self._id_read_aloud_stop,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.choose_read_aloud_voice(),
-            id=self._id_read_aloud_voice,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.choose_read_aloud_settings(),
-            id=self._id_read_aloud_settings,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.generate_speech_audio(),
-            id=self._id_read_aloud_generate_audio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_read_aloud(),
-            id=self._id_ai_speech_start_pause,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.stop_read_aloud(),
-            id=self._id_ai_speech_stop,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.choose_read_aloud_voice(),
-            id=self._id_ai_speech_voice,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.choose_read_aloud_settings(),
-            id=self._id_ai_speech_settings,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.generate_speech_audio(),
-            id=self._id_ai_speech_generate_audio,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.choose_announcement_backend(),
-            id=self._id_announcement_backend,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_announcement_backend("auto"),
-            id=self._id_announcement_backend_auto,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_announcement_backend("prism"),
-            id=self._id_announcement_backend_prism,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.set_announcement_backend("status_only"),
-            id=self._id_announcement_backend_status_only,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_announcement_trace_capture(),
-            id=self._id_toggle_announcement_trace,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_sound(),
-            id=self._id_toggle_sound,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_sound_events_dialog(),
-            id=self._id_sound_events,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_dictation(),
-            id=self._id_dictation,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_dictation_voice_commands(),
-            id=self._id_dictation_voice_commands,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_bw_model_manager(),
-            id=self._id_bw_model_manager,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_bw_model_status(),
-            id=self._id_bw_model_status,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.apply_bw_recommended_model(),
-            id=self._id_bw_model_recommend,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.check_bw_faster_whisper_engine(),
-            id=self._id_bw_check_faster_whisper,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_bw_provider_center(),
-            id=self._id_bw_provider_center,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_bw_provider_status(),
-            id=self._id_bw_provider_status,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.apply_bw_recommended_provider(),
-            id=self._id_bw_provider_recommend,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.select_bw_provider(),
-            id=self._id_bw_provider_select,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_bw_readiness_check(),
-            id=self._id_bw_readiness_check,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_bw_capability_matrix_page(),
-            id=self._id_bw_capability_matrix,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_bw_download_queue(),
-            id=self._id_bw_download_queue,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_watch_folder_monitoring(),
-            id=self._id_watch_folder_toggle,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_watch_folder_settings(),
-            id=self._id_watch_folder_settings,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_watch_folder_status(),
-            id=self._id_watch_folder_status,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_document_intake_report(),
-            id=self._id_document_intake_report,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.review_extraction_quality(),
-            id=self._id_review_extraction_quality,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.report_bad_extraction(),
-            id=self._id_report_bad_extraction,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.convert_file(),
-            id=self._id_convert_file,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_external_tools_dialog(),
-            id=self._id_external_tools,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.install_shell_integration(),
-            id=self._id_shell_install,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.remove_shell_integration(),
-            id=self._id_shell_remove,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_notifications(),
-            id=self._id_notifications,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.check_for_updates(),
-            id=self._id_check_updates,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.show_whats_new(),
-            id=self._id_whats_new,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.check_for_glow_updates(),
-            id=self._id_check_glow_updates,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_status_bar_settings(),
-            id=self._id_status_bar_settings,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_share_export_dialog(),
-            id=self._id_share_export,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_share_import_dialog(),
-            id=self._id_share_import,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_keymap_editor(),
-            id=self._id_keymap_editor,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_profiles_and_features_settings(),
-            id=self._id_profiles_and_features,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_with_file(),
-            id=self._id_compare_with_file,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_open_documents(),
-            id=self._id_compare_open_documents,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_next_difference(),
-            id=self._id_compare_next_difference,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_previous_difference(),
-            id=self._id_compare_previous_difference,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.compare_announce_difference(),
-            id=self._id_compare_announce_difference,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_compare_difference_list(),
-            id=self._id_compare_difference_list,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_compare_synchronization(),
-            id=self._id_compare_toggle_sync,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_compare_options(),
-            id=self._id_compare_options,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.create_compare_summary_document(),
-            id=self._id_compare_create_summary,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.copy_current_difference(),
-            id=self._id_compare_copy_current,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.copy_all_differences(),
-            id=self._id_compare_copy_all,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.start_macro_recording(),
-            id=self._id_start_macro_recording,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.stop_macro_recording(),
-            id=self._id_stop_macro_recording,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.play_last_macro(),
-            id=self._id_play_last_macro,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_macros(),
-            id=self._id_manage_macros,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.export_keymap_file(),
-            id=self._id_export_keymap,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.import_keymap_file(),
-            id=self._id_import_keymap,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.reset_keymap_defaults(),
-            id=self._id_reset_keymap,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.reset_all_to_factory_defaults(),
-            id=self._id_reset_all_defaults,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.post_to_mastodon(),
-            id=self._id_post_mastodon,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_mastodon_accounts(),
-            id=self._id_mastodon_accounts,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_welcome_guide(),
-            id=self._id_open_welcome_guide,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_keyboard_reference(),
-            id=self._id_open_keyboard_reference,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_user_guide(),
-            id=self._id_open_user_guide,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_third_party_notices(),
-            id=self._id_open_third_party_notices,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.save_diagnostics_bundle(),
-            id=self._id_save_diagnostics,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_startup_logs(),
-            id=self._id_view_startup_logs,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.report_bug(),
-            id=self._id_report_bug,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_logs_folder(),
-            id=self._id_open_logs_folder,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_diagnostics_folder(),
-            id=self._id_open_diagnostics_folder,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_yaml_structure_editor(),
-            id=self._id_yaml_structure_editor,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.glow_audit_document(),
-            id=self._id_glow_audit_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.glow_audit_selection(),
-            id=self._id_glow_audit_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.glow_fix_document(),
-            id=self._id_glow_fix_document,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.glow_fix_selection(),
-            id=self._id_glow_fix_selection,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.new_notebook(),
-            id=self._id_new_notebook,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.new_notebook_from_folder(),
-            id=self._id_new_notebook_from_folder,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.open_notebook(),
-            id=self._id_open_notebook,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.notebook_save_snapshot(),
-            id=self._id_notebook_save_snapshot,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_notebook_snapshots(),
-            id=self._id_notebook_restore_snapshot,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.manage_notebook_snapshots(),
-            id=self._id_manage_notebook_snapshots,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.toggle_entries_panel(),
-            id=self._id_toggle_entries_panel,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.go_to_entry_in_notebook(),
-            id=self._id_go_to_entry_in_notebook,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.go_to_heading_in_notebook(),
-            id=self._id_go_to_heading_in_notebook,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.go_to_bookmark_in_notebook(),
-            id=self._id_go_to_bookmark_in_notebook,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.go_to_sticky_note_in_notebook(),
-            id=self._id_go_to_sticky_note_in_notebook,
-        )
-        # Copy Tray per-slot bindings (slots 1-12)
-        for _n in range(1, 13):
-            self.frame.Bind(
-                wx.EVT_MENU,
-                lambda _e, _slot=_n: self.copy_to_tray_slot(_slot),
-                id=self._id_copy_tray_slots[_n - 1],
-            )
-        for _n in range(1, 13):
-            self.frame.Bind(
-                wx.EVT_MENU,
-                lambda _e, _slot=_n: self.paste_from_tray_slot(_slot),
-                id=self._id_paste_tray_slots[_n - 1],
-            )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.copy_to_next_slot(),
-            id=self._id_copy_to_next_slot,
-        )
-        self.frame.Bind(
-            wx.EVT_MENU,
-            lambda _e: self.search_tray_slots(),
-            id=self._id_search_tray_slots,
-        )
-        self.frame.Bind(wx.EVT_MENU, self._on_open_recent)
-        self.frame.Bind(wx.EVT_MENU, self._on_session_menu)
-        self.frame.Bind(wx.EVT_MENU, self._on_recent_session_menu)
-        self.frame.Bind(wx.EVT_MENU, self._on_window_doc_menu)
-        self.frame.Bind(wx.EVT_MENU, self._on_menu_command_activity)
+        self._bind_menu_events()

@@ -1,0 +1,545 @@
+"""QUILL Cast's library-tree actions: the context menu and its handlers.
+
+Extracted from ``podcasts.py`` (GATE-11) when the episode rows gained
+Play/Download and custom show ordering (Alt+Up/Alt+Down + Podcasts > Sort
+Podcasts) arrived. The pinned views' Rename and Reset Name rows went when the
+views left the tree for the Places list (2026-10-03): no row they applied to
+could be selected any more. Mixed into ``PodcastsAppFrame``; every ``self._*`` here is built by
+that class or ``PodcastsMixin``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+import wx
+
+
+class CastLibraryActionsMixin:
+    """Context-menu entries, rename/sort/download handlers for the main
+    page's library tree."""
+
+    def _on_library_rename_key(self) -> None:
+        """F2: rename what is yours to rename -- a folder.
+
+        A show or an episode keeps its feed's name: those labels belong to
+        the podcast, and a personal alias would quietly stop matching what
+        every other player, share link, and search result calls it.
+        """
+        selected = self._selected_tree_data()
+        if selected is None:
+            return
+        kind = selected[0]
+        if kind == "folder":
+            self._on_library_rename_folder()
+        elif kind in ("show", "episode"):
+            self._announce(
+                "Podcast and episode names come from the podcast itself and "
+                "can't be renamed. Folders can, with F2."
+            )
+
+    def _library_context_entries(self) -> list[tuple[str, Callable[[], object]]]:
+        """The context menu for whatever library row is selected, as (label,
+        handler) rows -- split from the popup itself so the menu each kind of
+        row offers is testable without wx."""
+        selected = self._selected_tree_data()
+        if selected is None:
+            return []
+        kind, key = selected
+        entries: list[tuple[str, Callable[[], object]]] = []
+        if kind == "show":
+            show = self._podcast_library.find_show(key)
+            if show is None:
+                return []
+            playing = self._podcast_controller.state.show_id == show.id and (
+                self._podcast_controller.state.state.name not in ("STOPPED", "ERROR")
+            )
+            fav_label = "Remove from Fa&vorites" if show.is_favorite else "Add to Fa&vorites"
+            entries = [
+                ("&Stop" if playing else "&Play Next Episode", self._on_library_play_stop_context),
+                (fav_label, self._on_library_favorite_toggle_context),
+                ("&Move to Folder...\tCtrl+Shift+V", self._on_library_move_to_folder),
+                ("Cop&y to Folder...\tCtrl+Shift+Y", self._on_library_copy_to_folder),
+                ("Move Up in &Custom Order\tAlt+Up", lambda: self._on_library_move_show(-1)),
+                ("Move Do&wn in Custom Order\tAlt+Down", lambda: self._on_library_move_show(1)),
+                ("Download &All Episodes", self._on_library_download_all_episodes),
+                # The symmetric verb: files gone, episodes and played state
+                # kept. Distinct from Remove All Episodes below, which empties
+                # the list itself.
+                ("Remove All Down&loads...", self._on_library_remove_all_downloads),
+                ("&Remove All Episodes...", self._on_library_remove_all_episodes),
+            ]
+            if show.feed_url and not getattr(self, "_safe_mode", False):
+                entries.insert(0, ("Refres&h Feed\tF5", self._on_library_refresh_feed))
+            if show.feed_url:
+                entries.append(("Feed Cre&dentials...", self._on_library_feed_credentials))
+            entries += [
+                ("Un&follow...\tDelete", self._on_library_remove),
+                ("New F&older...\tCtrl+Shift+E", self._on_library_new_folder),
+            ]
+        elif kind == "folder":
+            # The listening verbs lead (folder_menu says why), from the one
+            # implementation QUILL's Manager uses too. Its Folder Settings row
+            # stays QUILL's: Cast sets podcasts one at a time, in Settings for
+            # This Podcast.
+            from quill.ui.podcasts.folder_menu import folder_items
+
+            entries = list(folder_items(self, key, settings=False))
+            entries += [
+                ("Rena&me Folder...\tF2", self._on_library_rename_folder),
+                ("&Delete Folder...\tDelete", self._on_library_remove),
+                ("New F&older...\tCtrl+Shift+E", self._on_library_new_folder),
+                # On branches, never on shows or episodes -- those already ARE
+                # subscriptions; Add belongs where new things get filed.
+                ("&Add Podcast...", lambda: self._podcast_open_add_dialog()),
+            ]
+        elif kind == "episode":
+            pair = self._selected_episode()
+            if pair is None:
+                return []
+            show, episode = pair
+            state = self._podcast_controller.state
+            playing_this = (
+                state.show_id == show.id
+                and state.episode_guid == episode.guid
+                and state.state.name not in ("STOPPED", "ERROR")
+            )
+            # A downloaded episode is a file, and a file has three states
+            # rather than two: Play/Pause plus a Stop of its own. It also
+            # offers to give the disk space back, which was previously only
+            # possible for a whole show at once. Same shape as Quill Radio's
+            # browse menu (quill.core.radio.row_actions.transport_actions), so
+            # the two apps do not teach different habits for the same object.
+            downloaded = self._episode_is_downloaded(episode)
+            if downloaded:
+                entries = [
+                    (
+                        "&Pause" if playing_this else "&Play Episode",
+                        self._on_library_episode_play_stop,
+                    ),
+                    ("&Stop", self._on_library_episode_stop),
+                    ("Remo&ve Download", self._on_library_remove_episode_download),
+                ]
+            else:
+                entries = [
+                    (
+                        "&Stop" if playing_this else "&Play Episode",
+                        self._on_library_episode_play_stop,
+                    ),
+                    ("&Download Episode", self._on_library_download_episode),
+                ]
+        elif kind == "action":
+            # The empty-library filler rows: their menu is what they do.
+            entries = [
+                ("&Add Podcast...", lambda: self._podcast_open_add_dialog()),
+                ("&Import Podcasts from OPML...", lambda: self._podcast_open_import_opml()),
+            ]
+        else:
+            # The "No folder" group and the load-more rows. There is no Open
+            # Manager anywhere in this tree: in Cast it only led back to the
+            # Podcasts place, which is where the tree already is.
+            entries = [("&Add Podcast...", lambda: self._podcast_open_add_dialog())]
+        return entries
+
+    def _on_library_context_menu(self, _event: object) -> None:
+        entries = self._library_context_entries()
+        if not entries:
+            return
+        menu = wx.Menu()
+        id_refs = []
+        for label, handler in entries:
+            item_id = wx.NewIdRef()
+            id_refs.append(item_id)
+            menu.Append(item_id, label)
+            menu.Bind(wx.EVT_MENU, lambda _e, h=handler: h(), id=item_id)
+        self._keep_menu_ids(*id_refs)
+        self._shows_tree.PopupMenu(menu)
+        menu.Destroy()
+
+    def _on_library_play_stop_context(self) -> None:
+        show = self._selected_show()
+        if show is None:
+            return
+        state = self._podcast_controller.state
+        if state.show_id == show.id and state.state.name not in ("STOPPED", "ERROR"):
+            self.podcast_stop()
+        else:
+            self._play_show_next_episode(show.id)
+
+    def _on_library_refresh_feed(self) -> None:
+        show = self._selected_show()
+        if show is None:
+            return
+        if not show.feed_url:
+            self._announce(f"{show.title} has no feed address to refresh.")
+            return
+        if getattr(self, "_safe_mode", False):
+            self._announce("Feed refresh is unavailable in Safe Mode.")
+            return
+        self._on_refresh_feed(show)
+
+    def _on_library_favorite_toggle_context(self) -> None:
+        from quill.ui.podcasts.show_actions import toggle_favorite
+
+        show = self._selected_show()
+        if show is None:
+            return
+        toggle_favorite(self._podcast_library, show, announce=self._announce)
+        self._save_podcast_library()
+        self._refresh_transport_controls()
+
+    def _on_library_download_all_episodes(self) -> None:
+        from quill.ui.podcasts.show_actions import download_all_episodes
+
+        show = self._selected_show()
+        if show is None:
+            return
+        download_all_episodes(
+            self._podcast_download_queue,
+            self._podcast_download_root(),
+            show,
+            announce=self._announce,
+            host=self,
+        )
+
+    def _on_library_remove_all_downloads(self) -> None:
+        from quill.ui.podcasts.show_downloads import remove_all_downloads_prompt
+
+        show = self._selected_show()
+        if show is None:
+            return
+        if remove_all_downloads_prompt(
+            self.frame, self._podcast_library, show, announce=self._announce
+        ):
+            self._save_podcast_library()
+
+    def _save_and_reload_library(self, *, keep_key: tuple[str, str] | None = None) -> None:
+        """Persist a library change and retain its intended tree selection."""
+        self._save_podcast_library(keep_key=keep_key, refresh_now=True)
+
+    def _visible_library_show_ids(self) -> list[str]:
+        """Show ids in the tree's current visible order, skipping closed folders."""
+        tree = self._shows_tree
+        show_ids: list[str] = []
+
+        def collect(parent: object) -> None:
+            item, cookie = tree.GetFirstChild(parent)
+            while item.IsOk():
+                data = tree.GetItemData(item)
+                if isinstance(data, tuple) and len(data) == 2 and data[0] == "show":
+                    show_ids.append(str(data[1]))
+                if tree.IsExpanded(item):
+                    collect(item)
+                item, cookie = tree.GetNextChild(parent, cookie)
+
+        collect(tree.GetRootItem())
+        return show_ids
+
+    def _next_visible_library_show_key(self, show_id: str) -> tuple[str, str] | None:
+        """Choose the next visible show after removal, or the previous one at the end."""
+        show_ids = self._visible_library_show_ids()
+        try:
+            index = show_ids.index(show_id)
+        except ValueError:
+            return None
+        for candidate in show_ids[index + 1 :]:
+            if candidate != show_id:
+                return ("show", candidate)
+        for candidate in reversed(show_ids[:index]):
+            if candidate != show_id:
+                return ("show", candidate)
+        return None
+
+    def _neighbor_of_selected_placement(self) -> tuple[str, ...] | None:
+        """A remaining sibling at the selected row's position, then its folder."""
+        from quill.ui.podcasts.library_tree_updates import row_key
+
+        tree = self._shows_tree
+        selected = tree.GetSelection()
+        if not selected.IsOk():
+            return None
+        parent = tree.GetItemParent(selected)
+        if not parent.IsOk():
+            return None
+        for step in (tree.GetNextSibling, tree.GetPrevSibling):
+            item = step(selected)
+            while item.IsOk():
+                key = row_key(self, item)
+                if key is not None and key[0] == "show":
+                    return key
+                item = step(item)
+        return row_key(self, parent)
+
+    def _on_library_remove_all_episodes(self) -> None:
+        from quill.ui.podcasts.show_actions import remove_all_episodes_prompt
+
+        show = self._selected_show()
+        if show is None:
+            return
+        # on_change runs after the removal *and* after Ctrl+Z, so the saved
+        # library and the tree agree either way (11.3).
+        remove_all_episodes_prompt(
+            self.frame,
+            self._podcast_download_queue,
+            show,
+            announce=self._announce,
+            on_change=self._save_and_reload_library,
+        )
+
+    def _on_library_feed_credentials(self) -> None:
+        from quill.ui.podcasts.show_actions import feed_credentials_prompt
+
+        show = self._selected_show()
+        if show is None or not show.feed_url:
+            return
+        if feed_credentials_prompt(
+            self.frame, self._podcast_library, show, announce=self._announce
+        ):
+            self._save_podcast_library()
+
+    def _on_library_move_to_folder(self) -> None:
+        self._file_selected_show(copy=False)
+
+    def _on_library_copy_to_folder(self) -> None:
+        self._file_selected_show(copy=True)
+
+    def _file_selected_show(self, *, copy: bool) -> None:
+        from quill.ui.podcasts.library_tree_updates import row_key
+        from quill.ui.podcasts.show_filing import file_show
+
+        show = self._selected_show()
+        if show is None:
+            self._announce("Choose a podcast first.")
+            return
+        source = show.folder_id
+        selected_key = None
+        next_key = None
+        if getattr(self, "_current_place", "podcasts") == "podcasts":
+            item = self._shows_tree.GetSelection()
+            selected_key = row_key(self, item)
+            if not copy:
+                next_key = self._neighbor_of_selected_placement()
+            while item.IsOk():
+                data = self._shows_tree.GetItemData(item)
+                if isinstance(data, tuple) and len(data) == 2:
+                    if data[0] == "folder":
+                        source = data[1]
+                        break
+                    if data[0] == "group":
+                        source = None
+                        break
+                item = self._shows_tree.GetItemParent(item)
+        if file_show(
+            self.frame,
+            self._podcast_library,
+            show,
+            source_folder_id=source,
+            copy=copy,
+            announce=self._announce,
+            on_library_changed=self._save_podcast_library,
+        ):
+            # Moving removes the selected placement. Keep the cursor at its
+            # former position, including when a show has copies elsewhere.
+            keep_key = next_key if not copy else selected_key
+            self._save_podcast_library(keep_key=keep_key, refresh_now=True)
+
+    def _on_library_episode_play_stop(self) -> None:
+        pair = self._selected_episode()
+        if pair is None:
+            return
+        show, episode = pair
+        state = self._podcast_controller.state
+        if (
+            state.show_id == show.id
+            and state.episode_guid == episode.guid
+            and state.state.name not in ("STOPPED", "ERROR")
+        ):
+            self.podcast_stop()
+        else:
+            self._play_episode_object(show, episode)
+
+    def _episode_is_downloaded(self, episode: object) -> bool:
+        """Whether this episode has a file on disk right now.
+
+        The library records the path; the disk decides. Somebody who deleted
+        the file in Explorer has un-downloaded that episode, and a menu built
+        from the record alone would offer to remove a file that is not there
+        (and refuse to download the one that should be).
+        """
+        from pathlib import Path
+
+        recorded = str(getattr(episode, "downloaded_path", "") or "").strip()
+        if not recorded:
+            return False
+        try:
+            return Path(recorded).is_file()
+        except OSError:  # noqa: PERF203 - an unreadable path is simply not a hit
+            return False
+
+    def _on_library_episode_stop(self) -> None:
+        """Stop, from a downloaded episode's own Stop item.
+
+        Not the play/stop toggle: on a downloaded row Stop is a separate item,
+        so it must stop rather than start something.
+        """
+        self.podcast_stop()
+
+    def _on_library_remove_episode_download(self) -> None:
+        """Delete this episode's file; the subscription and played state stay.
+
+        Confirmation is the spoken outcome rather than a dialog: one episode is
+        a small, re-downloadable thing, and the show-wide Remove All Downloads
+        (which is not) keeps its confirmation.
+        """
+        from pathlib import Path
+
+        pair = self._selected_episode()
+        if pair is None:
+            return
+        _show, episode = pair
+        recorded = str(getattr(episode, "downloaded_path", "") or "").strip()
+        if not self._episode_is_downloaded(episode):
+            episode.downloaded_path = ""
+            self._save_podcast_library()
+            self._announce(f"{episode.title} is not downloaded.")
+            return
+        try:
+            Path(recorded).unlink()
+        except OSError as error:
+            self._announce(f"{episode.title} could not be removed. {error}")
+            return
+        episode.downloaded_path = ""
+        self._save_podcast_library()
+        self._announce(f"Removed the download of {episode.title}. It can be streamed again.")
+
+    def _on_library_download_episode(self) -> None:
+        """Download this one episode -- enqueued on the background download
+        worker, never fetched inline. The file lands under the Download
+        location as ``<show title>/<episode title>.<ext>`` (see
+        ``episode_destination``), so the name means something outside the app."""
+        from quill.ui.podcasts.show_actions import enqueue_episode_download
+
+        pair = self._selected_episode()
+        if pair is None:
+            return
+        show, episode = pair
+        if episode.downloaded_path:
+            self._announce(f"{episode.title} is already downloaded.")
+            return
+        if self._podcast_download_queue.get(episode.guid) is not None:
+            self._announce(f"{episode.title} is already in the download queue.")
+            return
+        enqueue_episode_download(
+            self._podcast_download_queue, self._podcast_download_root(), show, episode
+        )
+        self._announce(f"Downloading {episode.title} from {show.title}.")
+
+    def _on_library_move_show(self, offset: int) -> None:
+        """Alt+Up/Alt+Down (or the context menu): hand-arrange the library.
+
+        Taking manual control IS choosing custom order, so the first move
+        switches the sort mode -- after freezing the on-screen order as the
+        starting point, or that first nudge would scramble everything else.
+        """
+        show = self._selected_show()
+        if show is None:
+            return
+        if self._podcast_library.settings.show_sort_mode != "custom":
+            self._set_show_sort_mode("custom", announce=False)
+        from quill.core.podcasts.folder_membership import reorder
+        from quill.ui.podcasts.library_tree_updates import row_key
+
+        source = show.folder_id
+        if not self._content_is_list():
+            selected = row_key(self, self._shows_tree.GetSelection())
+            if selected is not None and len(selected) == 3:
+                source = selected[2]
+        if not reorder(self._podcast_library, show, offset, folder_id=source):
+            edge = "top" if offset < 0 else "bottom"
+            self._announce(f"{show.title} is already at the {edge}.")
+            return
+        self._save_podcast_library(refresh_now=True)
+        self._announce(f"Moved {show.title} {'up' if offset < 0 else 'down'}.")
+
+    def _set_show_sort_mode(self, mode: str, *, announce: bool = True) -> None:
+        """Subscriptions > Sort Podcasts, and the silent switch a manual move
+        performs. Entering custom mode freezes whatever order is on screen as
+        the starting order, so nothing visibly jumps."""
+        from quill.core.podcasts.sorting import sort_shows
+
+        settings = self._podcast_library.settings
+        if mode == "custom" and settings.show_sort_mode != "custom":
+            self._podcast_library.shows[:] = sort_shows(
+                self._podcast_library.shows, settings.show_sort_mode
+            )
+        changed = settings.show_sort_mode != mode
+        settings.show_sort_mode = mode
+        self._refresh_sort_mode_menu()
+        if changed:
+            self._save_podcast_library()
+        if announce:
+            labels = {
+                "title_az": "ascending, A to Z",
+                "title_za": "descending, Z to A",
+                "custom": "your custom order; move shows with Alt+Up and Alt+Down",
+            }
+            self._announce(f"Podcasts sorted {labels.get(mode, mode)}.")
+
+    def _on_library_rename_folder(self) -> None:
+        from quill.ui.podcasts.show_actions import rename_folder_prompt
+
+        selected = self._selected_tree_data()
+        if selected is None or selected[0] != "folder":
+            return
+        if rename_folder_prompt(
+            self.frame, self._podcast_library, selected[1], announce=self._announce
+        ):
+            self._save_podcast_library()
+
+    def _on_library_new_folder(self) -> None:
+        from quill.ui.podcasts.show_actions import create_folder_prompt
+
+        selected = self._selected_tree_data()
+        initial_parent = selected[1] if selected is not None and selected[0] == "folder" else None
+        if create_folder_prompt(
+            self.frame,
+            self._podcast_library,
+            announce=self._announce,
+            initial_parent_id=initial_parent,
+        ):
+            self._save_podcast_library()
+
+    def _on_library_remove(self) -> None:
+        from quill.ui.podcasts.show_actions import delete_folder_prompt, unsubscribe_show_prompt
+
+        selected = self._selected_tree_data()
+        if selected is None:
+            return
+        kind, key = selected
+        if kind == "show":
+            show = self._podcast_library.find_show(key)
+            if show is None:
+                return
+            next_key = self._next_visible_library_show_key(show.id)
+
+            def save_after_change() -> None:
+                keep_key = (
+                    ("show", show.id)
+                    if self._podcast_library.find_show(show.id) is not None
+                    else next_key
+                )
+                self._save_and_reload_library(keep_key=keep_key)
+
+            unsubscribe_show_prompt(
+                self.frame,
+                self._podcast_library,
+                show,
+                announce=self._announce,
+                on_change=save_after_change,
+                download_queue=self._podcast_download_queue,
+            )
+        elif kind == "folder":
+            if delete_folder_prompt(
+                self.frame, self._podcast_library, key, announce=self._announce
+            ):
+                self._save_podcast_library()

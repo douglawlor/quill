@@ -44,6 +44,8 @@ from quill.core.onboarding_profiles import (
 )
 from quill.core.settings import Settings
 from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 _log = logging.getLogger(__name__)
 
@@ -78,6 +80,16 @@ def _is_sr_active() -> bool:
 # ---------------------------------------------------------------------------
 # Wizard preview widget (replaces the read-only TextCtrl).
 # ---------------------------------------------------------------------------
+
+
+# What a screen reader speaks for each preview field; the window names
+# passed in are lookup keys, not phrases (#1693).
+_PREVIEW_SPOKEN_NAMES = {
+    "wizard.welcome_preview": lazy_gettext("Welcome preview"),
+    "wizard.intent_preview": lazy_gettext("Setup choices preview"),
+    "wizard.extras_preview": lazy_gettext("Extras preview"),
+    "wizard.summary_text": lazy_gettext("Setup summary"),
+}
 
 
 class _WizardPreview:
@@ -136,6 +148,7 @@ class _WizardPreview:
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
             name=name,
         )
+        set_spoken_name(ctrl, str(_PREVIEW_SPOKEN_NAMES.get(name, _("Preview"))))
         ctrl.SetMinSize((-1, _PREVIEW_MIN_HEIGHT))
         return ctrl
 
@@ -315,7 +328,7 @@ class _IntentPage(_WizardPage):
             style=wx.LB_SINGLE,
             name="wizard.intent_list",
         )
-        self._list.SetMinSize((-1, 160))
+        self._list.SetMinSize(dip_size(self._list, -1, 160))
         sizer.Add(self._list, flag=wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, border=12)
 
         about_label = wx.StaticText(
@@ -734,7 +747,12 @@ class _DataLocationPage(_WizardPage):
             self,
             label=_(
                 "Settings, dictionaries, autosaves, and recovery files go here. "
-                "You can change this later from Help > Personalise QUILL or Preferences."
+                "You can change this later from Help > Personalise QUILL or Preferences. "
+                "Tip: choosing a folder that a service like OneDrive, Dropbox, Google "
+                "Drive, or iCloud already keeps in sync is a simple way to carry your "
+                "QUILL settings between devices — QUILL just writes to the folder; the "
+                "sync client does the rest. Do not run QUILL from two devices against "
+                "the same folder at the same time."
             ),
             name="wizard.data_location_desc",
         )
@@ -743,7 +761,7 @@ class _DataLocationPage(_WizardPage):
 
         self._appdata_radio = wx.RadioButton(
             self,
-            label=_("In my Windows user profile (recommended)"),
+            label=_("In my user profile (recommended)"),
             name="wizard.data_location_appdata",
             style=wx.RB_GROUP,
         )
@@ -961,7 +979,7 @@ class SetupWizardDialog(wx.Dialog):
 
         self._build_ui()
         self._show_page(0)
-        self.SetMinSize((540, 560))
+        self.SetMinSize(dip_size(self, 540, 560))
         self.Fit()
         self.CentreOnParent()
         apply_modal_ids(self, affirmative_id=wx.ID_OK, cancel_id=wx.ID_CANCEL)

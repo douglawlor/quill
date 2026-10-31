@@ -1,0 +1,274 @@
+# Builds the QUILL Cast Portable and Setup-Shared release artifacts from one onedir build:
+#
+#   dist\QUILLCast\                       the staged app folder
+#   dist\QUILL-Cast-Portable-<ver>.zip         portable (with its data\ folder)
+#   dist\QUILL-Cast-Setup-Shared-<ver>.exe     the installer (bundles the runtime)
+#
+# TWO downloads, as Quill Radio and QUILL Lite publish (owner decision,
+# 2026-10-05). The thin "Lite" installer and the Companion zip are gone before
+# Cast's first public release, so nobody has either installed. Both leaned on a
+# shared runtime being on the machine already -- the Companion zip installs
+# nothing, and the thin installer downloads the runtime on first launch -- which
+# is the wrong trade for a podcast player somebody wants working the moment the
+# installer closes. Two downloads also make Check for Updates a question with
+# one honest answer, portable or not (podcasts_preferences passes
+# match_edition=False).
+#
+# Usage:
+#   .\scripts\build_release.ps1 [-Python <python.exe>] [-FfmpegDir <dir>]
+#                               [-Iscc <path>]
+#
+# Every path defaults to "" and is resolved from the checkout itself (see
+# scripts\BuildEnv.ps1), so a clone builds on any machine and any drive. These
+# used to be literal "S:\QUILL..." defaults, which made this script runnable on
+# exactly one computer.
+#
+# Everything is bundled; the installer and zip perform no downloads. No GitHub
+# token is generated or embedded (2026-09-26): all feedback goes by email to
+# support@community-access.org, so there is nothing to bundle.
+
+param(
+    [string]$Python = "",
+    [string]$FfmpegDir = "",
+    [string]$Iscc = "",
+    [string]$QuillRepo = "",
+    [switch]$SkipSharedRuntime,
+    [switch]$SkipPublishedCheck,
+    # A Dev build's version (dev-builds.yml): 3.3.0-dev.20261003.1. Release
+    # builds never pass it; the literal below stays the app's real version.
+    [string]$DevVersion = "",
+    [int]$Build = 0,
+    [switch]$Sign
+)
+
+$ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$version = "2.0.0"
+if ($DevVersion) { $version = $DevVersion }
+
+# Authenticode code signing is opt-in (docs/code-signing.md). Set the request
+# before the policy decision so required signing is preserved.
+if ($Sign) { $env:QUILL_SIGN = "1" }
+
+# -- resolve the toolchain ----------------------------------------------------
+# standalone\cast -> standalone -> the QUILL checkout root.
+if (-not $QuillRepo) {
+    $QuillRepo = Split-Path -Parent (Split-Path -Parent $repoRoot)
+}
+. (Join-Path $QuillRepo "scripts\BuildEnv.ps1")
+$QuillRepo = Resolve-QuillRepo -Preferred $QuillRepo
+$Python = Resolve-QuillPython -Preferred $Python -QuillRepo $QuillRepo
+$Iscc = Resolve-QuillIscc -Preferred $Iscc
+
+# The build number: -Build, else the next one after the newest tag published
+# for $version. It must equal the app's build constant in source, which the
+# runtime carries; the installer records it and Windows shows X.Y.Z.B.
+$build, $fileVersion = Resolve-QuillReleaseBuild -QuillRepo $QuillRepo -Python $Python -App "cast" -Version $version -Build $Build -Dev:([bool]$DevVersion) -OfflineOk:$SkipPublishedCheck
+
+# Beta and Dev builds are never code-signed (owner decision 2026-10-04). For a
+# -dev, -alpha, -beta or -rc version, or a Dev build, this says so in one line
+# and switches -Sign off for the whole build, Inno's /DSign included; a
+# final-numbered build (a Stable candidate) signs as before. The rule is
+# scripts\code_signing.py build-decision; see docs\code-signing.md.
+$null = Resolve-QuillSigning -QuillRepo $QuillRepo -Python $Python -Version $version -Dev:([bool]$DevVersion)
+Assert-QuillBuildEnv -Python $Python -QuillRepo $QuillRepo
+
+# GATE-SIBVER (2026-10-03, as Radio's script): the runtime this build ships carries
+# every app's version constant, so no sibling may be ahead of its published release.
+Assert-QuillSiblingVersions -QuillRepo $QuillRepo -Python $Python -Releasing @("cast") -Skip:$SkipPublishedCheck
+
+# -- render docs (html + epub from the markdown source) -----------------------
+& (Join-Path $PSScriptRoot "render_docs.ps1")
+
+# -- no feedback token (2026-09-26) ------------------------------------------
+# Builds used to generate and embed a bundled GitHub "feedback token" here. No
+# QuillVille build does any more: all feedback goes to support@community-access.org
+# by email, so there is no credential to ship. -TokenFile and -SkipToken went with
+# it. The spec excludes quill._feedback_token and refuses to freeze it or
+# feedback_hub (scripts\check_no_credentials.py), so a stale gitignored copy in
+# the checkout can no longer ride along.
+
+# -- ffmpeg to bundle ---------------------------------------------------------
+# SECURITY: ffmpeg is copied verbatim into shipped artifacts, so it must come
+# from a vetted directory. No PATH auto-discovery (the old Get-Command fallback
+# here was exactly what Radio's build refuses on purpose -- a stale or planted
+# local install would ship unverified). Absent an explicit -FfmpegDir, stage
+# the pinned, SHA-256-verified asset the same way Radio and Studio do.
+if (-not $FfmpegDir) {
+    Write-Host "Staging ffmpeg from QUILL's pinned release assets..."
+    & $Python (Join-Path $QuillRepo "scripts\fetch_build_deps.py") --only ffmpeg
+    if ($LASTEXITCODE -ne 0) { throw "Could not stage ffmpeg (see scripts/fetch_build_deps.py)." }
+    $FfmpegDir = Join-Path $QuillRepo "build\deps\ffmpeg"
+}
+if (-not (Test-Path (Join-Path $FfmpegDir "ffmpeg.exe"))) {
+    throw "ffmpeg.exe not found in -FfmpegDir '$FfmpegDir'; audio trim/normalize must ship bundled."
+}
+
+# -- shared QuillVille Runtime ------------------------------------------------
+# Cast used to be the one app whose build never built the shared runtime -- it
+# inherited whatever another app's build had left in ..\..\runtime\dist, the
+# same undocumented ordering trap Weather's build retired. Build it here unless
+# the caller explicitly reuses one, then stage exactly what Cast declares
+# (REQUIRED_COMPONENTS = ("ffmpeg",) -- no libmpv; playback is wx.media).
+. (Join-Path $QuillRepo "scripts\StageMediaTools.ps1")
+$sharedRuntimeDist = Join-Path $repoRoot "..\runtime\dist\QuillVilleRuntime"
+if ($SkipSharedRuntime -and (Test-Path (Join-Path $sharedRuntimeDist "QuillVilleRuntime.exe"))) {
+    Write-Host "Reusing existing shared runtime at $sharedRuntimeDist (--SkipSharedRuntime)."
+} else {
+    Push-Location (Join-Path $repoRoot "..\runtime")
+    try {
+        & (Join-Path $repoRoot "..\runtime\build_runtime.ps1") -Python $Python
+        if ($LASTEXITCODE -ne 0) { throw "Shared QuillVille Runtime build failed." }
+    } finally {
+        Pop-Location
+    }
+}
+Stage-QuillMediaTools -RuntimeDist $sharedRuntimeDist -FfmpegDir $FfmpegDir
+# -- onedir build -------------------------------------------------------------
+Push-Location $repoRoot
+try {
+    & $Python -m PyInstaller quill-cast.spec --noconfirm --distpath dist --workpath build
+    if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
+} finally {
+    Pop-Location
+}
+$appDir = Join-Path $repoRoot "dist\QUILLCast"
+if (-not (Test-Path (Join-Path $appDir "QUILLCast.exe"))) {
+    throw "Onedir build did not produce QUILLCast.exe"
+}
+
+# -- stage the shared payload (both artifacts ship this) ----------------------
+$toolsDir = Join-Path $appDir "tools\ffmpeg"
+New-Item -ItemType Directory -Force $toolsDir | Out-Null
+Copy-Item (Join-Path $FfmpegDir "ffmpeg.exe") $toolsDir -Force
+if (Test-Path (Join-Path $FfmpegDir "ffprobe.exe")) {
+    Copy-Item (Join-Path $FfmpegDir "ffprobe.exe") $toolsDir -Force
+}
+# FFmpeg is a GPLv3 build: its licence and source offer ship beside it. This
+# used to guess at a LICENSE next to the staging folder, which never existed,
+# so the onedir shipped FFmpeg with neither and said nothing. The texts live in
+# the package (quill\data\notices\ffmpeg), as StageMediaTools.ps1 uses them.
+$ffNotices = Join-Path $QuillRepo "quill\data\notices\ffmpeg"
+foreach ($notice in @("LICENSE.GPLv3.txt", "README-SOURCE.txt")) {
+    $noticePath = Join-Path $ffNotices $notice
+    if (-not (Test-Path $noticePath)) {
+        throw "FFmpeg licence notice '$noticePath' not found -- FFmpeg ships with its licence."
+    }
+    Copy-Item $noticePath $toolsDir -Force
+}
+
+# -- the chapter engine's model ----------------------------------------------
+# Cast infers chapters from a transcript, and most podcasts publish none -- so
+# without a local engine the honest answer is always "no chapters could be
+# found". The model is 40 MB and Apache-2.0, which is exactly why it was chosen
+# over models thirty-five times its size: small enough to ship, so the feature
+# answers the first time somebody asks rather than opening with a download.
+# Verified against the MD5 the publisher pins (scripts/stage_vosk_model.py).
+Write-Host "Staging the Vosk chapter model..."
+& $Python (Join-Path $QuillRepo "scripts\stage_vosk_model.py") $appDir
+if ($LASTEXITCODE -ne 0) { throw "Could not stage the Vosk chapter model." }
+$docsDir = Join-Path $appDir "docs"
+New-Item -ItemType Directory -Force $docsDir | Out-Null
+# The licences (quill/tools/build_third_party_notices.py) sit beside the
+# program in every artifact, where Help > About > Licences and Notices looks.
+foreach ($legal in @("THIRD-PARTY-NOTICES.txt", "LICENSE.txt")) {
+    Copy-Item (Join-Path $repoRoot $legal) $appDir -Force
+}
+# .md + .html for every doc (Help > User Guide / Release Notes / Product
+# Requirements... prefers the pre-rendered .html; .md is the fallback source
+# if a build ever ships without render_docs.ps1 having run).
+Copy-Item (Join-Path $repoRoot "docs\userguide.md") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "docs\userguide.html") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "docs\release-notes-2.0.md") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "docs\release-notes-2.0.html") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "docs\prd.md") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "docs\prd.html") $docsDir -Force
+# The changelog lives in docs\ with the rest since 2.0.0 (2026-10-03).
+Copy-Item (Join-Path $repoRoot "docs\CHANGELOG.md") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "docs\CHANGELOG.html") $docsDir -Force
+Copy-Item (Join-Path $repoRoot "README.md") (Join-Path $appDir "README-QUILL-Cast.md") -Force
+
+# -- portable zip (adds the data\ folder = portable-mode evidence) ------------
+$dataDir = Join-Path $appDir "data"
+New-Item -ItemType Directory -Force $dataDir | Out-Null
+Set-Content (Join-Path $dataDir "README.txt") @"
+This folder makes QUILL Cast portable: your subscriptions, downloads,
+queue, notes, and settings live here, right next to the app, so the
+whole thing travels on a stick. Delete this folder and the app uses
+the shared Quill data in your Windows profile instead.
+"@
+# The storage-mode marker is what actually routes data here (the folder
+# alone is only the portable-bundle evidence); QUILL portable ships the
+# same marker.
+Set-Content (Join-Path $dataDir "storage-mode.json") '{"mode": "portable"}'
+
+# -- code signing (payload) ---------------------------------------------------
+# Sign every exe/dll in the app BEFORE it is zipped or embedded in the installer.
+# Opt-in via -Sign / QUILL_SIGN; a no-op otherwise.
+$signer = Join-Path $QuillRepo "scripts\code_signing.py"
+& $Python $signer sign-build $sharedRuntimeDist $appDir --label "cast payload"
+if ($LASTEXITCODE -ne 0) { throw "Code signing (payload) failed." }
+
+# Release channels: a portable copy names its own version, as the installer's
+# quill-app-version.ini does -- a Dev build's version is not the code constant,
+# and the update helper's health check waits for exactly this version to start.
+Set-Content -LiteralPath (Join-Path $appDir "quill-app-version.ini") -Value "[app]`r`nversion=$version`r`nversion_build=$version+$build" -Encoding ascii
+$zipPath = Join-Path $repoRoot "dist\QUILL-Cast-Portable-$version.zip"
+if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+# Every shipped .md leaves with its .html and .epub (scripts\complete_docs_folder.py).
+Complete-QuillDocsFolders -Python $Python -Root (Join-Path (Split-Path -Parent $PSScriptRoot) "dist") -QuillRepo $QuillRepo
+# FFmpeg ships with its licence: fail here, before anything is zipped or
+# compiled, if any ffmpeg.exe in the portable or the runtime payload lacks it.
+& $Python (Join-Path $QuillRepo "scripts\check_ffmpeg_notices.py") $appDir $sharedRuntimeDist
+if ($LASTEXITCODE -ne 0) { throw "A bundle ships ffmpeg.exe without its licence notices." }
+Compress-Archive -Path $appDir -DestinationPath $zipPath
+# The installed flavor must NOT carry the data folder (it would flip the
+# installed copy into portable mode), so remove it before the installer runs.
+Remove-Item $dataDir -Recurse -Force
+
+# -- the installer: Setup-Shared -----------------------------------------------
+# Cast now consumes the shared QuillVille Runtime like Radio, Weather, Studio
+# and Inkwell (2026-08-18). Setup-Shared supersedes the old self-contained
+# Setup -- same AppId, so it upgrades it in place. The onedir above remains
+# the Portable zip's payload.
+$innoSign = @()
+if ($env:QUILL_SIGN -eq "1") {
+    $innoSign = @("/DSign", "/Squilltrusted=`$q$Python`$q `$q$signer`$q sign `$f")
+}
+# Cast declares ffmpeg only (already staged above). The runtime dist is a
+# communal work area, so strip any libmpv another app's build left there --
+# 110 MB Cast never calls (playback is wx.media).
+$stagedMpv = Join-Path $sharedRuntimeDist "tools\mpv"
+if (Test-Path $stagedMpv) {
+    Remove-Item $stagedMpv -Recurse -Force
+    Write-Host "Stripped staged mpv from the runtime payload (Cast declares ffmpeg only)."
+}
+$launcherDir = Join-Path $repoRoot "dist\QuillCast-shared"
+& $Python (Join-Path $QuillRepo "scripts\build_native_launcher.py") --product cast --out $launcherDir
+if ($LASTEXITCODE -ne 0) { throw "Native launcher build failed." }
+New-Item -ItemType Directory -Force (Join-Path $launcherDir "docs") | Out-Null
+Copy-Item (Join-Path $appDir "docs\*") (Join-Path $launcherDir "docs") -Recurse -Force
+& $Python $signer sign-build $sharedRuntimeDist $launcherDir --label "cast shared payload"
+if ($LASTEXITCODE -ne 0) { throw "Code signing (shared payload) failed." }
+# Every shipped .md leaves with its .html and .epub (scripts\complete_docs_folder.py).
+Complete-QuillDocsFolders -Python $Python -Root (Join-Path (Split-Path -Parent $PSScriptRoot) "dist") -QuillRepo $QuillRepo
+& $Iscc @innoSign "/dAppVersion=$version" "/dAppBuild=$build" "/dAppFileVersion=$fileVersion" (Join-Path $repoRoot "installer\quill-cast-shared.iss") "/O$(Join-Path $repoRoot 'dist')"
+if ($LASTEXITCODE -ne 0) { throw "ISCC (Setup-Shared) failed with exit code $LASTEXITCODE" }
+
+# -- retired downloads never ride along ----------------------------------------
+# dist\ is a work area, and an older build of this script left the thin
+# installer and the Companion zip in it. Anything left there is one drag-and-drop
+# away from being published beside the real two, so this version's copies go.
+foreach ($retired in @("QUILL-Cast-Lite-Setup-$version.exe", "QUILL-Cast-Companion-$version.zip")) {
+    $stale = Join-Path $repoRoot "dist\$retired"
+    if (Test-Path $stale) {
+        Remove-Item $stale -Force
+        Write-Host "Removed retired artifact $retired (Cast ships two downloads)."
+    }
+}
+
+Write-Host ""
+Write-Host "Release artifacts in $(Join-Path $repoRoot 'dist'):"
+Get-ChildItem (Join-Path $repoRoot "dist") -File -Filter "*-$version.*" | ForEach-Object {
+    Write-Host ("  {0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB))
+}

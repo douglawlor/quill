@@ -1,0 +1,529 @@
+﻿# Shared build-environment resolution for every standalone app's
+# scripts\build_release.ps1 and for standalone\runtime\build_runtime.ps1.
+#
+# WHY THIS EXISTS
+# Each build script used to hardcode its own absolute defaults -- "S:\QUILL",
+# "S:\QUILL\.venv\Scripts\python.exe", "S:\token.txt" (and Studio had the same
+# three on D:\). That made every script runnable on exactly one machine, on
+# exactly one drive letter: a clone anywhere else failed either instantly ("Python
+# at 'S:\QUILL\...' is not runnable") or, worse, several minutes in with a
+# misleading error. Radio and Weather had already grown a private copy of the
+# correct resolution logic; this file is that logic extracted once so the other
+# five scripts stop drifting from it.
+#
+# HISTORICAL NOTE (2026-08-17): "S:" and "D:" in old logs are the SAME machine.
+# The primary checkout's drive was re-lettered S: -> D:, which is why stale
+# .pyc tracebacks can print S:\QUILL paths and why S:\installs deletions sit in
+# D:'s recycle bin. The checkout's broken .venv (Python 3.13.11; PyInstaller
+# crashed on malformed metadata; the "stale venv silently changed what
+# shipped" hazard Resolve-QuillPython exists to avoid) was deleted the same
+# day. Release builds use the newest system CPython -- never a checkout venv.
+#
+# Dot-source it from a build script:
+#   . (Join-Path $quillRepo "scripts\BuildEnv.ps1")
+# following the same pattern render_docs.ps1 uses for scripts\DocRender.ps1.
+#
+# Nothing here resolves a path from a drive letter. Everything is derived from
+# this file's own location on disk, so the checkout builds from D:\, S:\, a UNC
+# share, or a temp clone with no arguments at all.
+
+Set-StrictMode -Version Latest
+
+# The QUILL checkout root, derived from THIS file (scripts\BuildEnv.ps1 -> repo
+# root). $PSScriptRoot inside a dot-sourced file is the *sourcing* script's
+# directory, so use $PSCommandPath, which always names this file.
+$script:QuillBuildEnvRoot = [System.IO.Path]::GetFullPath(
+    (Join-Path (Split-Path -Parent $PSCommandPath) ".."))
+
+function Resolve-QuillRepo {
+    <#
+    .SYNOPSIS
+    Resolve the QUILL checkout root, drive-letter independent.
+    .PARAMETER Preferred
+    An explicit -QuillRepo value from the caller; wins when it is a real checkout.
+    #>
+    param([string]$Preferred = "")
+
+    # An explicit value wins, but only if it really is a checkout -- a stale
+    # hardcoded default that happens to exist as a directory must not silently
+    # become the source tree we ship.
+    if ($Preferred -and (Test-Path (Join-Path $Preferred "quill\__init__.py"))) {
+        return [System.IO.Path]::GetFullPath($Preferred)
+    }
+    if ($Preferred) {
+        Write-Host "Ignoring -QuillRepo '$Preferred' (not a QUILL checkout); resolving from this script's location."
+    }
+    if (Test-Path (Join-Path $script:QuillBuildEnvRoot "quill\__init__.py")) {
+        return $script:QuillBuildEnvRoot
+    }
+    throw "QUILL checkout not found at '$script:QuillBuildEnvRoot' -- pass -QuillRepo <path>."
+}
+
+function Test-QuillPythonExe {
+    <#
+    .SYNOPSIS
+    True only if this python.exe actually runs.
+    .DESCRIPTION
+    Existing on disk is not the same as runnable: a virtualenv whose base
+    interpreter was moved or uninstalled still has a python.exe, and it dies with
+    "did not find executable at ...". Preferring it blindly wedged builds several
+    steps later with a misleading error far from the cause, so
+    prove the interpreter runs before committing to it.
+    #>
+    param([string]$Exe)
+
+    if (-not $Exe -or -not (Test-Path $Exe)) { return $false }
+    try {
+        & $Exe -c "import sys" 2>&1 | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Get-QuillPythonVersion {
+    <#
+    .SYNOPSIS
+    The [version] of an interpreter, or $null if it will not report one.
+    #>
+    param([string]$Exe)
+
+    try {
+        $raw = & $Exe -c "import sys;print('.'.join(map(str,sys.version_info[:3])))" 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
+        return [version]($raw.Trim())
+    } catch {
+        return $null
+    }
+}
+
+function Test-QuillPythonInstallable {
+    <#
+    .SYNOPSIS
+    False for a PEP 668 "externally managed" interpreter.
+    .DESCRIPTION
+    A uv- or distro-managed CPython ships an EXTERNALLY-MANAGED marker in its
+    stdlib and refuses `pip install` without --break-system-packages. These builds
+    must be able to install the pyproject [runtime] closure into the interpreter
+    they build with, so such an install is not a usable build target -- and it must
+    not merely be *preferred and then fail*, which is what happened when this
+    machine's newest system Python (a uv-managed 3.14.2 with no wxPython and no
+    PyInstaller) sorted to the top of the candidate list.
+    #>
+    param([string]$Exe)
+
+    try {
+        $out = & $Exe -c "import os,sysconfig;print(os.path.exists(os.path.join(sysconfig.get_paths()['stdlib'],'EXTERNALLY-MANAGED')))" 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $out) { return $true }
+        return ($out.Trim() -ne "True")
+    } catch {
+        return $true
+    }
+}
+
+function Get-QuillSystemPythons {
+    <#
+    .SYNOPSIS
+    Every usable system (non-virtualenv) CPython this machine can offer, newest first.
+    .DESCRIPTION
+    Sources, in order of trust: the `py` launcher's registered installs (PEP 514),
+    then PATH. A virtualenv is never returned -- a venv has pyvenv.cfg beside the
+    interpreter, and system Python is what these builds want. PEP 668
+    externally-managed installs are also skipped; see Test-QuillPythonInstallable.
+    #>
+    $found = @()
+
+    # The py launcher enumerates every properly registered install, including the
+    # per-user Store/pythoncore layouts that are not on PATH.
+    try {
+        $listing = & py --list-paths 2>$null
+        if ($LASTEXITCODE -eq 0 -and $listing) {
+            foreach ($line in $listing) {
+                # Lines look like: " -V:3.13 *        C:\...\python.exe"
+                $m = [regex]::Match($line, '(?<path>[A-Za-z]:\\[^\s].*?python\.exe)\s*$')
+                if ($m.Success) { $found += $m.Groups['path'].Value }
+            }
+        }
+    } catch { }
+
+    try {
+        foreach ($cmd in @(Get-Command python -All -ErrorAction SilentlyContinue)) {
+            if ($cmd.Source) { $found += $cmd.Source }
+        }
+    } catch { }
+
+    $seen = @{}
+    $result = @()
+    foreach ($exe in $found) {
+        $full = try { [System.IO.Path]::GetFullPath($exe) } catch { continue }
+        if ($seen.ContainsKey($full.ToLowerInvariant())) { continue }
+        $seen[$full.ToLowerInvariant()] = $true
+
+        # Skip virtualenvs: "just use system python".
+        if (Test-Path (Join-Path (Split-Path -Parent $full) "pyvenv.cfg")) { continue }
+        if (-not (Test-QuillPythonExe $full)) { continue }
+        if (-not (Test-QuillPythonInstallable $full)) { continue }
+        $ver = Get-QuillPythonVersion $full
+        if (-not $ver) { continue }
+        $result += [pscustomobject]@{ Path = $full; Version = $ver }
+    }
+    return $result | Sort-Object -Property Version -Descending
+}
+
+function Resolve-QuillPython {
+    <#
+    .SYNOPSIS
+    Pick the interpreter to build with. Never returns an unrunnable path.
+    .DESCRIPTION
+    Precedence:
+      1. an explicit -Python from the caller (hard error if unrunnable -- an
+         explicit request that cannot be honoured must not be silently replaced)
+      2. $env:QUILL_BUILD_PYTHON
+      3. the newest system CPython (py launcher, then PATH), at or above -Minimum
+      4. the checkout's .venv, only as a last resort
+    Step 3 before step 4 is deliberate: these release builds target system Python,
+    and a stale .venv silently changed what shipped.
+    .PARAMETER Minimum
+    Lowest acceptable version; system interpreters below it are passed over.
+    #>
+    param(
+        [string]$Preferred = "",
+        [string]$QuillRepo = "",
+        [version]$Minimum = [version]"3.14"
+    )
+
+    if ($Preferred) {
+        if (-not (Test-QuillPythonExe $Preferred)) {
+            throw "Python at '$Preferred' is not runnable -- pass a working -Python <python.exe>."
+        }
+        return [System.IO.Path]::GetFullPath($Preferred)
+    }
+
+    if ($env:QUILL_BUILD_PYTHON) {
+        if (Test-QuillPythonExe $env:QUILL_BUILD_PYTHON) {
+            Write-Host "Using QUILL_BUILD_PYTHON: $env:QUILL_BUILD_PYTHON"
+            return [System.IO.Path]::GetFullPath($env:QUILL_BUILD_PYTHON)
+        }
+        Write-Host "Ignoring QUILL_BUILD_PYTHON='$env:QUILL_BUILD_PYTHON' (not runnable)."
+    }
+
+    $candidates = @(Get-QuillSystemPythons)
+    $usable = @($candidates | Where-Object { $_.Version -ge $Minimum })
+    if ($usable.Count -gt 0) {
+        $pick = $usable[0]
+        # @(...) is load-bearing under Set-StrictMode -Version Latest: a
+        # Where-Object that filters everything out returns $null, and $null.Count
+        # is a hard error rather than 0 -- which took the build down on any
+        # machine with exactly one system Python.
+        $others = @($candidates | Where-Object { $_.Path -ne $pick.Path }).Count
+        $suffix = if ($others -gt 0) { "; $others other system copy/copies ignored" } else { "" }
+        Write-Host "Using system Python $($pick.Version) ($($pick.Path))$suffix"
+        return $pick.Path
+    }
+
+    if ($QuillRepo) {
+        $venv = Join-Path $QuillRepo ".venv\Scripts\python.exe"
+        if (Test-QuillPythonExe $venv) {
+            Write-Warning "No system Python >= $Minimum found; falling back to the checkout venv $venv."
+            return [System.IO.Path]::GetFullPath($venv)
+        }
+    }
+    throw "No usable Python >= $Minimum found -- pass -Python <python.exe> or set QUILL_BUILD_PYTHON."
+}
+
+function Resolve-QuillIscc {
+    <#
+    .SYNOPSIS
+    Locate the Inno Setup compiler without hardcoding a drive.
+    .DESCRIPTION
+    Inno Setup 7 only. The 64-bit v7 compiler is what allows
+    LZMADictionarySize above 64 MB, which the shared installers rely on to
+    deduplicate ffmpeg/ffprobe (-27 MB on Quill Radio alone), and quill.iss
+    uses the v7-only SetupArchitecture directive. Version 6 was a fallback
+    until 2026-09-26; it was removed so a machine without 7 fails here with a
+    message that says so, instead of part-way through a build with an error
+    that reads like a fault in the script. An ISCC.exe on PATH is used only
+    when it does not live in another version's "Inno Setup <n>" folder
+    (ISCC.exe carries no version resource, so the folder is the signal).
+    #>
+    param([string]$Preferred = "")
+
+    $tried = @()
+    if ($Preferred) { $tried += $Preferred }
+    $tried += @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 7\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 7\ISCC.exe"),
+        (Join-Path $env:ProgramFiles "Inno Setup 7\ISCC.exe")
+    )
+    foreach ($candidate in $tried) {
+        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    }
+    $onPath = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($onPath) {
+        $folder = Split-Path -Leaf (Split-Path -Parent $onPath.Source)
+        if (-not ($folder -like "Inno Setup *") -or $folder -eq "Inno Setup 7") {
+            return $onPath.Source
+        }
+        $tried += "$($onPath.Source) (skipped: not Inno Setup 7)"
+    }
+    throw "Inno Setup 7 is required and was not found (looked in $($tried -join '; ')). Install Inno Setup 7 from https://jrsoftware.org/isdl.php, or pass -Iscc <path to v7 ISCC.exe>."
+}
+
+function Assert-QuillBuildEnv {
+    <#
+    .SYNOPSIS
+    Fail early if the interpreter is missing declared build tools.
+    .DESCRIPTION
+    For the app builds that call PyInstaller directly (Cast, Social, Beacon,
+    Studio) rather than going through build_runtime.ps1. Without this they fail
+    on a bare "No module named PyInstaller" from deep inside the build, minutes
+    after the docs have already been rendered.
+    .PARAMETER Groups
+    Comma-separated pyproject optional-dependency groups. Defaults to the build
+    tools only -- an app build does not need the whole shipped [runtime] closure.
+    #>
+    param(
+        [string]$Python,
+        [string]$QuillRepo,
+        [string]$Groups = "packaging"
+    )
+
+    $envCheck = Join-Path $QuillRepo "scripts\check_build_env.py"
+    if (-not (Test-Path $envCheck)) {
+        Write-Warning "Build-environment check not found at $envCheck; skipping."
+        return
+    }
+    & $Python $envCheck --groups $Groups --python $Python
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build environment does not match pyproject [$Groups] -- see above."
+    }
+}
+
+
+function Assert-QuillRuntimeHasModule {
+    <#
+    .SYNOPSIS
+    Fail the build if the shared runtime does not contain the app's own module.
+
+    .DESCRIPTION
+    The QuillVille Runtime is a PyInstaller onedir with its OWN frozen copy of
+    the quill package, and every app installer ships it. So a runtime built
+    before an app existed does not contain that app -- and nothing else in the
+    build notices. QUILL Lite shipped exactly that on 2026-09-08: the installer
+    compiled cleanly, installed cleanly, and the first launch said
+    "No module named quill.apps.lite", because -SkipSharedRuntime had reused a
+    runtime from three weeks earlier.
+
+    Compiling and installing are not evidence that the thing runs.
+
+    Three checks, cheapest first:
+
+    * the module's source file is in the frozen tree. Universal, instant, and
+      exactly what was missing.
+    * the whole frozen quill package matches this checkout
+      (scripts\check_runtime_freshness.py). Present is not current: on
+      2026-09-08 a runtime about to be PUBLISHED passed the check above while
+      its frozen tree was 28 files behind, with two QUILL Lite modules missing
+      outright. The build would have shipped code three weeks older than its own
+      installer, green all the way.
+    * optionally, with -ProbeArgs, the runtime is asked to *run* the module with
+      those arguments and exit. Pass an app's no-window diagnostic switch here
+      ("--check") when it has one; the runtime launcher only accepts
+      "-m <module> [args]", never "-c". Deliberately last: a stale runtime runs
+      its stale module perfectly well, so the probe cannot answer this question.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$RuntimeDir,
+        [Parameter(Mandatory = $true)][string]$Module,
+        [string[]]$ProbeArgs = @(),
+        # The checkout the frozen tree must match, and the interpreter that runs
+        # the comparison. Both default to what this file already knows, so an
+        # existing call site needs no change to gain the check.
+        [string]$SourceRoot = "",
+        [string]$Python = ""
+    )
+    $exe = Join-Path $RuntimeDir "QuillVilleRuntime.exe"
+    if (-not (Test-Path $exe)) {
+        throw "Shared runtime not found at $exe -- build it before packaging."
+    }
+    # quill.apps.lite -> quillpps\lite.py, the path inside the frozen tree.
+    $relative = ($Module.Split('.') -join [System.IO.Path]::DirectorySeparatorChar) + '.py'
+    $sourceFile = Join-Path (Join-Path $RuntimeDir "_internal") $relative
+    if (-not (Test-Path $sourceFile)) {
+        throw @"
+The shared QuillVille Runtime at
+  $RuntimeDir
+does not contain '$Module' (looked for _internal\$relative).
+
+The runtime carries its own frozen copy of the quill package, so one built
+before this app existed does not contain it -- and the installer would compile,
+install, and then fail on first launch with "No module named $Module".
+
+Rebuild it (standalone
+untimeuild_runtime.ps1), or drop -SkipSharedRuntime.
+"@
+    }
+    if (-not $SourceRoot) { $SourceRoot = $script:QuillBuildEnvRoot }
+    if (-not $Python) { $Python = Resolve-QuillPython -QuillRepo $SourceRoot }
+    & $Python (Join-Path $SourceRoot "scripts\check_runtime_freshness.py") `
+        $RuntimeDir --source-root $SourceRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "The shared runtime is not built from this checkout (see above)."
+    }
+
+    if ($ProbeArgs.Count -gt 0) {
+        & $exe "-m" $Module @ProbeArgs | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "The shared runtime could not run '$Module $($ProbeArgs -join ' ')' (exit $LASTEXITCODE)."
+        }
+        Write-Host "Shared runtime ran $Module $($ProbeArgs -join ' ')."
+    } else {
+        Write-Host "Shared runtime contains $Module."
+    }
+}
+
+
+
+function Assert-QuillSiblingVersions {
+    <#
+    .SYNOPSIS
+    Fail the build if any app's version is ahead of its published release
+    without being released by this build (GATE-SIBVER).
+
+    .DESCRIPTION
+    The shared runtime carries every app's version constant, so a Radio build
+    froze a QUILL Lite that said 1.1.0 before 1.1.0 existed (2026-09-29): on
+    every machine that got it, Lite's About read 1.1.0 and Check for Updates
+    never offered the real release. scripts\check_sibling_versions.py compares
+    each app's source version with the newest published tag; -Releasing names
+    the app(s) this build ships. -SkipPublishedCheck is for dev builds only.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$QuillRepo,
+        [Parameter(Mandatory)][string]$Python,
+        [string[]]$Releasing = @(),
+        [switch]$Skip
+    )
+    if ($Skip) {
+        Write-Host "GATE-SIBVER skipped (-SkipPublishedCheck): a dev build, not a release."
+        return
+    }
+    $args = @((Join-Path $QuillRepo "scripts\check_sibling_versions.py"))
+    foreach ($app in $Releasing) { $args += @("--releasing", $app) }
+    & $Python @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "GATE-SIBVER: an app's version is out of step with what is published (see above)."
+    }
+}
+
+function Resolve-QuillReleaseBuild {
+    <#
+    .SYNOPSIS
+    The build number this release build ships as, and its Windows file version.
+
+    .DESCRIPTION
+    The same version can ship more than once: a rebuild of 3.2.0 with a fix is
+    3.2.0 build 2, offered as an update to everyone on build 1
+    (docs\release\RELEASE.md, "Build numbers"). -Build wins; otherwise
+    scripts\release_build_number.py takes the next build after the newest tag
+    published for this version, and refuses a build that is already published
+    or that the app's build constant in source does not say. -Dev is a Dev
+    build (no build number); -OfflineOk takes the source constant when the
+    published releases cannot be read (dev builds only).
+
+    Returns a two-element array: build number, file version (3.2.0.2).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$QuillRepo,
+        [Parameter(Mandatory)][string]$Python,
+        [Parameter(Mandatory)][string]$App,
+        [Parameter(Mandatory)][string]$Version,
+        [int]$Build = 0,
+        [switch]$Dev,
+        [switch]$OfflineOk
+    )
+    $args = @((Join-Path $QuillRepo "scripts\release_build_number.py"), "--app", $App, "--version", $Version)
+    if ($Build -gt 0) { $args += @("--build", "$Build") }
+    if ($Dev) { $args += "--dev" }
+    if ($OfflineOk) { $args += "--offline-ok" }
+    $line = & $Python @args | Select-Object -Last 1
+    if ($LASTEXITCODE -ne 0 -or -not $line) {
+        throw "Build number: this build cannot ship as $App $Version (see above)."
+    }
+    $parts = "$line".Trim().Split(" ")
+    Write-Host "Building $App $Version build $($parts[0]) (file version $($parts[1]))."
+    return @([int]$parts[0], $parts[1])
+}
+
+function Resolve-QuillSigning {
+    <#
+    .SYNOPSIS
+    Decide, once per build, whether this build may be Authenticode-signed.
+
+    .DESCRIPTION
+    Owner decision 2026-10-04: Beta and Dev builds are never code-signed. Only
+    a final-numbered version (3.2.0, a Stable candidate) is, and only when -Sign
+    or QUILL_SIGN asked for it. Call this right after Resolve-QuillReleaseBuild
+    and before the first sign-build.
+
+    The decision is scripts\code_signing.py build-decision, the same helper
+    build_windows_distribution.py asks, so the rule lives in one place and is
+    tested there. For a -dev, -alpha, -beta or -rc version, or a Dev build, it
+    prints "Beta and Dev builds are not code-signed; signing skipped." and this
+    clears QUILL_SIGN and QUILL_SIGN_REQUIRED, so the sign-build steps do
+    nothing and Inno gets no /DSign. It also leaves QUILL_SIGN_VERSION (and
+    QUILL_SIGN_DEV) set for the rest of the build: the signer refuses those
+    versions by itself, so nothing later can force a signature either.
+
+    Returns $true when this build signs.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$QuillRepo,
+        [Parameter(Mandatory)][string]$Python,
+        [Parameter(Mandatory)][string]$Version,
+        [switch]$Dev
+    )
+    $env:QUILL_SIGN_VERSION = $Version
+    if ($Dev) { $env:QUILL_SIGN_DEV = "1" } else { $env:QUILL_SIGN_DEV = "" }
+    $signer = Join-Path $QuillRepo "scripts\code_signing.py"
+    $decideArgs = @($signer, "build-decision", "--version", $Version)
+    if ($Dev) { $decideArgs += "--dev" }
+    $lines = @(& $Python @decideArgs)
+    if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0) {
+        throw "Code signing: could not decide whether $Version is signed (see above)."
+    }
+    $lines | Select-Object -SkipLast 1 | ForEach-Object { Write-Host $_ }
+    if ("$($lines[-1])".Trim() -eq "sign") { return $true }
+    $env:QUILL_SIGN = ""
+    $env:QUILL_SIGN_REQUIRED = ""
+    return $false
+}
+
+function Complete-QuillDocsFolders {
+    <#
+    .SYNOPSIS
+    Give every shipped Markdown file its HTML and EPUB, in every docs folder under -Root.
+
+    .DESCRIPTION
+    Called by each app's build just before it zips the portable copy and before
+    it compiles the installer, so whatever the build staged -- however it staged
+    it -- leaves with both renderings. scripts\complete_docs_folder.py renders
+    only what is missing, with release_readiness.py's own Pandoc invocation.
+    Added 2026-10-15, when Cast was found shipping no EPUB, Social and Beacon
+    shipping bare Markdown, and QUILL its user guide alone. Throws when a
+    document is still missing one afterwards, so no package ships without them.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$Root,
+        [string]$QuillRepo = (Split-Path -Parent $PSScriptRoot)
+    )
+    if (-not (Test-Path -LiteralPath $Root)) { return }
+    $script = Join-Path $QuillRepo "scripts\complete_docs_folder.py"
+    $folders = Get-ChildItem -LiteralPath $Root -Directory -Recurse -Filter "docs" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '\\(_internal|Lib|site-packages)\\' }
+    foreach ($folder in $folders) {
+        & $Python $script $folder.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Docs in $($folder.FullName) are missing HTML or EPUB (see above)." }
+    }
+}

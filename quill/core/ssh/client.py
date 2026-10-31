@@ -13,19 +13,46 @@ from __future__ import annotations
 
 import stat as stat_module
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from quill.core.error_codes import CodedError
 from quill.core.ssh.sites import AUTH_AGENT, AUTH_KEY, DEFAULT_PORT
 from quill.core.ssh.transfer import backup_name
 
-_INSTALL_HINT = (
-    "Editing files over SSH needs the 'paramiko' package, which is not installed. "
-    "Install it with: pip install paramiko"
-)
+
+def _install_hint() -> str:
+    """The install command that actually works, built at error time.
+
+    "pip install paramiko" was the old hint, and it sent a real user in a
+    circle (#1443): QUILL ships its own Python, so a pip install into the
+    system Python succeeds and changes nothing QUILL can see. The command has
+    to name *this* interpreter -- ``sys.executable -m pip`` -- which is also
+    how the AI SDK packs install themselves (core/ai/sdk_install.py).
+    """
+    import importlib.util
+    import sys
+
+    if importlib.util.find_spec("pip") is not None:
+        return (
+            "Editing files over SSH needs the 'paramiko' package, and it is not "
+            "installed in QUILL's own copy of Python -- installing it into "
+            "another Python on this machine will not be seen. Install it with:\n"
+            f'  "{sys.executable}" -m pip install paramiko\n'
+            "then restart QUILL."
+        )
+    return (
+        "Editing files over SSH needs the 'paramiko' package, and this build of "
+        "QUILL cannot install Python packages itself (pip is not bundled). "
+        f"Install paramiko into QUILL's own Python at {sys.executable} and "
+        "restart QUILL."
+    )
 
 
-class SshDependencyError(RuntimeError):
+class SshDependencyError(CodedError):
     """Raised when an SSH action is requested but ``paramiko`` is unavailable."""
+
+    code = "QUILL-SSH-CLIENT-NO-PARAMIKO"
 
 
 @dataclass(slots=True)
@@ -124,9 +151,64 @@ class SftpConnection:
 def _import_paramiko() -> Any:
     try:
         import paramiko  # type: ignore[import-untyped]
+    except ModuleNotFoundError as exc:
+        raise SshDependencyError(_install_hint()) from exc
     except Exception as exc:  # noqa: BLE001
-        raise SshDependencyError(_INSTALL_HINT) from exc
+        # Present but broken is a different fact from absent, and telling
+        # somebody to install a package they have installed is how #1443 went
+        # in a circle. Say what actually failed.
+        raise SshDependencyError(
+            f"The 'paramiko' package is installed but could not be loaded: {exc}"
+        ) from exc
     return paramiko
+
+
+def _managed_known_hosts_path() -> Path:
+    """The QUILL-owned, writable ``known_hosts`` used to pin SSH host keys."""
+    from quill.core.paths import app_data_dir
+
+    return app_data_dir() / "ssh" / "known_hosts"
+
+
+def _load_pinned_host_keys(client: Any, *, writable: bool) -> None:
+    """Populate ``client`` with every host key QUILL knows about.
+
+    Always merges the user's ``~/.ssh/known_hosts`` (read-only). When
+    ``writable`` is true, the QUILL-managed ``known_hosts`` is loaded via
+    ``load_host_keys`` so that paramiko's ``AutoAddPolicy`` persists a
+    newly-accepted key back to it -- turning "trust first use" into real
+    trust-on-first-use pinning: the *first* key seen for a host is saved,
+    and a *different* key on a later connect raises ``BadHostKeyException``
+    instead of being silently accepted.
+    """
+    # User's OpenSSH known_hosts, merged read-only (never our save target).
+    user_known_hosts = Path.home() / ".ssh" / "known_hosts"
+    if user_known_hosts.is_file():
+        try:
+            client.get_host_keys().load(str(user_known_hosts))
+        except Exception:  # noqa: BLE001 - a malformed user file must not block connect
+            pass
+    if not writable:
+        return
+    managed = _managed_known_hosts_path()
+    try:
+        managed.parent.mkdir(parents=True, exist_ok=True)
+        if not managed.exists():
+            managed.touch()
+        # Sets the save target so AutoAddPolicy writes accepted keys back.
+        client.load_host_keys(str(managed))
+    except Exception:  # noqa: BLE001 - fall back to in-memory-only if the store is unusable
+        pass
+
+
+def apply_pinned_host_keys(client: Any, *, writable: bool) -> None:
+    """Populate *client* with QUILL's pinned host keys (public wrapper).
+
+    Shared with the Remote Sites SFTP transport so every SSH-speaking path
+    gets the same trust-on-first-use pinning semantics; see
+    :func:`_load_pinned_host_keys`.
+    """
+    _load_pinned_host_keys(client, writable=writable)
 
 
 def connect(
@@ -145,10 +227,11 @@ def connect(
 
     Host-key policy (SEC-9): by default an unknown host key causes the
     connection to be rejected. Set ``trust_first_use=True`` to opt into
-    the legacy ``AutoAddPolicy`` behaviour where the first key seen for a
-    host is silently cached. Callers that already have the user's
-    :class:`~quill.core.settings.Settings` should pass
-    ``trust_first_use=settings.ssh_trust_first_use`` explicitly.
+    trust-on-first-use pinning -- the first key seen for a host is saved to
+    a QUILL-managed ``known_hosts`` and a *changed* key on a later connect
+    is rejected (``BadHostKeyException``), never silently accepted. Callers
+    that already have the user's :class:`~quill.core.settings.Settings`
+    should pass ``trust_first_use=settings.ssh_trust_first_use`` explicitly.
     """
     paramiko = _import_paramiko()
     if trust_first_use is None:
@@ -160,16 +243,22 @@ def connect(
             trust_first_use = False
     client = paramiko.SSHClient()
     client.load_system_host_keys()
+    # Merge user + QUILL-managed known_hosts so a previously-pinned key is
+    # verified (and a mismatch rejected) regardless of the policy below.
+    _load_pinned_host_keys(client, writable=bool(trust_first_use))
     if trust_first_use:
-        # Legacy PuTTY-style first-connect behaviour: accept and cache
-        # unknown host keys. A future pass can replace this with a
-        # "Trust This Host?" dialog.
+        # Trust-on-first-use: an *unknown* host is accepted and its key is
+        # persisted to the managed known_hosts (via AutoAddPolicy + the
+        # save target set in _load_pinned_host_keys). A subsequent connect
+        # presenting a *different* key raises BadHostKeyException before
+        # this policy is ever consulted -- so this is genuine pinning, not
+        # blanket acceptance.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     else:
         # Default: reject unknown host keys. ``paramiko.RejectPolicy``
         # is the strongest available; it raises ``SSHException`` on any
-        # key that is not in ``load_system_host_keys`` output, which is
-        # what we want for a first connect.
+        # key that is not already known, which is what we want for a
+        # first connect.
         client.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     pkey = None

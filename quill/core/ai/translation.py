@@ -7,12 +7,13 @@ and optional local LibreTranslate for privacy-sensitive workflows.
 from __future__ import annotations
 
 import json
-import ssl
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from quill.core.ai.custom_instructions import split_instruction
 from quill.core.assistant_ai import AssistantConnectionSettings, generate_assistant_response
+from quill.core.error_codes import CodedError
+from quill.core.net import verified_ssl_context
 
 SUPPORTED_LANGUAGES: dict[str, str] = {
     "Afrikaans": "af",
@@ -68,8 +69,8 @@ _TRANSLATE_PROMPT_TEMPLATE = (
 )
 
 
-class TranslationError(Exception):
-    pass
+class TranslationError(CodedError):
+    code = "QUILL-AI-TRANSLATE-FAILED"
 
 
 class TranslationAuthError(TranslationError):
@@ -83,10 +84,14 @@ def translate_text(
     api_key: str = "",
     provider: str = "ai_assistant",
     libretranslate_url: str = "http://localhost:5000",
+    *,
+    markdown: bool = False,
 ) -> tuple[str, str]:
     """Translate *text* to *target_language*.
 
     *provider*: "ai_assistant" (default, uses configured AI) or "libretranslate".
+    *markdown* says the text is Markdown: the preservation clause is then added
+    even when the user has replaced Translate's default instruction.
 
     Returns (translated_text, detected_source_language).
     detected_source_language is an ISO 639-1 code or "unknown".
@@ -99,7 +104,7 @@ def translate_text(
     if provider == "libretranslate":
         return _translate_libretranslate(text, target_language, libretranslate_url)
 
-    return _translate_ai(text, target_name, connection, api_key)
+    return _translate_ai(text, target_name, connection, api_key, markdown=markdown)
 
 
 def _resolve_target_name(target: str) -> str:
@@ -116,10 +121,13 @@ def _translate_ai(
     target_language_name: str,
     connection: AssistantConnectionSettings,
     api_key: str,
+    *,
+    markdown: bool = False,
 ) -> tuple[str, str]:
     system_prompt, user_prompt = split_instruction(
         "translate",
         _TRANSLATE_PROMPT_TEMPLATE.format(target_language=target_language_name) + text,
+        markdown=markdown,
     )
     response, error = generate_assistant_response(
         connection,
@@ -182,7 +190,7 @@ def _translate_libretranslate(
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        ctx = ssl.create_default_context()
+        ctx = verified_ssl_context()
         with urlopen(req, context=ctx, timeout=15) as resp:
             detected = json.loads(resp.read())
             if isinstance(detected, list) and detected:
@@ -203,7 +211,7 @@ def _translate_libretranslate(
         method="POST",
     )
     try:
-        ctx = ssl.create_default_context()
+        ctx = verified_ssl_context()
         with urlopen(req, context=ctx, timeout=60) as resp:
             result = json.loads(resp.read())
             translated = result.get("translatedText", "")

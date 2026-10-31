@@ -18,6 +18,7 @@ try:
 except ImportError:  # pragma: no cover - non-Windows fallback
     _winsound = None  # type: ignore[assignment]
 
+from quill.core.feature_catalog import FEATURE_DEFINITIONS
 from quill.core.quill_key_help import (
     MODE_BROWSE,
     MODE_PREFIX,
@@ -25,7 +26,8 @@ from quill.core.quill_key_help import (
     format_cheat_sheet,
     summarize_cheat_sheet,
 )
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, set_accessible_name
+from quill.ui.dpi import dip_size
 
 #: Named presets for the browse-mode follow-on timeout (seconds).
 #: Tokens match the values in ``settings_specs.SETTING_SPECS`` for
@@ -107,22 +109,15 @@ class QuillKeyMixin:
                     self._refresh_statusbar()
                     self.quill_key_selection_actions()
                     return True
-                # NAV-4: the QUILL key then G opens Quick Nav / Go to Anything.
-                if (
-                    not event.ControlDown()
-                    and not event.AltDown()
-                    and not event.ShiftDown()
-                    and key_code in (ord("G"), ord("g"))
-                ):
-                    self._quill_key_prefix_pending = False
-                    self._quill_key_prefix_started_at = 0.0
-                    self._refresh_statusbar()
-                    self.open_quick_nav()
-                    return True
+                # G is NOT a mode gate any more. It opened Quick Nav here
+                # (NAV-4) after the keymap gave leader G to Open From Favorite
+                # Folder, so that binding never fired (2026-10-03). Quick Nav
+                # is Ctrl+Shift+Z and Go to Anything Ctrl+Alt+Shift+A; G goes
+                # through the keymap like every other chord key.
                 # Data-driven chord dispatch: scan the keymap for any command
                 # whose binding matches "<prefix>, <second-key>". Mode gates
-                # (N, G, A+selection, QUILL+QUILL, Escape, ?) are handled
-                # above and are never reached here.
+                # (N, A+selection, QUILL+QUILL, Escape, ?) are handled above
+                # and are never reached here; RESERVED_LEADER_KEYS names them.
                 chord_command = self._chord_command_for_event(event)
                 if chord_command is not None:
                     self._quill_key_prefix_pending = False
@@ -144,13 +139,13 @@ class QuillKeyMixin:
                 self._quill_key_prefix_started_at = time.monotonic()
                 message = (
                     f"{QUILL_KEY_LABEL} prefix active. N for browse mode, press "
-                    f"{QUILL_KEY_LABEL} again for sticky mode, G for quick nav, "
+                    f"{QUILL_KEY_LABEL} again for sticky mode, "
                     "then any configured chord key, ? for help"
                 )
                 if self._has_active_selection():
                     message = (
                         f"{QUILL_KEY_LABEL} prefix active. N for browse mode, press "
-                        f"{QUILL_KEY_LABEL} again for sticky mode, G for quick nav, "
+                        f"{QUILL_KEY_LABEL} again for sticky mode, "
                         "A for selection actions, then any configured chord key, ? for help"
                     )
                 self._set_status_quiet(message)
@@ -188,6 +183,11 @@ class QuillKeyMixin:
             return True
 
         if self._quill_key_prefix_matches(event):
+            # #1185: a locked (sticky) mode exits only on Escape. The key held to
+            # lock it auto-repeats into here and used to exit the just-locked
+            # mode, so swallow the QUILL key while locked.
+            if self._quill_key_mode_sticky:
+                return True
             self._exit_quill_key_mode("Exited QUILL browse mode")
             return True
 
@@ -341,6 +341,23 @@ class QuillKeyMixin:
         _flags, key_code = parsed
         return ctrl, shift, alt, key_code
 
+    def _event_ctrl_equivalent_down(self, event: object) -> bool:
+        """True if the binding's "Ctrl" modifier is satisfied on this platform.
+
+        On macOS, wx's ``ControlDown()`` reflects the Cmd key, not the
+        physical Control key — the physical key is exposed separately via
+        ``RawControlDown()`` (a Mac-only method; identical to
+        ``ControlDown()`` on Windows/Linux). Checking only ``ControlDown()``
+        means a literal Ctrl+Shift+` press is invisible to the QUILL key on
+        macOS, and Cmd+Shift+` is macOS's own reserved "cycle windows"
+        shortcut, so it never reaches the app either — leaving the default
+        binding unusable on macOS both ways.
+        """
+        if event.ControlDown():
+            return True
+        raw_ctrl_fn = getattr(event, "RawControlDown", None)
+        return bool(raw_ctrl_fn()) if callable(raw_ctrl_fn) else False
+
     def _quill_key_prefix_matches(self, event: object) -> bool:
         binding = getattr(self.settings, "quill_key_binding", "Ctrl+Shift+Grave")
         parsed = self._parse_quill_key_binding(binding)
@@ -350,7 +367,7 @@ class QuillKeyMixin:
             return False
         need_ctrl, need_shift, need_alt, key_code = parsed
         if (
-            bool(event.ControlDown()) != need_ctrl
+            self._event_ctrl_equivalent_down(event) != need_ctrl
             or bool(event.ShiftDown()) != need_shift
             or bool(event.AltDown()) != need_alt
         ):
@@ -365,23 +382,8 @@ class QuillKeyMixin:
     def _event_has_modifiers(self, event: object) -> bool:
         return bool(event.ControlDown() or event.AltDown() or event.ShiftDown())
 
-    def _is_bare_modifier_key(self, key_code: int) -> bool:
-        """True when ``key_code`` is a modifier key pressed on its own.
-
-        wx fires EVT_CHAR_HOOK for the modifier keydown itself (e.g. Shift
-        going down just before the "/" that makes "?"), separately from the
-        combo it's part of. Chord/browse-mode dispatch must ignore these or
-        they get misread as an unrecognized second key.
-        """
-        wx = self._wx
-        return key_code in {
-            getattr(wx, "WXK_SHIFT", -11),
-            getattr(wx, "WXK_CONTROL", -10),
-            getattr(wx, "WXK_ALT", -12),
-            getattr(wx, "WXK_RAW_CONTROL", -13),
-            getattr(wx, "WXK_WINDOWS_LEFT", -14),
-            getattr(wx, "WXK_WINDOWS_RIGHT", -15),
-        }
+    # ``_is_bare_modifier_key`` now lives on KeybindingParseMixin (one shared
+    # copy with the standalone apps); MainFrame resolves it via the MRO.
 
     def _quill_key_action_for_event(self, event: object) -> str | None:
         wx = self._wx
@@ -396,6 +398,9 @@ class QuillKeyMixin:
             "quill.quick_nav.block_quote": "block_quote",
             "quill.quick_nav.bookmark": "bookmark",
             "quill.quick_nav.code_block": "code_block",
+            "quill.quick_nav.inline_note": "inline_note",
+            "quill.quick_nav.misspelling": "misspelling",
+            "quill.quick_nav.page": "page",
             "quill.quick_nav.table_of_contents": "table_of_contents",
             "quill.quick_nav.paragraph": "paragraph",
             "quill.quick_nav.sentence": "sentence",
@@ -464,6 +469,12 @@ class QuillKeyMixin:
             "browse.bookmark.previous": lambda: self._browse_bookmark(reverse=True),
             "browse.code_block.next": lambda: self._browse_code_block(reverse=False),
             "browse.code_block.previous": lambda: self._browse_code_block(reverse=True),
+            "browse.inline_note.next": lambda: self._browse_inline_note(reverse=False),
+            "browse.inline_note.previous": lambda: self._browse_inline_note(reverse=True),
+            "browse.misspelling.next": lambda: self._browse_misspelling(reverse=False),
+            "browse.misspelling.previous": lambda: self._browse_misspelling(reverse=True),
+            "browse.page.next": lambda: self._browse_page(reverse=False),
+            "browse.page.previous": lambda: self._browse_page(reverse=True),
             "browse.table_of_contents.next": lambda: self.open_outline_navigator(),
             "browse.table_of_contents.previous": lambda: self.open_outline_navigator(),
             "browse.paragraph.next": lambda: self._browse_paragraph(reverse=False),
@@ -533,18 +544,36 @@ class QuillKeyMixin:
             return True
         return False
 
+    def _chord_command_available(self, command_id: str) -> bool:
+        """Whether a chord may resolve to (and the cheat sheet may list) this command.
+
+        Only the build-level gate is applied: a feature that is locked off --
+        permanently, or because it is not released in this build -- is not part
+        of this QUILL at all, so its chord must neither fire nor be advertised.
+        Profile-level on/off/quiet is deliberately left to the handlers, which
+        keep their own explanatory behaviour.
+        """
+        registry = getattr(self, "commands", None)
+        command = registry.get(command_id) if registry is not None else None
+        if command is None:
+            return True
+        definition = FEATURE_DEFINITIONS.get(command.feature_id)
+        return definition is None or not definition.is_locked_off
+
     def _chord_command_for_event(self, event: object) -> str | None:
         """Return the command_id for a chord that matches the current event.
 
         Scans the live keymap for bindings of the form ``<prefix>, <second-key>``
         and returns the first command_id whose second key matches the event.
-        Mode-gate keys (N, G, A+selection, QUILL+QUILL, Escape, ?) are consumed
+        Mode-gate keys (N, A+selection, QUILL+QUILL, Escape, ?) are consumed
         before this is called and will never be returned here.
         """
         prefix = str(getattr(self.settings, "quill_key_binding", "Ctrl+Shift+Grave")).strip()
         chord_prefix = prefix + ", "
         for command_id, binding in (getattr(self, "keymap", None) or {}).items():
             if not binding or not binding.startswith(chord_prefix):
+                continue
+            if not self._chord_command_available(command_id):
                 continue
             second_key = binding[len(chord_prefix) :].strip()
             parsed = self._parse_chord_second_key(second_key)
@@ -554,45 +583,8 @@ class QuillKeyMixin:
                 return command_id
         return None
 
-    def _parse_chord_second_key(self, second_key: str) -> tuple[bool, bool, bool, int] | None:
-        """Parse the second part of a chord binding into (ctrl, shift, alt, key_code).
-
-        Handles bare keys (``V``, ``1``), modifier combos (``Shift+O``), and
-        named keys (``Tab``, ``Enter``, ``F1``–``F12``).
-        """
-        wx = self._wx
-        parts = [p.strip() for p in second_key.split("+") if p.strip()]
-        if not parts:
-            return None
-        ctrl = shift = alt = False
-        for modifier in parts[:-1]:
-            lowered = modifier.lower()
-            if lowered == "ctrl":
-                ctrl = True
-            elif lowered == "shift":
-                shift = True
-            elif lowered == "alt":
-                alt = True
-            else:
-                return None
-        token = parts[-1].upper()
-        if len(token) == 1:
-            return ctrl, shift, alt, ord(token)
-        named: dict[str, int] = {
-            "ENTER": getattr(wx, "WXK_RETURN", 13),
-            "TAB": getattr(wx, "WXK_TAB", 9),
-            "SPACE": getattr(wx, "WXK_SPACE", 32),
-            "ESC": getattr(wx, "WXK_ESCAPE", 27),
-            "ESCAPE": getattr(wx, "WXK_ESCAPE", 27),
-            "DELETE": getattr(wx, "WXK_DELETE", 127),
-            "BACKSPACE": getattr(wx, "WXK_BACK", 8),
-            "HOME": getattr(wx, "WXK_HOME", 313),
-            "END": getattr(wx, "WXK_END", 312),
-            **{f"F{i}": getattr(wx, f"WXK_F{i}", 339 + i) for i in range(1, 13)},
-        }
-        if token in named:
-            return ctrl, shift, alt, named[token]
-        return None
+    # ``_parse_chord_second_key`` now lives on KeybindingParseMixin (one shared
+    # copy with the standalone apps); MainFrame resolves it via the MRO.
 
     def _second_key_matches_event(
         self, parsed: tuple[bool, bool, bool, int], event: object
@@ -638,7 +630,13 @@ class QuillKeyMixin:
             counts=counts,
             selection_active=self._has_active_selection(),
             quill_key_label=QUILL_KEY_LABEL,
-            chord_map=self.keymap,
+            # Chords for features this build does not ship are neither
+            # dispatchable nor listed (see _chord_command_available).
+            chord_map={
+                command_id: binding
+                for command_id, binding in (self.keymap or {}).items()
+                if self._chord_command_available(command_id)
+            },
             prefix=str(getattr(self.settings, "quill_key_binding", "Ctrl+Shift+Grave")),
         )
 
@@ -658,7 +656,7 @@ class QuillKeyMixin:
             self.frame,
             title=title,
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
-            size=(560, 560),
+            size=dip_size(self.frame, 560, 560),
         )
         try:
             inner = wx.BoxSizer(wx.VERTICAL)
@@ -679,6 +677,7 @@ class QuillKeyMixin:
                 value=text,
                 style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_DONTWRAP,
             )
+            set_accessible_name(review, title)
             inner.Add(review, 1, wx.ALL | wx.EXPAND, 8)
             close_button = wx.Button(dialog, id=wx.ID_OK, label="Close")
             buttons = wx.StdDialogButtonSizer()

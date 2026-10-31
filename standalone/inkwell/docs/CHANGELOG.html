@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Quill Inkwell changelog</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-inkwell-changelog">Quill Inkwell changelog</h1>
+<h2 id="100">1.0.0</h2>
+<p>Quill Inkwell 1.0.0 is its first public release, and it has not been
+published yet. The testing build is <strong>1.0.0 (build 2)</strong>.
+First, the work since the first build, grouped by subject; then the
+first build itself.</p>
+<h3 id="display-scaling-and-licensing-2026-10-31">Display scaling and
+licensing (2026-10-31)</h3>
+<ul>
+<li><strong>Shared-runtime licensing.</strong> Installed editions use
+the QuillVille Runtime, which currently carries PyMuPDF 1.28.2 under
+AGPL-3.0 through the shared GLOW dependency; Inkwell does not itself
+expose GLOW. Release-specific source and legal review are required
+before the next public release. Portable contents must be checked
+separately. See Licences and Notices and the PyMuPDF distribution
+review.</li>
+<li><strong>Sharp text at any display scaling</strong> (2026-10-31).
+Quill Inkwell now handles each monitor’s scaling itself instead of
+letting Windows stretch it, so text stays sharp at 125, 150 and 200
+percent and on monitors with different scaling, and windows and list
+columns keep their proportions. Setting the environment variable
+<code>QUILL_DPI_UNAWARE</code> to <code>1</code> turns this off, for
+diagnosing a display problem (#1702). User guide: “Text looks blurry, or
+a window is the wrong size”.</li>
+<li><strong>Pygments in the notices</strong> (2026-10-31). The shared
+runtime now bundles Pygments, which QUILL and QUILL Lite use to read
+code and web pages for spell check, so Quill Inkwell’s third-party
+notices list it.</li>
+</ul>
+<h3 id="dictate-anywhere">Dictate Anywhere</h3>
+<ul>
+<li><strong>Dictate Anywhere</strong> (2026-10-05). Inkwell now hosts
+dictation into other programs, with the editors’ shared controller,
+engines, My Words and Phrases (<code>dictation.md</code> in the shared
+data folder) and commands (<code>quill/apps/inkwell_dictation.py</code>,
+<code>quill/core/windows_dictation/anywhere.py</code>,
+<code>quill/ui/windows_dictation_external.py</code>). <strong>File &gt;
+Dictate Anywhere Key…</strong> (Ctrl+Alt+Shift+D) chooses the
+system-wide key, none by default, with the same picker and refusals as
+the other keys. A new <strong>Dictation</strong> menu has
+<strong>Dictate Anywhere</strong> (Ctrl+D, a check item) and
+<strong>Dictation Settings…</strong> (Ctrl+Alt+D), the editors’ own
+window over Inkwell’s stored copy. Each phrase is typed at the cursor of
+the program in front; “scratch that” sends backspaces only while the
+same window keeps the focus. Commands that need to read the other
+program’s text (select, go to, correct, clips, snippets) are answered
+“That works in QUILL’s own documents…”. Refused with a sentence:
+password fields, programs running as administrator when Inkwell is not,
+QUILL’s own windows (Ctrl+F11 there) and Inkwell’s own window. The
+read-back defaults to a tone, since the screen reader echoes typing. An
+editor’s <strong>Dictate in Other Programs…</strong> hands its settings
+over once (<code>dictate-anywhere.json</code>) and starts Inkwell,
+opening the key chooser if no key is set. Off in Safe Mode.</li>
+<li><strong>Dictate Anywhere: one microphone, and your library by
+voice</strong> (2026-10-13). Inkwell takes the family’s one microphone
+lock while it listens, so it never dictates at the same time as QUILL,
+QUILL Lite or QUILL Transcribe, and it says which one is when it cannot
+start. “insert snippet”, “insert abbreviation” and “paste clip” now work
+in other programs, typed as one phrase that “scratch that” takes back
+whole (blanks are typed as [name], and the cursor stays at the end). Its
+Dictation Commands list shows only what works in other programs.</li>
+<li><strong>The command word in Dictate Anywhere</strong> (2026-10-15).
+Say QUILL before a command, “QUILL scratch that”, and whatever follows
+QUILL is never typed; if it is not a command you hear “Not a command”,
+and “QUILL type that” types it. “QUILL command mode” takes commands
+without the word until “dictation mode” or eight seconds with none. The
+word, strict mode and the seconds are in More Dictation Settings (Alt+C,
+Alt+E, Alt+D). Two new sounds play when QUILL hears the command word and
+when command mode ends.</li>
+<li><strong>QUILL Lite’s words in Dictate Anywhere</strong>
+(2026-10-15). Dictate Anywhere uses QUILL’s My Words and Phrases list,
+as before. QUILL Lite can now share that list (Use the shared word list,
+in its My Words and Phrases), so the names you teach QUILL Lite come out
+right here too. QUILL, QUILL Lite and QUILL Transcribe can also import
+and export the list.</li>
+<li><strong>Dictate Anywhere stays in the field you started in</strong>
+(2026-10-15). If the focus moves while you dictate, Inkwell pauses and
+holds your words instead of typing them somewhere else, as QUILL
+Transcribe does. <strong>Dictation &gt; Resume</strong> (Ctrl+R),
+<strong>Resume in This Field</strong> (Ctrl+Shift+R) and <strong>Discard
+Held Words</strong> (Ctrl+Shift+D), also in the tray menu while
+paused.</li>
+<li><strong>Programs dictation never types into</strong> (2026-10-15). A
+list you keep, in More Dictation Settings (Alt+N), that starts with the
+common password managers and the Windows sign-in prompts. Dictation
+refuses a listed program by name and types nothing.</li>
+<li><strong>Speech providers in Dictate Anywhere</strong> (2026-10-16).
+Dictation Settings has the editors’ <strong>Speech Providers…</strong>
+button (Alt+V), so Dictate Anywhere can use a speech company you already
+have an account with. Keys go to Windows Credential Manager, and you are
+asked before anything is sent.</li>
+<li><strong>Dictation settings shared with the family</strong>
+(2026-10-16). With <strong>Share dictation settings with every
+QuillVille program</strong> checked (Alt+Q, in More Dictation Settings),
+Dictate Anywhere uses the dictation settings you save in QUILL, QUILL
+Lite or QUILL Transcribe, and what you save in Inkwell reaches them. The
+read-back, your key and every permission to send your speech stay
+Inkwell’s own. Your own settings are backed up the first time, and a
+save that cannot reach the others is said aloud. The word list now lives
+in <code>%LOCALAPPDATA%\QuillVille\Dictation</code>, copied from QUILL’s
+data folder with the old file kept.</li>
+</ul>
+<h4 id="spelling-symbols-and-characters">Spelling, symbols and
+characters</h4>
+<ul>
+<li><strong>Dictate Anywhere: spell an address with pauses</strong>
+(2026-10-17). While spelling, each phrase now joins the letters you
+spelled just before it, with no space: “start spelling”, “juliet oscar”,
+“at sign echo x-ray”, “dot charlie oscar”, “stop spelling” types <em><a
+href="mailto:jo@ex.co">jo@ex.co</a></em>. Before, every pause typed a
+space into the address. Say “space” for a space. Limit: a whole word
+such as “smith” is not a letter and is left out; spell it.</li>
+<li><strong>Dictate Anywhere: a Markdown link by voice</strong>
+(2026-10-17). “open bracket the guide close bracket open paren page
+close paren” now types <code>[the guide](page)</code>, with no space in
+the middle.</li>
+<li><strong>Emoji arrive whole</strong> (2026-10-17). Dictate Anywhere
+and abbreviations that expand everywhere now type an emoji (or any
+character beyond the first 65,536 in Unicode) as one character. Before,
+a plain edit box such as the Run box (Windows+R) could receive it
+without its first half. For example, an abbreviation “thx” that expands
+to “Thanks! 🙏” now types the folded hands too, in any program. Some
+rarer Chinese characters could also be typed as a plain Latin letter;
+fixed as well. Limits: a program whose font has no picture for an emoji
+still shows a box, though the character is there and your screen reader
+reads it by name.</li>
+</ul>
+<h4 id="correcting-and-snippets">Correcting and snippets</h4>
+<ul>
+<li><strong>Correcting in Dictate Anywhere</strong> (2026-10-16).
+“Correct that” and “choose” a number, “capitalize that”, “all caps
+that”, “no caps that”, “replace” some words “with” new ones, “change
+that to” and new words, “delete last sentence” and “delete previous
+paragraph” now work in other programs, on the words dictation typed
+there itself, by taking them back with Backspace and retyping. Inkwell
+never reads the other program. A correction is refused, with one
+sentence and nothing sent, if the focus has moved, if you have typed or
+clicked since, or, for the commands that retype words, in Word and
+Outlook. With Moonshine or Whisper, “correct that” asks the other
+built-in engine to listen again and offers its answer as choice
+two.</li>
+<li><strong>Fixing it when you correct yourself</strong> (2026-10-16).
+With <strong>Fix it when I correct myself</strong> (Alt+X) checked in
+Dictation Settings, “Thursday, no, Friday” types Friday: a “no”, “I
+mean”, “sorry” or “scratch that word” between two days, months, numbers
+or names from My Words keeps the second. Anything else is typed as said,
+and it is off until you turn it on. <strong>Dictation style</strong>
+(Alt+Y) sets it and filler removal together, as Verbatim or Clean. The
+same as in QUILL, QUILL Lite and QUILL Transcribe.</li>
+<li><strong>Snippet blanks by voice in Dictate Anywhere</strong>
+(2026-10-16). “insert snippet” and a name now asks for each blank
+(“Title?”) and each choice (“Choose NVDA, JAWS or Narrator.”), then
+types the whole snippet once. Say skip, scratch that to go back one, or
+cancel to type nothing. “read that” reads back all of what was typed,
+not just the snippet’s name.</li>
+</ul>
+<h4 id="dictation-settings-and-the-user-guide">Dictation settings and
+the user guide</h4>
+<ul>
+<li><strong>Which speech engine Dictate Anywhere uses,
+explained</strong> (2026-10-17). The user guide’s section 20 has a new
+part, “Which speech engine Dictate Anywhere uses”: every choice in the
+Speech engine list, and the plain fact that Inkwell’s installer does not
+include the built-in Moonshine and Whisper models or the speech part
+that runs them, which downloaded models, OpenAI and speech providers
+need too. On a computer with only Inkwell, choose Windows speech
+recognition, or install QUILL Transcribe, which then does the dictating
+when you press your Dictate Anywhere key. It also covers Better
+Accuracy: Speech Models (Alt+B), all twelve Speech Providers (Alt+V),
+consent with No as the default, Spanish (commands stay in English), and
+a worked example.</li>
+<li><strong>No review-first box where there is nothing to
+review</strong> (2026-10-17). Inkwell’s <strong>More Dictation
+Settings</strong> (from <strong>Dictation &gt; Dictation
+Settings…</strong>, Ctrl+Alt+D, then <strong>More Dictation
+Settings…</strong>, Alt+A) no longer shows <strong>Send dictation to
+review first</strong> (it was Alt+V). That box sends each phrase to the
+<strong>Review Dictation</strong> window of QUILL, QUILL Lite and QUILL
+Transcribe instead of typing it; Inkwell has no such window, so Dictate
+Anywhere always types straight into the program you are in and the box
+did nothing here. As with the polishing box hidden earlier today, your
+choice is kept: if you share dictation settings with the family and
+turned review first on in QUILL, pressing OK in Inkwell’s Dictation
+Settings leaves it on, whichever style you choose. For example: turn it
+on in QUILL, choose <strong>Verbatim</strong> in Inkwell and press OK,
+and QUILL still sends your phrases to Review Dictation. To change it,
+use one of those three programs. The user guide’s “Correcting yourself
+as you talk” part says so, with that example.</li>
+<li><strong>No polishing box where there is nothing to polish</strong>
+(2026-10-17). Inkwell’s <strong>More Dictation Settings</strong> (from
+<strong>Dictation &gt; Dictation Settings…</strong>, Ctrl+Alt+D, then
+<strong>More Dictation Settings…</strong>, Alt+A) no longer shows
+<strong>Allow polishing my dictation with AI</strong>. Polishing with AI
+happens only in the <strong>Review Dictation</strong> window of QUILL,
+QUILL Lite and QUILL Transcribe, where you read the tidied words before
+anything is inserted, and Inkwell has no such window, so the box did
+nothing here. Hiding it does not change your choice: if you share
+dictation settings with the family and turned polishing on in QUILL,
+saving Inkwell’s Dictation Settings leaves it on, even when you choose
+the <strong>Verbatim</strong> or <strong>Clean</strong> style. Every
+other box in the window keeps its Alt key. The user guide’s “Correcting
+yourself as you talk” part now says where polishing lives.</li>
+</ul>
+<h3 id="abbreviations-and-your-own-phrases">Abbreviations and your own
+phrases</h3>
+<ul>
+<li><strong>A big abbreviation list opens and searches at once</strong>
+(2026-10-16). <strong>Manage Abbreviations</strong> (Ctrl+M) reads its
+rows only as you reach them, so ten thousand abbreviations fill
+instantly (it took over three seconds, and again after every key typed
+in the search box). The search finds words in any order, and the
+selection stays on the abbreviation you were on when the search
+changes.</li>
+<li><strong>A backslash in your own phrases is kept</strong>
+(2026-10-17). A phrase in My Words and Phrases that writes a folder or a
+file name, such as “my folder” writing <code>C:\new\temp</code>, was
+saved in a way that read back as <code>C:</code>, a new line and
+<code>ew</code>, then a tab. It is now saved with each backslash doubled
+(<code>C:\\new\\temp</code>) and reads back exactly as you typed it.
+Phrases you saved before keep working as they did; to fix one that
+already broke, open My Words and Phrases, choose the phrase, Edit, and
+type the folder again. Limits: when you edit <code>dictation.md</code>
+by hand, <code>\n</code> is still a new line and <code>\t</code> a tab,
+so write <code>\\</code> for a backslash before those letters.</li>
+</ul>
+<h3 id="keys-menus-and-the-quillville-menu">Keys, menus and the
+QuillVille menu</h3>
+<ul>
+<li><strong>A first run takes no system-wide keys</strong> (2026-10-17).
+Started for the first time on a computer, Inkwell still claimed
+Ctrl+Alt+Shift+K (Quick Insert) and Ctrl+Alt+Shift+X (Expand Word)
+everywhere in Windows, although both have been off by default since 5
+October and other programs use those keys. Now a first run registers
+neither. For example, a new Inkwell user pressing Ctrl+Alt+Shift+X in
+Quill Radio gets Radio’s own command, not Inkwell’s. To use either key,
+open the File menu and choose <strong>Quick Insert Key…</strong> or
+<strong>Expand Word Key…</strong>. A key you chose yourself is never
+changed.</li>
+<li><strong>No Quick Insert or Expand Word key until you choose
+one</strong> (2026-10-05). Ctrl+Alt+Shift+K (Quick Insert) and
+Ctrl+Alt+Shift+X (expand the word just typed) were registered
+system-wide too, and both are commands elsewhere in the family – X is
+Quill Radio’s Export My Setup – so they went the same way. <strong>File
+&gt; Quick Insert Key…</strong> (Ctrl+Alt+Shift+K) and <strong>File &gt;
+Expand Word Key…</strong> (Ctrl+Alt+Shift+E) use the same picker and the
+same refusals, and also refuse a key Inkwell already uses for one of its
+other two. Somebody still on the old keys is moved to none and told once
+in one sentence; a key somebody chose is kept
+(<code>quill/apps/inkwell_keys.py</code>,
+<code>InkwellSettings.take_system_keys</code>).</li>
+<li><strong>No show and hide key until you choose one</strong>
+(2026-10-05). The app registered Ctrl+Alt+Shift+I system-wide, and other
+QuillVille apps use that key for menu commands, so while this app ran
+theirs never fired. It now has no key by default; <strong>File &gt; Show
+and Hide Key…</strong> (Ctrl+Alt+Shift+H) lets you type one, or leave it
+empty for none, and refuses a key any QuillVille app uses as a command
+or as its own show and hide key, in one sentence naming the app.
+Somebody who had the old key is moved to none and told once, at the next
+launch; a key somebody chose is kept
+(<code>quill/core/family_chords.py</code>,
+<code>quill/core/show_hide_keys.py</code>,
+<code>quill/ui/show_hide_key_picker.py</code>).</li>
+<li><strong>Alt+Q opens the QuillVille menu again</strong> (2026-10-17).
+The <strong>Quick Insert…</strong> button in Inkwell’s window also
+claimed Alt+Q, and Windows gives a letter that a button and a menu share
+to the button, so Alt+Q opened Quick Insert and the guide’s “Alt+Q, then
+Q to open QUILL” typed a Q into Quick Insert’s filter instead. The
+button is now Alt+I (Quick &amp;Insert), and Alt+Q opens QuillVille, so
+Alt+Q then Q, R, W, V or T opens QUILL, Quill Radio, Quill Weather,
+Quill Converter or QUILL Transcribe as section 3 of the guide says.
+Ctrl+K still opens Quick Insert from the window. Section 9 of the user
+guide explains the button’s letter with an example.</li>
+<li><strong>QUILL Transcribe on the QuillVille menu and the
+tray</strong> (2026-10-16). QUILL Transcribe, which types what you say
+into any program, is released on 1 November 2026. Inkwell’s
+<strong>QuillVille</strong> menu lists it last (Alt+Q, then T, or
+Ctrl+Alt+Shift+F11); QUILL, Quill Radio, Quill Weather and Quill
+Converter keep F7 to F10. The tray icon’s menu adds <strong>Open QUILL
+Transcribe</strong> after QUILL, Quill Radio and Quill Weather. If it is
+not installed, Inkwell offers to download it once it is published, and
+nothing is downloaded until you say yes. The user guide has a new part,
+“Opening the other QuillVille apps”, in section 3.</li>
+</ul>
+<h3 id="sound">Sound</h3>
+<ul>
+<li><strong>Where Quill Inkwell’s own sounds play, and Alt+Shift+M to
+turn them off.</strong> The <strong>App Sounds Play On…</strong> button
+in <strong>Options &gt; Preferences…</strong> (Ctrl+,) offers System
+default, None (no sounds), or any sound card or headset by name. After a
+change one sound plays on the new card, so you hear where it went. If
+that card is unplugged the sounds play on the system default until it is
+back, and Quill Inkwell says so once. <strong>Alt+Shift+M</strong> turns
+Quill Inkwell’s sounds off and back on where they were, and
+<strong>Options &gt; App Sounds</strong> shows a check mark while they
+are on. Each QUILL app keeps its own choice; “Share these choices with
+my other Quill apps” keeps them in step. Your screen reader is never
+moved. Asked for on QUILLVille by Rick Lewis.</li>
+</ul>
+<h3 id="help">Help</h3>
+<ul>
+<li><strong>Help &gt; What’s New</strong> (Ctrl+Shift+F1) opens this
+changelog in your browser, on the same key as every other QuillVille
+app.</li>
+</ul>
+<h3 id="downloads-and-updating">Downloads and updating</h3>
+<ul>
+<li><strong>Two downloads, nothing else</strong> (2026-10-11). Quill
+Inkwell now comes as the installer and the portable zip. The small Lite
+installer and the Companion zip are gone. If you used the Lite
+installer, take the installer; if you used the Companion zip, take the
+portable zip. Check for Updates already offers the right one.</li>
+<li><strong>Every release build checks its version against what is
+published</strong> (2026-10-15). The shared QuillVille runtime carries
+every app’s version number, so a build of one app could make another
+report a version nobody can download yet, and Check for Updates would
+then never offer the real one. Quill Inkwell’s release builds now run
+the same check Quill Radio, QUILL Lite, QUILL Cast and Quill Weather
+already did, and a build of every app at once checks them all again
+instead of stopping at an app it did not know.</li>
+</ul>
+<h3 id="the-first-build-2026-08-11-never-published">The first build,
+2026-08-11 (never published)</h3>
+<p>The first build. Abbreviation expansion in every Windows application,
+sharing one library with QUILL.</p>
+<h4 id="added">Added</h4>
+<ul>
+<li><p><strong>An application icon of its own.</strong> This was the
+single hard blocker on cutting the 1.0.0 build, which is why it is
+recorded here rather than as a fix after the fact. The icon the app was
+scaffolded with was a byte-identical copy of Quill Weather’s – which was
+itself a copy of Quill Radio’s – so a listener with more than one
+QuillVille app installed would have seen the same face for several
+different products in the taskbar, in Alt+Tab and in the tray. For a
+tray-resident app like Inkwell, the tray is where it lives its whole
+life.</p>
+<p>Inkwell’s icon is a gold nib dipped into a white inkwell, on a
+terracotta tile: the app is named for the well, and the pot is a
+silhouette nothing else in the family has. It shares the family’s
+rounded tile shape and gold accent, and differs from every sibling in
+picture and in colour. Two alternatives were drawn and rejected for
+failing at 16x16, which is the size that actually matters – expanding
+text lines blurred to a grey block, and a bare fountain nib read as a
+flame.</p></li>
+<li><p><strong>System-wide expansion.</strong> A low-level keyboard hook
+recognises an abbreviation as you finish typing it and replaces it in
+whatever application has focus. Expansions are typed as synthesised
+keystrokes and never touch the clipboard.</p></li>
+<li><p><strong>One shared library.</strong> Inkwell and QUILL read and
+write the same <code>abbreviations.json</code>. An abbreviation added in
+either app works in both, with no import or sync; the file is re-read
+whenever it changes on disk.</p></li>
+<li><p><strong>Per-abbreviation settings.</strong> Each entry carries
+its own category, trigger mode (a space or punctuation, a space only,
+punctuation only, or never), speech mode, sound override, trailing-space
+behaviour, and case sensitivity. Schema version 2, backward and forward
+compatible.</p></li>
+<li><p><strong>Quick Insert.</strong> A type-to-filter picker over every
+enabled abbreviation, ordered by how often each is used, reachable from
+the window (Ctrl+K) or from anywhere (Ctrl+Alt+Shift+K). The only way to
+reach an entry whose trigger mode is Never.</p></li>
+<li><p><strong>New from Clipboard.</strong> Ctrl+Shift+N turns whatever
+is on the clipboard into a new abbreviation, pre-filled.</p></li>
+<li><p><strong>Fill-in fields.</strong> <code>${field:Label}</code> and
+<code>${field:Label=default}</code> make an expansion ask before it
+finishes; a label used twice is asked once and filled everywhere. The
+form is the same one QUILL’s editor uses, so a template behaves
+identically in both.</p></li>
+<li><p><strong>Categories</strong> with a filter in the manager, and a
+category column in both lists.</p></li>
+<li><p><strong>Variables</strong> in expansions: <code>${date}</code>,
+<code>${time}</code>, <code>${datetime}</code>, <code>${day}</code>,
+<code>${month}</code>, <code>${year}</code>, <code>${username}</code>,
+<code>${clipboard}</code>, <code>${cursor}</code>.</p></li>
+<li><p><strong>Case preservation.</strong> <code>Btw</code> capitalises
+and <code>BTW</code> shouts, for entries that are not case
+sensitive.</p></li>
+<li><p><strong>Exclusions.</strong> Password managers, the Windows
+sign-in and lock surfaces, the credential prompt, and the UAC dialog are
+permanently excluded, plus any applications the user adds.</p></li>
+<li><p><strong>Paste fallback</strong> for the few applications that
+drop synthetic keystrokes; the previous clipboard contents are always
+restored.</p></li>
+<li><p><strong>Tray residence</strong>, start-with-Windows,
+start-minimized, and a close button that keeps expansion
+running.</p></li>
+<li><p><strong>Safe Mode support.</strong>
+<code>QUILL_SAFE_MODE=1</code> prevents the keyboard hook from being
+installed at all.</p></li>
+</ul>
+<h4 id="working-everywhere-you-can-type">Working everywhere you can
+type</h4>
+<ul>
+<li><strong>Expands only where text is accepted.</strong> Before
+replacing anything, Inkwell checks that the focused element takes text,
+so backspaces never land in a list doing type-ahead or a page where
+Backspace means “go back”. Where it cannot tell, it goes ahead – a
+missed expansion is the more annoying failure.</li>
+<li><strong>AltGr characters no longer break expansion.</strong> Windows
+reports AltGr as Ctrl+Alt, and treating that as a command wiped the
+buffer mid-word on every layout that uses it – German, Polish, Spanish,
+Portuguese, the Nordic layouts. AltGr is now recognised as typing.</li>
+<li><strong>Backspace immediately after an expansion takes it
+back</strong>, restoring the abbreviation. The offer lasts a few seconds
+and only in the window where the expansion happened.</li>
+<li><strong>Expand on demand</strong> with Ctrl+Alt+Shift+X (or the
+Abbreviations menu): expands the word before the cursor without waiting
+for a space or punctuation, so it works mid-word, at the end of a line,
+and for entries set never to expand on their own.</li>
+<li><strong>Quick Insert from anywhere</strong> with
+Ctrl+Alt+Shift+K.</li>
+<li><strong>Per-application delivery.</strong> The clipboard-paste route
+can be turned on for one stubborn program (<code>paste_processes</code>
+in <code>inkwell.json</code>) instead of globally, so no other
+application has its clipboard borrowed.</li>
+<li><strong>The hook repairs itself.</strong> Windows silently removes a
+keyboard hook that responds too slowly; Inkwell re-installs its own
+every few minutes so expansion cannot quietly die for the rest of a
+session.</li>
+<li><strong>One expander per window.</strong> QUILL’s editor expands
+from the document itself, so Inkwell stays out of it rather than
+expanding the same word a second time. QUILL marks its own window; the
+marker identifies the actual window, so a development run and a renamed
+build are covered alike.</li>
+<li><strong>Elevated windows are explained, not silently
+broken.</strong> A normal-privilege program cannot see keys typed into
+an administrator window, so Inkwell says so the first time focus lands
+in one.</li>
+</ul>
+<h4 id="notes">Notes</h4>
+<ul>
+<li>Inkwell keeps no clipboard history, by design.</li>
+<li>The keystroke buffer is bounded at 64 characters, held in memory
+only, cleared constantly, and never written anywhere. See the user
+guide’s Privacy section and the PRD’s security contract.</li>
+</ul>
+</main>
+</body>
+</html>

@@ -18,7 +18,12 @@ provider-wiring work (AI-13), where that call path first exists.
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+
+from quill.tools.platform_guard import build_parent_map, platform_for_node
+from quill.tools.source_cache import read as source_text
 
 _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
@@ -27,263 +32,89 @@ _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 _EGRESS_CALLEES = frozenset({
     "urlopen",
     "urlretrieve",
-    # The ElevenLabs SDK does its HTTP internally (httpx), so no urlopen appears at
-    # the call site. Treat constructing the SDK client as the reviewable egress
-    # marker — it is the single point where QUILL hands off to the SDK's network
-    # path — so the gateway still gets a recorded, reviewed entry below.
+    # SDKs and sockets with no urlopen at the call site: constructing the
+    # ElevenLabs client, and websocket-client's opener (OpenAI dictation's live
+    # transcription), are each the one point QUILL hands off to the network.
     "ElevenLabs",
+    "create_connection",
+    # Private/authenticated podcast feeds fetch through this single wrapper
+    # (quill/core/podcasts/feed_auth.py) instead of a bare urlopen, so it builds
+    # its own opener (opener.open) and no plain ``urlopen`` name appears at the
+    # call site. Treat the wrapper as the reviewable egress marker so every
+    # private-feed fetch site is still inventoried below.
+    "urlopen_auth_safe",
+    # yt-dlp (URL import, Radio's YouTube) and chat-downloader (Radio's Live Chat) do
+    # their HTTP internally; constructing ``YoutubeDL`` / ``ChatDownloader`` is where
+    # QUILL enters each path, so those are the reviewable markers (as ElevenLabs).
+    "YoutubeDL",
+    "ChatDownloader",
 })
+
+# Module-qualified HTTP egress: a call like ``requests.get(...)`` or
+# ``httpx.post(...)``. Matched on the *module + method* pair (never the bare
+# attribute) so an ordinary ``some_dict.get(...)`` is not mistaken for a network
+# call. Covers the high-level HTTP clients that do their own socket work
+# internally, so no ``urlopen`` ever appears at the call site.
+_EGRESS_HTTP_MODULES = frozenset({"requests", "httpx", "urllib3"})
+_EGRESS_HTTP_METHODS = frozenset({
+    "get",
+    "post",
+    "head",
+    "put",
+    "delete",
+    "patch",
+    "request",
+    "Session",
+    "Client",
+})
+# A ``requests``/``httpx`` Session/Client kept on an attribute named ``session``
+# (the QuillSync/Beacon server-client pattern ``self.session.post(...)``). Matched
+# only when the immediate receiver attribute is literally ``session`` so a random
+# ``.get()`` cannot trip the gate.
+_EGRESS_SESSION_METHODS = frozenset({
+    "get",
+    "post",
+    "head",
+    "put",
+    "delete",
+    "patch",
+    "request",
+})
+
+
+def _is_qualified_egress(call: ast.Call) -> bool:
+    """Return True for a module-qualified or session-object HTTP egress call.
+
+    ``requests.get(...)`` / ``httpx.post(...)`` / ``urllib3.request(...)`` match on
+    the module + method pair; ``<obj>.session.post(...)`` matches the Session
+    pattern. Bare ``obj.get(...)`` never matches (no qualifying receiver).
+    """
+
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        return False
+    receiver = func.value
+    if (
+        isinstance(receiver, ast.Name)
+        and receiver.id in _EGRESS_HTTP_MODULES
+        and func.attr in _EGRESS_HTTP_METHODS
+    ):
+        return True
+    if (
+        isinstance(receiver, ast.Attribute)
+        and receiver.attr == "session"
+        and func.attr in _EGRESS_SESSION_METHODS
+    ):
+        return True
+    return False
+
 
 # Reviewed, allowed egress sites: "<relative path>::<enclosing function>" mapped
 # to the reason the call is not silent. Update this when adding a network call.
-_REVIEWED_EGRESS: dict[str, str] = {
-    "core/mastodon/client.py::_http_json": (
-        "Single egress site for the 'Post to Mastodon' feature. Reached only by an "
-        "explicit user action -- adding an account (app registration + OAuth token "
-        "exchange) or pressing Post -- to the user's own instance. HTTPS-only over a "
-        "verified TLS context; the access token travels in the Authorization header, "
-        "never the URL."
-    ),
-    "core/dectalk_runtime.py::download_dectalk_runtime": (
-        "User explicitly installs the optional DECTALK voice runtime; download "
-        "runs with a verified TLS context and visible progress."
-    ),
-    "core/updates.py::fetch_update_manifest": (
-        "Update check; gated by the user's update-check setting and shown in the "
-        "update UI. Verified TLS."
-    ),
-    "core/updates.py::fetch_latest_release": (
-        "Update check against GitHub Releases; same update setting and UI."
-    ),
-    "core/updates.py::fetch_releases": (
-        "Fetches release notes for an update the user is already reviewing."
-    ),
-    "core/updates.py::download_release_asset": (
-        "User chooses to download an offered update; verified TLS, visible progress."
-    ),
-    "core/glow_updates.py::fetch_glow_manifest": (
-        "Opt-in GLOW engine update check (GLOW-8); runs only when the user invokes "
-        "'Check for GLOW Updates' or enables the GLOW auto-check setting. Fetches a "
-        "signed manifest over a verified TLS context and host-allow-listed HTTPS URL."
-    ),
-    "core/ai/elevenlabs_tts.py::_client": (
-        "Constructs the host-owned ElevenLabs SDK client (roadmap §4.1, audio "
-        "export only). The SDK performs HTTP via httpx, so this construction is the "
-        "reviewed egress marker. Only runs when the user has selected the ElevenLabs "
-        "AI Voice provider, configured an 'ElevenLabs API key', and invoked Export "
-        "Document as Audio; the key is passed explicitly (never from the environment) "
-        "and the SDK talks only to api.elevenlabs.io. Optional 'elevenlabs' extra; "
-        "Safe-Mode and consent are enforced by the AI Voice surface."
-    ),
-    "core/assistant_ai.py::_fetch_models_from_endpoint": (
-        "User-initiated model discovery from the AI Connection dialog (Verify "
-        "Connection / List Models). HTTPS uses a verified context."
-    ),
-    "core/assistant_ai.py::_post_chat": (
-        "AI generation against the user's explicitly configured provider (AI-13). "
-        "Only runs when the user has set up an AI connection and invokes an "
-        "assistant action; HTTPS uses a verified context and cloud endpoints are "
-        "HTTPS-enforced by _validate_endpoint_security."
-    ),
-    "core/assistant_ai.py::_post_chat_stream": (
-        "Streaming variant of AI generation (AI-14). Same gating as _post_chat: "
-        "only runs against the user's explicitly configured, non-off provider on "
-        "an explicit assistant action, with HTTPS enforced for cloud endpoints by "
-        "_validate_endpoint_security and a verified TLS context."
-    ),
-    "core/speech/providers/whispercpp.py::_download_to_file": (
-        "User-initiated offline speech-model download (#617) from the Hugging Face "
-        "Hub whisper.cpp repo; HTTPS enforced (refuses non-https URLs), verified TLS "
-        "context, visible progress, blocked in Safe Mode, sha256-verified when a hash "
-        "is known. No silent background downloads."
-    ),
-    "core/speech/ffmpeg_install.py::_download_zip": (
-        "User-initiated optional ffmpeg download (#617) from the official Gyan.dev "
-        "Windows build linked by ffmpeg.org; HTTPS enforced (refuses non-https), "
-        "verified TLS context, visible progress, blocked in Safe Mode. ffmpeg is not "
-        "bundled (GPL/LGPL); QUILL only downloads it on an explicit action."
-    ),
-    "core/speech/piper_install.py::_download_zip": (
-        "User-initiated optional Piper TTS engine download (#669) from the pinned "
-        "rhasspy/piper GitHub release (piper_windows_amd64.zip). HTTPS enforced "
-        "(refuses non-https), verified TLS context, visible progress, blocked in "
-        "Safe Mode, Windows-only. No SHA-256 pin (relies on HTTPS + official GitHub "
-        "release asset). Triggered only by an explicit 'Download Piper Engine' action "
-        "from the Voice Browser dialog."
-    ),
-    "core/speech/espeak_install.py::_download_msi": (
-        "User-initiated optional eSpeak-NG TTS engine download (#669) from the pinned "
-        "espeak-ng GitHub release (x64 MSI). HTTPS enforced (refuses non-https), "
-        "verified TLS context, visible progress, blocked in Safe Mode, Windows-only. "
-        "MSI is then extracted admin-free via msiexec /a (no elevation, no registry). "
-        "Triggered only by an explicit 'Download eSpeak-NG' action from the Voice "
-        "Browser dialog."
-    ),
-    "core/speech/cloud_transcribers.py::transcribe_rest": (
-        "User-initiated cloud transcription via a Quillin-declared, host-vetted "
-        "provider kind (#669: Groq, ElevenLabs, ...). HTTPS enforced (refuses "
-        "non-https), verified TLS context, API key from the credential store, "
-        "endpoint is always one of the vetted CLOUD_REST_SPECS (never arbitrary), "
-        "blocked in Safe Mode, and only runs on explicit consented transcription."
-    ),
-    "core/speech/providers/vosk.py::_download_zip": (
-        "User-initiated offline Vosk speech-model download (#669) from the official "
-        "alphacephei.com model archive; HTTPS enforced (refuses non-https), verified "
-        "TLS context, visible progress, blocked in Safe Mode, MD5-verified against the "
-        "catalog's pinned hash, and zip-slip-guarded on extract. No silent downloads."
-    ),
-    "core/ai/model_manager.py::_download": (
-        "User-initiated local AI model download; verified TLS for HTTPS, visible progress callback."
-    ),
-    "core/lexical.py::_http_get_json": (
-        "Consented online dictionary/thesaurus lookups (DICT-1: Free Dictionary "
-        "and Datamuse). Only runs when the user enables online lexical lookups; "
-        "HTTPS with a verified TLS context, no API key, graceful offline fallback."
-    ),
-    "core/publishing_clients.py::verify_connection": (
-        "User-initiated publishing connection verification from the Publishing "
-        "Connections dialog. Runs only when the user explicitly verifies a saved "
-        "connection; remote endpoints are HTTPS-enforced and HTTPS uses a verified "
-        "TLS context."
-    ),
-    "core/publishing_clients.py::_request_json": (
-        "User-initiated publishing browse, open, create, update, and schedule "
-        "requests from the Publish menu and publishing dialogs. Runs only when "
-        "the user explicitly loads, sends, or schedules content through a saved "
-        "connection; remote endpoints are HTTPS-enforced and HTTPS uses a "
-        "verified TLS context."
-    ),
-    "ui/main_frame_quillins_host.py::fetch": (
-        "Quillin host 'net' capability bridge. A Quillin can only reach this "
-        "method when its manifest declares the default-deny 'net' capability AND "
-        "the user grants explicit per-action consent at the runtime consent gate "
-        "(_EditorHostServices reaches fetch only after the host's capability + "
-        "consent check passes); there is no silent path."
-    ),
-    # feedback_hub is an optional external library (not in quill/); its urlopen
-    # call is not found by this AST scan but is documented here for auditability.
-    # Two explicit-user-action call sites reach it:
-    #   report_bug() -> FeedbackDialog._on_submit -> create_issue -> urlopen
-    #   _send_crash_report() -> core.issue_submit.submit_crash_issue -> submit
-    #       -> create_issue -> urlopen
-    # The crash-report path requires an explicit consent confirmation, sends
-    # only a REDACTED log summary (stability.redaction), and runs only when a
-    # GitHub token is configured. Both fall back to the legacy browser/manual
-    # path when feedback_hub or a token is absent.
-    # #622: the crash-submit flow adds a third path:
-    #   sys.excepthook -> quill.__main__._install_excepthook
-    #       -> _try_offer_crash_submit (builds the redacted payload via
-    #          stability.crash_submit.build_crash_report_payload)
-    #       -> wx.CallAfter(schedule) -> CrashReportDialog.show()
-    #       -> on Send: quill.core.issue_submit.submit_crash_issue -> submit
-    #          -> create_issue -> urlopen
-    # The dialog path runs only when (a) wx is alive, (b) the user has the
-    # `auto_ask_crash_submit` setting enabled (default True during the beta
-    # phase), and (c) the user explicitly clicks **Send report** after
-    # reviewing the redacted preview. The default button is **Don't send**
-    # so an accidental dialog open does not send anything. When the GitHub
-    # token is absent the report is copied to the clipboard instead. The
-    # local crash file is always saved regardless of the user's choice.
-    # Every step is wrapped in try/except so the handler can never prevent
-    # the standard interpreter traceback from firing.
-    "io/http_transport.py::download_url": (
-        "Open-from-URL action. Triggered by an explicit user action from the "
-        "Remote Sites dialog (Open from URL); fetches the resource the user "
-        "named with a verified TLS context, default _MAX_BYTES cap, and visible "
-        "progress callback."
-    ),
-    "io/s3_sigv4.py::signed_request": (
-        "S3 transport. Triggered only by an explicit user action from the "
-        "Remote Sites dialog (Open from / Save to / Save Copy to) against a "
-        "user-configured S3 site. Uses AWS Signature V4 over a verified TLS "
-        "context; cloud endpoints are HTTPS-only."
-    ),
-    "io/s3_sigv4.py::signed_streaming_download": (
-        "S3 streaming download. Same gating and TLS guarantees as signed_request; "
-        "streams the response body to a temp file with a visible progress callback."
-    ),
-    "io/webdav_transport.py::_request": (
-        "WebDAV transport. Triggered only by an explicit user action from the "
-        "Remote Sites dialog against a user-configured WebDAV site. Uses "
-        "urllib with a verified TLS context; HTTP allowed only when the user "
-        "explicitly opts in (LAN-only) and HTTPS by default for cloud endpoints."
-    ),
-    "io/webdav_transport.py::download": (
-        "WebDAV file download. Same gating and TLS guarantees as _request; "
-        "streams the response body to a temp file with a visible progress callback."
-    ),
-    "core/ai_chat.py::_post_json": (
-        "AI chat request. Triggered only by an explicit user action in the Ask AI "
-        "dialog (Tools > Ask AI or Alt+Q). The provider, model, and prompt are "
-        "chosen by the user in the dialog before sending. HTTPS enforced for cloud "
-        "providers; local Ollama uses HTTP on localhost only. No silent background calls."
-    ),
-    "core/ai_chat.py::_get_json": (
-        "AI model list fetch. Triggered when the Ask AI dialog opens or when the "
-        "user changes the provider selector, to populate the model list. Same HTTPS "
-        "guarantee as _post_json."
-    ),
-    "core/contributors.py::fetch_contributors": (
-        "Developer tooling only — not called at runtime. The About screen uses the "
-        "baked-in CONTRIBUTORS tuple; this function is only invoked manually by a "
-        "developer running `python -m quill.core.contributors` to refresh that tuple. "
-        "There is no silent runtime path."
-    ),
-    "ui/main_frame.py::_run": (
-        "Piper voice model download (_download_piper_voice) or Kokoro model download "
-        "(_download_kokoro_models). Both are triggered only when the user clicks "
-        "'Download Voice...' in the Voice Browser dialog (Manage Voices & Reading Aloud). "
-        "Piper fetches .onnx and .onnx.json from HuggingFace piper-voices; Kokoro fetches "
-        "model and voices files from GitHub releases. Both use HTTPS, show a progress dialog "
-        "with Cancel, and reopen Manage Voices via switch_to_ok on completion."
-    ),
-    "core/ai/tts.py::request_speech": (
-        "OpenAI TTS speech synthesis. Triggered only by an explicit user action: "
-        "AI > Read Selection Aloud or AI > Read Document Aloud. The user must have "
-        "configured an OpenAI-compatible provider and API key in AI Hub. Request is "
-        "HTTPS-only (TTS_ENDPOINT is a hardcoded openai.com URL); no silent background calls."
-    ),
-    "core/ai/gemini_tts.py::request_speech_pcm": (
-        "Google Gemini 2.5 TTS speech synthesis. Triggered only by an explicit user "
-        "action: AI Voice read-aloud or export with the provider set to Gemini. The user "
-        "must have configured a Gemini API key. HTTPS-only (endpoint is a hardcoded "
-        "generativelanguage.googleapis.com URL); the key travels in the x-goog-api-key "
-        "header, never in the URL; no silent background calls."
-    ),
-    "core/ai/transcription.py::_post_audio": (
-        "OpenAI Whisper audio transcription/translation. Triggered only by an explicit "
-        "user action: AI > Transcribe Audio File or AI > Translate Audio File. The user "
-        "must have configured an OpenAI API key; the file is chosen interactively by the "
-        "user in AITranscribeDialog. HTTPS with a verified TLS context; 25 MB size guard."
-    ),
-    "core/ai/diarization.py::_diarize_deepgram": (
-        "Deepgram Nova-3 speaker diarization. Triggered only when the user explicitly "
-        "enables speaker diarization in AITranscribeDialog and invokes the transcription "
-        "action. A Deepgram API key is required. HTTPS with a verified TLS context; "
-        "no silent background calls."
-    ),
-    "core/ai/translation.py::_translate_libretranslate": (
-        "LibreTranslate local/self-hosted translation. Triggered only when the user "
-        "explicitly selects LibreTranslate as the provider in AI Hub Translation settings "
-        "and invokes an AI > Translate command. Default URL is localhost:5000; the user "
-        "must configure an external URL to make this a remote call, so consent is "
-        "embedded in the provider configuration UI."
-    ),
-    "core/node_install.py::_fetch_node_zip_url": (
-        "User-initiated Node.js LTS runtime download (Node Quillin support). Fetches "
-        "a small SHASUMS256.txt index (~5 KB) from nodejs.org/dist/latest-v{N}.x/ over "
-        "verified HTTPS to resolve the current win-x64 zip filename. Runs only on an "
-        "explicit 'Download Node.js runtime' action in the Quillins settings panel; "
-        "blocked in Safe Mode; Windows-only. No user data is sent."
-    ),
-    "core/node_install.py::_download_node_zip": (
-        "User-initiated Node.js LTS runtime download (Node Quillin support). Streams "
-        "the official nodejs.org win-x64 zip (URL resolved from SHASUMS256.txt by "
-        "_fetch_node_zip_url) over verified HTTPS with a visible progress callback. "
-        "Same gating as _fetch_node_zip_url: explicit action, Safe Mode blocked, "
-        "Windows-only. QUILL never redistributes the binary."
-    ),
-}
+# The reviewed table moved to its own module under GATE-11 (extract, never
+# rebaseline): it is data that grows with every networked feature, while the
+# scanner below is logic that does not.
+from quill.tools.network_egress_entries import _REVIEWED_EGRESS  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # PyGithub egress — manually documented (not AST-scannable)
@@ -293,18 +124,82 @@ _REVIEWED_EGRESS: dict[str, str] = {
 # urllib/socket/requests calls, so the AST scanner cannot find them.
 # The integration surface is documented here for auditability.
 #
-# Entry points (all in quill/core/github/github_provider.py):
+# Entry points in quill/core/github/github_provider.py (single-file browse/write):
 #   get_identity()    - GitHub API: GET /user
 #   get_repository()  - GitHub API: GET /repos/{owner}/{repo}
 #   list_refs()       - GitHub API: GET branches + tags for a repo
 #   get_file()        - GitHub API: GET /repos/{owner}/{repo}/contents/{path}
 #   save_file()       - GitHub API: PUT /repos/{owner}/{repo}/contents/{path}
 #
+# Entry points in quill/core/github/items_provider.py (issues/PRs/branches/
+# commits/tags/releases/workflow runs viewer, plus its write actions):
+#   fetch_issues/fetch_pulls/fetch_branches/fetch_commits/fetch_tags/
+#   fetch_releases/fetch_workflow_runs/fetch_pull_diff/fetch_file_text/
+#   fetch_issue_comments/search_items - GitHub API: GET (read-only)
+#   update_items()          - GitHub API: PATCH issue state, POST labels
+#   create_issue()          - GitHub API: POST /repos/{owner}/{repo}/issues
+#   create_pull_request()   - GitHub API: POST /repos/{owner}/{repo}/pulls
+#   merge_pull_request()    - GitHub API: PUT .../pulls/{n}/merge
+#   rerun_workflow_run()    - GitHub API: POST .../actions/runs/{id}/rerun
+#   create_comment()        - GitHub API: POST .../issues/{n}/comments
+#   edit_comment()          - GitHub API: PATCH .../issues/comments/{id}
+#   delete_comment()        - GitHub API: DELETE .../issues/comments/{id}
+#
+# Entry points in quill/core/github/repo_admin.py (repository lifecycle;
+# every method requires an authenticated token -- no anonymous path):
+#   create_repository()        - GitHub API: POST /user/repos or /orgs/{org}/repos
+#   fork_repository()          - GitHub API: POST .../forks
+#   rename_repository()        - GitHub API: PATCH /repos/{owner}/{repo} (name)
+#   set_visibility()           - GitHub API: PATCH /repos/{owner}/{repo} (private)
+#   set_default_branch()       - GitHub API: PATCH /repos/{owner}/{repo} (default_branch)
+#   set_branch_protection()    - GitHub API: PUT .../branches/{branch}/protection
+#   remove_branch_protection() - GitHub API: DELETE .../branches/{branch}/protection
+#   delete_branch()            - GitHub API: DELETE .../git/refs/heads/{branch}
+#   commit_files()             - GitHub API: POST .../git/trees, .../git/commits,
+#                                 then PATCH .../git/refs/heads/{branch} (fast-forward
+#                                 only -- refused, not force-pushed, if the branch
+#                                 has moved since it was read)
+#
 # Gating: all calls are triggered by explicit user actions in the GitHub
-# dialogs (File > Open from Remote > GitHub).  A one-time consent dialog fires
-# before any network call on first use.  Tokens are stored in Windows Credential
-# Manager only, never logged.  All PyGithub calls are HTTPS.
+# dialogs (File > Open from Remote > GitHub, the GitHub Items viewer's
+# Batch.../Actions... menus, and Tools > GitHub). A one-time consent dialog
+# fires before any network call on first use. Every write in items_provider.py
+# and every method in repo_admin.py additionally requires a signed-in token --
+# the anonymous/read-only session is refused outright -- and every write is
+# named explicitly in its own confirmation dialog before it runs; the four
+# highest-consequence repo_admin.py actions (rename, delete a branch, and
+# anything else routed through TypedConfirmDialog) require retyping the exact
+# name/number rather than a plain Yes/No. Tokens are stored in the OS secure
+# credential store only (Windows Credential Manager / macOS Keychain), never
+# logged. All PyGithub calls are HTTPS.
 
+# ---------------------------------------------------------------------------
+# Spotify Web Playback SDK egress (inside the WebView) — manually documented
+# ---------------------------------------------------------------------------
+# Playing Spotify Premium audio is only possible through Spotify's own Web
+# Playback SDK, which QUILL hosts in a hidden wx.html2.WebView (Edge/WebView2
+# on Windows -- quill/ui/spotify/web_player.py). Two network activities happen
+# INSIDE that WebView2 browser process, performed by the SDK / page JavaScript,
+# not by any urllib/requests call in quill/ source -- so the AST scanner above
+# cannot see them. They are documented here for auditability:
+#
+#   1. The page loads the SDK script from https://sdk.scdn.co/spotify-player.js
+#      and the SDK opens its own connections to open.spotify.com / *.scdn.co to
+#      stream the DRM-protected audio (Encrypted Media Extensions inside the
+#      browser engine). QUILL never sees, decodes, or stores that audio.
+#   2. window.quillSpotifyPlay(uri) issues one fetch() to
+#      https://api.spotify.com/v1/me/player/play?device_id=... (PUT, the user's
+#      Bearer token in the Authorization header, the chosen spotify: URI in the
+#      body) to point the SDK device at what to play.
+#
+# Gating: the whole feature is behind the future.spotify feature flag
+# (experimental), a one-time network-access consent (spotify_consent.json),
+# Safe-Mode refusal, and -- the Web Playback SDK being Premium-only -- a Spotify
+# Premium account. The hidden WebView is created only after the user explicitly
+# connects Spotify and starts playback; nothing reaches Spotify before that.
+# The access token the page uses is fetched through the reviewed
+# core/spotify/auth.py::_token_request / client.py::_request sites above.
+#
 # ---------------------------------------------------------------------------
 # pip subprocess egress (on-demand engine installs) — manually documented
 # ---------------------------------------------------------------------------
@@ -328,10 +223,115 @@ _REVIEWED_EGRESS: dict[str, str] = {
 #   Triggered: Manage Speech Models > Install Vosk, or Tools > Speech > Install Vosk.
 #
 # quill/core/speech/engine_install.py::install_kokoro_onnx
-#   Installs kokoro-onnx>=0.5.0 and soundfile>=0.14.0 (~20 MB + onnxruntime transitive).
-#   Triggered automatically after the Kokoro model files are downloaded
-#   (Manage Voices > Download Kokoro), or explicitly from Manage Speech Models >
-#   Install Kokoro ONNX, or Tools > Speech > Install Kokoro ONNX.
+#   Installs kokoro-onnx>=0.6.1 (shipped patched wheel) + soundfile>=0.14.0 (~20 MB + onnxruntime).
+#   Triggered automatically alongside the Kokoro model files via
+#   Help > Download Optional Components.
+#
+# quill/core/ai/sdk_install.py::install_pack
+#   On-demand install of an optional agentic SDK pack (GitHub Copilot SDK,
+#   Claude Agent SDK, or OpenAI Agents SDK) into <app data>/ai-packs/<pack>,
+#   wheel-only via `python -m pip install --only-binary=:all: --target <dir>
+#   <requirement>`. Same gating as the speech engines: explicit user action only
+#   (the AI engine switcher / Copilot onboarding dialog), visible progress,
+#   blocked in Safe Mode, no admin, no silent path. The SDKs are deliberately not
+#   bundled in the installer (large, fast-moving, one-of-three).
+#
+# quill/core/pdf_ocr_install.py::install_pdf_ocr_support
+#   On-demand install of the free PDF/Office text-extraction pack (MarkItDown,
+#   pdfplumber, pypdf; ~30 MB) into <app data>/engine-packs/pdf-ocr, wheel-only,
+#   same gating as the speech engines. Triggered: Help > Download Optional
+#   Components > "PDF and Office text extraction". #909's original bug (a build
+#   with no PDF/Office text extractor anywhere) is fixed by this being one click
+#   away on every install, not by forcing it onto installs that never need it.
+#
+# quill/core/speech/providers/whispercpp.py::_download_to_file
+#   whisper.cpp GGML model download (#617), fetched via
+#   huggingface_hub.hf_hub_download (repo_id/filename/revision), same library
+#   quill/core/speech/providers/fasterwhisper.py::_download_repo already uses
+#   via snapshot_download. Neither call is an urlopen/urlretrieve, so the AST
+#   scanner cannot see them; documented here for auditability. Both are
+#   user-initiated (Manage Speech Models > Download), blocked in Safe Mode,
+#   HTTPS-only (the Hub SDK never falls back to plaintext), and sha256-verified
+#   when a hash is known.
+
+# ---------------------------------------------------------------------------
+# git subprocess egress (Vault Sync, Sync Folder with GitHub) — manually documented
+# ---------------------------------------------------------------------------
+# `git pull`/`git push` run in a subprocess (`git -C <root> pull/push ...`);
+# the network call is performed by the user's own git installation reaching
+# their configured remote (typically, but not necessarily, github.com), not
+# by an urlopen in quill/ source, so the AST scanner above cannot see it.
+# QUILL never stores or injects a credential for these calls -- both features
+# rely entirely on the user's own git installation and its own credential
+# handling (an SSH key, or a stored HTTPS credential via the system git
+# credential manager), exactly as running `git push` from a terminal already
+# would outside QUILL. This is the deliberate "reuse git as the sync engine
+# instead of building QUILL's own" design (see quill/core/git_sync.py); the
+# much larger custom-sync-engine design in the retired
+# docs/planning/quill-sync-plan.md was not built.
+#
+# quill/core/vault/sync.py::run_vault_sync
+#   Commits, pulls, and pushes an Accessible Vault over its git remote.
+#   Triggered: Tools > Vault > Sync Vault (explicit user action only).
+#   Blocked in Safe Mode. Conflicts are listed, never auto-resolved.
+#
+# quill/core/git_sync.py::sync_folder_via_git, ::init_repo_with_remote
+#   The general-purpose form: commits, pulls, and pushes *any* folder the
+#   user chooses (delegating to run_vault_sync above for the actual
+#   commit/pull/push), plus `git init`/`git remote add origin <url>` when the
+#   chosen folder is not yet set up -- only after an explicit confirmation
+#   dialog states exactly what will run. Triggered: Tools > Sync Folder with
+#   GitHub... (explicit user action only). Blocked in Safe Mode.
+#
+# quill/core/local_git.py (Tools > Local Git; 0.9.0 Beta 3, docs/planning/
+# github.md section 4) -- listed here for the same subprocess-boundary
+# auditability, though unlike the two entries above this module makes **no
+# network calls at all**: status, diff, stage/unstage, branch list/switch,
+# stash, blame, bisect, and interactive rebase are all local-only git
+# operations (no push/pull/fetch anywhere in the module). Executable
+# resolution goes through quill/core/git_binaries.py's allowlist
+# (git/git.exe/gh/gh.exe only). Blocked in Safe Mode out of caution
+# (consistent with every other git-touching command), even though nothing
+# here actually reaches the network.
+#
+# quill/core/github/gh_bridge.py (Tools > GitHub > Codespaces.../Create
+# Codespace.../Ask Copilot for a Command.../Explain a Command...; 0.9.0
+# Beta 3, docs/planning/github.md section 1's Tier 3) -- `gh codespace
+# list/create/stop/delete/ssh` and `gh copilot suggest/explain` run in a
+# subprocess exactly like git_sync.py's git calls above; the network call
+# (when one happens -- listing/creating/stopping/deleting a codespace, or
+# Copilot's own API call for a suggestion) is performed by the user's own
+# `gh` installation reaching api.github.com and Copilot's service using
+# `gh`'s own stored auth, not by an urlopen in quill/ source. QUILL never
+# stores or injects a credential for these calls. Gated on the same
+# executable allowlist as local_git.py above, Safe Mode, and (for
+# create-codespace specifically) an explicit confirmation naming the cost/
+# quota implication before the call runs -- Codespaces is the one GitHub
+# integration command in QUILL with a real dollar cost. **Needs live-device
+# verification** (see the module's own docstring): unit-tested with a fake
+# `gh` runner, not yet exercised against a real `gh` install, a real
+# Codespaces-enabled repository, or real Copilot CLI access.
+
+# ---------------------------------------------------------------------------
+# ffmpeg subprocess egress (Sound Enhancements relay: Radio + Podcasts) — manually documented
+# ---------------------------------------------------------------------------
+# quill/core/audio_enhance.py::EnhanceRelay.start
+#   Spawns `ffmpeg -i <source> -af <filters> ... pipe:1` in a subprocess
+#   (build_relay_command) so the source (a live radio stream or a podcast
+#   episode) is filtered (EQ preset / compressor) before playback, exactly
+#   like radio recording's
+#   existing ffmpeg subprocess (core/radio/recording.py, already documented
+#   in module_size_budgets.json, not a new pattern). Not an urlopen in quill/
+#   source, so the AST scanner above cannot see it. The source is never
+#   attacker-controlled shell text -- it's the station or episode the user
+#   already chose to play, passed as one argv element (never through a
+#   shell). Reached only when the user turns on Playback > Sound
+#   Enhancements... (off, and this relay never starts, by default). ffmpeg's
+#   own bytes never leave the machine either: they're written to a
+#   127.0.0.1-only loopback HTTP server (_RelayHTTPServer) that the existing
+#   player engine reads from instead of the source's own URL -- no new
+#   remote surface, just a local relay in front of a fetch the engine would
+#   otherwise make itself.
 
 
 def _enclosing_function_name(tree: ast.AST, target: ast.AST) -> str:
@@ -356,14 +356,35 @@ def _callee_name(call: ast.Call) -> str | None:
     return None
 
 
-def discover_egress_sites() -> dict[str, str]:
-    """Return {"<rel path>::<function>": "<source line text>"} for every call."""
-    sites: dict[str, str] = {}
+@dataclass(frozen=True)
+class EgressSite:
+    """One discovered egress call site: its enclosing function and platform tag."""
+
+    function: str
+    #: ``"darwin"`` when the call sits inside a ``sys.platform == "darwin"``
+    #: branch (Mac-only, never exercised on the Windows dev box); ``""`` otherwise.
+    platform: str
+
+
+@lru_cache(maxsize=1)
+def _scan_egress() -> dict[str, EgressSite]:
+    """Scan the package once, returning ``{site: EgressSite}`` for every call.
+
+    ``discover_egress_sites`` (the function-to-name map the gate enforces on) and
+    ``discover_egress_platforms`` (the Mac-only tagging the review surfaces) both
+    derive from this single pass so the two views cannot drift apart. Cached for
+    the process lifetime: the scan parses every module in the package, and a
+    single gate run or test session calls the derived views several times.
+    """
+    sites: dict[str, EgressSite] = {}
     for path in sorted(_PACKAGE_ROOT.rglob("*.py")):
-        source = path.read_text(encoding="utf-8")
+        source = source_text(path)  # 60% of this scan is disk I/O
         tree = ast.parse(source, filename=str(path))
+        parents = build_parent_map(tree)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and _callee_name(node) in _EGRESS_CALLEES:
+            if isinstance(node, ast.Call) and (
+                _callee_name(node) in _EGRESS_CALLEES or _is_qualified_egress(node)
+            ):
                 rel = path.relative_to(_PACKAGE_ROOT).as_posix()
                 func_name = _enclosing_function_name(tree, node)
                 site = f"{rel}::{func_name}"
@@ -371,9 +392,30 @@ def discover_egress_sites() -> dict[str, str]:
                 # the same enclosing function are not possible by construction
                 # (one entry per function). Two egress calls in the same function
                 # would share the key, so keep the first to preserve the prior
-                # behavior and surface the collision via _first_seen_at().
-                sites.setdefault(site, func_name)
+                # behavior.
+                sites.setdefault(site, EgressSite(func_name, platform_for_node(parents, node)))
     return sites
+
+
+def discover_egress_sites() -> dict[str, str]:
+    """Return ``{"<rel path>::<function>": "<enclosing function name>"}``.
+
+    The gate enforces that every key here is reviewed in ``_REVIEWED_EGRESS``.
+    The value is the enclosing function name (kept for parity with prior
+    behaviour; the platform tag lives in :func:`discover_egress_platforms`).
+    """
+    return {site: record.function for site, record in _scan_egress().items()}
+
+
+def discover_egress_platforms() -> dict[str, str]:
+    """Return ``{site: platform}`` -- ``"darwin"`` for Mac-only sites, ``""`` else.
+
+    Informational, not enforcement: the reviewed-set gate is key-based and
+    unaffected by platform. A Mac-only egress site cannot be exercised on the
+    Windows dev box or in Windows CI, so surfacing it here lets a reviewer see
+    which reviewed entries only show their real behaviour on a Mac.
+    """
+    return {site: record.platform for site, record in _scan_egress().items()}
 
 
 def find_unreviewed_egress() -> tuple[set[str], set[str]]:

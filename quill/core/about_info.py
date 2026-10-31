@@ -32,12 +32,11 @@ from quill.branding import (
     APP_ORGANIZATION,
     INDEPENDENCE_NOTICE,
 )
-from quill.build_info import get_short_version, get_support_info
+from quill.build_info import get_short_version, get_support_info, release_build
 
 # Org links shown on the Overview tab. Mirrors ``MainFrame._ABOUT_LINKS``.
 _DEFAULT_ORG_LINKS: tuple[tuple[str, str], ...] = (
     ("Community Access", "https://community-access.org"),
-    ("Blind Information Technology Solutions (BITS)", "https://bits-acb.org"),
     ("Techopolis", "https://techopolis.app"),
     ("GLOW (Community Access)", "https://letitglow.app"),
     ("AccessibleApps (Christopher Toth)", "https://github.com/accessibleapps"),
@@ -69,7 +68,24 @@ _DEFAULT_GITHUB_LINKS: tuple[tuple[str, str], ...] = (
         "wx-accessible-webview on GitHub",
         "https://github.com/Community-Access/wx-accessible-webview",
     ),
+    (
+        "herwigfelix: macOS app launch fix (#755)",
+        "https://github.com/herwigfelix",
+    ),
 )
+
+# Golden Quills: people who have chosen to support QUILL financially. Donating is
+# always optional and never required to use any feature; this is recognition and
+# thanks, kept in alphabetical order. Add new supporters here.
+_GOLDEN_QUILLS: tuple[str, ...] = (
+    "Allison Meloy",
+    "Caroline Toews",
+    "Douglas Hunsinger",
+    "John McCann",
+)
+
+# Optional, voluntary donation link shown on the Golden Quills tab.
+_DONATE_URL = "http://www.paypal.me/jeffbis"
 
 _OVERVIEW_PARAGRAPHS: tuple[str, ...] = (
     "{product_name} {version} {channel} is a screen-reader-first writing and document "
@@ -162,6 +178,8 @@ class AboutInfo:
     dependencies: tuple[DependencyRow, ...]
     bundled_components: tuple[DependencyRow, ...]
     dependencies_available: bool
+    golden_quills: tuple[str, ...] = ()
+    donate_url: str = ""
     copyright: str = APP_COPYRIGHT
     license_name: str = APP_LICENSE_NAME
     independence_notice: str = INDEPENDENCE_NOTICE
@@ -186,6 +204,19 @@ def _load_contributors() -> tuple[Link, ...]:
         except ValueError:
             continue
     return tuple(out)
+
+
+def _load_golden_quills() -> tuple[str, ...]:
+    """Supporter names, de-duplicated and sorted case-insensitively."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in _GOLDEN_QUILLS:
+        cleaned = name.strip()
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen.add(key)
+            out.append(cleaned)
+    return tuple(sorted(out, key=str.lower))
 
 
 def _load_org_links() -> tuple[Link, ...]:
@@ -245,6 +276,8 @@ def gather_about_info(
     contributors: tuple[Link, ...] | None = None,
     org_links: tuple[Link, ...] | None = None,
     github_links: tuple[Link, ...] | None = None,
+    golden_quills: tuple[str, ...] | None = None,
+    donate_url: str | None = None,
     dependency_loader: Callable[[Path], tuple[DependencyRow, ...]] | None = None,
     bundled_loader: Callable[[], tuple[DependencyRow, ...]] | None = None,
     glow_summary: str | None = None,
@@ -267,7 +300,9 @@ def gather_about_info(
     dependencies = dep_loader(resolved_pyproject)
     bundled = bundle_loader()
 
-    short = display_version or get_short_version()
+    # About says which build of the version this is: "1.0.0 (build 2)".
+    build = release_build()
+    short = display_version or (get_short_version() + (f" (build {build})" if build else ""))
     resolved_channel = channel or _resolve_channel()
     resolved_version = version or __version__
     resolved_product = product_name or APP_DISPLAY_NAME
@@ -296,6 +331,8 @@ def gather_about_info(
         dependencies=dependencies,
         bundled_components=bundled,
         dependencies_available=resolved_pyproject.exists(),
+        golden_quills=golden_quills if golden_quills is not None else _load_golden_quills(),
+        donate_url=donate_url if donate_url is not None else _DONATE_URL,
         support_info=resolved_support,
     )
 

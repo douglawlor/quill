@@ -24,7 +24,13 @@ def _slice_function(source: str, fn_sig: str, stop_sig: str = "\n    def ") -> s
 
 
 def _main_frame_source() -> str:
-    return Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # The preferences dialogs live in the PreferencesMixin module (extracted
+    # from main_frame.py, CQ-1); scan both homes.
+    return (
+        Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+        + "\n"
+        + Path("quill/ui/main_frame_preferences.py").read_text(encoding="utf-8")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +69,24 @@ def test_general_preferences_factory_functions_present() -> None:
     assert "_make_spin_int" in body
     assert "_make_spin_float" in body
     assert "_make_text" in body
+
+
+def test_general_preferences_int_spin_names_its_inner_textctrl() -> None:
+    """support#69: VoiceOver reads a SpinCtrl's inner TextCtrl child, not the
+    outer control's Name. Both spin kinds must route through
+    set_accessible_name (quill.ui.accessible_names), which names the composite
+    AND its inner TextCtrl — the generalized form of the inline GetChildren()
+    walk this test used to pin (#1012)."""
+    source = _main_frame_source()
+    for factory in ("def _make_spin_int(", "def _make_spin_float("):
+        start = source.index(factory)
+        end = source.index("\n\n", start)
+        body = source[start:end]
+
+        assert "set_accessible_name(s, _spec.label)" in body, (
+            f"{factory.strip('def (')} must name the spin via set_accessible_name "
+            "so the macOS inner TextCtrl is announced with its label"
+        )
 
 
 # ---------------------------------------------------------------------------

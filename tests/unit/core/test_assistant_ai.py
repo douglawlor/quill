@@ -221,6 +221,44 @@ def test_verify_assistant_connection_surfaces_unlock_failure(
     assert "Open AI Connection" in message
 
 
+def test_safe_mode_outranks_an_unlock_failure_on_every_ai_surface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """H-SAFE-1 must hold even on a machine with an undecryptable saved key.
+
+    ``verify_assistant_connection`` checked the unlock failure first until
+    2026-09-08, so on a restored profile or a portable install moved between
+    Windows accounts it answered "the saved API key is encrypted for a
+    different Windows user" -- true, and useless, because re-entering the key
+    changes nothing while Safe Mode is on. It also made
+    ``tests/stability/test_stability.py`` pass or fail according to whether the
+    machine running it happened to carry such a key.
+    """
+    monkeypatch.setenv("QUILL_SAFE_MODE", "1")
+    monkeypatch.setattr(assistant_ai, "assistant_secret_unlock_failed", lambda: True)
+    settings = assistant_ai.AssistantConnectionSettings(
+        provider="openai",
+        host="https://api.openai.com",
+        model="gpt-4o-mini",
+    )
+
+    ok, message = assistant_ai.verify_assistant_connection(settings, api_key="x")
+    assert ok is False
+    assert "Safe Mode" in message
+
+    # The two surfaces that already ordered it this way, pinned alongside so
+    # the three cannot drift apart again.
+    models, list_error = assistant_ai.list_assistant_models(settings, api_key="x")
+    assert models == []
+    assert list_error is not None and "Safe Mode" in list_error
+
+    text, generate_error = assistant_ai.generate_assistant_response(
+        settings, api_key="x", prompt="hi"
+    )
+    assert text is None
+    assert generate_error is not None and "Safe Mode" in generate_error
+
+
 def test_list_assistant_models_surfaces_unlock_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -287,6 +325,29 @@ def test_recommended_models_for_provider_cloud_and_local(
     assert local[0] == "llama3.2:1b-instruct-q4_K_M"
     cloud = assistant_ai.recommended_models_for_provider("openai")
     assert "gpt-4o-mini" in cloud
+
+
+def test_ollama_cloud_default_and_recommended_models_are_real_ids() -> None:
+    # Bare "qwen3"/"gemma3" 404 on ollama.com; every default/recommended cloud
+    # model id must carry a size tag (or be a tagless flagship that exists).
+    default = providers.default_model_for_provider("ollama_cloud")
+    recommended = providers.recommended_models_for_provider("ollama_cloud")
+    assert default == "gemma3:12b"
+    assert "qwen3" not in recommended and "gemma3" not in recommended
+    # The non-reasoning default leads so it works on chat and the agent path.
+    assert recommended[0] == "gemma3:12b"
+
+
+def test_parse_chat_response_falls_back_to_reasoning_when_content_empty() -> None:
+    # Reasoning models (gpt-oss, some OpenRouter routes) leave `content` empty and
+    # put the answer on a reasoning channel; we must surface it, not fail.
+    payload = {"choices": [{"message": {"content": "", "reasoning_content": "the answer"}}]}
+    assert assistant_ai.parse_chat_response("ollama_cloud", payload) == "the answer"
+    payload2 = {"choices": [{"message": {"content": "", "reasoning": "alt channel"}}]}
+    assert assistant_ai.parse_chat_response("openrouter", payload2) == "alt channel"
+    # Normal content still wins over any reasoning field.
+    payload3 = {"choices": [{"message": {"content": "real", "reasoning": "ignored"}}]}
+    assert assistant_ai.parse_chat_response("openai", payload3) == "real"
 
 
 def test_recommended_model_guidance_returns_framing(
@@ -366,7 +427,11 @@ def test_list_models_reports_local_server_not_running(
     )
     _models, error = assistant_ai.list_assistant_models(settings, api_key="")
     assert error is not None
-    assert "not running" in error.lower()
+    # The "not_running" message was generalized to cover other local-AI servers
+    # (LM Studio, GPT4All) alongside Ollama, and no longer contains the literal
+    # phrase "not running" -- assert on the actionable, stable substrings instead.
+    assert "can't reach a local ai server" in error.lower()
+    assert "ollama serve" in error.lower()
 
 
 def test_list_models_retries_while_warming_up_then_succeeds(
@@ -655,6 +720,48 @@ def test_per_provider_keys_are_isolated(monkeypatch: pytest.MonkeyPatch) -> None
     assert openai_target != claude_target
 
 
+def test_keyed_provider_key_prefers_per_provider_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Even when the active provider is something else, the per-provider OpenAI key
+    # is used for a direct OpenAI call (Whisper / OpenAI TTS).
+    _fake_credential_store(monkeypatch)
+    assistant_ai.save_provider_api_key("openai", "openai-key")
+    monkeypatch.setattr(
+        assistant_ai,
+        "load_assistant_connection_settings",
+        lambda: assistant_ai.AssistantConnectionSettings(provider="claude"),
+    )
+    monkeypatch.setattr(assistant_ai, "load_assistant_api_key", lambda: "claude-active-key")
+    assert assistant_ai.load_keyed_provider_api_key("openai") == "openai-key"
+
+
+def test_keyed_provider_key_falls_back_to_active_only_when_provider_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_credential_store(monkeypatch)  # no per-provider openai key stored
+    monkeypatch.setattr(
+        assistant_ai,
+        "load_assistant_connection_settings",
+        lambda: assistant_ai.AssistantConnectionSettings(provider="openai"),
+    )
+    monkeypatch.setattr(assistant_ai, "load_assistant_api_key", lambda: "openai-active-key")
+    assert assistant_ai.load_keyed_provider_api_key("openai") == "openai-active-key"
+
+
+def test_keyed_provider_key_never_returns_another_providers_active_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The 401 bug: with no OpenAI key but an active Anthropic key, asking for the
+    # OpenAI key must return "" rather than the Anthropic key (which OpenAI rejects).
+    _fake_credential_store(monkeypatch)
+    monkeypatch.setattr(
+        assistant_ai,
+        "load_assistant_connection_settings",
+        lambda: assistant_ai.AssistantConnectionSettings(provider="claude"),
+    )
+    monkeypatch.setattr(assistant_ai, "load_assistant_api_key", lambda: "claude-active-key")
+    assert assistant_ai.load_keyed_provider_api_key("openai") == ""
+
+
 def test_clear_provider_api_key_only_affects_that_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake_credential_store(monkeypatch)
     assistant_ai.save_provider_api_key("openai", "openai-key")
@@ -784,3 +891,90 @@ def test_build_chat_headers_openai_does_not_get_anthropic_beta() -> None:
         "openai", "https://api.openai.com", "key123", cache_system_prompt=True
     )
     assert "anthropic-beta" not in headers
+
+
+# ---------------------------------------------------------------------------
+# Environment API key fallback (#1312)
+# ---------------------------------------------------------------------------
+
+
+def test_environment_key_is_used_only_when_nothing_is_stored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _fake_credential_store(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
+
+    assert assistant_ai.load_provider_api_key("openai") == "env-openai"
+    assert assistant_ai.provider_api_key_source("openai") == "environment"
+
+    # A key entered in QUILL always wins over an ambient one.
+    store[assistant_ai.provider_credential_target("openai")] = "stored-openai"
+    assert assistant_ai.load_provider_api_key("openai") == "stored-openai"
+    assert assistant_ai.provider_api_key_source("openai") == "stored"
+
+
+def test_environment_key_is_stripped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A shell profile exporting a trailing newline must not cause a 401."""
+    _fake_credential_store(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "  sk-ant-padded\n")
+    assert assistant_ai.load_provider_api_key("claude") == "sk-ant-padded"
+
+
+def test_environment_fallback_ignores_non_cloud_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local Ollama needs no key, and "off" is not a provider.
+
+    Guards against the computed-name approach, where provider "off" would
+    read OFF_API_KEY and a local Ollama would read OLLAMA_API_KEY.
+    """
+    _fake_credential_store(monkeypatch)
+    monkeypatch.setenv("OLLAMA_API_KEY", "should-not-be-used-for-local")
+    monkeypatch.setenv("OFF_API_KEY", "nonsense")
+    assert assistant_ai.load_provider_api_key("ollama") == ""
+    assert assistant_ai.load_provider_api_key("off") == ""
+    # ollama_cloud IS a cloud provider and does read OLLAMA_API_KEY.
+    assert assistant_ai.load_provider_api_key("ollama_cloud") == "should-not-be-used-for-local"
+
+
+def test_stored_accessors_never_see_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The accessors the UI and the migration use must ignore env vars."""
+    _fake_credential_store(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
+    assert assistant_ai.stored_provider_api_key("openai") == ""
+    assert assistant_ai.load_provider_api_key("openai") == "env-openai"
+
+
+def test_unlock_failure_is_not_masked_by_an_environment_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """L-5: a key encrypted for a different Windows user must still surface.
+
+    Silently succeeding with an environment key here would hide the
+    "re-enter your key" diagnosis behind an unrelated success.
+    """
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    _fake_credential_store(monkeypatch)
+    monkeypatch.setattr(assistant_ai, "unprotect_secret", _raise_unprotect)
+    assistant_ai.assistant_secret_path().write_text(
+        json.dumps({"protected_secret": "undecryptable"}), encoding="utf-8"
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "env-openai")
+    assistant_ai.save_assistant_connection_settings(
+        assistant_ai.AssistantConnectionSettings(provider="openai", model="gpt-4o-mini")
+    )
+    assert assistant_ai.assistant_secret_unlock_failed() is True
+    assert assistant_ai.load_assistant_api_key() == ""
+
+
+def _raise_unprotect(_value: str) -> str:
+    raise ValueError("cannot decrypt with this user's keys")
+
+
+def test_build_chat_body_without_a_ceiling_omits_it() -> None:
+    """``max_tokens=None`` (AI help on the user's own key) sends no answer
+    ceiling; Claude, which cannot omit it, gets the default."""
+    body = assistant_ai.build_chat_body("openai", "gpt-6-luna", "Hi", max_tokens=None)
+    assert "max_completion_tokens" not in body and "max_tokens" not in body
+    claude = assistant_ai.build_chat_body("claude", "claude-x", "Hi", max_tokens=None)
+    assert isinstance(claude["max_tokens"], int) and claude["max_tokens"] > 0

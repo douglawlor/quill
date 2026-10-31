@@ -43,6 +43,7 @@ headless tests or before ``init()`` is called).
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -56,6 +57,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _manager: _SoundManager | None = None
+#: The card this process's earcons go to and who hears about it, as last given
+#: to :func:`set_output_device` -- re-applied when :func:`init` rebuilds.
+_route: tuple[str, object] = ("", None)
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +73,10 @@ def init(settings: Settings) -> None:
     if _manager is not None:
         _manager.shutdown()
     _manager = _SoundManager(settings)
+    # A re-init keeps the card the app chose: settings know nothing about it,
+    # so nobody else would put it back.
+    if _route[0]:
+        _manager.player.set_output_device(*_route)
 
 
 def shutdown() -> None:
@@ -90,8 +98,71 @@ def post_sound(event_id: str) -> None:
 
     Safe to call from any thread and before :func:`init` is called.
     """
+    if os.environ.get("QUILL_DICTATION_TRACE", "").strip() == "1":
+        logger.info("dictation trace: sound %s", event_id)  # which earcon, and when
     if _manager is not None:
         _manager.play(event_id)
+
+
+def post_sound_and_wait(event_id: str, timeout: float | None = None) -> None:
+    """Play *event_id* and wait for it. Only for the app's goodbye.
+
+    Every other cue returns at once because it comments on something in
+    progress. This one is followed by the process ending, so returning
+    immediately means the sound is cut off -- reported by ear, closing
+    QUILL Lite.
+    """
+    if _manager is None or not _manager.enabled:
+        return
+    try:
+        from quill.platform.sound_player import MAX_BLOCKING_SECONDS
+
+        _manager.player.play_and_wait(
+            str(event_id), MAX_BLOCKING_SECONDS if timeout is None else timeout
+        )
+    except Exception:  # noqa: BLE001 - a goodbye must never delay or break an exit
+        return
+
+
+def preview_file(path: object) -> bool:
+    """Play a WAV file straight from disk. True when it actually played.
+
+    For the Sound Scheme window, which previews files that are not in any pack
+    yet -- the one the user has just browsed to, and the ones in a scheme they
+    are considering. Never raises: a preview that fails must not take the window
+    down with it, and the caller says so in words instead.
+    """
+    from pathlib import Path as _Path
+
+    if _manager is None:
+        return False
+    try:
+        data = _Path(str(path)).read_bytes()
+    except OSError:
+        return False
+    try:
+        _manager.player.preview_wav(data)
+    except Exception:  # noqa: BLE001 - a preview is never worth an exception
+        return False
+    return True
+
+
+def set_output_device(device: str, on_route: object = None) -> bool:
+    """Route this process's earcons to sound card *device* ("" = system default).
+
+    For a companion app whose sounds belong with its audio -- Quill Radio sends
+    them to the radio's card. QUILL itself never calls this: its earcons are
+    the editor's, and the editor has no card of its own. Returns whether the
+    card is reachable now; False before :func:`init`.
+    """
+    global _route
+    _route = (str(device or "").strip(), on_route)
+    if _manager is None:
+        return False
+    try:
+        return bool(_manager.player.set_output_device(*_route))
+    except Exception:  # noqa: BLE001 - routing must never cost the app its sounds
+        return False
 
 
 def toggle_mute() -> bool:
@@ -99,6 +170,19 @@ def toggle_mute() -> bool:
     if _manager is not None:
         return _manager.player.toggle_mute()
     return False
+
+
+def set_muted(muted: bool) -> bool:
+    """Set the mute state and return the previous one (to restore it later).
+
+    Studio's demonstration recorder mutes its own cues while it records the
+    whole system mix, so they cannot reach the file (Studio PRD REC-007).
+    """
+    if _manager is None:
+        return False
+    previous = bool(_manager.player.muted)
+    _manager.player.set_muted(muted)
+    return previous
 
 
 def is_active() -> bool:
@@ -109,13 +193,31 @@ def is_active() -> bool:
 def get_loaded_events() -> frozenset[str]:
     """Return the set of event IDs currently loaded across all active packs.
 
-    Used by :class:`~quill.ui.sound_events_dialog.SoundEventsDialog` to show
+    Used by :class:`~quill.ui.sound_scheme_dialog.SoundSchemeDialog` to show
     only toggles for sounds that actually exist in the loaded pack(s). Returns
     an empty frozenset when no manager is initialised.
     """
     if _manager is not None:
         return _manager.get_loaded_events()
     return frozenset()
+
+
+def has_sound_for(event_id: str) -> bool:
+    """True when *event_id* would actually make a noise if posted right now.
+
+    The question ``action_feedback`` has to ask before it decides a tone is
+    enough: does this moment have a clip of its own in the loaded pack? A mode
+    that chose "sound" for an event nothing can play would leave the user with no
+    feedback at all, so the answer routes it back to words.
+
+    Deliberately *not* consulted: the global mute and
+    ``settings.sound_events_disabled``. Those are the user saying "not this
+    noise", and turning them into speech would answer a request for quiet with a
+    voice. A pack with no clip is an absence; a silenced event is a decision.
+    """
+    if not event_id:
+        return False
+    return str(event_id) in get_loaded_events()
 
 
 def load_indent_tone_pack(scale: str) -> None:
@@ -151,17 +253,43 @@ def register_quillin_sounds(
 # ---------------------------------------------------------------------------
 
 
+#: Seconds between keep-alive plays. Short enough that a device's power-down
+#: timeout (typically 30-60 s) never elapses, long enough to cost nothing.
+_KEEPALIVE_INTERVAL_SECONDS = 20.0
+
+
 class _SoundManager:
     def __init__(self, settings: Settings) -> None:
+        import threading
+
         from quill.platform.sound_player import SoundPlayer
 
         self.player = SoundPlayer()
         self.enabled: bool = False
-        self._pack_path: str = ""
+        #: The pack path currently loaded, or None for "nothing loaded yet".
+        #:
+        #: None rather than "", and that is the whole of a bug that made the
+        #: entire earcon system silent for anybody on the **default** pack --
+        #: which is to say almost everybody. ``apply_settings`` reloads only
+        #: when the path has changed, this started life as "", and the default
+        #: ``sound_pack_path`` is *also* "". So on the very first call the
+        #: comparison was "" != "", the load was skipped, the player held zero
+        #: events, and every ``post_sound`` in the product quietly did nothing.
+        #: The one place it did not look broken was the spelling alert, which
+        #: falls back to ``wx.Bell`` when the pack has no sound for the event --
+        #: so it beeped instead, and the earcons were never missed loudly enough
+        #: to be reported. A sentinel that cannot collide with a real value is
+        #: the fix; ``test_sound_manager.py`` now asserts the first load happens.
+        self._pack_path: str | None = None
         self._indent_scale: str = ""
         # Tracks event IDs contributed by the indent tone overlay so they can
         # be included in get_loaded_events() without re-reading disk.
         self._indent_event_ids: frozenset[str] = frozenset()
+        # Soundcard keep-alive (audio identity, opt-in): a silent clip on a
+        # timer so USB/Bluetooth devices never power down and clip the first
+        # earcon after a pause. The thread exists only while enabled.
+        self._keepalive_stop = threading.Event()
+        self._keepalive_thread: threading.Thread | None = None
         self.apply_settings(settings)
 
     def apply_settings(self, settings: Settings) -> None:
@@ -172,11 +300,15 @@ class _SoundManager:
         disabled = frozenset(e.strip() for e in events_disabled_raw.split(",") if e.strip())
         new_indent_scale = str(getattr(settings, "indent_tone_scale", ""))
 
+        keepalive = bool(getattr(settings, "sound_keepalive_enabled", False))
+
         if not self.enabled:
             self.player.set_muted(True)
+            self._set_keepalive(False)
             return
 
         self.player.set_muted(False)
+        self._set_keepalive(keepalive)
 
         # Reload pack only when the path actually changed.
         if new_pack_path != self._pack_path:
@@ -199,7 +331,33 @@ class _SoundManager:
         if self.enabled:
             self.player.play(event_id)
 
+    def _set_keepalive(self, enabled: bool) -> None:
+        """Start or stop the keep-alive loop to match the setting."""
+        import threading
+
+        if not enabled:
+            self._keepalive_stop.set()
+            self._keepalive_thread = None
+            return
+        if self._keepalive_thread is not None and self._keepalive_thread.is_alive():
+            return
+        self._keepalive_stop = threading.Event()
+        stop = self._keepalive_stop
+
+        def _loop() -> None:
+            while not stop.wait(_KEEPALIVE_INTERVAL_SECONDS):
+                try:
+                    self.player.play("keepalive")
+                except Exception:  # noqa: BLE001 - keep-alive must never surface
+                    return
+
+        self._keepalive_thread = threading.Thread(  # GATE-40-OK: opt-in keep-alive loop.
+            target=_loop, daemon=True, name="quill-sound-keepalive"
+        )
+        self._keepalive_thread.start()
+
     def shutdown(self) -> None:
+        self._keepalive_stop.set()
         self.player.shutdown()
 
     # ------------------------------------------------------------------

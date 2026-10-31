@@ -1,0 +1,1580 @@
+"""A QUILL Lite document window with the wx taken out, for testing behaviour.
+
+Every command in QUILL Lite is a method on a mixin that reads and writes a text
+control and then says what it did. Both halves matter and only one of them was
+being checked: the command table had gates for its keys, its mnemonics and its
+labels, and the *behaviour* of the commands was left to a person listening to a
+running build.
+
+That is how F8 shipped broken. ``cmd_start_selection`` was correct, the key was
+correct, the menu was correct -- and a key-up handler wired to the same control
+threw the anchor away a millisecond later, so F8 followed by Shift+F8 answered
+"No selection in progress" every single time. No table gate can see that: it is
+an interaction between a command and an event hook, and the only thing that
+catches it is calling both, in order, the way the window does.
+
+So this is the window, minus wx: a text model that behaves like ``wx.TextCtrl``
+(including the parts that surprise people -- see :meth:`FakeControl.GetInsertionPoint`),
+a rich-text editor stand-in, an app stand-in, and a class with the real mixins
+composed onto it. The commands under test are the real ones; nothing here
+reimplements a command or asserts against a copy of its logic.
+
+Two rules for anything added here:
+
+* **Match wx where wx is odd, not where it is convenient.** ``GetInsertionPoint``
+  returning the *start* of a selection is a real wxMSW behaviour that a stand-in
+  which returned "the caret" would hide, and code written against the convenient
+  version is code that fails on the user's machine.
+* **Record, never suppress.** Announcements, earcons and status touches all land
+  in lists. A command whose only output is a sentence is a command whose only
+  testable output is that sentence.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+import pytest
+import wx
+
+from quill.ui.extend_selection_mode import ExtendSelectionMixin
+from quill.ui.richedit_rtf_surface import RichEditRtfError
+from tests.wx_session import shared_wx_app
+
+
+class _SkippableEvent:
+    """Enough of ``wx.CommandEvent`` for a cue handler: it calls ``Skip``."""
+
+    def __init__(self) -> None:
+        self.skipped = False
+
+    def Skip(self, skip: bool = True) -> None:  # noqa: N802 - wx API shape
+        self.skipped = bool(skip)
+
+
+#: wx event type ids for the three clipboard events, so a recorded binding can be
+#: matched back to the operation it reports.
+_CLIPBOARD_EVENT_KINDS = {
+    wx.EVT_TEXT_CUT.typeId: "cut",
+    wx.EVT_TEXT_COPY.typeId: "copy",
+    wx.EVT_TEXT_PASTE.typeId: "paste",
+}
+
+
+class FakeControl:
+    """The slice of ``wx.TextCtrl`` QUILL Lite's commands actually use.
+
+    Text, a selection, an insertion point and a small undo stack. Line
+    arithmetic is computed from the text rather than stored, so a command that
+    edits the text cannot leave the line map stale -- which is the class of bug
+    the real control cannot have and a lazier stand-in would invent.
+    """
+
+    def __init__(self, text: str = "", cursor: int = 0) -> None:
+        self._text = text
+        self._cursor = min(cursor, len(text))
+        self._sel: tuple[int, int] = (self._cursor, self._cursor)
+        self._undo: list[tuple[str, int]] = []
+        self._redo: list[tuple[str, int]] = []
+        self.clipboard = ""
+        self.shown_positions: list[int] = []
+        self.focused = False
+        self.refreshed = 0
+        self.font: Any = None
+        self.colours: dict[str, Any] = {}
+        self.clipboard_handlers: dict[str, Any] = {}
+        #: How many times the whole buffer has been marshalled out of the
+        #: "control". Counted because the document mirror's entire value is in
+        #: how *few* of these happen -- a version that was always correct and
+        #: read the buffer per question would pass every other test in this
+        #: suite and cost a listener their arrow keys (bad.md V2, V3, S8, T1).
+        self.value_reads = 0
+
+    # -- text ---------------------------------------------------------- #
+
+    def GetValue(self) -> str:
+        self.value_reads += 1
+        return self._text
+
+    def GetRange(self, start: int, end: int) -> str:  # noqa: N802 - wx API shape
+        """A slice, without the whole-buffer marshal ``GetValue`` costs.
+
+        Deliberately not counted in ``value_reads``: the point of the counter is
+        the O(N) read, and this is the O(1) call that replaces it on the typing
+        path (bad.md T1).
+        """
+        return self._text[max(0, int(start)) : max(0, int(end))]
+
+    def SetValue(self, text: str) -> None:
+        self._push_undo()
+        self._text = text
+        self._clamp()
+
+    def ChangeValue(self, text: str) -> None:
+        """As wx: set the text *without* an undo step or a text event."""
+        self._text = text
+        self._clamp()
+
+    def IsEditable(self) -> bool:  # noqa: N802 - wx API shape
+        """True unless SetEditable(False) said otherwise. The read-only case has
+        its own tests, and a stub that lacked this method at all made a guard
+        that consults it look like a guard that refuses everything."""
+        return getattr(self, "_editable", True)
+
+    def SetEditable(self, on: bool) -> None:  # noqa: N802 - wx API shape
+        """The Read-Only Guard's switch (2026-10-16)."""
+        self._editable = bool(on)
+
+    def GetLastPosition(self) -> int:
+        return len(self._text)
+
+    def Replace(self, start: int, end: int, text: str) -> None:
+        self._push_undo()
+        self._text = self._text[:start] + text + self._text[end:]
+        self._cursor = start + len(text)
+        self._sel = (self._cursor, self._cursor)
+        self._clamp()
+
+    def Remove(self, start: int, end: int) -> None:
+        self.Replace(start, end, "")
+
+    def WriteText(self, text: str) -> None:
+        start, end = self._sel
+        if end > start:
+            self.Replace(start, end, text)
+            return
+        self.Replace(self._cursor, self._cursor, text)
+
+    # -- caret and selection ------------------------------------------- #
+
+    def GetInsertionPoint(self) -> int:
+        """As wxMSW: the *start* of the selection whenever there is one.
+
+        Not a shortcut -- this is what the real control answers, and it is why
+        extend mode cannot simply ask "where is the caret" after it has set a
+        selection. A stand-in that returned the moving end would make broken
+        code pass.
+        """
+        start, end = self._sel
+        return start if end > start else self._cursor
+
+    def SetInsertionPoint(self, position: int) -> None:
+        self._cursor = max(0, min(int(position), len(self._text)))
+        self._sel = (self._cursor, self._cursor)
+
+    def GetSelection(self) -> tuple[int, int]:
+        return self._sel
+
+    def SetSelection(self, start: int, end: int) -> None:
+        """Select the span, and leave the caret at *end* -- as wx does.
+
+        The caret lands on the ``to`` argument rather than on the larger of the
+        two, which is what makes ``SetSelection(end, start)`` the way to ask for
+        a selection whose caret is at its beginning. A stand-in that sorted
+        first would let Go to Start of Selection pass its test while the caret
+        sat at the far end (bad.md L13) -- that is precisely how that bug lived
+        long enough to need a live check.
+        """
+        caret = max(0, min(int(end), len(self._text)))
+        low, high = sorted((int(start), int(end)))
+        low = max(0, min(low, len(self._text)))
+        high = max(0, min(high, len(self._text)))
+        self._sel = (low, high)
+        self._cursor = caret
+
+    def SelectAll(self) -> None:
+        self.SetSelection(0, len(self._text))
+
+    def ShowPosition(self, position: int) -> None:
+        self.shown_positions.append(int(position))
+
+    def GetStringSelection(self) -> str:  # noqa: N802 - wx spelling
+        """The selected text, which is what a markup insertion wraps."""
+        start, end = self._sel
+        return self._text[start:end]
+
+    def SetFocus(self) -> None:
+        self.focused = True
+
+    def Refresh(self) -> None:
+        self.refreshed += 1
+
+    # -- lines --------------------------------------------------------- #
+
+    def GetNumberOfLines(self) -> int:
+        return self._text.count("\n") + 1
+
+    def PositionToXY(self, position: int) -> tuple[bool, int, int]:
+        position = max(0, min(int(position), len(self._text)))
+        before = self._text[:position]
+        line = before.count("\n")
+        column = position - (before.rfind("\n") + 1)
+        return (True, column, line)
+
+    def XYToPosition(self, column: int, line: int) -> int:
+        lines = self._text.split("\n")
+        if line < 0 or line >= len(lines):
+            return -1
+        start = sum(len(text) + 1 for text in lines[:line])
+        return start + min(int(column), len(lines[line]))
+
+    # -- clipboard ----------------------------------------------------- #
+
+    # The event fires BEFORE the edit, which is wx's order and not the obvious
+    # one. wxMSW handles WM_CUT by sending wxEVT_TEXT_CUT first and only doing
+    # the cut if the handler skipped it, so a handler reading the selection sees
+    # the text that is about to go. Raising it afterwards -- which this stub did
+    # until the clip-library capture needed the text -- meant a cut handler saw
+    # an empty selection, and the copy history would have quietly recorded
+    # nothing for the copy most worth keeping.
+    def Cut(self) -> None:
+        self._raise_clipboard_event("cut")
+        start, end = self._sel
+        if end > start:
+            self.clipboard = self._text[start:end]
+            self.Remove(start, end)
+
+    def Copy(self) -> None:
+        self._raise_clipboard_event("copy")
+        start, end = self._sel
+        if end > start:
+            self.clipboard = self._text[start:end]
+
+    def Paste(self) -> None:
+        self._raise_clipboard_event("paste")
+        if self.clipboard:
+            self.WriteText(self.clipboard)
+
+    def _raise_clipboard_event(self, kind: str) -> None:
+        """Fire the handler wx would fire, because the cue now hangs off it.
+
+        ``wxEVT_TEXT_CUT`` / ``COPY`` / ``PASTE`` are raised by the real control
+        from the Windows messages it acts on, which is *why* QUILL Lite's feedback
+        was moved onto them: they fire once whether the command came from the
+        accelerator, the menu, the context menu, or the control's own key
+        handling. A stand-in that stayed silent would let the cue be deleted with
+        every test still green.
+        """
+        handler = self.clipboard_handlers.get(kind)
+        if handler is not None:
+            handler(_SkippableEvent())
+
+    def CanPaste(self) -> bool:
+        return bool(self.clipboard)
+
+    # -- undo ---------------------------------------------------------- #
+
+    def _push_undo(self) -> None:
+        self._undo.append((self._text, self._cursor))
+        self._redo.clear()
+
+    def CanUndo(self) -> bool:
+        return bool(self._undo)
+
+    def CanRedo(self) -> bool:
+        return bool(self._redo)
+
+    def Undo(self) -> None:
+        if not self._undo:
+            return
+        self._redo.append((self._text, self._cursor))
+        self._text, self._cursor = self._undo.pop()
+        self._clamp()
+
+    def Redo(self) -> None:
+        if not self._redo:
+            return
+        self._undo.append((self._text, self._cursor))
+        self._text, self._cursor = self._redo.pop()
+        self._clamp()
+
+    # -- appearance ---------------------------------------------------- #
+
+    def SetFont(self, font: Any) -> None:
+        self.font = font
+
+    def SetBackgroundColour(self, colour: Any) -> None:
+        self.colours["background"] = colour
+
+    def SetForegroundColour(self, colour: Any) -> None:
+        self.colours["foreground"] = colour
+
+    def Bind(self, event: Any, handler: Any, *_args: Any, **_kwargs: Any) -> None:
+        """Record the clipboard bindings; ignore the rest.
+
+        Only three bindings carry behaviour a command test can observe, and they
+        are the three the real window puts here in ``bind_clipboard_cues``.
+        """
+        kind = _CLIPBOARD_EVENT_KINDS.get(getattr(event, "typeId", None))
+        if kind is not None:
+            self.clipboard_handlers[kind] = handler
+
+    def _clamp(self) -> None:
+        self._cursor = max(0, min(self._cursor, len(self._text)))
+        low, high = self._sel
+        low = max(0, min(low, len(self._text)))
+        high = max(0, min(high, len(self._text)))
+        self._sel = (low, high) if high > low else (self._cursor, self._cursor)
+
+
+class FakeEditor:
+    """The rich-text surface, recording what was asked of it.
+
+    Formatting is a request to a Rich Edit control and there is nothing to read
+    back, so what is testable is *that the right request was made with the right
+    argument*, plus the announcement that followed. Both are recorded.
+    """
+
+    def __init__(self, control: FakeControl, mode: str = "plain") -> None:
+        self.control = control
+        self.mode = mode
+        self.rtf: bool = True
+        #: RTF a test has handed the surface, or ``None`` to serialize the
+        #: buffer on demand. Set by :meth:`set_rtf` so a round trip is a round
+        #: trip rather than two independent conversions.
+        self.rtf_bytes: bytes | None = None
+        self.calls: list[tuple[str, Any]] = []
+        self.attrs: dict[str, bool] = {}
+        self.font_size = 11
+        self.zoom = 100
+        self.headings: dict[int, int] = {}
+        #: ``(offset, level, text)`` rows the heading list and Alt+Down report.
+        self.heading_rows: list[tuple[int, int, str]] = []
+        self.list_style = "none"
+
+    def rtf_available(self) -> bool:
+        return self.rtf
+
+    def get_rtf(self) -> bytes:
+        """The document as RTF, through the same writer the real surface saves with.
+
+        A stand-in that returned a canned string would let the mode switch pass
+        its tests while converting nothing. Running the buffer through
+        ``markdown_to_rtf`` means a test can put ``## Title`` in a window, ring
+        to rich and back, and assert it is still a heading -- which is the whole
+        of bad.md R6.
+        """
+        if not self.rtf:
+            raise RichEditRtfError("no native surface")
+        if self.rtf_bytes is not None:
+            return self.rtf_bytes
+        from quill.io.rtf import markdown_to_rtf
+
+        return markdown_to_rtf(self.control.GetValue()).encode("utf-8")
+
+    def set_rtf(self, data: bytes) -> None:
+        """Take RTF, and keep the plain text the control would show."""
+        if not self.rtf:
+            raise RichEditRtfError("no native surface")
+        from quill.io.rtf import rtf_to_markdown
+
+        self.rtf_bytes = data
+        self.calls.append(("set_rtf", len(data)))
+        self.control.ChangeValue(rtf_to_markdown(data.decode("utf-8", errors="replace")))
+
+    def toggle_overtype(self) -> bool:
+        self.overtype = not getattr(self, "overtype", False)
+        return self.overtype
+
+    def toggle_font_attr(self, attr: str) -> bool:
+        self.attrs[attr] = not self.attrs.get(attr, False)
+        self.calls.append(("toggle_font_attr", attr))
+        return self.attrs[attr]
+
+    def set_alignment(self, alignment: str) -> bool:
+        self.calls.append(("set_alignment", alignment))
+        return True
+
+    def set_line_spacing(self, spacing: float) -> bool:
+        self.calls.append(("set_line_spacing", spacing))
+        return True
+
+    def set_list_style(self, style: str) -> bool:
+        """The three-stop ring the real surface gained on 2026-09-16.
+
+        ``ITextPara.ListType`` has always had a numbered value; the surface
+        offered two of the three, so QUILL Lite could not make a numbered list in
+        any kind of document (bad.md P1.5).
+        """
+        self.list_style = style
+        self.calls.append(("set_list_style", style))
+        return True
+
+    def list_style_at_caret(self) -> str:
+        return self.list_style
+
+    def set_bullets(self, on: bool) -> bool:
+        self.set_list_style("bullet" if on else "none")
+        self.calls.append(("set_bullets", on))
+        return True
+
+    def bullets_at_caret(self) -> bool:
+        return self.list_style == "bullet"
+
+    def set_font_name(self, name: str) -> bool:
+        self.calls.append(("set_font_name", name))
+        return True
+
+    def set_font_size(self, size: int) -> bool:
+        self.font_size = size
+        self.calls.append(("set_font_size", size))
+        return True
+
+    def step_font_size(self, *, larger: bool) -> float:
+        self.font_size = max(1, self.font_size + (2 if larger else -2))
+        self.calls.append(("step_font_size", larger))
+        return float(self.font_size)
+
+    def set_zoom(self, numerator: float, denominator: float) -> None:
+        self.zoom = (numerator, denominator)
+        self.calls.append(("set_zoom", (numerator, denominator)))
+
+    def set_text_mode(self, mode: str) -> None:
+        self.mode = mode
+        self.calls.append(("set_text_mode", mode))
+
+    def clear_formatting(self) -> None:
+        """Everything off at once -- the real surface's Normal Text (Word's
+        Ctrl+Shift+N). Recorded rather than simulated: what the command owes
+        the user is that it reached the surface and said so, and what the
+        surface does with the Text Object Model is its own test
+        (tests/unit/ui/test_rich_format_fidelity.py, on the real control)."""
+        self.attrs.clear()
+        self.list_style = "none"
+        self.calls.append(("clear_formatting", None))
+
+    def set_heading(self, level: int) -> bool:
+        self.calls.append(("set_heading", level))
+        return True
+
+    def heading_level_at_caret(self) -> int:
+        return self.headings.get(self.control.GetInsertionPoint(), 0)
+
+    def all_headings(self) -> list[tuple[int, int, str]]:
+        """``(offset, level, text)`` rows, as the real editor reports them.
+
+        Settable by a test (``editor.heading_rows = [...]``) because the rich
+        heading ladder is a font size in a Rich Edit control, and there is
+        nothing for a stand-in to compute it from.
+        """
+        return list(self.heading_rows)
+
+    def next_heading(self, position: int, *, reverse: bool = False) -> tuple[int, int] | None:
+        """``(offset, level)`` for the next heading past *position*, or ``None``.
+
+        The signature matters. This used to take ``forward=`` and return ``-1``,
+        and the real editor takes ``reverse=`` and returns ``None`` -- so
+        ``_navigate_heading`` unpacked an int and the stand-in could never have
+        caught it. Match wx-side reality, including the shape of "nothing".
+        """
+        rows = sorted(self.heading_rows)
+        if reverse:
+            earlier = [row for row in rows if row[0] < position]
+            return (earlier[-1][0], earlier[-1][1]) if earlier else None
+        later = [row for row in rows if row[0] > position]
+        return (later[0][0], later[0][1]) if later else None
+
+    def paragraph_text_at(self, position: int) -> str:
+        for offset, _level, text in self.heading_rows:
+            if offset == position:
+                return text
+        return ""
+
+    def caret_format_description(self) -> str:
+        return "Body text"
+
+    def set_document_color(self, colour: Any) -> None:
+        self.calls.append(("set_document_color", colour))
+
+    def save_rtf(self, path: str) -> None:
+        """Write the document where the real TOM save would.
+
+        The bytes are the plain text rather than RTF, deliberately: what the
+        save path is being tested for is the temp-file-then-replace dance and
+        the colour being stripped and restored around it, not the markup. A
+        real file has to appear, though, or ``os.replace`` fails.
+        """
+        self.calls.append(("save_rtf", path))
+        from pathlib import Path as _Path
+
+        _Path(path).write_text(self.control.GetValue(), encoding="utf-8")
+
+    def set_background_color(self, colour: Any) -> None:
+        self.calls.append(("set_background_color", colour))
+
+    def set_word_wrap(self, on: bool) -> None:
+        self.calls.append(("set_word_wrap", on))
+
+
+class FakeTimer:
+    """``wx.Timer``, counted rather than run. Autosave in a test would put a
+    real file write on a real clock in the middle of an assertion."""
+
+    def __init__(self) -> None:
+        self.started: list[int] = []
+        self.stopped = 0
+
+    def Start(self, milliseconds: int) -> None:  # noqa: N802 - wx API shape
+        self.started.append(int(milliseconds))
+
+    def Stop(self) -> None:  # noqa: N802 - wx API shape
+        self.stopped += 1
+
+
+class _FakePoint:
+    """``wx.Point``, for the two margin accessors and nothing else."""
+
+    def __init__(self, x: int, y: int) -> None:
+        self.x = x
+        self.y = y
+
+
+class FakePageData:
+    """Stands in for ``wx.PageSetupDialogData`` and ``wx.PrintData`` alike.
+
+    Both are opaque C++ value objects that only accept each other, so a bare
+    ``object()`` is rejected by the first real wx call the command makes. This
+    carries the two methods Page Setup uses and is otherwise an identity: what
+    the tests ask is whether an OK *replaced* the stored value and a cancel
+    *left it alone*.
+    """
+
+    def __init__(self, label: str = "") -> None:
+        self.label = label
+        self.print_data: Any = None
+
+    def SetPrintData(self, data: Any) -> None:  # noqa: N802 - wx API shape
+        self.print_data = data
+
+    def GetPrintData(self) -> Any:  # noqa: N802 - wx API shape
+        return self.print_data
+
+    # The margins, added 2026-09-17 with Print Preview and formatted printing
+    # (bad.md P3.6, PR3): both convert them from millimetres into twips, and
+    # both ask this object for them.
+    def GetMarginTopLeft(self) -> Any:  # noqa: N802 - wx API shape
+        return _FakePoint(15, 15)
+
+    def GetMarginBottomRight(self) -> Any:  # noqa: N802 - wx API shape
+        return _FakePoint(15, 15)
+
+    def GetPaperId(self) -> int:  # noqa: N802 - wx API shape
+        return 9  # wx.PAPER_A4
+
+
+class FakePrintSettings:
+    """``app.print_settings``: page setup and printer data, shared app-wide.
+
+    The real objects are ``wx.PageSetupDialogData`` and ``wx.PrintData``, which
+    a test has no way to inspect meaningfully. What the commands actually do
+    with them is *replace* them after an OK and *leave them alone* after a
+    cancel, and that is what these placeholders let a test assert.
+    """
+
+    def __init__(self) -> None:
+        self.page_setup: Any = FakePageData("page setup")
+        self.print_data: Any = FakePageData("print data")
+        #: Where ``store_into`` last wrote. Page Setup persists to the settings
+        #: file since 2026-09-16 -- it was in memory only, so paper, orientation
+        #: and all four margins reverted at every launch (bad.md F13, PR2) -- and
+        #: a test needs to see that the write happened, not what wx put in it.
+        self.stored: list[Any] = []
+
+    def store_into(self, settings: Any) -> None:
+        self.stored.append(settings)
+
+
+class FakeVoice:
+    def __init__(self) -> None:
+        self.said: list[str] = []
+
+    def speak(self, message: str) -> None:
+        self.said.append(message)
+
+
+class FakeApp:
+    """The application object, with only what a document window reaches for."""
+
+    def __init__(self, tmp_path: Any, settings: Any) -> None:
+        from quill.core.clip_library import ClipLibrary
+        from quill.core.copy_tray import CopyTray
+
+        self.settings = settings
+        self.data_dir = tmp_path
+        self.voice = FakeVoice()
+        self.frames: list[Any] = []
+        self.starting_up = False
+        self.saved_settings = 0
+        self.queued_settings = 0
+        self.reapplied = 0
+        self.rebuilt_menus = 0
+        self.exited = 0
+        self.cycled: list[bool] = []
+        self.opened: list[Any] = []
+        # The real stores, in a temporary directory. A stand-in for CopyTray
+        # would be a second implementation of numbered slots to keep in step with
+        # the first, and the commands under test are mostly *about* the store.
+        self.copy_tray = CopyTray(tmp_path)
+        self.clip_library = ClipLibrary(tmp_path)
+        self.collected = ""
+        self.collected_pieces = 0
+        self.abbreviations: dict[str, str] = {}
+        self.features: dict[str, bool] = {}
+        self.keymap: dict[str, str] = {}
+        self.document_memory = None
+        self.saved_keymaps: list[Any] = []
+        self.saved_features = 0
+        self.reloaded_abbreviations = 0
+        #: Page setup and printer data, shared by every document in the real
+        #: app. Only identity matters here -- the commands read it, hand it to
+        #: wx and write it back -- so a bare object is the honest stand-in.
+        self.print_settings = FakePrintSettings()
+        #: Windows this app was asked to bring forward, in order. Close Other
+        #: Documents focuses each child before asking about it -- an MDI child
+        #: cannot be raised -- and a prompt that names a document other than the
+        #: one on screen is simply the wrong question for a listener.
+        self.focused: list[Any] = []
+        #: The MDI shell, which is what a modal dialog parents to. ``None`` is
+        #: the honest stand-in: wx accepts a parentless dialog, and no test here
+        #: puts a real one up.
+        self.shell = None
+
+    def focus_frame(self, frame: Any) -> None:
+        self.focused.append(frame)
+
+    def close_other_documents(self, keep: Any) -> int:
+        """The shipped implementation, run against these fakes.
+
+        Imported rather than restated: a copy here could agree with a bug, and
+        the thing under test is what the real method does when a window refuses
+        to close.
+        """
+        from quill.apps.lite import QuillLiteApp
+
+        return QuillLiteApp.close_other_documents(self, keep)
+
+    def command_registry(self, _frame: Any) -> list[Any]:
+        """What the palette and Go To Anything are built from. Empty is fine:
+        both are being tested for *what they do with the answer*, not for the
+        contents of a list they are handed."""
+        return []
+
+    def save_keymap(self) -> None:
+        self.saved_keymaps.append(dict(self.keymap))
+
+    def feature_enabled(self, _area: str) -> bool:
+        return True
+
+    def save_settings(self) -> None:
+        self.saved_settings += 1
+
+    def _queue_settings_save(self) -> None:
+        self.queued_settings += 1
+
+    def reapply_settings(self) -> None:
+        self.reapplied += 1
+
+    def rebuild_all_menus(self) -> None:
+        self.rebuilt_menus += 1
+
+    def refresh_all_menus(self) -> None:
+        self.rebuilt_menus += 1
+
+    def save_features(self) -> None:
+        self.saved_features += 1
+
+    def reload_abbreviations(self) -> None:
+        self.reloaded_abbreviations += 1
+
+    def save_abbreviations(self) -> None:
+        return None
+
+    def cycle(self, *args: Any, **kwargs: Any) -> None:
+        self.cycled.append(args[-1] if args else kwargs.get("forward", True))
+
+    def exit_all(self) -> None:
+        self.exited += 1
+
+    def new_window(self, *args: Any, **kwargs: Any) -> Any:
+        self.opened.append((args, kwargs))
+        return None
+
+    def open_path(self, *args: Any, **kwargs: Any) -> Any:
+        self.opened.append((args, kwargs))
+        return None
+
+    def binding_for(self, _command: str) -> str:
+        return ""
+
+
+@pytest.fixture
+def wx_app():
+    """A **live** ``wx.App``, whatever the rest of the worker has done to it.
+
+    Almost nothing here needs one -- the whole point of the harness is that the
+    commands run without wx -- but ``wx.Printout`` refuses to be constructed
+    without an App, and printing is worth reaching rather than stubbing past.
+
+    This used to be session-scoped, holding one App and destroying it at the
+    end, on the stated grounds that "a second App in one process is not
+    supported". Ten test files under ``tests/unit/apps`` create a second one
+    anyway (``wx.App(False)``) and destroy it in teardown, and with
+    ``--dist=loadfile`` whether one of those shares a worker with the printing
+    tests is decided by the *file list*. So adding an unrelated test file could
+    -- and on 2026-09-12 did -- make printing fail in CI with "The wx.App object
+    must be created first!": the session fixture still handed back its App
+    object, whose C++ half another file had destroyed.
+
+    Asking wx what is alive, every time, is both the honest implementation of
+    "give me a usable App" and immune to that ordering. Nothing is destroyed
+    here, so this fixture never leaves a dangling object for anyone else.
+    """
+    app = wx.GetApp()
+    if app is not None:
+        try:
+            app.GetAppName()  # cheap probe: raises once the C++ peer is gone
+        except Exception:  # noqa: BLE001 - any failure means "not usable"
+            app = None
+    return app if app is not None else shared_wx_app()
+
+
+def _close_cast_frame(frame: Any, *, loop: Any = None) -> bool:
+    """Close a real ``PodcastsAppFrame`` the way Cast closes, and wait for it.
+
+    ``frame.frame.Destroy()`` alone is not a teardown: it skips Cast's close
+    path, so the download queue, the pools and the timers keep running against
+    a window whose C++ half is gone.
+
+    The close is driven under an **active** ``wx.GUIEventLoop``, and that is
+    load-bearing. With no active loop, ``wx.YieldIfNeeded`` makes a temporary
+    one that dispatches nothing, so no ``wx.CallLater`` ever fires and Cast's
+    deferred close chain (``close_tasks.advance_close``) never advances: the
+    wait below ran to its deadline, the frame was destroyed by force with its
+    ``wx.Timer`` objects still armed and a top-level window left behind, and
+    the next test to run a real loop delivered those timers into freed
+    windows. That was the 2026-10-12 heap corruption (0xc0000374 inside
+    ``YieldIfNeeded``), seen in ``test_cast_one_window.py``'s teardown and
+    bisected to ``12f2fd4a`` because that is where its fixture started
+    activating a loop of its own -- the first real loop after the fixtures
+    that closed without one. Same close, active loop: 3.6 s, nothing left.
+
+    Returns whether Cast reported its responsive shutdown finished.
+    """
+    app = wx.GetApp()
+    previous_loop = wx.EventLoop.GetActive()
+    own_loop = loop is None and previous_loop is None
+    if own_loop:
+        loop = wx.GUIEventLoop()
+        wx.EventLoop.SetActive(loop)
+    loop = loop or previous_loop
+    try:
+        frame._exit_requested = True
+        frame.frame.Close()
+        deadline = time.monotonic() + 10
+        while not getattr(frame, "_cast_closed", False) and time.monotonic() < deadline:
+            if app is not None:
+                app.ProcessPendingEvents()
+            wx.YieldIfNeeded()
+            loop.ProcessIdle()
+            time.sleep(0.005)
+        closed = bool(getattr(frame, "_cast_closed", False))
+        if not closed and frame.frame:
+            frame.frame.Destroy()
+            wx.YieldIfNeeded()
+        for name in (
+            "_task_manager",
+            "_podcast_feed_tasks",
+            "_podcast_save_pool",
+            "_podcast_record_tasks",
+            "_cast_undo_file_pool",
+            "_cast_close_pool",
+            "_cast_view_retirement_pool",
+        ):
+            pool = getattr(frame, name, None)
+            if pool is not None:
+                pool.shutdown(wait=True, cancel_pending=name != "_cast_view_retirement_pool")
+        wx.YieldIfNeeded()
+        loop.ProcessIdle()
+    finally:
+        if own_loop:
+            wx.EventLoop.SetActive(previous_loop)
+    return closed
+
+
+@pytest.fixture
+def quiet_cast_startup(monkeypatch):
+    """Stop a real ``PodcastsAppFrame`` reaching outside the test as it starts.
+
+    Unpatched, each frame starts an update check, a launch feed check and folder
+    watching on background threads, and registers system-wide hotkeys and media
+    keys. Those outlive the test and call back into windows that are gone,
+    which is how the Cast fixtures that skipped this crashed python.exe with
+    heap corruption in a later file (2026-10-12). Request it before building
+    the frame.
+    """
+    from quill.apps.podcasts import PodcastsAppFrame
+
+    for name in (
+        "_check_at_launch",
+        "_start_folder_watching",
+        "_maybe_resume_last_episode",
+        "_maybe_check_updates_on_startup",
+        "_cast_launch_notices",
+        "_reload_global_hotkeys",
+    ):
+        monkeypatch.setattr(PodcastsAppFrame, name, lambda self: None)
+    monkeypatch.setattr(PodcastsAppFrame, "_register_media_keys", lambda self, *a, **kw: None)
+    monkeypatch.setattr(PodcastsAppFrame, "_register_tray_hotkey", lambda self, _chord: True)
+
+
+@pytest.fixture
+def close_cast():
+    """The one teardown for a real Cast frame; see ``_close_cast_frame``."""
+    return _close_cast_frame
+
+
+@pytest.fixture
+def lite_settings():
+    """Real :class:`Settings`, so a test reads the same defaults the app does.
+
+    QUILL Lite's own, not QUILL's. This was QUILL's until 2026-09-10, which
+    happened to work while the tests only touched fields both objects have --
+    and stopped the moment a View-menu test reached for ``show_status_bar``,
+    which is one of seventeen fields only the small editor has. A stand-in built
+    on the wrong settings class is a stand-in that can pass while the app cannot
+    run, so it is the app's class or nothing.
+    """
+    from quill.core.lite.settings import Settings
+
+    return Settings()
+
+
+@pytest.fixture
+def lite_window(tmp_path, lite_settings):
+    """Factory: ``lite_window("text", cursor=3)`` -> a window with real commands.
+
+    The mixins are the shipped ones. What is faked is everything below them.
+    """
+    from quill.apps.lite_keymap_editor import DocumentKeymapMixin
+    from quill.apps.lite_printing import DocumentPrintMixin
+    from quill.apps.lite_updates import DocumentUpdatesMixin
+    from quill.apps.lite_window_activity import DocumentActivityMixin
+    from quill.apps.lite_window_clipboard import DocumentClipboardMixin
+    from quill.apps.lite_window_commands import DocumentCommandsMixin
+    from quill.apps.lite_window_context_menu import DocumentContextMenuMixin
+    from quill.apps.lite_window_dictation import DocumentDictationMixin
+    from quill.apps.lite_window_file import DocumentFileMixin
+    from quill.apps.lite_window_folding import DocumentFoldingMixin
+    from quill.apps.lite_window_format import DocumentFormatCommandsMixin
+    from quill.apps.lite_window_headings import DocumentHeadingsMixin
+    from quill.apps.lite_window_history import DocumentHistoryMixin
+    from quill.apps.lite_window_import import DocumentImportMixin
+    from quill.apps.lite_window_lines import DocumentLineMixin
+    from quill.apps.lite_window_marks import DocumentMarksMixin
+    from quill.apps.lite_window_markup import DocumentMarkupMixin
+    from quill.apps.lite_window_mode import DocumentModeMixin
+    from quill.apps.lite_window_pdf import DocumentPdfMixin
+    from quill.apps.lite_window_read_only import DocumentReadOnlyMixin
+    from quill.apps.lite_window_sections import DocumentSectionCommandsMixin
+    from quill.apps.lite_window_selection import DocumentSelectionMixin
+    from quill.apps.lite_window_sources import DocumentSourcesMixin
+    from quill.apps.lite_window_spelling import DocumentSpellingMixin
+    from quill.apps.lite_window_tables import DocumentTableNavMixin
+    from quill.apps.lite_window_text_editor import DocumentTextEditorMixin
+    from quill.apps.lite_window_tools import DocumentToolsMixin
+    from quill.apps.lite_window_typing import DocumentTypingMixin
+    from quill.apps.lite_window_view import DocumentViewCommandsMixin
+    from quill.apps.lite_window_words import DocumentWordsMixin
+    from quill.ui.highlight_commands import HighlightCommandsMixin
+    from quill.ui.hosted_ai_commands import HostedAiMixin
+    from quill.ui.html_export_commands import HtmlExportCommandsMixin
+    from quill.ui.inline_notes_commands import InlineNotesCommandsMixin
+    from quill.ui.task_list_commands import TaskListCommandsMixin
+
+    class LiteWindowStub(
+        # Tools > Read-Only Guard, 2026-10-16: first, as in DocumentFrame, so its
+        # _host_read_only answers the shared notes and word tools.
+        DocumentReadOnlyMixin,
+        # Tools > Thesaurus and the Dictionary Status row, 2026-10-02.
+        DocumentWordsMixin,
+        # Inline notes, Toggle Task Done and Export as HTML, 2026-10-04: the
+        # shared modules themselves, whose hooks default to this window's own
+        # control, _announce and app.
+        InlineNotesCommandsMixin,
+        # Highlighted passages, 2026-10-16: shared the same way.
+        HighlightCommandsMixin,
+        TaskListCommandsMixin,
+        HtmlExportCommandsMixin,
+        # Help > Activity and Repeat Last Result, 2026-10-02 (qc.md F-10).
+        DocumentActivityMixin,
+        # Tools > AI, added 2026-09-23. The four handlers open modeless
+        # frames, which is the same shape as the dialog commands above --
+        # what is reached here is the handler the menu binds, with the
+        # frames themselves patched at their own module.
+        HostedAiMixin,
+        # Tools > Dictation, added 2026-09-25. The recogniser is patched in the
+        # test; what is reached is the shared handler the menu binds.
+        DocumentDictationMixin,
+        DocumentSelectionMixin,
+        DocumentMarksMixin,
+        DocumentLineMixin,
+        DocumentToolsMixin,
+        # Make QUILL Lite My Text Editor and the Notepad switch, 2026-10-03.
+        # The registry, the prompt and Settings are patched in the test.
+        DocumentTextEditorMixin,
+        DocumentClipboardMixin,
+        DocumentFormatCommandsMixin,
+        # The outline commands, split out of the Format mixin on 2026-09-23
+        # (GATE-11): Select Section, Move Section Up/Down, Move Section To.
+        DocumentSectionCommandsMixin,
+        DocumentHistoryMixin,
+        # Navigate > Table, 2026-10-17: QUILL's cell moves over quill.core.table_nav.
+        DocumentTableNavMixin,  # with Insert > Table (2026-10-25), its base
+        DocumentTypingMixin,
+        # The View menu and the Spelling menu, added 2026-09-10. Both are the
+        # same shape as the ones already here -- a state change plus a sentence --
+        # and both were shape-only until the coverage ratchet
+        # (quill.tools.lite_command_coverage) made that visible. The context-menu
+        # mixin comes with them for its ``spell_ignores`` list, which the
+        # spelling navigation consults on every hop.
+        DocumentViewCommandsMixin,
+        DocumentSpellingMixin,
+        DocumentFileMixin,
+        # A PDF opened as text, and Save's refusal to write it back, 2026-10-15:
+        # save() asks it on every write, so a stub without it fails every save.
+        DocumentPdfMixin,
+        # File > Import / Convert Document, 2026-10-17: QUILL's converter on
+        # QUILL Lite's File menu.
+        DocumentImportMixin,
+        # Open from URL and the clipboard, drops, Reopen with Encoding and the
+        # save-time disk check, 2026-10-04 (the PlanCake design note).
+        DocumentSourcesMixin,
+        # Printing and the Keyboard Manager, added 2026-09-11. Both are one
+        # state change behind a wx dialog, which is the shape the dialog
+        # recorder (``lite_dialogs``) exists to make testable.
+        DocumentPrintMixin,
+        DocumentKeymapMixin,
+        # Check for Updates, added 2026-09-12. The network call and both
+        # dialogs are patched in the test; what is being reached here is the
+        # handler the Help menu binds.
+        DocumentUpdatesMixin,
+        DocumentContextMenuMixin,
+        # Caret-move heading announcements, added 2026-09-14. Here because the
+        # formatting commands latch it after announcing themselves, so a stub
+        # without it fails on Heading 1 rather than on anything to do with
+        # structure -- and because the announcements themselves need testing.
+        DocumentHeadingsMixin,
+        # The converting mode switch, added 2026-09-17 (bad.md R6). The real
+        # mixin rather than a stand-in: a stub that only moved ``editor.mode``
+        # was exactly what let a switch that converted nothing look correct.
+        DocumentModeMixin,
+        # The Tier 2 and Tier 3 crossings, 2026-09-17 (bad.md P2.13, P3.6):
+        # folding over Markdown sections, and Extend Selection Mode -- the
+        # latter through the SHARED quill.ui.extend_selection_mode rather
+        # than a stand-in, because a stub that only moved a flag is exactly
+        # what let extend mode ship never having worked from the keyboard.
+        DocumentFoldingMixin,
+        ExtendSelectionMixin,
+        # The Insert menu, the document's markup language and the list cue,
+        # added 2026-09-15. Here rather than in a stub of its own because the
+        # heading and formatting commands ask it what the document is written in
+        # before they decide what to write -- a window without it fails on
+        # Ctrl+B rather than on anything to do with markup.
+        DocumentMarkupMixin,
+        DocumentCommandsMixin,
+    ):
+        """A document window with wx removed and every output recorded."""
+
+        def __init__(self, text: str, cursor: int, mode: str) -> None:
+            self.control = FakeControl(text, cursor)
+            self.editor = FakeEditor(self.control, mode)
+            self.app = FakeApp(tmp_path, lite_settings)
+            self.app.frames.append(self)
+            self.announcements: list[str] = []
+            self.cues: list[str] = []
+            self.actions: list[tuple[str, str]] = []
+            self.status_touches = 0
+            self.status_messages: list[str] = []
+            self.modified = False
+            self.checks_synced = 0
+            self.path = None
+            self.number = 1
+            self.closed = 0
+            self.discard_asked = 0
+            self.encoding = "utf-8"
+            # ``newline``, not ``line_ending``: that is the attribute name the
+            # real DocumentFrame uses and the one cmd_file_format reads. The
+            # stub carried the other spelling and nothing noticed, because no
+            # test had reached the command that reads it.
+            self.newline = chr(13) + chr(10)
+            self.line_ending = self.newline
+            self.failures: list[tuple[str, str]] = []
+            self.printed: list[str] = []
+            # The recovery slot and the autosave timer, set up in
+            # DocumentFrame.__init__ and read by save() on every write. A window
+            # that never had a slot is the ordinary case -- one is created the
+            # first time unsaved work is copied aside -- so None is the honest
+            # starting value rather than a stub object.
+            self._slot = None
+            self._autosave = FakeTimer()
+            self.colour_calls: list[Any] = []
+            self.popped_menus: list[Any] = []
+            # The same state ``DocumentFrame.__init__`` sets up, set up the same
+            # way. Anything a command reads must exist before the command runs,
+            # and the real window's ordering is part of what is being tested.
+            from quill.core.document_text import DocumentText
+            from quill.core.locations import LocationRing
+            from quill.core.numbered_bookmarks import BookmarkSet
+
+            # The real window's mirror, built the same way and fed the same way:
+            # display code reads this and never the control, and every edit
+            # marks it stale. A stub that skipped it would let a reader go back
+            # to GetValue() with every test still green, which is the whole
+            # regression the mirror exists to prevent (bad.md V2).
+            self.doc_text = DocumentText(lambda: self.control.GetValue())
+            self.bookmarks = BookmarkSet()
+            #: Set by the text hook, cleared when a bookmark is read. Bookmarks
+            #: are re-found from the text around them rather than shifted by a
+            #: length guess (bad.md L9), and the flag is what keeps the search
+            #: off the typing path.
+            self._bookmarks_need_reanchor = False
+            self.locations = LocationRing()
+            self._tracked_length = len(text)
+            self._loading = False
+            self._find_options: dict[str, Any] = {}
+            #: The modeless Find window, kept so a second Ctrl+F raises the one
+            #: already open instead of stacking another over the same document.
+            self._find_dialog = None
+            self.status_bar_focused = 0
+            self._init_selection()
+            self._init_overwrite()
+            self._init_spelling()
+            self._init_context_menu()
+            # The window binds these in __init__ too, and the cue for cut, copy
+            # and paste now hangs off them: a stub that skipped the binding would
+            # report all three as silent and be believed.
+            self.bind_clipboard_cues()
+
+        # -- the recorded outputs ------------------------------------- #
+
+        def _announce(self, message: str) -> None:
+            self.announcements.append(message)
+            self.app.voice.speak(message)
+            self.status_messages.append(message)
+
+        def _cue(self, event: str) -> None:
+            self.cues.append(str(event))
+
+        def _action(self, event: str, message: str) -> None:
+            """The real resolver, over the fake channels.
+
+            The rule under test is which of the two channels fires, so the rule
+            itself is imported rather than restated: a copy here could agree with
+            a bug.
+            """
+            from quill.core.action_feedback import resolve
+
+            self.actions.append((str(event), message))
+            play, speak = resolve(
+                self.app.settings.action_feedback,
+                has_sound=self._has_sound_for(event),
+            )
+            if play:
+                self._cue(event)
+            if speak:
+                self.app.voice.speak(message)
+            self.status_messages.append(message)
+
+        #: Events the "loaded pack" has a clip for. Set by the factory to the ones
+        #: the shipped Ink pack actually ships; a test that wants the no-clip
+        #: fall-through empties it.
+        available_sounds: frozenset[str] | set[str] = frozenset()
+
+        def _has_sound_for(self, event: str) -> bool:
+            """The seam the real window resolves against ``sound_manager``.
+
+            Faked rather than reached through, because the answer in the real app
+            depends on which pack is loaded and on there being an audio stack at
+            all -- neither of which a command test should be deciding.
+            """
+            return str(event) in self.available_sounds
+
+        # -- the system clipboard, kept out of the tests ---------------- #
+
+        def _clipboard_text(self) -> str:
+            """The fake control's clipboard, not the machine's.
+
+            ``wx.TheClipboard`` is a shared, single-owner OS resource: a test that
+            read it would race the user's own clipboard, the screen reader's
+            polling and every other test in the suite, and would have to be
+            marked ``machine_global`` for its trouble. The commands under test
+            care about what came back, not where from.
+            """
+            return self.control.clipboard
+
+        def _set_clipboard_text(self, text: str) -> bool:
+            self.control.clipboard = text
+            return True
+
+        def _set_status_message(self, message: str) -> None:
+            self.status_messages.append(message)
+
+        def _touch_status(self) -> None:
+            self.status_touches += 1
+
+        def _set_modified(self, value: bool) -> None:
+            self.modified = value
+
+        def _sync_check_items(self) -> None:
+            self.checks_synced += 1
+
+        def _update_title(self) -> None:
+            return None
+
+        def Close(self, force: bool = False) -> bool:  # noqa: N802 - wx API shape
+            self.closed += 1
+            self.app.frames.remove(self) if self in self.app.frames else None
+            return True
+
+        #: What this window's save prompt answers. The real one is a message
+        #: box; what callers depend on is the True/False, and False -- the
+        #: answer people forget to write a test for -- is what stops a bulk
+        #: close dead.
+        discard_answer = True
+
+        def confirm_discard(self) -> bool:
+            self.discard_asked += 1
+            return self.discard_answer
+
+        def describe_indent_at_cursor(self) -> str:
+            return "no indent"
+
+        def _set_mode_internal(self, mode: str) -> None:
+            """Swap the editor surface without reloading the text.
+
+            The real one on DocumentAppearanceMixin destroys and rebuilds a wx
+            control; what callers depend on is only that ``editor.mode`` has
+            moved by the time it returns.
+            """
+            self.editor.set_text_mode(mode)
+
+        def apply_theme(self) -> None:
+            self.colour_calls.append("theme")
+
+        def _set_whole_document_colour(self, rgb: Any) -> None:
+            """Recorded. The real one lives on DocumentAppearanceMixin and needs
+            wx colours; what matters here is that a save strips the theme colour
+            and puts it back, so a dark-mode save cannot leak light grey text
+            into somebody's file."""
+            self.colour_calls.append(rgb)
+
+        def _apply_rich_theme_colour(self) -> None:
+            self.colour_calls.append("restored")
+
+        def _report_failure(self, caption: str, message: str) -> None:
+            """Recorded, not raised. A failed print or save is announced to the
+            user and must not take the command down with it."""
+            self.failures.append((caption, message))
+
+        def document_name(self) -> str:
+            return self.path.name if self.path else "Untitled 1"
+
+        # No ``_printable_lines`` / ``_heading_marks`` here on purpose: the real
+        # ones in DocumentPrintMixin work against these fakes, and shadowing
+        # them would test the stand-in instead of the heading marking that is
+        # the only interesting thing printing does to a document.
+
+        def _print_font(self) -> Any:
+            """The real one asks wx for a font. Printing itself is stubbed."""
+            return None
+
+        def focus_status_bar(self) -> None:
+            """Where F6 goes. Recorded rather than performed: the bar is wx.
+
+            What the command decides is *whether* to go there -- a hidden bar
+            has nowhere to move to -- and that decision is the testable half.
+            """
+            self.status_bar_focused += 1
+
+        # -- the window's own event hooks, as the real window wires them -- #
+
+        def on_caret_moved(self, key_code: int) -> None:
+            """What ``EVT_KEY_UP`` does, in the order ``lite_window`` does it.
+
+            It no longer touches the F8 marker -- that is the 2026-09-15 change,
+            and the tests in test_lite_extend_selection.py still drive this hook
+            precisely to prove that moving the caret leaves the marker alone.
+            """
+            self._touch_status()
+
+        def on_text_changed(self) -> None:
+            """What ``EVT_TEXT`` does, in the order ``lite_window`` does it.
+
+            *Both* handlers: the real window binds EVT_TEXT twice, once for the
+            window's own state and once for the bookmarks, and a stub that ran
+            one of them would let a bookmark answer about the document as it
+            was before the edit (bad.md L9).
+            """
+            self.doc_text.invalidate()
+            self._set_modified(True)
+            self._touch_status()
+            self.text_changed_while_extending()
+            self._track_bookmarks(_SkippableEvent())
+
+    def make(text: str = "", cursor: int = 0, mode: str = "plain", name: str | None = None) -> Any:
+        window = LiteWindowStub(text, cursor, mode)
+        if name is not None:
+            # The file name is what decides a document's markup language, so a
+            # test about Markdown has to be able to say the window holds a .md.
+            window.path = tmp_path / name
+        window._init_folding()
+        window.available_sounds = frozenset({
+            "search_not_found",
+            "search_found",
+            "search_wrapped",
+            "text_cut",
+            "text_copied",
+            "text_pasted",
+            "text_deleted",
+            "undo_performed",
+            "redo_performed",
+            "selection_started",
+            "selection_completed",
+            # The shipped Ink pack has this one, which matters because a
+            # spelling alert that asks for a tone and finds none falls through
+            # to the words (bad.md S12) -- so a fixture that left it out would
+            # be testing the fall-through as if it were the normal case.
+            "spelling_alert",
+        })
+        return window
+
+    return make
+
+
+# --------------------------------------------------------------------------- #
+# Dialogs
+# --------------------------------------------------------------------------- #
+
+
+class _Shown:
+    """A constructed dialog whose ``show()`` returns the test's answer.
+
+    For the handful of surfaces that are classes rather than functions -- the
+    emoji picker is one -- where the caller does ``Dialog(parent).show()``.
+    """
+
+    def __init__(self, answer: Any) -> None:
+        self._answer = answer
+
+    def show(self) -> Any:
+        return self._answer
+
+
+class DialogRecorder:
+    """Every window QUILL Lite can open, replaced by a record-and-answer stub.
+
+    Twenty-odd commands are *one state change behind a modal dialog*: choose a
+    file, choose a font, choose a slot, then do the thing. Without a seam they
+    stay shape-only forever, and shape-only is what let F8 ship broken -- so the
+    seam is worth building rather than accepting the gap.
+
+    Two rules, and they are the same two the rest of this harness follows.
+
+    **Answer, do not simulate.** Nothing here draws a dialog or decides what a
+    user would pick. A test says what came back (``dialogs.answer("FileDialog",
+    path)``) and asserts what the command did with it. The default answer is
+    **cancel**, because cancel is the case that is forgotten: a command that
+    quietly acts on a cancelled dialog is the bug this catches.
+
+    **Patch where the name is looked up.** A dialog imported at module scope
+    has to be replaced in the module that imported it, not where it is defined
+    -- ``lite_window_headings.choose_heading`` is a different binding from
+    ``lite_dialogs.choose_heading``, and patching the second leaves the first
+    untouched. The table below names both ends for that reason.
+    """
+
+    #: ``(module path, attribute)`` for every dialog entry point, keyed by the
+    #: short name a test uses. Where a module imported the name at its own
+    #: scope, that module is the target -- see the docstring.
+    TARGETS: dict[str, tuple[str, str]] = {
+        # Imported inside the function that uses them: the defining module is
+        # the only binding, so patching it there covers every caller.
+        "choose_from_rows": ("quill.apps.lite_dialogs", "choose_from_rows"),
+        # Same window, second binding: lite_window_clipboard imports it at
+        # module scope, so patching only lite_dialogs left the tray and the clip
+        # library opening a real wx.Dialog in the middle of a test.
+        "choose_from_rows_clipboard": ("quill.apps.lite_window_clipboard", "choose_from_rows"),
+        # Third binding: the Misspelling List imports it at module scope too
+        # (bad.md 4.2, Tier 2).
+        "choose_from_rows_spelling": (
+            "quill.apps.lite_window_spelling_navigation",
+            "choose_from_rows",
+        ),
+        # Fourth: Earlier Versions and Paste from Tray both list rows, and the
+        # line tools module imports the chooser at its own scope as well.
+        # Earlier Versions moved to its own module under GATE-11 and is the
+        # only row-chooser left on this side of the tools split.
+        "choose_from_rows_backups": ("quill.apps.lite_window_backups", "choose_from_rows"),
+        # Fifth: Restore Deleted Text offers the ring's three entries rather
+        # than only the newest (bad.md C9).
+        "choose_from_rows_lines": ("quill.apps.lite_window_lines", "choose_from_rows"),
+        # Moved to quill/ui so QUILL can open the same window on the same
+        # chord (bad.md P1.14); imported inside the handler, so patch it
+        # where it is defined.
+        "edit_spelling_voice": ("quill.ui.spelling_voice_dialog", "edit_spelling_voice"),
+        "AppFeaturesDialog": ("quill.ui.app_features_dialog", "AppFeaturesDialog"),
+        "CommandPaletteDialog": ("quill.ui.palette", "CommandPaletteDialog"),
+        "GoToAnythingDialog": ("quill.ui.palette", "GoToAnythingDialog"),
+        "review_textctrl": ("quill.ui.spell_review", "review_textctrl"),
+        "show_help": ("quill.ui.app_context_help", "show_help"),
+        # Imported at module scope by their caller: patch the caller.
+        "show_text_window": ("quill.apps.lite_window_commands", "show_text_window"),
+        "show_text_window_marks": ("quill.apps.lite_window_marks", "show_text_window"),
+        "choose_bookmark": ("quill.apps.lite_window_marks", "choose_bookmark"),
+        # And a third binding, for the Review Buffer, which is the same
+        # read-only window used for a different purpose (bad.md 4.2, Tier 2).
+        "show_text_window_review": ("quill.apps.lite_window_selection", "show_text_window"),
+        "choose_heading": ("quill.apps.lite_window_headings", "choose_heading"),
+        # Ctrl+G opens one Go To window with a target kind since 2026-09-16
+        # (bad.md 5.4); ask_line_number is gone from this module with it.
+        "ask_go_to": ("quill.apps.lite_window_go_to", "ask_go_to"),
+        "choose_special_character": (
+            "quill.apps.lite_window_special_character",
+            "choose_special_character",
+        ),
+        "edit_file_format": ("quill.apps.lite_window_tools", "edit_file_format"),
+        "edit_preferences": ("quill.apps.lite_window_view", "edit_preferences"),
+        "FindDialog": ("quill.apps.lite_window_find", "FindDialog"),
+        "ReplaceDialog": ("quill.apps.lite_window_find", "ReplaceDialog"),
+        "KeymapEditorDialog": ("quill.apps.lite_keymap_editor", "KeymapEditorDialog"),
+        # The Insert menu's three. All four bindings are at module scope in
+        # lite_window_markup, so that is where they are patched -- the defining
+        # module is a different binding and patching it would leave a real
+        # wx.Dialog opening halfway through a test run.
+        "choose_document_language": (
+            "quill.apps.lite_window_markup",
+            "choose_document_language",
+        ),
+        "choose_searchable": ("quill.apps.lite_window_markup", "choose_searchable"),
+        "ask_link": ("quill.apps.lite_window_markup", "ask_link"),
+        "ask_text": ("quill.apps.lite_window_markup", "ask_text"),
+        # Second binding: the line tools import it at their own module scope,
+        # so patching the markup module leaves Delete Lines Containing and Hard
+        # Wrap opening a real wx.Dialog in the middle of a test.
+        "ask_text_tools": ("quill.apps.lite_window_tools", "ask_text"),
+        # The emoji picker is QUILL's and is imported *inside* the command, so
+        # the defining module is the only binding there is. It is a class rather
+        # than a function: the stub records the construction and the test's
+        # answer is what ``.show()`` hands back.
+        "EmojiPickerDialog": ("quill.ui.main_frame_emoji_picker", "EmojiPickerDialog"),
+        # Opening a PDF, 2026-10-15: the shared password box (imported inside
+        # the method, so the defining module) and the scanned question and
+        # Save's refusal (a message box imported at lite_window_pdf's scope).
+        "ask_pdf_password": ("quill.ui.pdf_password", "ask_pdf_password"),
+        "show_message_box_pdf": ("quill.apps.lite_window_pdf", "show_message_box"),
+        # Import / Convert Document's scanned question, 2026-10-17 (a message
+        # box imported at lite_window_import's scope).
+        "show_message_box_import": ("quill.apps.lite_window_import", "show_message_box"),
+    }
+
+    #: Names whose stub must be callable *and* have a ``show()``, because the
+    #: caller constructs an object and then asks it. One extra shape rather than
+    #: a second recorder.
+    CONSTRUCTED: frozenset[str] = frozenset({"EmojiPickerDialog"})
+
+    #: The sentinel meaning "no test set an answer, so answer cancel".
+    CANCELLED = object()
+
+    def __init__(self, monkeypatch: Any) -> None:
+        self._monkeypatch = monkeypatch
+        self.answers: dict[str, Any] = {}
+        #: ``(name, args, kwargs)`` in the order the commands opened them.
+        self.opened: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+        for name in self.TARGETS:
+            self._install(name)
+
+    # -- the seam --------------------------------------------------------- #
+
+    def _install(self, name: str) -> None:
+        import importlib
+
+        module_path, attribute = self.TARGETS[name]
+        module = importlib.import_module(module_path)
+        if not hasattr(module, attribute):  # pragma: no cover - a renamed dialog
+            raise AssertionError(
+                f"{module_path}.{attribute} does not exist. The recorder's table is "
+                "stale, which would leave a real dialog opening in a test run."
+            )
+        self._monkeypatch.setattr(module, attribute, self._stub(name))
+
+    def _stub(self, name: str) -> Any:
+        def opened(*args: Any, **kwargs: Any) -> Any:
+            self.opened.append((name, args, kwargs))
+            answer = self.answers.get(name, self.CANCELLED)
+            answer = None if answer is self.CANCELLED else answer
+            return _Shown(answer) if name in self.CONSTRUCTED else answer
+
+        return opened
+
+    # -- what a test says -------------------------------------------------- #
+
+    #: Names that are two bindings on one window. A test says the short name and
+    #: gets both, because which module imported the dialog is the recorder's
+    #: problem rather than the test author's.
+    ALIASES: dict[str, tuple[str, ...]] = {
+        "choose_from_rows": (
+            "choose_from_rows",
+            "choose_from_rows_clipboard",
+            "choose_from_rows_spelling",
+            "choose_from_rows_lines",
+            "choose_from_rows_backups",
+        ),
+        "show_text_window": (
+            "show_text_window",
+            "show_text_window_marks",
+            "show_text_window_review",
+        ),
+        "ask_text": ("ask_text", "ask_text_tools"),
+    }
+
+    def answer(self, name: str, value: Any) -> None:
+        """Make *name* return *value* instead of cancelling."""
+        if name not in self.TARGETS:  # pragma: no cover - a typo in a test
+            raise AssertionError(f"{name!r} is not a dialog this recorder patches")
+        for alias in self.ALIASES.get(name, (name,)):
+            self.answers[alias] = value
+
+    def names(self) -> list[str]:
+        return [name for name, _args, _kwargs in self.opened]
+
+    def kwargs_for(self, name: str) -> dict[str, Any]:
+        """The keyword arguments the last opening of *name* was given."""
+        wanted = self.ALIASES.get(name, (name,))
+        for opened, _args, kwargs in reversed(self.opened):
+            if opened in wanted:
+                return kwargs
+        raise AssertionError(f"{name} was never opened; opened: {self.names()}")
+
+    def args_for(self, name: str) -> tuple[Any, ...]:
+        wanted = self.ALIASES.get(name, (name,))
+        for opened, args, _kwargs in reversed(self.opened):
+            if opened in wanted:
+                return args
+        raise AssertionError(f"{name} was never opened; opened: {self.names()}")
+
+
+class FakeModalDialog:
+    """A wx dialog class used as ``with wx.FileDialog(...) as d`` or plain.
+
+    Built by :func:`_fake_dialog_class` with the answers baked in, because the
+    commands construct these themselves -- there is no seam to hand an instance
+    through, only the class name on the ``wx`` module.
+    """
+
+    _answer_id: Any = None
+    _values: dict[str, Any] = {}
+    constructed: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        type(self).constructed.append((args, kwargs))
+
+    def __enter__(self) -> FakeModalDialog:
+        return self
+
+    def __exit__(self, *_exc: Any) -> bool:
+        return False
+
+    def ShowModal(self) -> Any:  # noqa: N802 - wx API shape
+        return self._answer_id
+
+    def Destroy(self) -> None:  # noqa: N802 - wx API shape
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        """Answer GetPath / GetPaths / GetFontData / ... from the baked values.
+
+        A dialog method a test did not name raises rather than returning a
+        silent ``None``: a command reading a value nobody supplied should fail
+        loudly in the test rather than take the default branch by accident.
+        """
+        if name in self._values:
+            value = self._values[name]
+            return (lambda *_a, **_k: value) if not callable(value) else value
+        raise AttributeError(
+            f"{name} was not supplied to this fake dialog; add it to the values dict"
+        )
+
+
+def _fake_dialog_class(answer_id: Any, **values: Any) -> type[FakeModalDialog]:
+    """A one-off dialog class answering *answer_id* and the named getters."""
+    return type(
+        "FakeDialog",
+        (FakeModalDialog,),
+        {"_answer_id": answer_id, "_values": values, "constructed": []},
+    )
+
+
+@pytest.fixture
+def lite_dialogs(monkeypatch):
+    """Every QUILL Lite dialog, recorded and answered. See :class:`DialogRecorder`."""
+    return DialogRecorder(monkeypatch)
+
+
+@pytest.fixture
+def page_data():
+    """The :class:`FakePageData` class, handed over rather than imported.
+
+    A test needing this must **not** write ``from conftest import FakePageData``:
+    with several ``conftest.py`` files and no ``__init__.py`` beside them, the
+    bare module name is ambiguous, and on CI it resolved to
+    ``tests/unit/ui/conftest.py`` -- an ImportError that no local run reproduced
+    because the local collection order happened to bind the other one first.
+    """
+    return FakePageData
+
+
+@pytest.fixture
+def fake_wx_dialog(monkeypatch):
+    """Replace a ``wx`` dialog class (``FileDialog``, ``FontDialog``, ...).
+
+    Returns ``install(name, answer_id, **getters)`` and hands back the class, so
+    a test can assert on how it was constructed as well as what the command did
+    with the answer.
+    """
+
+    def install(name: str, answer_id: Any, **getters: Any) -> type[FakeModalDialog]:
+        cls = _fake_dialog_class(answer_id, **getters)
+        monkeypatch.setattr(wx, name, cls)
+        return cls
+
+    return install
+
+
+@pytest.fixture(autouse=True)
+def _dictation_read_back_now(monkeypatch):
+    """Say a dictated phrase's read-back as soon as it is queued.
+
+    ``HostFeedback.read_back`` waits a moment (wx.CallLater) so the sentence
+    arrives after the reader has reacted to the edit. Tests assert the
+    sentence right after the phrase, so they passed only when CallLater
+    happened to raise and the "say it now" fallback ran -- order-dependent,
+    and it failed in CI. The queue and joining still run; only the wait is
+    skipped here.
+    """
+    from quill.ui import windows_dictation_ports as ports
+
+    original = ports.HostFeedback.read_back
+
+    def read_back_now(self, text: str) -> None:
+        original(self, text)
+        timer, self._timer = self._timer, None
+        if timer is not None:
+            try:
+                timer.Stop()
+            except Exception:  # noqa: BLE001 - a timer that never started
+                pass
+        if self._pending:
+            self._speak_pending()
+
+    monkeypatch.setattr(ports.HostFeedback, "read_back", read_back_now)

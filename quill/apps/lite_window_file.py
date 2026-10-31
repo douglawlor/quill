@@ -1,0 +1,554 @@
+"""Opening a file, saving it, and copying unsaved work aside.
+
+Split out of :mod:`quill.apps.lite_window` on 2026-09-10 for GATE-11: the frame
+module was over the default cap and this is the largest thing in it that is not
+the frame -- two hundred lines about *files*, in a class otherwise made of
+window plumbing and event hooks.
+
+What holds it together is that all three are the same risk. Every path here can
+lose somebody's work, so every one of them:
+
+* **writes atomically** (``textfile.write_bytes_atomic``: temp file, then
+  ``os.replace``), so a power cut mid-save cannot leave a half-written document
+  where the finished one was;
+* **says what happened in words**, because a failed save is the one event where
+  silence is indistinguishable from success and the cost of believing the wrong
+  one is the document;
+* **keeps the recovery copy beside the file and never over it**, and removes it
+  only once the real save has succeeded.
+
+The methods run on ``DocumentFrame``, which supplies ``control``, ``editor``,
+``app``, ``path`` and the announcement and status hooks.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import wx
+
+from quill.apps.lite_window_word import DocumentWordMixin, open_mode_for
+from quill.core.lite import APP_NAME
+from quill.core.lite import recovery as recovery_mod
+from quill.core.lite.filetypes import is_word_path, word_save_refusal
+from quill.core.lite.open_prepare import PreparedDocument
+from quill.core.lite.open_prepare import prepare as prepare_document
+from quill.core.lite.textfile import (
+    decode_text,
+    encode_text,
+    unencodable_characters,
+    unencodable_warning,
+    write_bytes_atomic,
+)
+from quill.core.pdf_open import is_pdf_path
+from quill.core.sound_events import SoundEvent
+from quill.ui.dialog_contract import show_message_box
+from quill.ui.richedit_editing import PLAIN, RICH
+from quill.ui.richedit_rtf_surface import RichEditRtfError
+
+__all__ = ["DocumentFileMixin"]
+
+#: The temp-file suffix a rich save writes beside its target before replacing it.
+#: Moved here with the two writers that use it (2026-09-10); nothing else did.
+_TMP_SUFFIX = ".quilllite-tmp"
+
+
+class DocumentFileMixin(DocumentWordMixin):
+    """Load, save, and the autosave copy. Composed onto ``DocumentFrame``."""
+
+    # ------------------------------------------------------------------ #
+    # Load
+    # ------------------------------------------------------------------ #
+
+    def _remember_clean_text(self) -> None:
+        """Note what the buffer held at the moment the document became clean.
+
+        One read per load or save, never per keystroke: it is compared only on
+        the first text event after that, in :meth:`_text_event_changed_nothing`.
+        """
+        try:
+            self._clean_text: str | None = self.control.GetValue()
+        except Exception:  # noqa: BLE001 - no baseline just means "trust the event"
+            self._clean_text = None
+
+    def _text_event_changed_nothing(self) -> bool:
+        """Whether a text event on a clean document left the text as it was.
+
+        Rich Edit raises EN_CHANGE for things that change nothing: Ctrl+Z with
+        nothing to undo, for one. Reported 2026-09-25 as "I open QUILL Lite, make
+        no changes, and Alt+F4 asks me to save". Rich text only trusts this when
+        the buffer is empty, because there a formatting-only change with the same
+        characters (a native chord QUILL Lite does not route) is a real edit.
+        """
+        baseline = getattr(self, "_clean_text", None)
+        if baseline is None:
+            return False
+        if self.editor.mode == RICH and baseline:
+            return False
+        try:
+            return self.control.GetValue() == baseline
+        except Exception:  # noqa: BLE001 - unreadable is "changed"
+            return False
+
+    def load(self, path: Path) -> bool:
+        """Open *path* into this window. ``False`` when it could not be read.
+
+        Synchronous: prepare and commit back to back. A large or networked file
+        goes through ``begin_background_load`` instead (F-05), which runs the
+        same two halves with the slow one on a worker.
+        """
+        path = Path(path)
+        if is_pdf_path(path):
+            # Always on the worker, whatever its size: extraction is slow, and
+            # the commit is where a password or OCR gets asked (lite_window_pdf).
+            self.begin_background_load(path)
+            return True
+        mode = open_mode_for(self, path)  # a .docx opens rich when it can (2026-10-17)
+        try:
+            self._check_mode_available(mode)
+            prepared = prepare_document(path, mode)
+        except (OSError, RichEditRtfError) as exc:
+            self._report_failure("Open failed", f"Could not open {path.name}.\n\n{exc}")
+            return False
+        return self._commit_load(path, prepared)
+
+    def _check_mode_available(self, mode: str) -> None:
+        """Rich text needs the Rich Edit control; say so before reading anything."""
+        if mode == RICH and not self.editor.rtf_available():
+            raise RichEditRtfError("Rich text needs the Windows Rich Edit control.")
+
+    def _commit_load(self, path: Path, prepared: PreparedDocument) -> bool:
+        """Put prepared text into the editor and do everything a load implies.
+
+        UI thread only: this is the half that touches the Rich Edit control.
+        """
+        if prepared.pdf is not None and not self.pdf_ready_to_commit(path, prepared.pdf):
+            return False
+        path, prepared = self.settle_word_open(path, prepared)  # lite_window_word
+        self._loading = True
+        try:
+            if prepared.mode == RICH:
+                self._commit_rich(prepared)
+            else:
+                self._commit_plain(prepared)
+        except (OSError, RichEditRtfError) as exc:
+            self._loading = False
+            self._report_failure("Open failed", f"Could not open {path.name}.\n\n{exc}")
+            return False
+        finally:
+            self._loading = False
+            # The one funnel every open goes through -- File > Open, the command
+            # line, a recent file, the shell. Rich and plain both replace the
+            # text without raising a text event (ChangeValue, and the TOM's own
+            # set_rtf), so the mirror is told here rather than in each branch.
+            self.doc_text.invalidate()
+        self.path = path
+        # Guarded if somebody guarded this file, or it cannot be written.
+        self.apply_read_only_guard(path)
+        self._remember_disk_baseline()
+        self._discard_slot()
+        self.modified = False
+        self._remember_clean_text()
+        self._remember(path)
+        self.control.SetInsertionPoint(0)
+        self._update_title()
+        # The file's own name decides whether it is checked, so this has to run
+        # after the path is set and not at construction: a window is built
+        # empty and only then told which file it holds.
+        self._init_spelling()
+        # Both sweeps, not just the marks: the file name is what decides the
+        # language for a document with no override, so opening notes.md into a
+        # window that was plain has to light the Markdown rows too.
+        self._sync_check_items()
+        self._sync_menu_rows()
+        self._touch_status()
+        # After the path is set, for the same reason spelling is: the store is
+        # keyed by file path, and a window is built empty and only then told
+        # which file it holds. This can move the cursor, so it runs before the
+        # spelling announcement rather than after -- the last thing said should
+        # be about the document, not about a caret that has already moved.
+        self.restore_document_memory()
+        self.announce_spelling_state_if_skipped()
+        # Once, and only for a file that is not UTF-8: the reader can read the
+        # text but cannot know what it was stored as, and that decides what a
+        # save can hold. The same sentence QUILL says (2026-10-04).
+        if prepared.mode != RICH:
+            from quill.core.text_decoding import open_notice
+
+            notice = open_notice(prepared.encoding)
+            if notice:
+                self._announce(notice)
+        # Last, because it is the one thing about this file that will cost
+        # something later: a read-only file typed into for twenty minutes
+        # refuses at Ctrl+S, which is the worst moment to learn it. The
+        # sentence is shared with QUILL (bad.md P2.12).
+        from quill.core.file_access import READ_ONLY_NOTICE, is_read_only
+
+        if is_read_only(path):
+            self._announce(READ_ONLY_NOTICE)
+        self.note_pdf_source(prepared.pdf)
+        self.note_word_source(path, prepared)
+        return True
+
+    def _commit_rich(self, prepared: PreparedDocument) -> None:
+        """Hand the already-scanned, sanitised RTF to the TOM."""
+        self._check_mode_available(RICH)
+        self._set_mode_internal(RICH)
+        self.editor.set_rtf(prepared.rtf)
+        self._apply_rich_theme_colour()
+        if prepared.blocked:
+            self._announce("Removed for safety: " + ", ".join(prepared.blocked))
+
+    def _commit_plain(self, prepared: PreparedDocument) -> None:
+        self.encoding, self.newline = prepared.encoding, prepared.newline
+        self._set_mode_internal(PLAIN)
+        self.control.ChangeValue(prepared.text)
+
+    def _load_recovery(self, slot: recovery_mod.RecoverySlot) -> None:
+        """Restore a slot into this window, leaving it modified and unsaved.
+
+        Two things this used to get wrong, and both of them lose work.
+
+        **The document's own format is restored with it (F2).** The slot is
+        always UTF-8 with LF line endings, because a copy of unsaved work has to
+        hold whatever was typed -- and the window adopted *the slot's* encoding,
+        so a cp1252 file recovered after a crash was saved back as UTF-8 and a
+        CRLF one as LF. The slot records what the document was; this puts it
+        back, and falls through to the slot's own only when there is nothing
+        recorded (a slot written by an older build).
+
+        **A failed restore claims nothing (F9).** It used to adopt the path,
+        set the slot and mark the window modified even when the read had raised
+        -- so an empty window sat under the name of a real file, and closing it
+        and answering "No" deleted the only copy of the work.
+        """
+        self._loading = True
+        restored = False
+        try:
+            if slot.mode == RICH and self.editor.rtf_available():
+                self._set_mode_internal(RICH)
+                self.editor.load_rtf(str(slot.content_path))
+                self._apply_rich_theme_colour()
+            else:
+                decoded = decode_text(slot.content_path.read_bytes())
+                self.encoding = slot.encoding or decoded.encoding
+                self.newline = slot.newline or decoded.newline
+                self._set_mode_internal(PLAIN)
+                self.control.ChangeValue(decoded.text)
+            restored = True
+        except (OSError, RichEditRtfError) as exc:
+            self._report_failure("Recovery failed", f"Could not restore {slot.title}.\n\n{exc}")
+        finally:
+            self._loading = False
+            self.doc_text.invalidate()  # as in open_path: no text event fires
+        if not restored:
+            # The slot is left on disk deliberately. It is still the only copy
+            # of that work, and the next launch will offer it again.
+            self._announce(f"{slot.title} could not be recovered, and is still saved aside")
+            return
+        if slot.original_path and Path(slot.original_path).exists():
+            self.path = Path(slot.original_path)
+        self._slot = slot
+        self.modified = True
+        self._update_title()
+        # A restored slot brings its original name with it, and the name is
+        # what decides the language for a document with no override.
+        self._sync_menu_rows()
+        self._touch_status()
+
+    def _remember(self, path: Path) -> None:
+        """Put *path* at the head of the recent list, in every window."""
+        self.app.settings.remember_recent(str(path))
+        self.app._queue_settings_save()
+        self.app.refresh_all_menus()
+
+    # ------------------------------------------------------------------ #
+    # Save
+    # ------------------------------------------------------------------ #
+
+    def save(
+        self, target: Path | None = None, text: str | None = None, *, background: bool = False
+    ) -> bool:
+        """Write the document. Falls through to Save As when it has no name yet.
+
+        *text* is what to write instead of the buffer, which is how Save As
+        converts a document **at write time** rather than in the window: the
+        conversion is applied to the file, and only a successful write is
+        allowed to change what is on screen (bad.md F1).
+
+        *background* is Ctrl+S's: a Word document is then written on the worker
+        (lite_window_word). Every other caller -- the close prompt above all --
+        needs the write finished when this returns, and gets it.
+        """
+        if self.refuse_while_word_saving():
+            return False
+        destination = target if target is not None else self.path
+        if destination is None:
+            return self.cmd_save_as()
+        if target is None and self.refuse_save_over_source():
+            # An opened PDF: the buffer is text read out of it (lite_window_pdf).
+            return self.cmd_save_as()
+        if target is not None and self.refuse_save_as_target(Path(target)):
+            return False
+        if self.refuse_word_target(Path(destination)):
+            return False
+        if target is None and self._pending_suffix:
+            # A mode switch has made this name wrong for what the buffer holds
+            # -- rich runs under a .txt, or Markdown under a .rtf. Save proposes
+            # the renamed file; it never rewrites the one on disk into a format
+            # its name does not claim (bad.md R6).
+            return self.cmd_save_as()
+        destination = Path(destination)
+        body = self.control.GetValue() if text is None else text
+        # A text override *is* the instruction to write characters rather than
+        # runs: both conversions produce one, and both are saving a rich or HTML
+        # document to a plain target. Without this the window is still rich at
+        # write time, so Save As from .rtf to .txt wrote RTF into the .txt.
+        as_rich = self.editor.mode == RICH and text is None
+        if not as_rich and not self._encoding_allows(body):
+            return False
+        # Never overwrite a change another program made since this window last
+        # read or wrote the file (2026-10-04); asks Overwrite, Reload or Save As.
+        if not self._confirm_unseen_disk_change(destination):
+            return False
+        if background and as_rich and self.saves_as_word(destination):
+            return self.begin_word_save(destination)
+        try:
+            self._write_to(destination, body, as_rich=as_rich)
+        except (OSError, RichEditRtfError) as exc:
+            self._report_failure("Save failed", f"Could not save {destination.name}.\n\n{exc}")
+            return False
+        if self.app.feature_enabled("backups"):
+            # After the real write, never before: a backup that fails must not
+            # be able to fail the save it was taken alongside.
+            from quill.core.lite.backups import write_backup
+
+            write_backup(destination, self.control.GetValue())
+        self._settle_saved(destination)
+        self._cue(SoundEvent.DOCUMENT_SAVED)
+        self._announce(f"Saved {destination.name}")
+        return True
+
+    def refuse_word_target(self, destination: Path) -> bool:
+        """A Word name from a window that cannot write it: refuse rather than write text.
+
+        A rich window writes a real ``.docx`` (2026-10-17, lite_window_word).
+        Plain text under a Word name, or anything under ``.docm`` and the
+        template names, is a file Word will not open
+        (``quill.core.lite.filetypes.WORD_SUFFIXES``). ``True`` when refused.
+        """
+        if not is_word_path(destination.name) or self.saves_as_word(destination):
+            return False
+        show_message_box(
+            word_save_refusal(destination.name, switch_key=self._switch_mode_key()),
+            "Format not supported",
+            wx.OK | wx.ICON_INFORMATION,
+            self,
+        )
+        return True
+
+    def _switch_mode_key(self) -> str:
+        """Switch Document Mode's key as a sentence says it, for the refusal."""
+        return self.spoken_key_for("cmd_switch_document_kind")
+
+    def save_quietly(self) -> str | None:
+        """The clipboard collector's save: no window, and no sentence of its own.
+
+        ``None`` when the named document was written; otherwise the plain
+        reason it was not, for the collector to say. Everything Save would ask
+        about in a window -- characters the file's encoding cannot hold, a file
+        another program changed -- is a reason here instead, and the person
+        settles it with an ordinary Save. No backup copy either: a dated copy
+        per collected clip would bury the ones Save keeps. A document with no
+        name, or one waiting to be renamed, is not this method's to save.
+        """
+        from quill.core.clipboard_collector import disk_changed_reason, encoding_reason
+        from quill.core.external_change import changed_since
+
+        if self.path is None or self._pending_suffix:
+            return None
+        if self._word_save_busy:
+            return f"Still saving {self._word_save_busy}"
+        if is_word_path(Path(self.path).name) and not self.saves_as_word(self.path):
+            return word_save_refusal(Path(self.path).name, switch_key=self._switch_mode_key())
+        destination = Path(self.path)
+        as_rich = self.editor.mode == RICH
+        body = self.control.GetValue()
+        if not as_rich and unencodable_characters(body, self.encoding):
+            return encoding_reason(destination.name, self.encoding)
+        if changed_since(getattr(self, "_disk_baseline", None), destination) is not None:
+            return disk_changed_reason(destination.name)
+        try:
+            self._write_to(destination, body, as_rich=as_rich)
+        except (OSError, RichEditRtfError) as exc:
+            return f"Could not save {destination.name}: {exc}"
+        self._settle_saved(destination)
+        return None
+
+    def _write_to(self, destination: Path, body: str, *, as_rich: bool) -> None:
+        """The write itself, shared by Save and the collector's quiet save."""
+        if as_rich and self.saves_as_word(destination):
+            self._write_word(destination)  # through QUILL's Word writer
+        elif as_rich:
+            self._write_rtf(destination)
+        else:
+            write_bytes_atomic(
+                destination,
+                encode_text(body, encoding=self.encoding, newline=self.newline),
+            )
+
+    def _settle_saved(self, destination: Path) -> None:
+        """Everything a successful write settles, for Save and the quiet save alike."""
+        self.path = destination
+        self._remember_disk_baseline()
+        self._discard_slot()
+        self._set_modified(False)
+        self._update_title()
+        # Save As is the moment an untitled document first *has* a key, so this
+        # is also the moment bookmarks set while it was untitled become
+        # keepable. On a plain Save it is a checkpoint against a crash.
+        self.remember_document_memory()
+        # Save As can change the extension, and the extension is what decides
+        # whether this document is spell-checked. A .txt saved as .json should
+        # go quiet; the taught-word cache is dropped for the same reason, since
+        # the document's own sidecar dictionary moved with the name.
+        self._forget_spell_dictionary()
+        self._remember(destination)
+        # Whatever the name was wrong about, it is not wrong now.
+        self._pending_suffix = ""
+        # Save As can change the language as well as the spell check: an
+        # untitled document saved as notes.md is a Markdown document from here
+        # on, and its Format rows have to say so without waiting for a restart.
+        self._sync_menu_rows()
+
+    def _encoding_allows(self, body: str) -> bool:
+        """True when the save may go ahead; asks about characters that will not fit.
+
+        The encoding a text file was read in is the one it is written back in,
+        which is the right default and the reason somebody can type an em dash
+        into a Windows-1252 file and lose it. ``errors="replace"`` turned each
+        one into a question mark and said nothing at all -- the quietest
+        possible way to damage a document, and visible only if the person
+        happens to read that line again (bad.md F3).
+
+        Three answers, which is why it is a question rather than a refusal:
+        **Yes** saves as UTF-8 and keeps everything, **No** saves as asked and
+        loses them knowingly, and **Cancel** stops. The status bar's Encoding
+        cell follows a Yes, because the document really is UTF-8 from then on.
+        """
+        missing = unencodable_characters(body, self.encoding)
+        if not missing:
+            return True
+        answer = show_message_box(
+            unencodable_warning(len(missing), self.encoding),
+            APP_NAME,
+            wx.YES_NO | wx.CANCEL | wx.ICON_QUESTION,
+            self,
+        )
+        if answer == wx.CANCEL:
+            self._announce("Save cancelled")
+            return False
+        if answer == wx.YES:
+            self.encoding = "utf-8"
+            self._touch_status()
+        return True
+
+    def _write_rtf(self, target: Path) -> None:
+        """Save through the TOM to a sibling temp file, then replace the target.
+
+        The theme colour is removed for the duration of the save, so dark mode
+        never leaks light grey text into somebody's file, and restored in a
+        ``finally`` so a failed save does not leave the window unreadable.
+        """
+        tmp = target.with_name(target.name + _TMP_SUFFIX)
+        self._set_whole_document_colour(None)
+        try:
+            self.editor.save_rtf(str(tmp))
+            os.replace(tmp, target)
+        finally:
+            self._apply_rich_theme_colour()
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _write_recovery_copy(self) -> None:
+        """The autosave tick: copy unsaved work aside. Never raises, never blocks."""
+        slot = self._slot
+        if slot is None or not self.modified:
+            return
+        try:
+            if self.editor.mode == RICH and slot.mode == RICH:
+                tmp = slot.content_path.with_name(slot.content_path.name + _TMP_SUFFIX)
+                self._set_whole_document_colour(None)
+                try:
+                    self.editor.save_rtf(str(tmp))
+                finally:
+                    self._apply_rich_theme_colour()
+                os.replace(tmp, slot.content_path)
+            else:
+                if slot.mode != self.editor.mode:
+                    # The document changed mode since the slot was made; a plain
+                    # copy in a .rtf slot would be restored by the RTF reader.
+                    recovery_mod.discard(slot)
+                    slot = self._slot = recovery_mod.new_slot(
+                        self.editor.mode, str(self.path) if self.path else ""
+                    )
+                write_bytes_atomic(
+                    slot.content_path, self.control.GetValue().encode("utf-8", errors="replace")
+                )
+            slot.original_path = str(self.path) if self.path else ""
+            # What the document is, so a restore can put it back (F2). Recorded
+            # on every tick rather than at slot creation, because File > Encoding
+            # and Line Endings can change either one between ticks.
+            slot.encoding = self.encoding
+            slot.newline = self.newline
+            recovery_mod.write_meta(slot)
+        except (OSError, RichEditRtfError):
+            pass  # the next tick tries again; a failed copy must not interrupt typing
+
+    def _discard_slot(self) -> None:
+        if self._slot is not None:
+            recovery_mod.discard(self._slot)
+            self._slot = None
+
+    def _on_autosave_tick(self, _event: wx.TimerEvent) -> None:
+        self._write_recovery_copy()
+
+    def stop_timers(self) -> None:
+        """Stop everything that fires on a clock. Safe to call more than once.
+
+        *Everything*, since 2026-09-16. It stopped the autosave and the status
+        bar and left two behind: the live spell check's one-shot timer and the
+        pending "and here is how it is spelled" -- both of which fire a second
+        or so later, on a window that has been destroyed, into a bare ``except``
+        that swallowed the evidence (bad.md S8). A timer nobody stops is a
+        crash nobody can reproduce.
+        """
+        try:
+            self._autosave.Stop()
+        except RuntimeError:
+            pass
+        # An open still reading on a worker: its result must never land in a
+        # window that is closing (F-05). Closing the window is how it is cancelled.
+        cancel_open = getattr(self, "cancel_background_load", None)
+        if callable(cancel_open):
+            cancel_open()
+        self._stop_status_timer()
+        stop_watch = getattr(self, "_stop_disk_watch", None)  # lite_window_watch.py
+        if callable(stop_watch):
+            stop_watch()
+        timer = getattr(self, "_spell_timer", None)
+        if timer is not None:
+            try:
+                timer.Stop()
+            except RuntimeError:
+                pass
+        voice = getattr(self, "_spell_voice", None)
+        if voice is not None:
+            voice.cancel()
+
+    def restart_autosave(self) -> None:
+        """Re-arm the timer at the current interval, after Preferences changes it."""
+        self._autosave.Start(self.app.settings.autosave_seconds * 1000)

@@ -12,6 +12,7 @@ from pathlib import Path
 from quill.core.spellcheck import (
     Misspelling,
     add_word_to_scope,
+    rank_misspellings_by_frequency,
     suggest_words,
 )
 from quill.core.spelling.context_builder import build_context
@@ -20,6 +21,7 @@ from quill.core.spelling.models import (
     ReviewCounters,
     SpellingIssue,
 )
+from quill.core.spelling.paragraph_context import normalize_context_mode, paragraph_context
 
 
 @dataclass
@@ -53,11 +55,53 @@ class ReviewSession:
         dictionary: set[str],
         scope_start: int = 0,
         scope_end: int | None = None,
+        ranked: bool = False,
+        ignores: object | None = None,
+        start_at: int | None = None,
+        wrap: bool = False,
+        context_mode: str = "sentence",
+        filename: str | Path | None = None,
     ) -> None:
         self._text = text
+        #: The document's file name: it decides what is read at all -- web
+        #: addresses never, and in code only the strings and comments
+        #: (quill.core.spellcheck_spans).
+        self._filename = filename
+        #: ``spell_review_context_mode``: the Context field shows the sentence
+        #: and its neighbours, or the whole paragraph.
+        self._context_mode = normalize_context_mode(context_mode)
         self._dictionary = dictionary
         self._scope_start = scope_start
         self._scope_end = scope_end if scope_end is not None else len(text)
+        # Kurzweil-1000-style ranked spelling (community feature request):
+        # the guided review walks issues most-frequent-word-first instead of
+        # document order. Re-applied on every _rescan(), which runs after
+        # every action -- so as Change All clears the current top offender,
+        # the next most-frequent word naturally rises to the front instead of
+        # the ranking going stale mid-session.
+        self._ranked = ranked
+        #: The words this window has already been told to skip, from outside
+        #: this session. Every other route honours them -- the live check,
+        #: Ctrl+F7, the word-at-cursor menu -- and F7 did not, so a word
+        #: somebody had deliberately ignored was the first thing the review
+        #: stopped on (bad.md S6). Duck-typed on ``skips(text, item)`` so the
+        #: session stays wx-free and either editor's list fits.
+        self._ignores = ignores
+        #: Where the review begins, which is the caret rather than the top of
+        #: the document when the caller passes one. Word has started F7 at the
+        #: insertion point since it had an F7, and for somebody working in the
+        #: middle of a long document the alternative is being walked back
+        #: through everything they already checked (bad.md S7, rule 1).
+        self._start_at = None if start_at is None else max(scope_start, int(start_at))
+        #: Whether reaching the end comes back round to the beginning. The
+        #: setting ``spell_review_wrap_to_beginning`` has been documented, and
+        #: shipped, and read by nothing at all -- there was no "end" for it to
+        #: happen at, because the review always started from the top. Giving it
+        #: a start gave it a meaning.
+        self._wrap = bool(wrap)
+        #: True once the wrap has happened, so it happens once and the prompt
+        #: is said once.
+        self._wrapped = False
         self._session_ignores: set[str] = set()
         self._ignored_once_positions: set[int] = set()
         self._counters = ReviewCounters()
@@ -65,6 +109,29 @@ class ReviewSession:
         self._issues: list[Misspelling] = []
         self._current_idx: int = 0
         self._rescan(advance_past=None)
+
+    def set_ranked(self, ranked: bool) -> None:
+        """Re-order the remaining issues, mid-review, without losing progress.
+
+        Ranked and document order were two commands opening the same dialog
+        until 2026-09-16 -- ``_open_spelling_review(ranked=False/True)`` --
+        which is one verb registered twice, the shape that already let
+        ``keep_unique_lines`` and ``blockquote`` drift from their twins
+        (bad.md 7.1). It is now a checkbox, and a checkbox has to work while
+        the dialog is open.
+
+        Cheap because ``_rescan`` already re-applies the ordering after every
+        action, so the ranking cannot go stale mid-session; flipping the flag
+        and re-scanning is the whole change. Counters, session ignores and the
+        undo stack are untouched: what was corrected stays corrected.
+        """
+        if bool(ranked) == self._ranked:
+            return
+        self._ranked = bool(ranked)
+        self._rescan(advance_past=None)
+
+    def is_ranked(self) -> bool:
+        return self._ranked
 
     # ------------------------------------------------------------------
     # Public read API
@@ -74,7 +141,10 @@ class ReviewSession:
         if self._current_idx >= len(self._issues):
             return None
         m = self._issues[self._current_idx]
-        ctx, ws, we = build_context(self._text, m.start, m.end)
+        if self._context_mode == "paragraph":
+            ctx, ws, we = paragraph_context(self._text, m.start, m.end)
+        else:
+            ctx, ws, we = build_context(self._text, m.start, m.end)
         suggs = tuple(suggest_words(m.word, self._dictionary))
         return SpellingIssue(
             word=m.word,
@@ -95,6 +165,48 @@ class ReviewSession:
 
     def can_undo(self) -> bool:
         return bool(self._undo_stack)
+
+    def should_wrap(self) -> bool:
+        """True when the review has run out *after* the caret but not before it.
+
+        Asked by the dialog between issues. Answering yes means: say the wrap
+        prompt, call :meth:`wrap_to_beginning`, and carry on. The session does
+        not announce anything itself -- it has no voice, and a wx-free core
+        earning one is how a core stops being wx-free.
+        """
+        if not self._wrap or self._wrapped or self._start_at is None:
+            return False
+        if self._current_idx < len(self._issues):
+            return False
+        return any(m.start < self._start_at for m in self._issues_before_start())
+
+    def wrap_to_beginning(self) -> None:
+        """Come back round to the top and carry on. Once per review."""
+        if self._wrapped:
+            return
+        self._wrapped = True
+        self._start_at = None
+        self._rescan(advance_past=None)
+        self._current_idx = 0
+
+    def _issues_before_start(self) -> list[Misspelling]:
+        """Every issue in scope, including the ones the caret start held back.
+
+        Annotated ``list[object]`` until 2026-09-18, which made ``should_wrap``
+        the one mypy error in quill/core: it reads ``m.start`` off each item,
+        and ``object`` has no such attribute. The list was always Misspellings;
+        only the annotation said otherwise.
+        """
+        from quill.core.spellcheck import list_misspellings as _lm
+
+        return [
+            m
+            for m in _lm(self._text, self._dictionary, filename=self._filename)
+            if self._scope_start <= m.start < self._scope_end
+            and m.word.lower() not in self._session_ignores
+            and m.start not in self._ignored_once_positions
+            and not self._externally_ignored(m)
+        ]
 
     def is_complete(self) -> bool:
         return self._current_idx >= len(self._issues)
@@ -153,7 +265,7 @@ class ReviewSession:
 
         all_ms = [
             x
-            for x in _lm(self._text, self._dictionary)
+            for x in _lm(self._text, self._dictionary, filename=self._filename)
             if self._scope_start <= x.start < self._scope_end and x.word.lower() == target_lower
         ]
 
@@ -223,10 +335,20 @@ class ReviewSession:
         scope: str,
         document_path: Path | None,
         project_root: Path | None,
+        personal_dir: Path | None = None,
     ) -> None:
-        """Add the current word to the named dictionary scope."""
+        """Add the current word to the named dictionary scope.
+
+        *personal_dir* because this is shared by two editors that keep separate
+        data folders. Without it ``add_word_to_scope`` falls back to QUILL's,
+        so F7's "Add to Dictionary" in QUILL Lite grew a Quill folder under
+        ``%APPDATA%`` on a machine that had never had QUILL installed -- and the word
+        was flagged again next session, because QUILL Lite reads its own
+        (bad.md S1). QUILL Lite's other two add routes passed the right folder
+        all along; only the review dialog did not.
+        """
         m = self._issues[self._current_idx]
-        add_word_to_scope(m.word, scope, document_path, project_root)
+        add_word_to_scope(m.word, scope, document_path, project_root, personal_dir)
         # Also add to the in-memory dictionary so the session respects it.
         self._dictionary.add(m.word.lower())
         self._undo_stack.append(
@@ -311,22 +433,50 @@ class ReviewSession:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _externally_ignored(self, item: object) -> bool:
+        """Whether the host's own ignore list says to skip *item*. Never raises.
+
+        A list that raises must cost the filtering, not the review: the worst
+        outcome of answering False is a word offered that somebody had skipped,
+        and the worst outcome of raising is F7 not opening at all.
+        """
+        skips = getattr(self._ignores, "skips", None)
+        if skips is None:
+            return False
+        try:
+            return bool(skips(self._text, item))
+        except Exception:  # noqa: BLE001 - an ignore list must not break F7
+            return False
+
     def _rescan(self, advance_past: int | None) -> None:
         """Re-scan _text and set _current_idx to the first unhandled issue.
 
         If *advance_past* is given, the first issue must start strictly after
         that position (used after Change to skip the replacement location).
+        In ranked mode, "next" has no positional meaning -- the freshly
+        re-ranked list's top entry is always shown next, which naturally
+        surfaces the next-most-frequent word once the current one is cleared.
         """
         from quill.core.spellcheck import list_misspellings as _lm
 
         self._issues = [
             m
-            for m in _lm(self._text, self._dictionary)
+            for m in _lm(self._text, self._dictionary, filename=self._filename)
             if self._scope_start <= m.start < self._scope_end
             and m.word.lower() not in self._session_ignores
             and m.start not in self._ignored_once_positions
+            and not self._externally_ignored(m)
+            # Held back until the wrap, when there is one. Filtered here rather
+            # than skipped at the cursor so the counts, the ranking and "no
+            # misspellings found" all agree about what this pass covers.
+            and (self._start_at is None or m.start >= self._start_at)
         ]
+        if self._ranked:
+            self._issues = rank_misspellings_by_frequency(self._issues)
         if advance_past is not None:
+            if self._ranked:
+                self._current_idx = 0 if self._issues else len(self._issues)
+                return
             # Find the index of the first issue strictly after advance_past.
             for i, m in enumerate(self._issues):
                 if m.start > advance_past:

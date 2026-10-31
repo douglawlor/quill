@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Tutorial 10: Podcasts with QUILL Cast</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="tutorial-10-podcasts-with-quill-cast">Tutorial 10: Podcasts with
+QUILL Cast</h1>
+<p>In this tutorial you will follow a podcast, play an episode, pause
+and skip around in it, and line up something to hear next. It takes
+about ten minutes. Every step tells you what to press.</p>
+<p>Podcasts have their own app in the QUILL family, called <strong>QUILL
+Cast</strong>. It is free. If you have QUILL, you can find Cast on
+QUILL’s QuillVille menu, which offers to download it if you don’t have
+it yet.</p>
+<h2 id="a-few-words-first">A few words first</h2>
+<p>A <strong>podcast</strong> is a show that puts out episodes, a bit
+like a radio programme you can hear whenever you like. When you
+<strong>follow</strong> a podcast, Cast collects each new episode for
+you as it comes out. Following is free, and you can stop any time. An
+episode you have not heard yet is called <strong>unheard</strong>.</p>
+<h2 id="1-open-cast">1. Open Cast</h2>
+<ol type="1">
+<li>Open QUILL Cast from the Start menu.</li>
+<li>The first time, a short welcome window opens. Read it with the arrow
+keys if you like.</li>
+<li>Press <strong>Add Your First Podcast</strong> (Alt+A) to go straight
+to the next step. Or press Escape to skip the welcome. It will not come
+back.</li>
+</ol>
+<h2 id="2-follow-your-first-podcast">2. Follow your first podcast</h2>
+<ol type="1">
+<li>Press <strong>Ctrl+N</strong> to open Add Podcast. Your cursor is in
+the Podcast name box.</li>
+<li>Type a few words of a podcast’s name and press Enter. Cast tells you
+how many it found.</li>
+<li>Press <strong>Alt+R</strong> to move to the results, and arrow
+through them.</li>
+<li>When you hear the one you want, press <strong>Alt+O</strong> to
+follow it. Cast says “Now following”, the podcast’s name and how many
+episodes it has.</li>
+<li>Press Escape to close the Add Podcast window.</li>
+</ol>
+<p>Not sure you picked the right one? Press Enter on a result instead.
+Cast shows you the podcast and its recent episodes before you
+decide.</p>
+<p>Want more to start with? Podcasts &gt; Follow ACB Media Podcasts
+(<strong>Ctrl+Alt+B</strong>) follows all of ACB Media’s podcasts in one
+step. If you are moving from another podcast app, save your list there
+as an OPML file, then choose Import OPML (Alt+I) in the Add Podcast
+window.</p>
+<h2 id="3-hear-an-episode">3. Hear an episode</h2>
+<ol type="1">
+<li>Press <strong>Ctrl+Shift+S</strong> to go to Podcasts. This is your
+library, with one row for each podcast you follow.</li>
+<li>Arrow to the podcast you just followed and press
+<strong>Enter</strong>. Cast plays its next unheard episode and tells
+you what it is.</li>
+</ol>
+<p>Want a particular episode? Press Right Arrow on the podcast to open
+it. Arrow down through the episodes, newest first, and press Enter on
+the one you want. Left Arrow takes you back up. Press
+<strong>Ctrl+T</strong> any time to hear what is playing.</p>
+<h2 id="4-pause-skip-and-change-the-volume">4. Pause, skip and change
+the volume</h2>
+<p>These keys work from anywhere in Cast. Try each one.</p>
+<ol type="1">
+<li>Press <strong>Ctrl+P</strong> to pause. Press it again to carry
+on.</li>
+<li>Press <strong>Ctrl+Right</strong> to skip forward, and
+<strong>Ctrl+Left</strong> to skip back.</li>
+<li>Press <strong>Ctrl+Up</strong> to make it louder, and
+<strong>Ctrl+Down</strong> to make it quieter.</li>
+<li>Press <strong>Ctrl+.</strong> (Ctrl+Period) to stop.</li>
+</ol>
+<p>Cast remembers where you stopped. Play that episode again, today or
+next month, and it picks up where you left off.</p>
+<h2 id="5-line-up-what-comes-next">5. Line up what comes next</h2>
+<p>The Play Queue is your list for later. When one episode ends, the
+next one in the queue plays.</p>
+<ol type="1">
+<li>In Podcasts, press Right Arrow on a podcast to open its
+episodes.</li>
+<li>Arrow to an episode you want to hear later and press
+<strong>Space</strong>. Cast tells you it was added to the Play
+Queue.</li>
+<li>Press <strong>Ctrl+Shift+Q</strong> to go to the Play Queue and hear
+what is lined up.</li>
+</ol>
+<h2 id="6-find-your-way-around">6. Find your way around</h2>
+<p>Press <strong>Alt+L</strong> to go to the Places list. Think of it as
+a map of Cast. It has your Inbox, where new episodes wait for you,
+Continue Listening, for anything you started and didn’t finish, and
+more. Arrow down the list, press Enter to go into a place, and Backspace
+to come back out.</p>
+<h2 id="7-listen-with-the-window-out-of-the-way">7. Listen with the
+window out of the way</h2>
+<p>Press <strong>Ctrl+W</strong> to send Cast to the system tray. The
+episode keeps playing while you do other things, and your keyboard’s
+media keys still work. To bring Cast back, press
+<strong>Ctrl+Alt+Shift+F12</strong> from any program, or double-click
+the Cast icon in the notification area.</p>
+<h2 id="if-you-press-the-wrong-thing">If you press the wrong thing</h2>
+<p>Any question that would delete something starts on No, so pressing
+Enter too soon loses nothing. If something goes anyway, press
+<strong>Ctrl+Z</strong>. It brings back the last podcast you unfollowed
+or the last episode you removed, and tells you what came back. Missed
+what Cast just said? Press <strong>F9</strong> to hear it again.</p>
+<h2 id="keys-for-your-first-day">Keys for your first day</h2>
+<ul>
+<li>Ctrl+N: add a podcast</li>
+<li>Enter: play the selected podcast or episode</li>
+<li>Ctrl+P: pause or carry on</li>
+<li>Ctrl+Right and Ctrl+Left: skip forward or back</li>
+<li>Ctrl+Up and Ctrl+Down: volume up or down</li>
+<li>Ctrl+T: say what is playing</li>
+<li>Space: add the episode to the Play Queue</li>
+<li>F9: repeat the last thing Cast said</li>
+<li>Ctrl+Alt+F1: guided tutorials inside Cast</li>
+</ul>
+<h2 id="where-to-go-next">Where to go next</h2>
+<p>The <a href="/docs/cast-userguide.html">QUILL Cast user guide</a>
+starts with “Your first ten minutes” and then walks you through
+everything else, one chapter at a time. Cast, QUILL and Quill Radio
+share your podcasts, so a podcast you follow in one is there in the
+others too. For radio stations, see <a
+href="09-internet-radio.md">Tutorial 9</a>.</p>
+</main>
+</body>
+</html>

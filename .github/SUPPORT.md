@@ -4,7 +4,7 @@
 
 Inside QUILL, use:
 
-- `Help -> Report a Bug`
+- `Help -> Get Help from Support...` (Ctrl+Alt+F2)
 
 That flow gathers diagnostics and opens the support handoff path.
 
@@ -17,5 +17,5 @@ For open-ended questions and idea discussions, use GitHub Discussions.
 
 ## Security reports
 
-Do not file public issues for vulnerabilities. Follow `SECURITY.md` for private
-reporting instructions.
+Do not file public issues for vulnerabilities. Follow `docs/SECURITY.md` for
+private reporting instructions.

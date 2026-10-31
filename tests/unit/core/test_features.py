@@ -102,6 +102,41 @@ def test_feature_manager_respects_profile_state() -> None:
     assert manager.state_for("future.publishing") == FEATURE_STATE_OFF
 
 
+def test_casual_writer_is_a_focused_just_write_profile() -> None:
+    """#890: Casual Writer turns off power/AI/review/remote/developer surfaces
+    (an unlisted feature defaults to ON, so each must be named), while keeping
+    the write/format/print/send core -- and all screen-reader I/O -- available."""
+    from quill.core.features import PROFILE_WRITER
+
+    manager = FeatureManager(active_profile_id=PROFILE_WRITER)
+
+    # Explicitly off: not part of "write, format, print, send".
+    for off_feature in (
+        "future.ai",
+        "future.ai_menu_top_level",
+        "core.glow",
+        "core.remote",
+        "core.github_remote",
+        "core.developer_console",
+        "core.emmet",
+        "core.watch_folder",
+        "core.analysis",
+        "core.notebook",
+    ):
+        assert manager.state_for(off_feature) == FEATURE_STATE_OFF, off_feature
+
+    # Core writing stays on.
+    assert manager.state_for("core.editor") == FEATURE_STATE_ON
+    assert manager.state_for("core.file") == FEATURE_STATE_ON
+    assert manager.state_for("core.format") == FEATURE_STATE_ON
+
+    # "Just write" must not mean "less accessible": screen-reader I/O stays.
+    assert manager.state_for("core.voice_commands") == FEATURE_STATE_ON
+    assert manager.state_for("core.braille") == FEATURE_STATE_ON  # ON by default, not stripped
+    assert manager.state_for("core.read_aloud") != FEATURE_STATE_OFF
+    assert manager.state_for("core.dictation") != FEATURE_STATE_OFF
+
+
 def test_feature_manager_can_switch_profiles() -> None:
     manager = FeatureManager(active_profile_id=PROFILE_ESSENTIAL)
     preview = manager.change_profile_preview(PROFILE_DEVELOPER_POWER_TEXT)
@@ -134,6 +169,34 @@ def test_feature_manager_finds_feature_by_alias() -> None:
     feature = find_feature("regex")
     assert feature is not None
     assert feature.id == "core.search.regex"
+
+
+def test_no_ambiguous_feature_aliases() -> None:
+    """Every id/name/alias must resolve to exactly one feature.
+
+    A term claimed by two definitions makes ``find_feature`` order-dependent
+    (last wins) and logs a warning on import; this guards against reintroducing
+    such a collision (e.g. "abbreviation" / "text expansion" once mapped to both
+    core.edit and core.abbreviations/core.emmet)."""
+    from quill.core.feature_catalog import FEATURE_DEFINITIONS
+
+    owners: dict[str, list[str]] = {}
+    for feature in FEATURE_DEFINITIONS.values():
+        for term in (feature.id, feature.name, *feature.aliases):
+            owners.setdefault(term.lower(), []).append(feature.id)
+    clashes = {term: ids for term, ids in owners.items() if len(set(ids)) > 1}
+    assert not clashes, f"Ambiguous feature aliases (term -> feature ids): {clashes}"
+
+
+def test_abbreviation_terms_resolve_to_the_abbreviations_feature() -> None:
+    # Typed text expansion terms belong to the dedicated feature, not core.edit
+    # (generic editing) or core.emmet (HTML/CSS markup expansion).
+    for term in ("abbreviation", "abbreviations", "text expansion", "abbreviation expansion"):
+        feature = find_feature(term)
+        assert feature is not None and feature.id == "core.abbreviations", term
+    # Emmet keeps its markup-specific terms.
+    emmet = find_feature("emmet")
+    assert emmet is not None and emmet.id == "core.emmet"
 
 
 def test_feature_registry_includes_shipped_profiles() -> None:
@@ -298,18 +361,18 @@ def test_enabled_feature_with_all_dependencies_on_is_visible() -> None:
     assert manager.is_visible("core.navigate") is True
 
 
-def test_voice_commands_is_locked_off_internal_flag() -> None:
-    # Hey QUILL (core.voice_commands) is gated behind an internal flag for now
-    # (tied to the removed Windows dictation path), so it is hard-disabled and
-    # hidden regardless of profile or override.
+def test_voice_commands_is_unlocked_and_visible() -> None:
+    # Hey QUILL Phase 1: core.voice_commands is surfaced (push-to-talk over the
+    # offline speech stack). The runtime double-gate lives in
+    # voice_commands_available (off by default via settings, off in Safe Mode).
     manager = FeatureManager(active_profile_id=PROFILE_FULL_QUILL)
 
-    assert manager.is_enabled("core.voice_commands") is False
-    assert manager.is_visible("core.voice_commands") is False
+    assert manager.is_enabled("core.voice_commands") is True
+    assert manager.is_visible("core.voice_commands") is True
 
 
 def test_bits_whisperer_master_flag_is_locked_off() -> None:
-    # BITS Whisperer is deferred to QUILL 2.0; the master `core.bw_whisperer`
+    # QUILL Whisperer is deferred to QUILL 2.0; the master `core.bw_whisperer`
     # flag is locked off for 1.0, which hard-disables it and every bw_* feature
     # that depends on it, regardless of the active profile or any override.
     manager = FeatureManager(active_profile_id=PROFILE_FULL_QUILL)
@@ -333,9 +396,213 @@ def test_every_feature_id_referenced_in_main_frame_is_defined() -> None:
 
     from quill.core.features import FEATURE_DEFINITIONS
 
-    source = Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # Command registration (the feature_id wiring) lives in
+    # main_frame_commands.py (extracted from main_frame.py, CQ-1).
+    source = (
+        Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+        + "\n"
+        + Path("quill/ui/main_frame_commands.py").read_text(encoding="utf-8")
+    )
     referenced = set(re.findall(r'feature_id="([^"]+)"', source))
 
     assert referenced, "expected main_frame to wire feature ids to commands"
     missing = sorted(fid for fid in referenced if fid not in FEATURE_DEFINITIONS)
     assert missing == [], f"command feature ids missing from FEATURE_DEFINITIONS: {missing}"
+
+
+# -- unreleased (developer-build-only) features -----------------------------
+# The editor-embedded Podcasts manager is built, but its companion app (Quill
+# Cast) has not shipped, so a public 1.0.0 build must not surface it. The gate
+# is the same one the companion apps use (``QUILL_DEV_BUILD=1``, via
+# ``app_launcher.is_dev_build``); these tests pin both halves of it. The env
+# var -- not ``paths._DEV_BUILD``, which the session-wide conftest fixture
+# forces True -- is what the gate reads, so monkeypatching it is enough.
+
+
+def _public_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("QUILL_DEV_BUILD", raising=False)
+
+
+def _developer_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUILL_DEV_BUILD", "1")
+
+
+def test_unreleased_features_are_the_ones_deliberately_held_back() -> None:
+    from quill.core.feature_catalog import FEATURE_DEFINITIONS, UNRELEASED_FEATURE_IDS
+
+    # Three editor features are held back from the public build, reachable only in
+    # a developer build: the podcast manager (waits on the Quill Cast app), the
+    # embedded Internet Radio (moved to the standalone Quill Radio app), and the
+    # Book Library (moving to QUILL Social). The fourth is the companion apps'
+    # top-level Quillins menu, hidden until the extension story is public --
+    # the host still runs, so this hides a menu, not a capability. The fifth,
+    # Connect YouTube Account (OAuth), waits on a different external gate: this
+    # build's Google OAuth consent screen must pass Google's own verification
+    # (or the signer be listed as a test user) before sign-in works for anyone.
+    assert UNRELEASED_FEATURE_IDS == frozenset({
+        "core.podcasts",
+        "core.radio",
+        "core.library",
+        "future.quillins_menu",
+        "future.youtube_oauth",
+    })
+    assert FEATURE_DEFINITIONS["core.podcasts"].released is False
+    assert FEATURE_DEFINITIONS["core.radio"].released is False
+    assert FEATURE_DEFINITIONS["core.library"].released is False
+    assert FEATURE_DEFINITIONS["future.quillins_menu"].released is False
+    assert FEATURE_DEFINITIONS["future.youtube_oauth"].released is False
+
+
+def test_podcasts_is_locked_off_in_a_public_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    _public_build(monkeypatch)
+    for profile_id in PROFILE_DEFINITIONS:
+        manager = FeatureManager(active_profile_id=profile_id)
+        assert manager.state_for("core.podcasts") == FEATURE_STATE_OFF, profile_id
+        assert manager.is_enabled("core.podcasts") is False, profile_id
+        assert manager.is_visible("core.podcasts") is False, profile_id
+
+
+def test_podcasts_cannot_be_enabled_by_a_user_in_a_public_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _public_build(monkeypatch)
+    manager = FeatureManager(active_profile_id=PROFILE_FULL_QUILL)
+    manager.enable_feature("core.podcasts")
+    assert manager.is_enabled("core.podcasts") is False
+    # A hand-edited override in features.json is no way past the gate either.
+    manager.overrides["core.podcasts"] = FEATURE_STATE_ON
+    assert manager.state_for("core.podcasts") == FEATURE_STATE_OFF
+    assert manager.is_enabled("core.podcasts") is False
+
+
+def test_podcasts_is_hidden_from_manage_individual_features(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # MainFrame.open_individual_feature_toggles lists every definition that is
+    # neither locked on nor locked off; the build gate must drop Podcasts from
+    # that list exactly as a ``locked_off`` feature is dropped.
+    from quill.core.feature_catalog import FEATURE_DEFINITIONS
+
+    _public_build(monkeypatch)
+    toggleable = {
+        feature_id
+        for feature_id, definition in FEATURE_DEFINITIONS.items()
+        if not definition.locked_on and not definition.is_locked_off
+    }
+    assert "core.podcasts" not in toggleable
+    assert "core.radio" not in toggleable  # now gated out of the public editor
+    assert "core.library" not in toggleable  # gated too, moving to QUILL Social
+
+    _developer_build(monkeypatch)
+    toggleable_dev = {
+        feature_id
+        for feature_id, definition in FEATURE_DEFINITIONS.items()
+        if not definition.locked_on and not definition.is_locked_off
+    }
+    assert "core.podcasts" in toggleable_dev
+    assert "core.radio" in toggleable_dev  # a developer build keeps embedded radio
+    assert "core.library" in toggleable_dev  # ...and the Book Library
+
+
+def test_internet_radio_is_locked_off_in_a_public_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    _public_build(monkeypatch)
+    for profile_id in PROFILE_DEFINITIONS:
+        manager = FeatureManager(active_profile_id=profile_id)
+        assert manager.state_for("core.radio") == FEATURE_STATE_OFF, profile_id
+        assert manager.is_enabled("core.radio") is False, profile_id
+        assert manager.is_visible("core.radio") is False, profile_id
+
+
+def test_internet_radio_is_available_in_a_developer_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    _developer_build(monkeypatch)
+    manager = FeatureManager(active_profile_id=PROFILE_FULL_QUILL)
+    assert manager.is_enabled("core.radio") is True
+    # A developer build keeps the Book Library too.
+    assert manager.is_enabled("core.library") is True
+
+
+def test_developer_build_restores_podcasts(monkeypatch: pytest.MonkeyPatch) -> None:
+    _developer_build(monkeypatch)
+    manager = FeatureManager(active_profile_id=PROFILE_ESSENTIAL)
+    # Podcasts is not listed in the Essential profile, and an unlisted feature
+    # defaults to ON -- the behaviour a developer build keeps.
+    assert manager.state_for("core.podcasts") == FEATURE_STATE_ON
+    assert manager.is_enabled("core.podcasts") is True
+    assert manager.is_visible("core.podcasts") is True
+
+
+def test_book_library_is_locked_off_in_a_public_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    _public_build(monkeypatch)
+    for profile_id in PROFILE_DEFINITIONS:
+        manager = FeatureManager(active_profile_id=profile_id)
+        assert manager.state_for("core.library") == FEATURE_STATE_OFF, profile_id
+        assert manager.is_enabled("core.library") is False, profile_id
+        assert manager.is_visible("core.library") is False, profile_id
+
+
+def test_podcast_commands_are_not_visible_in_the_palette(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _public_build(monkeypatch)
+    registry = CommandRegistry()
+    registry.register(
+        "podcasts.open_manager",
+        "Podcasts: Open Manager...",
+        lambda: None,
+        feature_id="core.podcasts",
+    )
+    registry.register(
+        "radio.browse",
+        "Radio: Browse Stations...",
+        lambda: None,
+        feature_id="core.radio",
+    )
+    manager = FeatureManager(active_profile_id=PROFILE_FULL_QUILL)
+    visible = {command.id for command in registry.list(manager)}
+    assert "podcasts.open_manager" not in visible
+    assert "radio.browse" not in visible  # Internet Radio is gated out of the editor too
+
+
+# -- the standalone apps and the release gate -------------------------------
+# The gate above keeps unreleased features out of public *QUILL* builds. The
+# companion app that IS the feature must escape it, or a public Quill Radio
+# ships with no recording scheduler, no wake task, and an empty palette --
+# exactly what the 3.0.0 release candidate did until caught. ``grant_product_features`` is
+# the sanctioned escape: in-memory, never persisted, safety locks untouched.
+
+
+def test_a_product_grant_enables_a_locked_off_feature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _public_build(monkeypatch)
+    manager = FeatureManager(active_profile_id=PROFILE_FULL_QUILL)
+    assert manager.is_enabled("core.radio") is False
+    manager.grant_product_features({"core.radio"})
+    assert manager.is_enabled("core.radio") is True
+    assert manager.is_visible("core.radio") is True
+    # The grant is this process's, not the editor's: nothing else opens up.
+    assert manager.is_enabled("core.podcasts") is False
+
+
+def test_a_product_grant_is_never_persisted(
+    feature_data_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _public_build(monkeypatch)
+    manager = FeatureManager()
+    manager.grant_product_features({"core.radio"})
+    manager.save()
+    reloaded = FeatureManager.load()
+    assert "core.radio" not in reloaded.unlocked_feature_ids
+    assert reloaded.is_enabled("core.radio") is False
+
+
+def test_the_radio_and_cast_apps_grant_their_own_feature() -> None:
+    """The wiring half: each standalone app claims the feature it is built
+    around, right after the shell comes up. Source-pinned (constructing the
+    frames needs a display); the enforcement half is the grant tests above."""
+    for module, feature_id in (
+        ("quill/apps/radio.py", "core.radio"),
+        ("quill/apps/podcasts.py", "core.podcasts"),
+    ):
+        source = (Path(__file__).parents[3] / module).read_text(encoding="utf-8")
+        assert f'grant_product_features({{"{feature_id}"}})' in source, module

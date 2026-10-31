@@ -10,11 +10,16 @@ from pathlib import Path
 
 
 def _main_frame_source() -> str:
-    return Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # MainFrame is composed from main_frame.py plus extracted mixin modules
+    # (CQ-1); scan the composite so wiring stays pinned wherever it lives.
+    ui = Path("quill/ui")
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(ui.glob("main_frame*.py")))
 
 
 def _menu_source() -> str:
-    return Path("quill/ui/main_frame_menu.py").read_text(encoding="utf-8")
+    return Path("quill/ui/main_frame_menu.py").read_text(encoding="utf-8") + Path(
+        "quill/ui/main_frame_menu_bindings.py"
+    ).read_text(encoding="utf-8")
 
 
 def _check_glow_updates_body() -> str:
@@ -33,7 +38,7 @@ def test_glow_update_command_is_registered() -> None:
 def test_glow_update_menu_item_is_bound() -> None:
     menu = _menu_source()
     assert "self._id_check_glow_updates" in menu
-    assert "Check for &GLOW Updates..." in menu
+    assert "Chec&k for GLOW Updates..." in menu
     assert "self.check_for_glow_updates()" in menu
 
 

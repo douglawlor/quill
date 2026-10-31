@@ -25,11 +25,13 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Callable
+import sys
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from quill.core.error_codes import CodedError
 from quill.core.speech import models
 
 # (fraction 0.0-1.0, human message) — same shape as the speech ProgressCallback.
@@ -46,8 +48,10 @@ _ALLOWED_FFPROBE = frozenset({"ffprobe", "ffprobe.exe"})
 INSTALL_HINT = "Install ffmpeg (for example: winget install Gyan.FFmpeg) and try again."
 
 
-class TranscodeError(Exception):
+class TranscodeError(CodedError):
     """Raised when audio could not be prepared for transcription."""
+
+    code = "QUILL-SPEECH-TRANSCODE-FAILED"
 
 
 def ffmpeg_search_dirs() -> list[Path]:
@@ -55,12 +59,19 @@ def ffmpeg_search_dirs() -> list[Path]:
 
     1. ``{QUILL_APP_ROOT}/tools/ffmpeg`` — a copy shipped beside a portable build
        or dropped in by the user (mirrors the whisper.cpp engine layout).
-    2. ``<data>/tools/ffmpeg`` — a copy a future "Download FFmpeg" action installs.
+    2. ``<exe dir>/tools/ffmpeg`` — the shared runtime's (or portable bundle's)
+       own folder. An app started straight through ``QuillVilleRuntime.exe`` --
+       a taskbar pin Windows made from the running process -- has no launcher
+       to export ``QUILL_APP_ROOT``; this mirrors ``find_libmpv``.
+    3. ``<data>/tools/ffmpeg`` — a copy the Help-menu repair action installs.
     """
     dirs: list[Path] = []
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
         dirs.append(Path(app_root) / "tools" / "ffmpeg")
+    exe_dir = Path(sys.executable).parent / "tools" / "ffmpeg"
+    if exe_dir not in dirs:
+        dirs.append(exe_dir)
     dirs.append(models.app_data_dir() / "tools" / "ffmpeg")
     return dirs
 
@@ -92,6 +103,33 @@ def find_ffprobe() -> str | None:
 def ffmpeg_available() -> bool:
     """True when QUILL can convert arbitrary audio/video for transcription."""
     return find_ffmpeg() is not None
+
+
+def resolve_export_format(
+    typed_suffix: str, filter_index: int, ordered_exts: Sequence[str]
+) -> tuple[str, bool]:
+    """Pick the output format for the Generate Speech Audio save dialog (#750).
+
+    ``ordered_exts`` is the list of format ids shown as named filters in order
+    (e.g. ``["wav", "mp3", ...]``); the trailing "All files" filter occupies
+    index ``len(ordered_exts)``. ``typed_suffix`` is the suffix the user typed
+    (``output_path.suffix``), ``filter_index`` is the dialog's selected filter.
+
+    Returns ``(format_id, normalize_suffix)``:
+
+    - A recognized typed extension wins, so ``song.mp3`` typed under "All files"
+      still makes an MP3 and the user's name is kept (``normalize_suffix`` False).
+    - Otherwise the selected named filter decides and the path suffix should be
+      normalized to it (``normalize_suffix`` True).
+    - An unknown extension under "All files" falls back to WAV.
+    """
+    typed = typed_suffix.lower().lstrip(".")
+    known = set(ordered_exts)
+    if typed in known:
+        return typed, False
+    if 0 <= filter_index < len(ordered_exts):
+        return ordered_exts[filter_index], True
+    return "wav", typed != "wav"
 
 
 def build_probe_duration_command(ffprobe: str, path: Path) -> list[str]:

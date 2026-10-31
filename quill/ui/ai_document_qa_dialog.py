@@ -10,7 +10,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, dialog_alive
+from quill.ui.dpi import dip, dip_size
 
 
 class AIDocumentQADialog:
@@ -52,10 +53,12 @@ class AIDocumentQADialog:
             title=f"Document Q&A - {document_title}",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(820, 660))
+        self.dialog.SetSize(dip_size(self.dialog, 820, 660))
         self._build_ui()
 
     def _build_ui(self) -> None:
+        from quill.ui.spoken_name import set_spoken_name
+
         wx = self._wx
         root = wx.BoxSizer(wx.VERTICAL)
 
@@ -67,6 +70,7 @@ class AIDocumentQADialog:
             value=self._document_title,
         )
         self._doc_path_ctrl.SetName("Document path or title")
+        set_spoken_name(self._doc_path_ctrl, "Document path or title")
         browse_btn = wx.Button(self.dialog, label="&Browse File...")
         use_editor_btn = wx.Button(self.dialog, label="Use &Current Document")
         src_sizer.Add(self._doc_path_ctrl, 1, wx.EXPAND | wx.RIGHT, 6)
@@ -95,9 +99,9 @@ class AIDocumentQADialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SIMPLE,
         )
         self._history.SetName("Q&A history")
-        self._history.InsertColumn(0, "#", width=36)
-        self._history.InsertColumn(1, "Question", width=280)
-        self._history.InsertColumn(2, "Answer (preview)", width=360)
+        self._history.InsertColumn(0, "#", width=dip(self._history, 36))
+        self._history.InsertColumn(1, "Question", width=dip(self._history, 280))
+        self._history.InsertColumn(2, "Answer (preview)", width=dip(self._history, 360))
         root.Add(self._history, 1, wx.EXPAND | wx.ALL, 8)
 
         # Answer detail panel
@@ -108,6 +112,7 @@ class AIDocumentQADialog:
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_NONE,
         )
         self._answer_ctrl.SetName("Answer text")
+        set_spoken_name(self._answer_ctrl, "Answer")
         self._excerpt_label = wx.StaticText(self.dialog, label="")
         self._excerpt_label.Wrap(760)
         detail_sizer.Add(self._answer_ctrl, 1, wx.EXPAND | wx.ALL, 4)
@@ -131,10 +136,10 @@ class AIDocumentQADialog:
 
         # Action buttons
         btn_row = wx.BoxSizer(wx.HORIZONTAL)
-        self._copy_btn = wx.Button(self.dialog, label="&Copy Answer")
+        self._copy_btn = wx.Button(self.dialog, label="C&opy Answer")
         self._insert_btn = wx.Button(self.dialog, label="&Insert at Cursor")
         self._clear_btn = wx.Button(self.dialog, label="C&lear History")
-        self._close_btn = wx.Button(self.dialog, label="C&lose")
+        self._close_btn = wx.Button(self.dialog, label="Close")
         apply_modal_ids(
             self.dialog,
             affirmative_id=self._close_btn.GetId(),
@@ -238,11 +243,17 @@ class AIDocumentQADialog:
                 answer = self._context.ask(question, self._connection, self._api_key)
                 _wx.CallAfter(self._on_answer_done, question, answer)
             except Exception as exc:  # noqa: BLE001
-                _wx.CallAfter(self._on_answer_error, str(exc))
+                # user_facing_message: diagnosis plus the what-to-do hint for
+                # the error code, not just the raw exception text.
+                from quill.core.error_codes import user_facing_message
+
+                _wx.CallAfter(self._on_answer_error, user_facing_message(exc))
 
         threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: AI bg thread
 
     def _on_answer_done(self, question: str, answer: object) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the AI answered (#1067)
         row = self._history.GetItemCount()
         self._history.InsertItem(row, str(row + 1))
         self._history.SetItem(row, 1, question[:60])
@@ -257,8 +268,17 @@ class AIDocumentQADialog:
             self._excerpt_label.SetLabel(f"Source: {answer.source_excerpt}")
         else:
             self._excerpt_label.SetLabel("")
-        truncation = " (document was truncated at 80,000 chars)" if answer.truncated else ""
-        self._status_label.SetLabel(f"Answer received{truncation}.")
+        if answer.truncated and answer.total_chars:
+            # State the working size, not just the fact of truncation: the
+            # user must know how much of their document the answer covers.
+            status = (
+                "Answer received. The document is large, so the answer used the "
+                f"first {answer.used_chars:,} of its {answer.total_chars:,} characters."
+            )
+        else:
+            status = "Answer received."
+        self._status_label.SetLabel(status)
+        self._announce_status(status)
         self._copy_btn.Enable(True)
         if self._on_insert is not None:
             self._insert_btn.Enable(True)
@@ -268,9 +288,21 @@ class AIDocumentQADialog:
         self._wx.CallAfter(self._question_ctrl.SetFocus)
 
     def _on_answer_error(self, message: str) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the AI answered (#1067)
         self._status_label.SetLabel(f"Error: {message}")
+        self._announce_status(f"Error: {message}")
         self._working = False
         self._ask_btn.Enable(True)
+
+    def _announce_status(self, message: str) -> None:
+        """Speak a status change; the label alone is invisible to a screen reader."""
+        try:
+            from quill.platform.sr_announce import announce
+
+            announce(message)
+        except Exception:  # noqa: BLE001 - status speech is best-effort
+            pass
 
     def _on_history_select(self, event: object) -> None:
         row = self._history.GetFirstSelected()

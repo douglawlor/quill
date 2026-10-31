@@ -15,7 +15,8 @@ from quill.core.notebook_store import (
     load_notebook,
     save_notebook,
 )
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, set_accessible_name
+from quill.ui.dpi import dip_size
 from quill.ui.notebook_navigator_page import _NotebookNode, build_notebook_nodes
 
 
@@ -83,11 +84,17 @@ class NotebookUIMixin:
             if self._show_modal_dialog(dlg, "New Notebook from Folder") != wx.ID_OK:
                 return
             name = dlg.GetValue().strip() or name
+        # #1345: the folder's name goes to a *native* save panel here. On macOS
+        # an emoji-leading name was implicated in a crash inside that panel's
+        # activation, so the suggestion is sanitized; the notebook keeps the
+        # name the user typed.
+        from quill.core.paths import safe_dialog_filename
+
         with wx.FileDialog(
             self.frame,
             "Save notebook as",
             wildcard="QUILL Notebooks (*.quillnotebook)|*.quillnotebook",
-            defaultFile=f"{name}.quillnotebook",
+            defaultFile=safe_dialog_filename(name, suffix=".quillnotebook", fallback="Notebook"),
             style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
         ) as dlg:
             if self._show_modal_dialog(dlg, "Save Notebook As") != wx.ID_OK:
@@ -139,7 +146,16 @@ class NotebookUIMixin:
         self._active_notebook = nb
         if hasattr(self, "_entries_panel"):
             self._entries_panel.load(nb)
-        self._set_status(f'Notebook "{nb.name}" opened ({len(nb.entries)} entries).')
+        # A dropped entry is said, not hidden. The loader keeps a damaged
+        # notebook open rather than refusing it (#1499), and the difference
+        # between "this notebook has 39 chapters" and "one of your 40 could not
+        # be read" is one nobody can see in a list they have never counted.
+        dropped = getattr(nb, "unreadable_entries", 0)
+        message = f'Notebook "{nb.name}" opened ({len(nb.entries)} entries).'
+        if dropped:
+            noun = "entry" if dropped == 1 else "entries"
+            message += f" {dropped} {noun} could not be read and were left out."
+        self._set_status(message)
         self._refresh_statusbar()
 
     def notebook_save_snapshot(self) -> None:
@@ -203,18 +219,30 @@ class NotebookUIMixin:
                 wx.OK | wx.ICON_INFORMATION,
             )
             return
-        dialog = wx.Dialog(self.frame, title="Manage Versions", size=(520, 420))
+        dialog = wx.Dialog(self.frame, title="Manage Versions", size=dip_size(self.frame, 520, 420))
         outer = wx.BoxSizer(wx.VERTICAL)
         outer.Add(wx.StaticText(dialog, label="Versions:"), 0, wx.ALL, 8)
         listbox = wx.ListBox(dialog, style=wx.LB_SINGLE)
-        for snap in getattr(nb, "snapshots", []):
+        set_accessible_name(listbox, "Versions")
+        snapshots = getattr(nb, "snapshots", [])
+        for snap in snapshots:
             created = getattr(snap, "created", "")[:10]
             listbox.Append(f"{snap.name}  ({created})", snap.id)
+        if not snapshots:
+            # A silently empty list gives a screen-reader user no explanation --
+            # a placeholder row (kept focusable, unlike main_frame_sessions.py's
+            # disabled-item pattern, so the text is actually announced) plus
+            # disabled Rename/Delete matches the "(No open documents in
+            # workspace)" precedent elsewhere in this codebase.
+            listbox.Append("(No versions saved yet)", None)
         outer.Add(listbox, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         btn_rename = wx.Button(dialog, label="Re&name")
         btn_delete = wx.Button(dialog, label="&Delete")
         btn_close = wx.Button(dialog, wx.ID_CLOSE, label="&Close")
+        if not snapshots:
+            btn_rename.Enable(False)
+            btn_delete.Enable(False)
         btn_sizer.Add(btn_rename, 0, wx.RIGHT, 4)
         btn_sizer.Add(btn_delete, 0, wx.RIGHT, 4)
         btn_sizer.Add(btn_close, 0)

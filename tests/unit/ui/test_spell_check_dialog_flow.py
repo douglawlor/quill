@@ -11,13 +11,24 @@ from pathlib import Path
 
 
 def _main_frame_source() -> str:
-    return Path("quill/ui/main_frame.py").read_text(encoding="utf-8")
+    # The spellcheck commands live in the SpellcheckCommandsMixin module
+    # (extracted from main_frame.py, CQ-1).
+    return Path("quill/ui/main_frame_spellcheck.py").read_text(encoding="utf-8")
 
 
 def _spell_dialog_body() -> str:
+    """F7's own two methods, and nothing after them.
+
+    Bounded by ``_misspelling_context_text`` rather than by
+    ``_choose_misspelling_with_context``, which was deleted on 2026-09-16 -- a
+    whole dialog method with no callers left. A source-contract test that slices
+    between two names has to be told when one of them goes, and this one was
+    not: every assertion in the file raised ValueError instead of failing on
+    what it was actually about.
+    """
     source = _main_frame_source()
     start = source.index("def open_spell_check_dialog")
-    end = source.index("def _choose_misspelling_with_context")
+    end = source.index("def _misspelling_context_text")
     return source[start:end]
 
 
@@ -43,13 +54,30 @@ def test_f7_reports_no_issues_when_clean() -> None:
     assert "No misspellings found" in body
 
 
+def test_no_misspellings_announced_once() -> None:
+    # #728: "No misspellings found" was spoken twice -- _set_status already
+    # announces the message, and a redundant explicit _announce spoke it again.
+    # The clean path must announce exactly once, via _set_status only.
+    body = _spell_dialog_body()
+    assert 'self._set_status("No misspellings found.")' in body
+    assert 'self._announce("No misspellings found.")' not in body
+
+
 def test_f7_invalidates_dictionary_cache_on_close() -> None:
     body = _spell_dialog_body()
     assert "_invalidate_spell_dictionary_cache" in body
 
 
-def test_multi_word_chooser_button_names_the_corrections_action() -> None:
-    """The original multi-word chooser still uses 'Show Corrections...' (unchanged)."""
+def test_the_old_multi_word_chooser_is_gone() -> None:
+    """It went with ``_choose_misspelling_with_context`` on 2026-09-16.
+
+    This test used to assert the chooser's "Show Corrections..." button, which
+    was the right assertion while the dialog had callers. It had none: the
+    guided review replaced it and nothing removed the dead half, so the button
+    was pinned in place by a test for a window nobody could open. What is worth
+    asserting now is the absence -- a second spelling dialog growing back is how
+    a pair drifts (bad.md 7.1).
+    """
     source = _main_frame_source()
-    assert 'label="Show Corrections..."' in source
-    assert 'label="Review Word"' not in source
+    assert 'label="Show Corrections..."' not in source
+    assert "_choose_misspelling_with_context" not in source

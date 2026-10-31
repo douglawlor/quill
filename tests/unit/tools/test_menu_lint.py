@@ -5,6 +5,7 @@ from __future__ import annotations
 from quill.tools.menu_lint import (
     _check_ctrl_alt,
     _check_depth,
+    _check_no_literal_double_ampersand,
     _check_required_clusters,
     run_checks,
 )
@@ -114,17 +115,17 @@ def _fake_menu_source(*labels: str) -> str:
 
 
 def test_required_clusters_present() -> None:
-    # All nine required cluster labels, each passed to a real AppendSubMenu call.
+    # All required cluster labels, each passed to a real AppendSubMenu call.
+    # (AI is now a top-level menu, not a Tools cluster.)
     fake = _fake_menu_source(
-        "R&eading && Dictation",
+        "R&eading and Dictation",
         "C&omparison",
         "&Watch Folder",
-        "AI &Assistant",
-        "&Advanced",
+        "A&dvanced",
         "&Quillins",
         "A&ccessibility",
-        "&Customize && Support",
-        "&Writing && Language",
+        "C&ustomize and Support",
+        "&Writing and Language",
     )
     assert _check_required_clusters(fake) == []
 
@@ -137,14 +138,13 @@ def test_required_clusters_missing_reports_error() -> None:
 
 def test_required_clusters_missing_writing_language() -> None:
     fake = _fake_menu_source(
-        "R&eading && Dictation",
+        "R&eading and Dictation",
         "C&omparison",
         "&Watch Folder",
-        "AI &Assistant",
-        "&Advanced",
+        "A&dvanced",
         "&Quillins",
         "A&ccessibility",
-        "&Customize && Support",
+        "C&ustomize and Support",
     )
     errors = _check_required_clusters(fake)
     assert any("Writing" in e for e in errors)
@@ -153,9 +153,9 @@ def test_required_clusters_missing_writing_language() -> None:
 def test_required_clusters_comment_mention_does_not_satisfy_gate() -> None:
     """Regression for #286: the old substring check would pass if a cluster's
     label text merely appeared in a comment. The AST check must not."""
-    fake = '# TODO: rename the "AI &Assistant" cluster someday\nimport wx\n'
+    fake = '# TODO: rename the "&Watch Folder" cluster someday\nimport wx\n'
     errors = _check_required_clusters(fake)
-    assert any("AI Assistant" in e for e in errors)
+    assert any("Watch Folder" in e for e in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +205,43 @@ def test_depth_root_menus_ignored() -> None:
         "    file_menu.AppendSubMenu(recent_menu, 'Recent')\n"
     )
     assert _check_depth(src) == []
+
+
+# ---------------------------------------------------------------------------
+# #876: submenu labels must not contain a literal "&&"
+# ---------------------------------------------------------------------------
+
+
+def test_no_double_ampersand_clean_source_passes() -> None:
+    src = (
+        "def build():\n"
+        "    m = wx.Menu()\n"
+        "    sub = wx.Menu()\n"
+        "    m.AppendSubMenu(sub, _('&Writing and Language'))\n"
+    )
+    assert _check_no_literal_double_ampersand(src) == []
+
+
+def test_no_double_ampersand_detects_violation() -> None:
+    """#876: NVDA read submenu headers like 'Writing & Language' as literal
+    'Writing && Language' -- the double-ampersand escape did not collapse to
+    a single '&' the way it does for leaf menu items. Fixed by not relying on
+    the '&&' escape in submenu header labels at all."""
+    src = (
+        "def build():\n"
+        "    m = wx.Menu()\n"
+        "    sub = wx.Menu()\n"
+        "    m.AppendSubMenu(sub, _('&Writing && Language'))\n"
+    )
+    errors = _check_no_literal_double_ampersand(src)
+    assert any("Writing" in e for e in errors)
+
+
+def test_no_double_ampersand_ignores_non_submenu_calls() -> None:
+    # A literal "&&" elsewhere (e.g. a leaf menu item via _menu_label) is not
+    # this gate's concern -- only AppendSubMenu headers are checked.
+    src = "def build():\n    x = _('Dictation &History && Review...')\n"
+    assert _check_no_literal_double_ampersand(src) == []
 
 
 # ---------------------------------------------------------------------------

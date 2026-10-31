@@ -28,8 +28,38 @@ without ever calling ``ShowModal``.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
 import quill.ui.main_frame as main_frame_module
+import quill.ui.main_frame_crash_recovery as recovery_module  # F-08: moved, 2026-10-03
+import quill.ui.main_frame_onboarding_flow as onboarding_module  # F-08: moved, 2026-10-03
 from quill.ui.main_frame import MainFrame
+
+
+@pytest.fixture(autouse=True)
+def _established_data_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Give every test here a data dir the user is already established in.
+
+    These tests are about the first-run *wizard*. They are not about the other
+    first-run prompt: when the current data dir has no ``keymap.json``, QUILL
+    offers to import a previous installation's data, and that offer reaches
+    ``wx.MessageDialog`` -- which the ``_Wx`` stub below has never had, because
+    on a developer machine the offer never gets that far. An established
+    ``%APPDATA%\Quill`` makes :func:`detect_importable_legacy_dir` return
+    ``None`` at its first check, so the prompt is skipped and nobody notices.
+
+    On a machine with no prior install -- every CI runner -- it is not skipped,
+    and five tests fail with ``'_Wx' object has no attribute 'MessageDialog'``
+    on a dialog they were never about. Writing a ``keymap.json`` here removes
+    the machine from the test rather than teaching the stub about a dialog the
+    test does not care whether it sees.
+    """
+    data = tmp_path / "quill-data"
+    data.mkdir()
+    (data / "keymap.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("QUILL_DATA_DIR", str(data))
 
 
 class _Frame:
@@ -92,7 +122,7 @@ def test_trust_consent_decline_does_not_record_consent(monkeypatch) -> None:
     frame = _build_frame()
     frame._show_modal_dialog = lambda dialog, title: _Wx.ID_NO
     marked: list[int] = []
-    monkeypatch.setattr(main_frame_module, "mark_trust_consent_complete", lambda: marked.append(1))
+    monkeypatch.setattr(onboarding_module, "mark_trust_consent_complete", lambda: marked.append(1))
 
     class _Dialog:
         def __init__(self, *a, **k) -> None:
@@ -116,7 +146,7 @@ def test_trust_consent_accept_records_consent(monkeypatch) -> None:
     frame = _build_frame()
     frame._show_modal_dialog = lambda dialog, title: _Wx.ID_YES
     marked: list[int] = []
-    monkeypatch.setattr(main_frame_module, "mark_trust_consent_complete", lambda: marked.append(1))
+    monkeypatch.setattr(onboarding_module, "mark_trust_consent_complete", lambda: marked.append(1))
 
     class _Dialog:
         def __init__(self, *a, **k) -> None:
@@ -236,11 +266,9 @@ def test_crash_recovery_offloads_snapshot_io_to_background(monkeypatch) -> None:
 
     # Pre-mock read_recovery_snapshot + app_data_dir so the prepare worker is
     # safe to call synchronously.
+    monkeypatch.setattr(recovery_module, "app_data_dir", lambda: __import__("pathlib").Path("/tmp"))
     monkeypatch.setattr(
-        main_frame_module, "app_data_dir", lambda: __import__("pathlib").Path("/tmp")
-    )
-    monkeypatch.setattr(
-        main_frame_module,
+        recovery_module,
         "read_recovery_snapshot",
         lambda _p: ("line1\nline2\nline3", False),
     )
@@ -275,11 +303,9 @@ def test_crash_recovery_prepare_failure_is_reported_via_startup_failure(monkeypa
     frame._show_crash_recovery_dialog = lambda *a, **k: show_calls.append((a, k))
     failures: list[str] = []
     frame._report_startup_task_failure = lambda label: failures.append(label)
+    monkeypatch.setattr(recovery_module, "app_data_dir", lambda: __import__("pathlib").Path("/tmp"))
     monkeypatch.setattr(
-        main_frame_module, "app_data_dir", lambda: __import__("pathlib").Path("/tmp")
-    )
-    monkeypatch.setattr(
-        main_frame_module,
+        recovery_module,
         "read_recovery_snapshot",
         lambda _p: (_ for _ in ()).throw(OSError("boom")),
     )

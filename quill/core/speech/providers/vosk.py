@@ -27,7 +27,6 @@ import hashlib
 import json
 import os
 import shutil
-import ssl
 import tempfile
 import urllib.request
 import wave
@@ -37,6 +36,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from quill.core.net import verified_ssl_context
 from quill.core.speech import catalog, models
 from quill.core.speech.provider import (
     InstalledSpeechModel,
@@ -52,7 +52,7 @@ from quill.core.speech.provider import (
 
 PROVIDER_ID = "vosk"
 
-_VERIFIED_TLS = ssl.create_default_context()
+_VERIFIED_TLS = verified_ssl_context()
 _DOWNLOAD_TIMEOUT_S = 60.0
 
 
@@ -92,6 +92,24 @@ def result_from_vosk(chunks: Iterable[Any]) -> tuple[str, tuple[TranscriptionSeg
 
 def _model_dir(model_id: str) -> Path:
     return models.models_root() / PROVIDER_ID / model_id
+
+
+def _bundled_model_dir(model_id: str) -> Path | None:
+    """A Vosk model shipped with the app, if one is present for *model_id*.
+
+    The build stages the small English model under
+    ``{app}/speech-models-bundled/vosk/`` (see ``_stage_vosk_model`` in
+    ``scripts/build_windows_distribution.py``), the same shape whisper.cpp's
+    and Piper's bundled assets already use. It is there for **chapters**: a
+    40 MB engine that works on first launch with no download is the difference
+    between a feature people meet and one they have to go and find. Returns
+    None on a source run or any build that did not stage it.
+    """
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if not app_root:
+        return None
+    candidate = Path(app_root) / "speech-models-bundled" / PROVIDER_ID / model_id
+    return candidate if candidate.is_dir() else None
 
 
 def _vosk_model_root(model_dir: Path) -> Path | None:
@@ -206,7 +224,13 @@ class VoskProvider:
     def _ensure_model(self, model_id: str) -> Any:
         if self._model is not None and self._loaded_model_id == model_id:
             return self._model
+        # A user-downloaded copy first, then the one shipped with the app --
+        # the same precedence whisper.cpp uses, so replacing a bundled model
+        # with a better one is possible and never silently ignored.
         root = _vosk_model_root(_model_dir(model_id))
+        if root is None:
+            bundled = _bundled_model_dir(model_id)
+            root = _vosk_model_root(bundled) if bundled is not None else None
         if root is None:
             raise SpeechError(
                 f"The '{model_id}' Vosk model is not installed. "

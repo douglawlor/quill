@@ -12,13 +12,22 @@ import functools
 import logging
 import time
 
-import regex
+try:
+    import regex
+
+    _HAVE_REGEX = True
+except ImportError:  # the app must still start without it (PR #1618, qc.md X-08)
+    import re as regex  # type: ignore[no-redef]
+
+    _HAVE_REGEX = False
+
+from quill.core.error_codes import CodedError
 
 logger = logging.getLogger(__name__)
 
 
-class RegexTimeoutError(Exception):
-    pass
+class RegexTimeoutError(CodedError):
+    code = "QUILL-STABILITY-REGEX-TIMEOUT"
 
 
 @functools.lru_cache(maxsize=128)
@@ -36,7 +45,11 @@ def safe_finditer(
     started = time.monotonic()
     try:
         compiled = _compile_cached(pattern, flags)
-        matches = list(compiled.finditer(text, timeout=timeout_seconds))
+        matches = list(
+            compiled.finditer(text, timeout=timeout_seconds)
+            if _HAVE_REGEX
+            else compiled.finditer(text)  # stdlib re has no timeout
+        )
         duration_ms = (time.monotonic() - started) * 1000
         logger.info(
             "Regex search completed pattern_length=%d text_length=%d matches=%d duration_ms=%.1f",
@@ -71,7 +84,11 @@ def safe_subn(
     started = time.monotonic()
     try:
         compiled = _compile_cached(pattern, flags)
-        updated, count = compiled.subn(replacement, text, timeout=timeout_seconds)
+        updated, count = (
+            compiled.subn(replacement, text, timeout=timeout_seconds)
+            if _HAVE_REGEX
+            else compiled.subn(replacement, text)
+        )
         duration_ms = (time.monotonic() - started) * 1000
         logger.info(
             (

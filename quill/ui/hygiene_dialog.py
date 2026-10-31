@@ -9,6 +9,8 @@ import wx
 from quill.core.hygiene.findings import HygieneFinding
 from quill.core.i18n import _
 from quill.ui.dialog_contract import apply_modal_ids, show_message_box
+from quill.ui.dpi import dip, dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 _CONFIDENCE_LABEL = {
     "high": "High confidence",
@@ -84,8 +86,8 @@ class HygieneReviewDialog:
     # ------------------------------------------------------------------
 
     def _build(self, dlg: wx.Dialog) -> None:
-        dlg.SetMinSize((560, 440))
-        dlg.SetSize((700, 520))
+        dlg.SetMinSize(dip_size(dlg, 560, 440))
+        dlg.SetSize(dip_size(dlg, 700, 520))
         dlg.SetName("Quill Eraser Review")
 
         root = wx.BoxSizer(wx.VERTICAL)
@@ -104,10 +106,10 @@ class HygieneReviewDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.LC_HRULES,
         )
         self._list.SetName("Findings list")
-        self._list.InsertColumn(0, _("#"), width=40)
-        self._list.InsertColumn(1, _("Confidence"), width=120)
-        self._list.InsertColumn(2, _("Issue"), width=260)
-        self._list.InsertColumn(3, _("Line"), width=60)
+        self._list.InsertColumn(0, _("#"), width=dip(self._list, 40))
+        self._list.InsertColumn(1, _("Confidence"), width=dip(self._list, 120))
+        self._list.InsertColumn(2, _("Issue"), width=dip(self._list, 260))
+        self._list.InsertColumn(3, _("Line"), width=dip(self._list, 60))
         root.Add(self._list, 2, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
         # --- Detail pane ---
@@ -119,6 +121,7 @@ class HygieneReviewDialog:
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
         )
         self._detail.SetName("Issue detail")
+        set_spoken_name(self._detail, "Issue detail")
         detail_box.Add(self._detail, 1, wx.EXPAND | wx.ALL, 4)
 
         root.Add(detail_box, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)

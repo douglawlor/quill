@@ -19,7 +19,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.accessible_names import set_accessible_name
+from quill.ui.dialog_contract import (
+    apply_modal_ids,
+    focus_primary_control,
+    ok_cancel_platform_order,
+)
+from quill.ui.dpi import dip_size
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,6 +46,7 @@ class VoiceBrowserResult:
     dectalk_rate: int = 200
     kokoro_speed: float = 1.0
     espeak_rate: int = 175
+    macos_rate: int = 175
 
 
 class VoiceBrowserDialog:
@@ -63,8 +70,8 @@ class VoiceBrowserDialog:
         ``_preview_voice`` method.
     engine_available:
         ``{engine_id: bool}`` mapping — True when the engine binary / packages are
-        installed and ready. Engines marked False show a "Download Engine" button
-        instead of the voice list action button. Defaults to all-True when omitted.
+        installed and ready. Missing downloadable engines show a "Download Engine"
+        button; DECtalk must be installed separately. Defaults to all-True when omitted.
     embed_in:
         When given, build the UI into this existing ``wx.Panel`` instead of
         creating a new ``wx.Dialog``.  In this mode ``show()`` must not be called;
@@ -83,7 +90,9 @@ class VoiceBrowserDialog:
         piper_model_dir: Path,
         settings: object,
         preview_fn: Callable[..., None],
+        preview_stop_fn: Callable[[], None] | None = None,
         engine_available: dict[str, bool] | None = None,
+        elevenlabs_api_key: str = "",
         has_preview_sample: Callable[[str, str], bool] | None = None,
         embed_in: object | None = None,
         on_action: Callable[[VoiceBrowserResult], None] | None = None,
@@ -97,7 +106,10 @@ class VoiceBrowserDialog:
         self._current_engine = current_engine
         self._piper_model_dir = piper_model_dir
         self._settings = settings
+        self._elevenlabs_api_key = elevenlabs_api_key
         self._preview_fn = preview_fn
+        self._preview_stop_fn = preview_stop_fn or (lambda: None)
+        self._previewing = False
         self._engine_available: dict[str, bool] = engine_available or {}
         # Whether a bundled pre-recorded preview clip exists for (engine, voice).
         self._has_preview_sample = has_preview_sample or (lambda _e, _v: False)
@@ -116,8 +128,8 @@ class VoiceBrowserDialog:
                 title="Manage Voices & Reading Aloud",
                 style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
             )
-            self.dialog.SetMinSize(wx.Size(580, 520))
-            self.dialog.SetSize(wx.Size(680, 600))
+            self.dialog.SetMinSize(dip_size(self.dialog, 580, 520))
+            self.dialog.SetSize(dip_size(self.dialog, 680, 600))
             self._root = self.dialog
             self._embed_mode = False
 
@@ -160,11 +172,11 @@ class VoiceBrowserDialog:
         root.Add(filter_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
 
         # Voice list.
-        voices_lbl = wx.StaticText(parent, label="&Voices (use the Preview button to hear one):")
+        voices_lbl = wx.StaticText(parent, label="Voices (&use the Preview button to hear one):")
         root.Add(voices_lbl, 0, wx.LEFT | wx.TOP, 10)
         self._voice_lb = wx.ListBox(parent, style=wx.LB_SINGLE)
         self._voice_lb.SetName("Voices")
-        self._voice_lb.SetMinSize(wx.Size(-1, 160))
+        self._voice_lb.SetMinSize(dip_size(self._voice_lb, -1, 160))
         root.Add(self._voice_lb, 1, wx.EXPAND | wx.ALL, 10)
 
         # Voice detail.
@@ -181,7 +193,10 @@ class VoiceBrowserDialog:
         self._rate_spin = wx.SpinCtrl(
             sb, min=75, max=650, initial=getattr(s, "read_aloud_rate", 175)
         )
-        self._rate_spin.SetName("Rate (words per minute)")
+        # support#69: a wx.SpinCtrl is a composite; VoiceOver focuses the inner
+        # TextCtrl, which does not inherit the parent's SetName. The helper
+        # names both so the number box is announced with its label.
+        set_accessible_name(self._rate_spin, "Rate (words per minute)")
         rate_row.Add(self._rate_lbl, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         rate_row.Add(self._rate_spin, 1, wx.EXPAND)
         settings_box.Add(rate_row, 0, wx.EXPAND | wx.ALL, 4)
@@ -191,7 +206,7 @@ class VoiceBrowserDialog:
         self._vol_spin = wx.SpinCtrl(
             sb, min=0, max=100, initial=getattr(s, "read_aloud_volume", 100)
         )
-        self._vol_spin.SetName("Volume")
+        set_accessible_name(self._vol_spin, "Volume (0 to 100)")
         vol_row.Add(self._vol_lbl, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         vol_row.Add(self._vol_spin, 1, wx.EXPAND)
         settings_box.Add(vol_row, 0, wx.EXPAND | wx.ALL, 4)
@@ -201,7 +216,7 @@ class VoiceBrowserDialog:
         self._pitch_spin = wx.SpinCtrl(
             sb, min=0, max=100, initial=getattr(s, "read_aloud_pitch", 50)
         )
-        self._pitch_spin.SetName("Pitch")
+        set_accessible_name(self._pitch_spin, "Pitch (0 to 100)")
         pitch_row.Add(self._pitch_lbl, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         pitch_row.Add(self._pitch_spin, 1, wx.EXPAND)
         settings_box.Add(pitch_row, 0, wx.EXPAND | wx.ALL, 4)
@@ -211,17 +226,13 @@ class VoiceBrowserDialog:
         self._kok_spin = wx.SpinCtrlDouble(
             sb, min=0.5, max=2.0, initial=getattr(s, "read_aloud_kokoro_speed", 1.0), inc=0.1
         )
-        self._kok_spin.SetName("Speed multiplier")
-        for _child in self._kok_spin.GetChildren():
-            if isinstance(_child, wx.TextCtrl):
-                _child.SetName("Speed multiplier")
-                break
+        set_accessible_name(self._kok_spin, "Speed multiplier")
         kok_row.Add(self._kok_lbl, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         kok_row.Add(self._kok_spin, 1, wx.EXPAND)
         settings_box.Add(kok_row, 0, wx.EXPAND | wx.ALL, 4)
 
         # eSpeak voice character variant (appended as accent+variant).
-        from quill.core.read_aloud import ESPEAK_VARIANTS as _ev
+        from quill.core.voice_catalog import ESPEAK_VARIANTS as _ev
 
         self._espeak_variant_codes = [code for code, _ in _ev]
         self._espeak_variant_labels = [label for _, label in _ev]
@@ -251,16 +262,21 @@ class VoiceBrowserDialog:
         self._download_btn.SetName("Download voice model")
         self._export_btn = wx.Button(parent, label="E&xport to Audio File...")
         self._export_btn.SetName("Export document to audio file")
+        self._set_default_btn = wx.Button(parent, label="&Set as Default")
+        self._set_default_btn.SetName("Set selected voice as default")
         btn_row.Add(self._preview_btn, 0, wx.RIGHT, 6)
         btn_row.Add(self._download_btn, 0, wx.RIGHT, 6)
         btn_row.Add(self._export_btn, 0, wx.RIGHT, 6)
+        btn_row.Add(self._set_default_btn, 0, wx.RIGHT, 6)
 
         if not self._embed_mode:
             ok_btn = wx.Button(parent, id=wx.ID_OK)
             cancel_btn = wx.Button(parent, id=wx.ID_CANCEL)
             btn_row.AddStretchSpacer()
-            btn_row.Add(ok_btn, 0, wx.RIGHT, 6)
-            btn_row.Add(cancel_btn, 0)
+            # #53: native button order -- Cancel-left/OK-right on macOS.
+            first_btn, second_btn = ok_cancel_platform_order(ok_btn, cancel_btn)
+            btn_row.Add(first_btn, 0, wx.RIGHT, 6)
+            btn_row.Add(second_btn, 0)
             apply_modal_ids(parent, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
 
         root.Add(btn_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
@@ -276,6 +292,8 @@ class VoiceBrowserDialog:
         self._preview_btn.Bind(wx.EVT_BUTTON, lambda _e: self._do_preview())
         self._download_btn.Bind(wx.EVT_BUTTON, lambda _e: self._do_download())
         self._export_btn.Bind(wx.EVT_BUTTON, lambda _e: self._do_export())
+        self._set_default_btn.Bind(wx.EVT_BUTTON, lambda _e: self._do_set_default())
+        self._voice_lb.Bind(wx.EVT_CONTEXT_MENU, lambda _e: self._show_voice_context_menu())
 
         # Preview is the primary action after picking a voice, so place it right
         # after the voice list in tab order (without moving it visually) (#700).
@@ -297,8 +315,10 @@ class VoiceBrowserDialog:
 
         from quill.core.read_aloud import (
             list_dectalk_voices,
-            list_espeak_english_voices,
+            list_elevenlabs_voices,
+            list_espeak_voices,
             list_kokoro_voices,
+            list_macos_voices,
             list_piper_catalog_voices,
             list_voices,
         )
@@ -310,10 +330,14 @@ class VoiceBrowserDialog:
         if eng == "kokoro":
             return list_kokoro_voices()
         if eng == "espeak":
-            return list_espeak_english_voices()
-        # sapi5 — English-only system voices
-        all_v = list_voices()
-        return [v for v in all_v if "english" in v.name.lower() or not v.name] or all_v
+            return list_espeak_voices()
+        if eng == "macos":
+            return list_macos_voices()
+        if eng == "elevenlabs":
+            return list_elevenlabs_voices(self._elevenlabs_api_key)
+        # sapi5 — every installed system voice, whatever its language, so a
+        # user with (say) an Italian Windows voice can pick it (#813 follow-on).
+        return list_voices()
 
     def _current_voice_id_for(self, eng: str) -> str:
         from pathlib import Path as _Path
@@ -329,6 +353,10 @@ class VoiceBrowserDialog:
         if eng == "espeak":
             raw = str(getattr(s, "read_aloud_espeak_voice", "") or "en-gb")
             return raw.split("+")[0]  # strip stored variant for list matching
+        if eng == "macos":
+            return str(getattr(s, "read_aloud_macos_voice", "") or "")
+        if eng == "elevenlabs":
+            return str(getattr(s, "read_aloud_elevenlabs_voice", "") or "")
         return str(getattr(s, "read_aloud_voice", "") or "")
 
     def _espeak_combined_voice_id(self, accent_id: str) -> str:
@@ -381,7 +409,7 @@ class VoiceBrowserDialog:
 
     def _update_settings_panel(self, eng: str) -> None:
         s = self._settings
-        has_rate = eng in {"sapi5", "dectalk", "espeak"}
+        has_rate = eng in {"sapi5", "dectalk", "espeak", "macos"}
         has_vol_pitch = eng == "sapi5"
         has_kokoro = eng == "kokoro"
         has_any = has_rate or has_vol_pitch or has_kokoro
@@ -395,6 +423,9 @@ class VoiceBrowserDialog:
         elif eng == "espeak":
             self._rate_spin.SetRange(80, 450)
             self._rate_spin.SetValue(getattr(s, "read_aloud_espeak_rate", 175))
+        elif eng == "macos":
+            self._rate_spin.SetRange(80, 450)
+            self._rate_spin.SetValue(getattr(s, "read_aloud_macos_rate", 175))
 
         if has_vol_pitch:
             self._vol_spin.SetValue(getattr(s, "read_aloud_volume", 100))
@@ -423,16 +454,16 @@ class VoiceBrowserDialog:
         self._settings_sb.Show(has_any)
 
         eng_ok = self._engine_available.get(eng, True)
-        if eng == "dectalk" and not eng_ok:
-            self._download_btn.SetLabel("&Download DECtalk Engine (~30 MB)...")
-            self._download_btn.Show(True)
-        elif eng == "piper" and not eng_ok:
-            self._download_btn.SetLabel("&Download Piper Engine (~10 MB)...")
+        if eng == "piper" and not eng_ok:
+            self._download_btn.SetLabel("&Download Piper Engine (~22 MB)...")
             self._download_btn.Show(True)
         elif eng == "piper":
             self._download_btn.SetLabel("&Download Piper Voice...")
             self._download_btn.Show(True)
-        elif eng == "kokoro":
+        elif eng == "kokoro" and not eng_ok:
+            # Kokoro ships as one pack; once the models are downloaded there is
+            # nothing more to fetch, so hide the button rather than offer a
+            # redundant 114 MB re-download.
             self._download_btn.SetLabel("&Download Kokoro — all voices, one pack (~114 MB)...")
             self._download_btn.Show(True)
         elif eng == "espeak" and not eng_ok:
@@ -486,7 +517,7 @@ class VoiceBrowserDialog:
         detail = " · ".join(parts)
         if not eng_ok:
             _NOT_READY_MSG = {
-                "dectalk": "DECtalk is not installed. Use the download button to get it.",
+                "dectalk": "DECtalk is not installed. QUILL does not distribute it.",
                 "piper": "Piper is not installed. Use the download button to get it.",
                 "espeak": "eSpeak-NG is not installed. Use the download button to get it.",
                 "kokoro": "Kokoro models are not downloaded. Use the download button to get them.",
@@ -498,8 +529,10 @@ class VoiceBrowserDialog:
             detail = f"{detail} — {not_dl}" if detail else not_dl
         self._detail_lbl.SetLabel(detail)
         # Preview works when the voice is ready (real synthesis) or when a
-        # bundled sample clip exists for it.
-        self._preview_btn.Enable(ready or has_sample)
+        # bundled sample clip exists for it. Stays enabled whenever a preview
+        # is actually running, even if the newly-selected row isn't ready --
+        # otherwise the Stop button goes disabled out from under the user.
+        self._preview_btn.Enable(ready or has_sample or self._previewing)
         # Rate/volume/pitch/speed/character apply to real synthesis only.
         self._set_voice_settings_enabled(ready)
 
@@ -516,6 +549,9 @@ class VoiceBrowserDialog:
         return self._engine_available.get(eng, True) and bool(getattr(voice, "installed", True))
 
     def _do_preview(self) -> None:
+        if self._previewing:
+            self._stop_preview()
+            return
         idx = self._voice_lb.GetSelection()
         wx = self._wx
         if idx == wx.NOT_FOUND or idx >= len(self._displayed_voices):
@@ -528,7 +564,42 @@ class VoiceBrowserDialog:
         if not ready and not self._has_preview_sample(eng, v.id):
             return
         voice_id = self._espeak_combined_voice_id(v.id) if eng == "espeak" else v.id
-        self._preview_fn(eng, voice_id, live=ready)
+        # Push the current rate/speed/volume controls into the shared settings
+        # object the preview reads, so a live preview reflects them. Without this
+        # the preview honored only the last SAVED values, so moving a control did
+        # nothing until the dialog was closed with Save / Set as Default.
+        if ready:
+            self._apply_preview_settings(eng)
+        self._preview_fn(eng, voice_id, live=ready, on_state_change=self._on_preview_state)
+
+    def _apply_preview_settings(self, eng: str) -> None:
+        """Mirror the live rate/speed/volume controls into ``self._settings`` (the
+        same object the preview synthesizer reads) so Preview reflects unsaved
+        adjustments. Only the current engine's rate is written; Kokoro uses its
+        own speed spin; Piper exposes no rate control so nothing is written."""
+        s = self._settings
+        s.read_aloud_volume = self._vol_spin.GetValue()
+        s.read_aloud_kokoro_speed = self._kok_spin.GetValue()
+        rate = self._rate_spin.GetValue()
+        if eng == "sapi5":
+            s.read_aloud_rate = rate
+        elif eng == "dectalk":
+            s.read_aloud_dectalk_rate = rate
+        elif eng == "espeak":
+            s.read_aloud_espeak_rate = rate
+        elif eng == "macos":
+            s.read_aloud_macos_rate = rate
+
+    def _on_preview_state(self, state: str) -> None:
+        """Toggle the Preview button between its idle and Stop labels."""
+        self._previewing = state in ("generating", "playing")
+        label = "&Stop Preview" if self._previewing else "&Preview Selected Voice"
+        self._preview_btn.SetLabel(label)
+
+    def _stop_preview(self) -> None:
+        """Cancel the active preview via the same path a new preview would use."""
+        self._preview_stop_fn()
+        self._on_preview_state("idle")
 
     def _do_download(self) -> None:
         eng = self._current_engine_id()
@@ -568,6 +639,29 @@ class VoiceBrowserDialog:
         )
         self._dispatch_action(result)
 
+    def _do_set_default(self) -> None:
+        """Make the selected engine+voice the Read Aloud default without
+        closing the dialog -- the same result OK produces, just explicit and
+        reachable mid-session (#847 Set as Default)."""
+        self._dispatch_action(self.collect_result())
+
+    def _show_voice_context_menu(self) -> None:
+        """Right-click on a voice row: the same actions as the buttons below,
+        reached without leaving the list (keyboard: Shift+F10 / Menu key)."""
+        wx = self._wx
+        idx = self._voice_lb.GetSelection()
+        if idx == wx.NOT_FOUND or idx >= len(self._displayed_voices):
+            return
+        menu = wx.Menu()
+        preview_item = menu.Append(wx.ID_ANY, "&Preview")
+        default_item = menu.Append(wx.ID_ANY, "Set as &Default")
+        download_item = menu.Append(wx.ID_ANY, "D&ownload Voice...")
+        menu.Bind(wx.EVT_MENU, lambda _e: self._do_preview(), preview_item)
+        menu.Bind(wx.EVT_MENU, lambda _e: self._do_set_default(), default_item)
+        menu.Bind(wx.EVT_MENU, lambda _e: self._do_download(), download_item)
+        self._voice_lb.PopupMenu(menu)
+        menu.Destroy()
+
     def _dispatch_action(self, result: VoiceBrowserResult) -> None:
         if self._embed_mode and self._on_action is not None:
             self._on_action(result)
@@ -591,6 +685,11 @@ class VoiceBrowserDialog:
                 self._rate_spin.GetValue()
                 if eng == "espeak"
                 else getattr(s, "read_aloud_espeak_rate", 175)
+            ),
+            "macos_rate": (
+                self._rate_spin.GetValue()
+                if eng == "macos"
+                else getattr(s, "read_aloud_macos_rate", 175)
             ),
         }
 
@@ -617,6 +716,7 @@ class VoiceBrowserDialog:
         """Open the dialog. Returns what the user chose, or None on cancel."""
         if self._embed_mode:
             raise RuntimeError("VoiceBrowserDialog.show() cannot be called in embed mode")
+        focus_primary_control(self.dialog)
         result_code = show_modal_dialog(self.dialog, "Manage Voices & Reading Aloud")
         if result_code == self._wx.ID_OK and self._result is None:
             # User clicked OK without using a special action button.

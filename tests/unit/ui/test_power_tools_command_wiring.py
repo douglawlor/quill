@@ -25,6 +25,10 @@ from quill.ui.main_frame_power_tools_menu import POWER_TOOLS_COMMANDS, POWER_TOO
 _SOURCE = (
     Path(main_frame_module.__file__).read_text(encoding="utf-8")
     + "\n"
+    + Path(main_frame_module.__file__)
+    .with_name("main_frame_commands.py")
+    .read_text(encoding="utf-8")
+    + "\n"
     + Path(main_frame_menu_module.__file__).read_text(encoding="utf-8")
 )
 _MENU_SOURCE = Path(eds_menu_module.__file__).read_text(encoding="utf-8")
@@ -32,19 +36,32 @@ _MENU_SOURCE = Path(eds_menu_module.__file__).read_text(encoding="utf-8")
 # Every power-tool command id that must be both registered and menu-wired.
 _POWER_TOOLS_COMMAND_IDS = [
     "power.insert_special_character",
+    # #1488: a hard break is a marker at the end of a line and both of its
+    # spellings are impossible to type with confidence, so it needs a command.
+    "power.insert_line_break",
     "power.insert_file_content",
     "power.insert_table_of_contents",
+    "power.insert_image",
     "power.new_document_from_clipboard",
     "power.expand_abbreviation",
     "power.preview_abbreviation",
     "power.explain_abbreviation",
+    "edit.repeat_command",
+    "edit.restore_deletion",
+    "power.describe_character",
+    "power.describe_character_detail",
+    "power.describe_image_at_cursor",
+    "edit.copy_to_tray_slot",
     "power.paste_html_as_markdown",
+    "power.paste_markdown_as_html",
     "power.number_lines",
     "power.hard_wrap_lines",
     "power.delete_to_line_start",
     "power.delete_to_line_end",
     "power.delete_to_document_start",
     "power.delete_to_document_end",
+    "power.apply_auto_outline_numbering",
+    "power.remove_auto_outline_numbering",
     "power.delete_paragraph",
     "power.set_lines_first_not_second",
     "power.set_lines_common",
@@ -63,8 +80,15 @@ _POWER_TOOLS_COMMAND_IDS = [
     "power.run_target_at_cursor",
     "power.rename_current_file",
     "power.delete_current_file",
+    # Send / Copy as Email (#900)
+    "power.send_as_email",
+    "power.copy_as_email_body",
     # §4.22/§4.23 TextMonkey/EdSharp-parity additions
     "power.trim_blank_lines",
+    # Its companion, added 2026-09-10 with the shared format_ops helper
+    # QUILL Lite needed. Two commands rather than one because trimming the ends
+    # and emptying the middle are different jobs -- see the manifest comment.
+    "power.remove_blank_lines",
     "power.strip_html_tags",
     "power.decode_html_entities",
     "power.encode_html_entities",
@@ -93,14 +117,18 @@ _POWER_TOOLS_COMMAND_IDS = [
     "power.select_citation_style",
     "power.shuffle_lines",
     "power.sort_lines_numeric",
+    "power.sort_lines_by_date",
     "power.sort_lines_by_length",
-    "power.keep_unique_lines",
     "power.delete_lines_containing",
     "power.delete_lines_not_containing",
     # Copy Tray (dialog-level commands only; per-slot commands register directly
     # in MainFrame._build_commands to avoid duplicate menu entries)
     "edit.open_copy_tray",
     "edit.clear_all_tray_slots",
+    # Clip Library (#895) -- shares the copy_tray menu group as its natural
+    # neighbor; handlers live on ClipLibraryMixin, not CopyTrayMixin.
+    "edit.keep_selection_in_clip_library",
+    "edit.open_clip_library",
 ]
 
 
@@ -154,8 +182,8 @@ def test_every_command_is_menu_wired() -> None:
     assert '_append_power_tools_group(power_tools_menu, "power_tools")' in _SOURCE
     # Accept both i18n-wrapped _("...") and bare string forms.
     assert (
-        'tools_menu.AppendSubMenu(power_tools_menu, _("&Advanced"))' in _SOURCE
-        or 'tools_menu.AppendSubMenu(power_tools_menu, "&Advanced")' in _SOURCE
+        'tools_menu.AppendSubMenu(power_tools_menu, _("A&dvanced"))' in _SOURCE
+        or 'tools_menu.AppendSubMenu(power_tools_menu, "A&dvanced")' in _SOURCE
     )
     for helper in (
         "_append_power_tools_insert_items",
@@ -179,31 +207,47 @@ def test_menu_items_are_bound() -> None:
 
 
 def test_read_only_guard_protects_edit_helpers() -> None:
+    """Two helpers left in main_frame, and the one they now share.
+
+    `_apply_text_block_operation` gave its guard up on 2026-09-18 along with
+    the rest of its body: it delegates to `apply_line_tool`, which is where the
+    three line-tool helpers became one (bad.md N1, P1.16). The guard did not
+    get weaker -- it got fewer places to be forgotten.
+    """
+    import inspect
+
+    from quill.ui.main_frame_power_tools import PowerToolsActionsMixin
+
     guard = (
         "if self._document_is_read_only():\n"
         '            self._set_status("Document is read-only")\n'
         "            return"
     )
-    assert _SOURCE.count(guard) >= 3, "read-only guard missing from one of the _apply_* helpers"
+    assert _SOURCE.count(guard) >= 2, "read-only guard missing from one of the _apply_* helpers"
+    assert guard in inspect.getsource(PowerToolsActionsMixin.apply_line_tool)
 
 
 def test_event_hooks_are_wired() -> None:
     char_hook = _SOURCE[_SOURCE.index("def _on_editor_char_hook") :][:200]
     assert "if self._maybe_describe_key(event):" in char_hook
-    caret = _SOURCE[_SOURCE.index("def _on_editor_caret_activity") :][:200]
+    caret = _SOURCE[_SOURCE.index("def _on_editor_caret_activity") :][:600]
     assert "self._maybe_announce_indent()" in caret
 
 
 def test_read_only_state_refreshes_on_tab_switch() -> None:
-    activate = _SOURCE[_SOURCE.index("def _activate_tab") :][:1200]
+    # Fixed-width slice of a still-growing method; widen generously (rather
+    # than to the exact current distance) so the next unrelated addition to
+    # _activate_tab doesn't retrigger this.
+    activate = _SOURCE[_SOURCE.index("def _activate_tab") :][:2400]
     assert "self._refresh_read_only_state()" in activate
 
 
 def test_read_only_state_refreshes_on_open() -> None:
     # Newly opened/selected tabs must re-apply a persisted read-only guard.
-    # #616: the macOS branch and its explanatory comment add ~30 lines to
-    # _create_document_tab before the refresh call, so widen the slice.
-    create_tab = _SOURCE[_SOURCE.index("def _create_document_tab") :][:2700]
+    # This is a fixed-width slice of a large, still-growing method; widen it
+    # generously (rather than to the exact current distance) so the next
+    # unrelated addition to _create_document_tab doesn't retrigger this.
+    create_tab = _SOURCE[_SOURCE.index("def _create_document_tab") :][:9000]
     assert "self._refresh_read_only_state()" in create_tab
 
 
@@ -215,9 +259,28 @@ def test_command_table_is_exactly_the_expected_ids_with_no_duplicates() -> None:
 
 
 def test_every_table_handler_exists_on_the_actions_mixin() -> None:
+    from quill.ui.main_frame_classic_editor import ClassicEditorMixin
+    from quill.ui.main_frame_clip_library import ClipLibraryMixin
     from quill.ui.main_frame_copy_tray import CopyTrayMixin
+    from quill.ui.main_frame_image_alt import ImageAltMixin
     from quill.ui.main_frame_power_tools import PowerToolsActionsMixin
     from quill.ui.main_frame_power_tools_menu import _MIGRATED_HANDLERS
+
+    # The classic-editor trio (Repeat, Restore Deleted Text, Describe Character)
+    # lives on ClassicEditorMixin, extracted to keep main_frame_power_tools.py
+    # within its GATE-11 budget.
+    classic_ids = {
+        "edit.repeat_command",
+        "edit.restore_deletion",
+        "power.describe_character",
+        "power.describe_character_detail",
+    }
+    # Clip Library (#895) shares the copy_tray menu group but its handlers live
+    # on their own mixin, not CopyTrayMixin.
+    clip_library_ids = {"edit.keep_selection_in_clip_library", "edit.open_clip_library"}
+    # Image alt-text commands (#899) live on their own mixin, not
+    # PowerToolsActionsMixin.
+    image_alt_ids = {"power.insert_image", "power.describe_image_at_cursor"}
 
     for command in POWER_TOOLS_COMMANDS:
         if command.id in _MIGRATED_HANDLERS:
@@ -226,6 +289,21 @@ def test_every_table_handler_exists_on_the_actions_mixin() -> None:
             assert callable(_MIGRATED_HANDLERS[command.id])
             continue
         name = command.handler_name
+        if command.id in classic_ids:
+            assert hasattr(ClassicEditorMixin, name), (
+                f"missing handler {name} on ClassicEditorMixin for {command.id}"
+            )
+            continue
+        if command.id in image_alt_ids:
+            assert hasattr(ImageAltMixin, name), (
+                f"missing handler {name} on ImageAltMixin for {command.id}"
+            )
+            continue
+        if command.id in clip_library_ids:
+            assert hasattr(ClipLibraryMixin, name), (
+                f"missing handler {name} on ClipLibraryMixin for {command.id}"
+            )
+            continue
         # Copy Tray commands live on CopyTrayMixin, not PowerToolsActionsMixin.
         if command.placement.group == "copy_tray":
             assert hasattr(CopyTrayMixin, name), (
@@ -254,19 +332,27 @@ def test_menu_recirculation_preserves_shipped_group_order() -> None:
     expected = {
         "insert": [
             "power.insert_special_character",
+            "power.insert_line_break",
             "power.insert_file_content",
             "power.insert_table_of_contents",
+            "power.insert_image",
         ],
         "edit": [
             "power.paste_html_as_markdown",
+            "power.paste_markdown_as_html",
             "power.new_document_from_clipboard",
             "power.expand_abbreviation",
             "power.preview_abbreviation",
             "power.explain_abbreviation",
+            "edit.repeat_command",
+            "edit.restore_deletion",
         ],
         "copy_tray": [
             "edit.open_copy_tray",
+            "edit.copy_to_tray_slot",
             "edit.clear_all_tray_slots",
+            "edit.keep_selection_in_clip_library",
+            "edit.open_clip_library",
         ],
         "format_line": [
             "power.number_lines",
@@ -277,17 +363,20 @@ def test_menu_recirculation_preserves_shipped_group_order() -> None:
             "power.delete_to_line_end",
             "power.delete_to_document_start",
             "power.delete_to_document_end",
+            "power.apply_auto_outline_numbering",
+            "power.remove_auto_outline_numbering",
         ],
         "sort_filter": [
             "power.shuffle_lines",
             "power.sort_lines_numeric",
+            "power.sort_lines_by_date",
             "power.sort_lines_by_length",
-            "power.keep_unique_lines",
             "power.delete_lines_containing",
             "power.delete_lines_not_containing",
         ],
         "trim_blank": [
             "power.trim_blank_lines",
+            "power.remove_blank_lines",
         ],
         "html_encoding": [
             "power.strip_html_tags",
@@ -338,6 +427,9 @@ def test_menu_recirculation_preserves_shipped_group_order() -> None:
             "power.toggle_indent_announce",
             "power.infer_indent",
             "power.compute_line_statistics",
+            "power.describe_character",
+            "power.describe_character_detail",
+            "power.describe_image_at_cursor",
         ],
     }
     for group, ids in expected.items():

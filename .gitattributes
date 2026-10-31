@@ -1,0 +1,23 @@
+# tests/corpus/ fixtures represent real document content used for
+# byte-for-byte round-trip tests (e.g. tests/unit/io/test_open_read.py).
+# Without this, Git's line-ending normalization is governed entirely by
+# each checkout machine's local core.autocrlf default, which differs
+# between Windows and macOS/Linux CI runners -- the same committed file
+# can check out with different bytes on different platforms, defeating
+# the whole point of a byte-identical fixture. -text disables any EOL
+# conversion so every checkout gets the exact bytes that were committed.
+tests/corpus/** -text
+
+# The vendored shared tag/chapter model is byte-identical with podHarvest's
+# copy (podharvest/audio_tags_core.py), and a SHA-256 drift test in each repo
+# checks that. Line-ending conversion would break it: podHarvest pins its
+# tree to LF while this repo leaves .py to each checkout's core.autocrlf, so
+# the same committed file would hash differently on the two sides. -text
+# disables every EOL conversion, exactly as it does for tests/corpus/ above.
+quill/core/speech/audio_tags_core.py -text
+quill/core/speech/audio_tags_core.sha256 -text
+
+# The family menu-key snapshot is compared byte for byte with a fresh scan
+# (tests/unit/ui/test_global_hotkeys.py and family_chords_snapshot), which
+# writes LF. A Windows runner's autocrlf checkout made it CRLF and stale.
+quill/core/data/family_menu_chords.json text eol=lf

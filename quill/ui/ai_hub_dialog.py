@@ -15,7 +15,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from quill.core.i18n import _, lazy_gettext
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.core.platform_nouns import credential_store_name
+from quill.ui.dialog_contract import apply_modal_ids, dialog_alive, set_accessible_name
+from quill.ui.dpi import dip_size
 
 _PROVIDER_CHOICES: tuple[tuple[str, object], ...] = (
     ("off", lazy_gettext("Off (AI disabled)")),
@@ -34,23 +36,35 @@ _DEEPGRAM_MAX_SPEAKERS_KEY = "deepgram_default_max_speakers"
 
 def _load_deepgram_key() -> str:
     try:
-        from quill.platform.windows.credential_manager import credential_load
+        from quill.platform.windows.credential_manager import load_generic_credential
 
-        return credential_load(_DEEPGRAM_KEY_CRED_TARGET) or ""
+        stored = load_generic_credential(_DEEPGRAM_KEY_CRED_TARGET)
+        return (stored.secret if stored else "") or ""
     except Exception:  # noqa: BLE001
         return ""
 
 
 def _save_deepgram_key(key: str) -> None:
     try:
-        from quill.platform.windows.credential_manager import credential_delete, credential_save
+        from quill.platform.windows.credential_manager import (
+            delete_generic_credential,
+            save_generic_credential,
+        )
 
         if key.strip():
-            credential_save(_DEEPGRAM_KEY_CRED_TARGET, key.strip())
+            save_generic_credential(_DEEPGRAM_KEY_CRED_TARGET, key.strip())
         else:
-            credential_delete(_DEEPGRAM_KEY_CRED_TARGET)
-    except Exception:  # noqa: BLE001
-        pass
+            delete_generic_credential(_DEEPGRAM_KEY_CRED_TARGET)
+    except Exception:  # noqa: BLE001 - never crash the dialog on a store failure
+        # A silently-unsaved API key would look saved but leave transcription
+        # broken. Log it so the failure is diagnosable (the dialog surfaces the
+        # working/not-working state via its own Test/refresh path).
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Could not persist the Deepgram API key to the credential store",
+            exc_info=True,
+        )
 
 
 def _load_deepgram_max_speakers() -> int:
@@ -105,10 +119,12 @@ class AIHubDialog:
         show_modal_dialog: Callable,
         announce: Callable[[str], None] | None = None,
         open_advanced_connection: Callable[[], None] | None = None,
+        initial_page: str | None = None,
     ) -> None:
         import wx
 
         self._wx = wx
+        self._initial_page = initial_page
         self._show_modal = show_modal_dialog
         # Route announcements through the verbosity engine's legacy passthrough
         # (a no-op for the user today) so engine.speak() is reachable from this
@@ -121,11 +137,17 @@ class AIHubDialog:
 
         from quill.core.assistant_ai import (
             load_assistant_connection_settings,
-            load_provider_api_key,
+            provider_api_key_source,
+            stored_provider_api_key,
         )
 
         self._settings = load_assistant_connection_settings()
-        self._provider_key = load_provider_api_key(self._settings.provider or "ollama")
+        # stored_* not load_*: this value populates an EDITABLE field whose Save
+        # writes it back to the credential store. Prefilling it from an
+        # environment variable would silently persist a key the user never
+        # entered here, and keep using it after they unset the variable.
+        self._provider_key = stored_provider_api_key(self._settings.provider or "ollama")
+        self._provider_key_source = provider_api_key_source(self._settings.provider or "ollama")
         self._deepgram_key = _load_deepgram_key()
         self._deepgram_max_speakers = _load_deepgram_max_speakers()
 
@@ -146,7 +168,7 @@ class AIHubDialog:
             title=_("AI Hub"),
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(740, 600))
+        self.dialog.SetSize(dip_size(self.dialog, 740, 600))
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -171,10 +193,18 @@ class AIHubDialog:
         # proxy never reaches wx. Choice/ListBox/ComboBox labels are
         # already coerced in their own builders.
         self._notebook.AddPage(self._build_provider_tab(), str(_("Provider")))
+        self._notebook.AddPage(self._build_harnesses_tab(), str(_("Engines")))
         self._notebook.AddPage(self._build_on_device_tab(), str(_("On-Device")))
         self._notebook.AddPage(self._build_audio_tab(), str(_("Audio Services")))
+        self._notebook.AddPage(self._build_services_tab(), str(_("Services")))
         self._notebook.AddPage(self._build_instructions_tab(), str(_("Instructions")))
+        self._notebook.AddPage(self._build_sessions_tab(), str(_("Sessions")))
         self._notebook.AddPage(self._build_advanced_tab(), str(_("Advanced")))
+        if self._initial_page:
+            for index in range(self._notebook.GetPageCount()):
+                if self._notebook.GetPageText(index) == self._initial_page:
+                    self._notebook.SetSelection(index)
+                    break
 
         btn_sizer = wx.StdDialogButtonSizer()
         ok_btn = wx.Button(self.dialog, wx.ID_OK, label=_("&OK"))
@@ -193,7 +223,7 @@ class AIHubDialog:
         self.dialog.SetSizer(root)
         ok_btn.Bind(wx.EVT_BUTTON, self._on_ok)
         cancel_btn.Bind(wx.EVT_BUTTON, lambda _e: self.dialog.EndModal(wx.ID_CANCEL))
-        wx.CallAfter(self._notebook.SetFocus)
+        # Initial focus comes from _show_modal_dialog's focus_primary_control seam, not here.
 
     # ------------------------------------------------------------------
     # Tab 1: Provider
@@ -230,6 +260,20 @@ class AIHubDialog:
         key_row.Add(self._key_ctrl, 1, wx.RIGHT, 4)
         key_row.Add(self._reveal_btn, 0)
         sizer.Add(key_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
+        if self._provider_key_source == "environment":
+            # Say so out loud rather than leaving the field mysteriously empty
+            # on a provider that nonetheless works: the key is real, it just
+            # lives in the environment, and typing here overrides it.
+            env_note = wx.StaticText(
+                panel,
+                label=_(
+                    "This provider is using an API key from an environment "
+                    "variable. Leave this box empty to keep using it, or type a "
+                    "key here to save one in QUILL instead."
+                ),
+            )
+            sizer.Add(env_note, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
+        self._set_key_field_enabled(self._settings.provider or "ollama")
 
         # Host (shown only for Ollama / custom)
         sizer.Add(
@@ -239,11 +283,20 @@ class AIHubDialog:
         self._host_ctrl.SetName("Host URL")
         sizer.Add(self._host_ctrl, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
 
-        # Model
+        # Model — an editable dropdown: pick a recommended model (free-first) or
+        # type any id. "List models" fills it with everything the account/device
+        # offers; changing the provider refreshes the suggestions.
         sizer.Add(wx.StaticText(panel, label=_("Model:")), 0, wx.LEFT | wx.TOP, 6)
-        self._model_ctrl = wx.TextCtrl(panel, value=self._settings.model or "")
-        self._model_ctrl.SetName("Model")
-        sizer.Add(self._model_ctrl, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
+        model_row = wx.BoxSizer(wx.HORIZONTAL)
+        self._model_ctrl = wx.ComboBox(panel, style=wx.CB_DROPDOWN)
+        self._model_ctrl.SetName("Model — choose a suggestion or type a model id")
+        self._list_models_btn = wx.Button(panel, label=_("&List models"))
+        model_row.Add(self._model_ctrl, 1, wx.RIGHT, 4)
+        model_row.Add(self._list_models_btn, 0)
+        sizer.Add(model_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
+        self._populate_hub_models(
+            self._settings.provider or "ollama", select=self._settings.model or ""
+        )
 
         # Test connection button + result
         test_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -262,7 +315,179 @@ class AIHubDialog:
         panel.SetSizer(sizer)
         self._reveal_btn.Bind(wx.EVT_TOGGLEBUTTON, self._on_reveal_key)
         self._test_btn.Bind(wx.EVT_BUTTON, self._on_test_connection)
+        self._provider_choice.Bind(wx.EVT_CHOICE, self._on_hub_provider_changed)
+        self._list_models_btn.Bind(wx.EVT_BUTTON, self._on_hub_list_models)
+        self._model_ctrl.Bind(wx.EVT_COMBOBOX, self._on_hub_model_selected)
+        # Discovered Ollama model -> live capabilities (from /api/show). Populated
+        # by "List models"; empty for providers that do not report capabilities.
+        self._ollama_capabilities: dict[str, list[str]] = {}
         return panel
+
+    def _hub_provider(self) -> str:
+        idx = self._provider_choice.GetSelection()
+        return _PROVIDER_CHOICES[idx][0] if idx >= 0 else "ollama"
+
+    def _set_key_field_enabled(self, provider: str) -> None:
+        """Grey out the API key field for providers that don't need one.
+
+        Local Ollama (and any future no-key provider) needs no credential, so
+        the field must not read as a required prompt (#883-adjacent gap: this
+        dialog never consulted provider_requires_api_key, unlike the older
+        AssistantConnectionDialog).
+        """
+        from quill.core.ai.providers import provider_requires_api_key
+
+        requires_key = provider_requires_api_key(provider)
+        self._key_ctrl.Enable(requires_key)
+        self._reveal_btn.Enable(requires_key)
+
+    def _populate_hub_models(self, provider: str, *, select: str = "") -> None:
+        """Fill the model dropdown with recommended (free-first) ids for a provider."""
+        from quill.core.ai.providers import (
+            default_model_for_provider,
+            recommended_models_for_provider,
+        )
+
+        suggestions = recommended_models_for_provider(provider)
+        self._model_ctrl.Set(suggestions)
+        fallback = suggestions[0] if suggestions else default_model_for_provider(provider)
+        self._model_ctrl.SetValue(select.strip() or fallback)
+
+    def _on_hub_provider_changed(self, _event: object) -> None:
+        # A model id is provider-specific, so show the new provider's recommended
+        # default (free-first for OpenRouter) rather than carrying the old id over.
+        # #883: repopulating the model combo can steal focus back to it on MSW
+        # when the provider choice was navigated via arrow keys without opening
+        # its dropdown; restore focus to the provider choice if that happened.
+        provider = self._hub_provider()
+        had_focus = self._provider_choice.HasFocus()
+        self._populate_hub_models(provider)
+        self._set_key_field_enabled(provider)
+        if had_focus and not self._provider_choice.HasFocus():
+            self._provider_choice.SetFocus()
+        # Auto-probe Ollama on selection: a consented localhost /api/tags ping
+        # so the user hears immediately whether Ollama is running (and how many
+        # models are available) instead of discovering it via a failed request.
+        if provider == "ollama":
+            self._auto_probe_ollama()
+
+    def _auto_probe_ollama(self) -> None:
+        import threading
+
+        self._test_label.SetLabel(_("Checking Ollama..."))
+
+        def _run() -> None:
+            import wx as _wx
+
+            from quill.core.ai.onboarding import list_provider_models
+
+            models, error = list_provider_models("ollama")
+            if error:
+                msg = error  # already plain-language (e.g. the "not running" message)
+            else:
+                msg = _(
+                    "Ollama running. {n} models available -- use List models to choose."
+                ).format(n=len(models))
+            _wx.CallAfter(self._on_auto_probe_done, msg)
+
+        threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: AI bg thread
+
+    def _on_auto_probe_done(self, message: str) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the background probe finished (#1067)
+        self._test_label.SetLabel(message)
+
+    def _on_hub_list_models(self, _event: object) -> None:
+        import threading
+
+        provider = self._hub_provider()
+        self._test_label.SetLabel(_("Listing models..."))
+        self._list_models_btn.Enable(False)
+
+        def _run() -> None:
+            import wx as _wx
+
+            from quill.core.ai.onboarding import list_provider_models
+
+            models, error = list_provider_models(provider)
+            # For local Ollama, enrich each discovered model with its REAL
+            # capabilities (queried dynamically via /api/show) so the user can
+            # see which models do vision/tools -- no hardcoded model-name list,
+            # so this stays correct as models are added or renamed. Best-effort:
+            # models whose capabilities can't be determined are shown by name
+            # only (never falsely labelled text-only).
+            capabilities: dict[str, list[str]] = {}
+            if not error and models and provider == "ollama":
+                from quill.core.ai.ollama_capabilities import enrich_capabilities
+                from quill.core.ai.providers import default_host_for_provider
+
+                host = self._host_ctrl.GetValue().strip() or default_host_for_provider(provider)
+                try:
+                    capabilities = enrich_capabilities(host, models)
+                except Exception:  # noqa: BLE001 - enrichment is best-effort
+                    capabilities = {}
+            _wx.CallAfter(self._on_hub_models_listed, models, error, capabilities)
+
+        threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: model discovery
+
+    def _on_hub_models_listed(
+        self, models: list, error: str, capabilities: dict | None = None
+    ) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before model discovery finished (#1067)
+        self._list_models_btn.Enable(True)
+        self._ollama_capabilities = {str(k): list(v) for k, v in (capabilities or {}).items()}
+        if not models:
+            self._test_label.SetLabel(error or _("No models were returned."))
+            return
+        current = self._model_ctrl.GetValue().strip()
+        self._model_ctrl.Set(models)
+        self._model_ctrl.SetValue(current if current in models else models[0])
+        if self._ollama_capabilities:
+            from quill.core.ai.ollama_capabilities import capability_summary
+
+            summary = capability_summary(models, self._ollama_capabilities)
+            self._test_label.SetLabel(
+                _("Loaded {n} models: {summary}").format(n=len(models), summary=summary)
+            )
+            self._announce_capability_for_current()
+        else:
+            self._test_label.SetLabel(_("Loaded {n} models.").format(n=len(models)))
+
+    def _on_hub_model_selected(self, _event: object) -> None:
+        self._announce_capability_for_current()
+
+    def _announce_capability_for_current(self) -> None:
+        # Speak the selected model's capability badge when we know it. Unknown
+        # capabilities are left unannounced (never claim "text only" on a guess);
+        # a plain completion model has no badge, so nothing is spoken -- keeping
+        # the chatter down for the common case.
+        model = self._model_ctrl.GetValue().strip()
+        caps = self._ollama_capabilities.get(model) if self._ollama_capabilities else None
+        if not caps:
+            return
+        from quill.core.ai.ollama_capabilities import capability_badge
+
+        badge = capability_badge(caps)
+        if badge:
+            self._announce(str(_("{model}: {badge}").format(model=model, badge=badge)))
+
+    # ------------------------------------------------------------------
+    # Tab: Engines (harnesses) — pick the agentic engine; install / sign in.
+    # All logic lives in the wx-free-of-this-module EnginesPanel so the Hub
+    # stays within its GATE-11 size budget.
+    # ------------------------------------------------------------------
+
+    def _build_harnesses_tab(self) -> object:
+        from quill.ui.ai_hub_engines_panel import EnginesPanel
+
+        self._engines_panel = EnginesPanel(
+            self._notebook,
+            parent_dialog=self.dialog,
+            announce=self._announce,
+            show_modal=self._show_modal,
+        )
+        return self._engines_panel.panel
 
     # ------------------------------------------------------------------
     # Tab 2: On-Device
@@ -309,6 +534,387 @@ class AIHubDialog:
 
         panel.SetSizer(sizer)
         return panel
+
+    # ------------------------------------------------------------------
+    # Services tab: document conversion and OCR (PRD §5.93 / OCR PRD §8-§10)
+    # ------------------------------------------------------------------
+
+    def _build_services_tab(self) -> object:
+        """The customer-facing services page: the two free local conversion
+        tiers at a glance, and the full configuration surface for the paid,
+        consent-gated Datalab Chandra OCR Service (BYOK; the key goes to the
+        credential vault, never a settings file)."""
+        wx = self._wx
+        from quill.core.datalab_ocr import load_datalab_api_key
+        from quill.core.settings import load_settings
+
+        stored = load_settings()
+        panel = wx.ScrolledWindow(self._notebook, style=wx.VSCROLL)
+        panel.SetScrollRate(0, 12)
+        panel.SetName("Document conversion and OCR services")
+        sizer = wx.BoxSizer(wx.VERTICAL)
+
+        intro = wx.StaticText(
+            panel,
+            label=str(
+                _(
+                    "QUILL's Import / Convert Document tool always runs the free, "
+                    "on-device services first: the built-in MarkItDown converter for "
+                    "born-digital files and the local Tesseract OCR engine for scans "
+                    "(install it from Tools > Reading & Dictation). Neither uploads "
+                    "anything, needs an account, or costs money.\n\n"
+                    "The optional cloud service below is the accuracy escalation for "
+                    "the hardest documents. It is paid, bring-your-own-key, and QUILL "
+                    "asks for your explicit consent before every single upload."
+                )
+            ),
+        )
+        intro.Wrap(640)
+        sizer.Add(intro, 0, wx.ALL, 8)
+
+        box = wx.StaticBoxSizer(
+            wx.StaticBox(panel, label=str(_("Datalab Chandra OCR Service (cloud, paid)"))),
+            wx.VERTICAL,
+        )
+        self._services_status = wx.StaticText(panel, label="")
+        self._services_status.SetName("Datalab service status")
+        box.Add(self._services_status, 0, wx.ALL, 6)
+
+        self._datalab_enabled_cb = wx.CheckBox(
+            panel, label=str(_("&Enable the Datalab Chandra OCR Service"))
+        )
+        self._datalab_enabled_cb.SetValue(bool(getattr(stored, "datalab_enabled", False)))
+        box.Add(self._datalab_enabled_cb, 0, wx.ALL, 6)
+
+        grid = wx.FlexGridSizer(0, 2, 6, 8)
+        grid.AddGrowableCol(1, 1)
+
+        grid.Add(wx.StaticText(panel, label=str(_("API key:"))), 0, wx.ALIGN_CENTER_VERTICAL)
+        self._datalab_key_ctrl = wx.TextCtrl(panel, style=wx.TE_PASSWORD)
+        self._datalab_key_ctrl.SetName(
+            "Datalab API key. Stored securely in the credential vault, never in settings files."
+        )
+        self._datalab_key_ctrl.SetValue(load_datalab_api_key())
+        grid.Add(self._datalab_key_ctrl, 0, wx.EXPAND)
+
+        grid.Add(wx.StaticText(panel, label=str(_("Endpoint:"))), 0, wx.ALIGN_CENTER_VERTICAL)
+        self._datalab_endpoint_ctrl = wx.TextCtrl(
+            panel, value=str(getattr(stored, "datalab_endpoint", "https://www.datalab.to"))
+        )
+        self._datalab_endpoint_ctrl.SetName(
+            "Datalab endpoint. HTTPS only; change it only for an enterprise or on-premises server."
+        )
+        grid.Add(self._datalab_endpoint_ctrl, 0, wx.EXPAND)
+
+        grid.Add(wx.StaticText(panel, label=str(_("Default mode:"))), 0, wx.ALIGN_CENTER_VERTICAL)
+        self._datalab_mode_ctrl = wx.Choice(
+            panel, choices=["Fast", "Balanced (recommended)", "Accurate"]
+        )
+        mode_values = {"fast": 0, "balanced": 1, "accurate": 2}
+        self._datalab_mode_ctrl.SetSelection(
+            mode_values.get(str(getattr(stored, "datalab_mode", "balanced")), 1)
+        )
+        set_accessible_name(self._datalab_mode_ctrl, str(_("Default mode")))
+        grid.Add(self._datalab_mode_ctrl, 0, wx.EXPAND)
+
+        grid.Add(wx.StaticText(panel, label=str(_("Default output:"))), 0, wx.ALIGN_CENTER_VERTICAL)
+        self._datalab_output_ctrl = wx.Choice(
+            panel, choices=["Markdown (recommended)", "HTML", "JSON"]
+        )
+        output_values = {"markdown": 0, "html": 1, "json": 2}
+        self._datalab_output_ctrl.SetSelection(
+            output_values.get(str(getattr(stored, "datalab_output", "markdown")), 0)
+        )
+        set_accessible_name(self._datalab_output_ctrl, str(_("Default output")))
+        grid.Add(self._datalab_output_ctrl, 0, wx.EXPAND)
+        box.Add(grid, 0, wx.EXPAND | wx.ALL, 6)
+
+        self._datalab_paginate_cb = wx.CheckBox(
+            panel, label=str(_("Add &page delimiters (recommended for navigation)"))
+        )
+        self._datalab_paginate_cb.SetValue(bool(getattr(stored, "datalab_paginate", True)))
+        box.Add(self._datalab_paginate_cb, 0, wx.ALL, 6)
+
+        consent_note = wx.StaticText(
+            panel,
+            label=str(
+                _(
+                    "Confirm before upload: always on. QUILL never sends a document "
+                    "to this service without asking you first, every time."
+                )
+            ),
+        )
+        consent_note.Wrap(640)
+        box.Add(consent_note, 0, wx.ALL, 6)
+
+        actions = wx.BoxSizer(wx.HORIZONTAL)
+        save_btn = wx.Button(panel, label=str(_("&Save Service Settings")))
+        test_btn = wx.Button(panel, label=str(_("&Test Connection")))
+        summary_btn = wx.Button(panel, label=str(_("&Copy Service Summary")))
+        for button in (save_btn, test_btn, summary_btn):
+            actions.Add(button, 0, wx.RIGHT, 6)
+        box.Add(actions, 0, wx.ALL, 6)
+
+        links = wx.WrapSizer(wx.HORIZONTAL)
+        from quill.core.datalab_ocr import DATALAB_LINKS
+
+        for label, url_key in (
+            (_("Visit Datalab &Website"), "website"),
+            (_("&Get or Manage API Key"), "api_keys"),
+            (_("View &Pricing"), "pricing"),
+            (_("P&rivacy and Security"), "privacy"),
+            (_("API &Documentation"), "docs"),
+            (_("Supported &File Types"), "file_types"),
+        ):
+            button = wx.Button(panel, label=str(label))
+            button.SetName(f"{label} (opens in your browser)")
+            url = DATALAB_LINKS[url_key]
+            button.Bind(wx.EVT_BUTTON, lambda _e, target=url: self._open_service_link(target))
+            links.Add(button, 0, wx.RIGHT | wx.BOTTOM, 6)
+        box.Add(links, 0, wx.ALL, 6)
+        sizer.Add(box, 0, wx.EXPAND | wx.ALL, 8)
+
+        # --- Auphonic (audio post-production for the Audio Studio) ---
+        auphonic_box = wx.StaticBoxSizer(
+            wx.StaticBox(
+                panel, label=str(_("Auphonic audio post-production (cloud, your own account)"))
+            ),
+            wx.VERTICAL,
+        )
+        auphonic_note = wx.StaticText(
+            panel,
+            label=str(
+                _(
+                    "Auphonic masters finished audiobooks and podcast episodes "
+                    "(leveling, noise reduction, encoding). QUILL uses it from the "
+                    "Audio Studio's Chapter Workbench: Publish > Send to Auphonic. "
+                    "The API token is stored in the {store}, "
+                    "never in a settings file, and nothing is ever uploaded "
+                    "without a per-book confirmation."
+                ).format(store=credential_store_name())
+            ),
+        )
+        auphonic_note.Wrap(640)
+        auphonic_box.Add(auphonic_note, 0, wx.ALL, 6)
+
+        auphonic_grid = wx.FlexGridSizer(0, 2, 6, 8)
+        auphonic_grid.AddGrowableCol(1, 1)
+        auphonic_grid.Add(
+            wx.StaticText(panel, label=str(_("API token:"))), 0, wx.ALIGN_CENTER_VERTICAL
+        )
+        self._auphonic_token_ctrl = wx.TextCtrl(panel, style=wx.TE_PASSWORD)
+        self._auphonic_token_ctrl.SetName(
+            "Auphonic API token. Stored securely in the credential vault, never in settings files."
+        )
+        self._auphonic_token_ctrl.SetValue(self._load_auphonic_token())
+        auphonic_grid.Add(self._auphonic_token_ctrl, 0, wx.EXPAND)
+        auphonic_box.Add(auphonic_grid, 0, wx.EXPAND | wx.ALL, 6)
+
+        auphonic_actions = wx.BoxSizer(wx.HORIZONTAL)
+        auphonic_save_btn = wx.Button(panel, label=str(_("Save Auphonic To&ken")))
+        auphonic_save_btn.Bind(wx.EVT_BUTTON, self._on_save_auphonic_token)
+        auphonic_check_btn = wx.Button(panel, label=str(_("Check Acco&unt and Credits")))
+        auphonic_check_btn.Bind(wx.EVT_BUTTON, self._on_check_auphonic_account)
+        auphonic_actions.Add(auphonic_save_btn, 0, wx.RIGHT, 6)
+        auphonic_actions.Add(auphonic_check_btn, 0, wx.RIGHT, 6)
+        for label, url in (
+            (_("Visit Auphonic &Website"), "https://auphonic.com"),
+            (_("Auphonic API D&ocumentation"), "https://auphonic.com/api-docs/"),
+        ):
+            button = wx.Button(panel, label=str(label))
+            button.SetName(f"{label} (opens in your browser)")
+            button.Bind(wx.EVT_BUTTON, lambda _e, target=url: self._open_service_link(target))
+            auphonic_actions.Add(button, 0, wx.RIGHT, 6)
+        auphonic_box.Add(auphonic_actions, 0, wx.ALL, 6)
+        sizer.Add(auphonic_box, 0, wx.EXPAND | wx.ALL, 8)
+
+        footer = wx.StaticText(
+            panel,
+            label=str(
+                _(
+                    "The full plain-language overview of every conversion service is in "
+                    "Tools > Reading & Dictation > OCR and Conversion Services."
+                )
+            ),
+        )
+        footer.Wrap(640)
+        sizer.Add(footer, 0, wx.ALL, 8)
+
+        save_btn.Bind(wx.EVT_BUTTON, self._on_save_services)
+        test_btn.Bind(wx.EVT_BUTTON, self._on_test_datalab)
+        summary_btn.Bind(wx.EVT_BUTTON, self._on_copy_service_summary)
+
+        panel.SetSizer(sizer)
+        self._refresh_services_status()
+        return panel
+
+    def _load_auphonic_token(self) -> str:
+        try:
+            from quill.core.publish.auphonic import CREDENTIAL_TARGET
+            from quill.platform.windows.credential_manager import load_generic_credential
+
+            credential = load_generic_credential(CREDENTIAL_TARGET)
+            return (credential.secret or "") if credential is not None else ""
+        except Exception:  # noqa: BLE001 - no credential store on this platform
+            return ""
+
+    def _on_save_auphonic_token(self, _event: object) -> None:
+        token = str(self._auphonic_token_ctrl.GetValue()).strip()
+        try:
+            from quill.core.publish.auphonic import CREDENTIAL_TARGET
+            from quill.platform.windows.credential_manager import save_generic_credential
+
+            save_generic_credential(CREDENTIAL_TARGET, token, user_name="auphonic")
+        except Exception:  # noqa: BLE001
+            self._announce(
+                str(_("The token could not be stored in the credential vault on this system."))
+            )
+            return
+        self._announce(
+            str(_("Auphonic token saved to the credential vault."))
+            if token
+            else str(_("Auphonic token cleared."))
+        )
+
+    def _on_check_auphonic_account(self, _event: object) -> None:
+        """One explicit, named call to Auphonic: username, credits, preset count."""
+        from quill.core.publish import auphonic
+
+        token = str(self._auphonic_token_ctrl.GetValue()).strip()
+        if not token:
+            self._announce(
+                str(_("No Auphonic token entered. Paste one, or get it from auphonic.com."))
+            )
+            return
+        wx = self._wx
+        busy = wx.BusyCursor()
+        try:
+            info = auphonic.account_info(token)
+            presets = auphonic.list_presets(token)
+        except auphonic.AuphonicError as exc:
+            self._announce(str(exc))
+            return
+        finally:
+            del busy
+        self._announce(
+            str(
+                _(
+                    "Auphonic account {user}: {credits} credits available, {count} preset(s)."
+                ).format(
+                    user=info.username or _("(unnamed)"),
+                    credits=f"{info.credits:g}",
+                    count=len(presets),
+                )
+            )
+        )
+
+    def _open_service_link(self, url: str) -> None:
+        import webbrowser
+
+        webbrowser.open(url)
+        self._announce(str(_("Opened in your browser.")))
+
+    def _services_values(self) -> dict[str, object]:
+        modes = ("fast", "balanced", "accurate")
+        outputs = ("markdown", "html", "json")
+        return {
+            "enabled": bool(self._datalab_enabled_cb.GetValue()),
+            "key": str(self._datalab_key_ctrl.GetValue()).strip(),
+            "endpoint": str(self._datalab_endpoint_ctrl.GetValue()).strip(),
+            "mode": modes[max(0, self._datalab_mode_ctrl.GetSelection())],
+            "output": outputs[max(0, self._datalab_output_ctrl.GetSelection())],
+            "paginate": bool(self._datalab_paginate_cb.GetValue()),
+        }
+
+    def _refresh_services_status(self) -> None:
+        from quill.core.datalab_ocr import load_datalab_api_key
+
+        values = self._services_values()
+        has_key = bool(values["key"] or load_datalab_api_key())
+        if values["enabled"] and has_key:
+            status = _("Status: Ready. Cloud upload requires your consent each time.")
+        elif values["enabled"]:
+            status = _("Status: Needs API key.")
+        else:
+            status = _("Status: Not configured (optional).")
+        self._services_status.SetLabel(str(status))
+
+    def _on_save_services(self, _event: object) -> None:
+        from quill.core.datalab_ocr import save_datalab_api_key
+        from quill.core.settings import load_settings, save_settings
+
+        values = self._services_values()
+        endpoint = str(values["endpoint"])
+        if endpoint and not endpoint.lower().startswith("https://"):
+            self._announce(str(_("The endpoint must start with https:// - not saved.")))
+            return
+        stored = load_settings()
+        stored.datalab_enabled = bool(values["enabled"])
+        stored.datalab_endpoint = endpoint or "https://www.datalab.to"
+        stored.datalab_mode = str(values["mode"])
+        stored.datalab_output = str(values["output"])
+        stored.datalab_paginate = bool(values["paginate"])
+        save_settings(stored)
+        if not save_datalab_api_key(str(values["key"])):
+            self._announce(
+                str(
+                    _(
+                        "Settings saved. The API key could not be stored in the "
+                        "credential vault on this system; set the DATALAB_API_KEY "
+                        "environment variable instead."
+                    )
+                )
+            )
+        else:
+            self._announce(str(_("Datalab service settings saved.")))
+        self._refresh_services_status()
+
+    def _on_test_datalab(self, _event: object) -> None:
+        """PRD §10.2: never uploads a document — key-presence check plus a
+        safe endpoint sanity check only."""
+        values = self._services_values()
+        if not values["key"]:
+            self._announce(
+                str(_("No API key entered. Add one, or get a key from the Datalab website."))
+            )
+            return
+        endpoint = str(values["endpoint"])
+        if not endpoint.lower().startswith("https://"):
+            self._announce(str(_("The endpoint must start with https://.")))
+            return
+        self._announce(
+            str(
+                _(
+                    "API key present and the endpoint looks valid. Full validation "
+                    "happens on your first conversion - no document is uploaded by "
+                    "this test."
+                )
+            )
+        )
+        self._refresh_services_status()
+
+    def _on_copy_service_summary(self, _event: object) -> None:
+        """A safe, secret-free summary for support requests (PRD §8.11)."""
+        wx = self._wx
+        values = self._services_values()
+        summary = "\n".join([
+            "QUILL OCR service summary",
+            "Provider: Datalab Chandra OCR Service",
+            f"Enabled: {'Yes' if values['enabled'] else 'No'}",
+            f"Endpoint: {values['endpoint'] or 'https://www.datalab.to'}",
+            f"Default mode: {values['mode']}",
+            f"Default output: {values['output']}",
+            f"Page delimiters: {'Yes' if values['paginate'] else 'No'}",
+            f"API key present: {'Yes' if values['key'] else 'No'}",
+            "API key value: Not included",
+            "Cloud upload required: Yes (consent asked every time)",
+        ])
+        if wx.TheClipboard.Open():
+            wx.TheClipboard.SetData(wx.TextDataObject(summary))
+            wx.TheClipboard.Close()
+            self._announce(str(_("Service summary copied - no secrets included.")))
+        else:
+            self._announce(str(_("Could not open the clipboard.")))
 
     # ------------------------------------------------------------------
     # Tab 3: Audio Services  (P4-4)
@@ -360,7 +966,7 @@ class AIHubDialog:
             max=20,
             initial=self._deepgram_max_speakers,
         )
-        self._max_speakers_spin.SetName("Default maximum speakers")
+        set_accessible_name(self._max_speakers_spin, "Default maximum speakers")
         sizer.Add(self._max_speakers_spin, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
         note = wx.StaticText(
@@ -435,7 +1041,7 @@ class AIHubDialog:
         )
         self._inst_editor = wx.TextCtrl(page, style=wx.TE_MULTILINE | wx.TE_RICH2)
         self._inst_editor.SetName("Instruction text")
-        self._inst_editor.SetMinSize(wx.Size(400, 200))
+        self._inst_editor.SetMinSize(dip_size(self._inst_editor, 400, 200))
         right.Add(self._inst_editor, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 6)
 
         right.Add(wx.StaticLine(page), 0, wx.EXPAND | wx.ALL, 6)
@@ -447,7 +1053,7 @@ class AIHubDialog:
         )
         self._default_display = wx.TextCtrl(page, style=wx.TE_MULTILINE | wx.TE_READONLY)
         self._default_display.SetName("Built-in default instruction")
-        self._default_display.SetMinSize(wx.Size(400, 120))
+        self._default_display.SetMinSize(dip_size(self._default_display, 400, 120))
         right.Add(self._default_display, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
 
         btn_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -525,7 +1131,7 @@ class AIHubDialog:
         )
         self._img_editor = wx.TextCtrl(page, style=wx.TE_MULTILINE | wx.TE_RICH2)
         self._img_editor.SetName("Image prompt override")
-        self._img_editor.SetMinSize(wx.Size(400, 200))
+        self._img_editor.SetMinSize(dip_size(self._img_editor, 400, 200))
         right.Add(self._img_editor, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 6)
 
         right.Add(wx.StaticLine(page), 0, wx.EXPAND | wx.ALL, 6)
@@ -537,7 +1143,7 @@ class AIHubDialog:
         )
         self._img_default_display = wx.TextCtrl(page, style=wx.TE_MULTILINE | wx.TE_READONLY)
         self._img_default_display.SetName("Built-in image prompt")
-        self._img_default_display.SetMinSize(wx.Size(400, 120))
+        self._img_default_display.SetMinSize(dip_size(self._img_default_display, 400, 120))
         right.Add(self._img_default_display, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 6)
 
         btn_row = wx.BoxSizer(wx.HORIZONTAL)
@@ -698,6 +1304,14 @@ class AIHubDialog:
     # Tab 5: Advanced  (P7-1)
     # ------------------------------------------------------------------
 
+    def _build_sessions_tab(self) -> object:
+        from quill.ui.ai_hub_sessions_panel import SessionsPanel
+
+        self._sessions_panel = SessionsPanel(
+            self._notebook, parent_dialog=self.dialog, announce=self._announce
+        )
+        return self._sessions_panel.panel
+
     def _build_advanced_tab(self) -> object:
         wx = self._wx
         panel = wx.Panel(self._notebook)
@@ -809,6 +1423,8 @@ class AIHubDialog:
         threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: AI bg thread
 
     def _on_test_done(self, message: str) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the connection test finished (#1067)
         self._test_label.SetLabel(message)
         self._test_btn.Enable(True)
 
@@ -820,7 +1436,7 @@ class AIHubDialog:
                 "settings (but not stored API keys)."
             ),
             _("Reset AI Settings"),
-            wx.YES_NO | wx.ICON_WARNING,
+            wx.YES_NO | wx.NO_DEFAULT | wx.ICON_WARNING,
             self.dialog,
         )
         if result != wx.YES:

@@ -5,7 +5,11 @@ from pathlib import Path
 from quill.ui.main_frame import MainFrame
 
 _UI_DIR = Path(__file__).resolve().parents[3] / "quill" / "ui"
-SOURCE = (_UI_DIR / "main_frame.py").read_text(encoding="utf-8")
+# The watch-folder runtime moved to its own mixin under F-08 (2026-10-03); the
+# wiring stays in main_frame.py, the handlers in main_frame_watch_folder.py.
+SOURCE = (_UI_DIR / "main_frame.py").read_text(encoding="utf-8") + (
+    _UI_DIR / "main_frame_watch_folder.py"
+).read_text(encoding="utf-8")
 # The Add/Edit Watch Profile dialog (_edit_watch_profile) was extracted into a
 # mixin (GATE-11), so editor-dialog introspection checks both files.
 WATCH_PROFILE_SOURCE = (_UI_DIR / "main_frame_watch_profile.py").read_text(encoding="utf-8")
@@ -94,8 +98,11 @@ def test_watch_profile_editor_exposes_filters_and_schedule() -> None:
     # WATCH-5: per-profile suffix/name-pattern/min-size/min-age filters and schedule.
     assert 'suffix_input.SetName("File type suffixes, comma separated")' in WATCH_UI_SOURCE
     assert 'pattern_input.SetName("File name patterns, comma separated")' in WATCH_UI_SOURCE
-    assert 'size_input.SetName("Minimum file size in bytes")' in WATCH_UI_SOURCE
-    assert 'age_input.SetName("Minimum file age in seconds")' in WATCH_UI_SOURCE
+    # #1012: these two are SpinCtrl/SpinCtrlDouble, so they route through
+    # set_accessible_name (also names the composite's inner TextCtrl on
+    # macOS) instead of a bare .SetName(...) call.
+    assert 'set_accessible_name(size_input, "Minimum file size in bytes")' in WATCH_UI_SOURCE
+    assert 'set_accessible_name(age_input, "Minimum file age in seconds")' in WATCH_UI_SOURCE
     assert 'sched_choice.SetName("Schedule mode")' in WATCH_UI_SOURCE
     assert "sched_modes = [SCHED_ALWAYS, SCHED_WINDOW, SCHED_QUIET]" in WATCH_UI_SOURCE
     assert "name_patterns=name_patterns," in WATCH_UI_SOURCE

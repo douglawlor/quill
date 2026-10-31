@@ -10,7 +10,12 @@ class Document:
     path: Path | None = None
     modified: bool = False
     encoding: str = "utf-8"
-    line_ending: str = "\n"
+    # CRLF, which is what Notepad, WordPad, Word and QUILL Lite all write for a
+    # new document on Windows (bad.md F11, P2.10). A document READ from disk
+    # gets whatever that file had -- every reader sets this explicitly -- so
+    # this default only decides what a brand-new document is born with, and
+    # settings.default_line_ending is how a person changes it.
+    line_ending: str = "\r\n"
     source_metadata: dict[str, object] = field(default_factory=dict)
     _revision: int = field(default=0, repr=False)
 
@@ -46,9 +51,26 @@ class Document:
         return self._revision
 
     def set_text(self, value: str) -> None:
-        if value == self.text:
+        # Length first: this runs on every keystroke (#1346), and an insertion
+        # or deletion -- the overwhelmingly common case -- changes the length,
+        # making the no-op check O(1) instead of a full-string compare that
+        # scans to the caret. Same-length edits (overwrite mode, a replaced
+        # selection of equal size) still fall through to the real compare.
+        if len(value) == len(self.text) and value == self.text:
             return
         self.text = value
+        self.modified = True
+        self._revision += 1
+
+    def mark_content_changed(self) -> None:
+        """Record a content change that is not visible in the plain text.
+
+        Rich mode (One Editor, Every Format): applying bold via the TOM
+        changes the *document* without changing ``text``, so ``set_text``
+        would no-op — yet autosave keys on ``revision`` and the title bar on
+        ``modified``. This is the sanctioned bump for those formatting-only
+        edits.
+        """
         self.modified = True
         self._revision += 1
 

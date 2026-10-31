@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from quill.core.a11y_regions import RegionTracker
-from quill.platform.windows.sr_announce import (
+from quill.platform.sr_announce import (
     clear_transcript,
     enable_transcript_capture,
     set_transcript_path,
@@ -23,15 +23,30 @@ class _DummyDialog:
 class _DummyWx:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, int]] = []
+        #: The parent each box was given. wxMSW returns focus here when the box
+        #: closes, so a box raised from inside a dialog must name that dialog
+        #: rather than the frame behind it -- see quill/ui/modal_stack.py.
+        self.parents: list[object] = []
 
-    def MessageBox(self, message: str, caption: str, style: int) -> int:
+    def MessageBox(self, message: str, caption: str, style: int, parent: object = None) -> int:
         self.calls.append((message, caption, style))
+        self.parents.append(parent)
         return 7
+
+
+class _TransitionSettings:
+    """Settings stub with the entry/exit cues explicitly opted in.
+
+    The setting is off by default (#778), so these announcement tests turn it
+    on; the companion tests below assert the silent default."""
+
+    announce_dialog_transitions = True
 
 
 def test_show_modal_dialog_announces_entry_and_exit() -> None:
     frame = MainFrame.__new__(MainFrame)
     frame._region_tracker = RegionTracker()
+    frame.settings = _TransitionSettings()
     dialog = _DummyDialog(result=42)
     set_transcript_path(None)
     clear_transcript()
@@ -48,6 +63,7 @@ def test_show_modal_dialog_announces_entry_and_exit() -> None:
 def test_show_message_box_announces_entry_and_exit() -> None:
     frame = MainFrame.__new__(MainFrame)
     frame._region_tracker = RegionTracker()
+    frame.settings = _TransitionSettings()
     frame._wx = _DummyWx()
     set_transcript_path(None)
     clear_transcript()
@@ -57,6 +73,24 @@ def test_show_message_box_announces_entry_and_exit() -> None:
         assert result == 7
         assert frame._wx.calls == [("Body", "Caption", 123)]
         assert transcript_entries() == ["Entered Caption dialog", "Exited Caption dialog"]
+    finally:
+        enable_transcript_capture(False)
+        clear_transcript()
+
+
+def test_show_message_box_is_silent_without_opt_in() -> None:
+    # Default (announce_dialog_transitions absent/False): no spoken cues, so
+    # QUILL never doubles a screen reader's own dialog announcements (#778).
+    frame = MainFrame.__new__(MainFrame)
+    frame._region_tracker = RegionTracker()
+    frame._wx = _DummyWx()
+    set_transcript_path(None)
+    clear_transcript()
+    enable_transcript_capture(True)
+    try:
+        result = frame._show_message_box("Body", "Caption", 123)
+        assert result == 7
+        assert transcript_entries() == []
     finally:
         enable_transcript_capture(False)
         clear_transcript()

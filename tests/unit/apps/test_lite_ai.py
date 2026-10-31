@@ -1,0 +1,1192 @@
+"""Tools > AI: what each command actually does.
+
+Every test here **calls the handler**, and the calls are written as lambdas
+rather than as a parametrized list of method names. That is not a style
+preference: ``quill.tools.lite_command_coverage`` detects coverage by walking
+the AST for real calls, and ``getattr(win, name)()`` over a parametrized string
+is invisible to it. A table of handler names that never calls one is exactly the
+shape of test that let the F8 bug ship -- a key, a label, a handler, a passing
+test, and extend mode that had never once worked from the keyboard.
+
+The frames are patched at :mod:`quill.ui.hosted_ai_dialogs`, which is where the
+mixin imports them from (inside the methods, so that is also where they are
+looked up). What is being exercised is the handler: the guard, the resolution of
+what to send, and what it hands the window.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+
+class _FakeFrame:
+    """Records how it was constructed, and pretends to be a window."""
+
+    last: dict | None = None
+
+    def __init__(self, *args, **kwargs):
+        type(self).last = {"args": args, "kwargs": kwargs}
+        self.shown = False
+
+    def Show(self):  # noqa: N802 - wx API shape
+        self.shown = True
+
+    def Raise(self):  # noqa: N802 - wx API shape
+        pass
+
+    def SetFocus(self):  # noqa: N802 - wx API shape
+        self.focused = True
+
+    def Bind(self, _event, handler):  # noqa: N802 - wx API shape
+        # The mixin attaches an EVT_CLOSE handler so a closed window stops
+        # counting as open. Kept so close() below can fire it.
+        self._on_close = handler
+
+    def close(self):
+        """Close this window the way wx would, handler and all."""
+        handler = getattr(self, "_on_close", None)
+        if handler is not None:
+            handler(type("_Event", (), {"Skip": lambda _self: None})())
+
+
+@pytest.fixture
+def ai_frames(monkeypatch):
+    """Every AI window, replaced by a recorder. Returns the four classes."""
+    import quill.ui.hosted_ai_dialogs as dialogs
+    import quill.ui.hosted_ai_pad as pad
+
+    # Patched where each is looked up, not where it is defined -- the mixin
+    # imports them inside its methods, so the defining module is the lookup
+    # site. Getting this backwards is the mistake tests/unit/apps/conftest.py's
+    # DialogRecorder names both ends of every entry point to avoid.
+    made = {}
+    for module, names in (
+        (pad, ("AiPadFrame", "AiResultFrame")),
+        (dialogs, ("AiSignInFrame", "AiUsageFrame")),
+    ):
+        for name in names:
+            cls = type(name, (_FakeFrame,), {"last": None})
+            monkeypatch.setattr(module, name, cls)
+            made[name] = cls
+    return made
+
+
+@pytest.fixture
+def signed_in(monkeypatch):
+    """An AI service that believes this computer is connected **and agreed to**.
+
+    The agreement is granted here rather than repeated in every test that is
+    about something else, because every one of these would otherwise be
+    testing the consent gate by accident and its own subject not at all. The
+    gate has its own tests further down, and they are the ones that matter for
+    it.
+    """
+    from quill.ui.hosted_ai_commands import HostedAiMixin
+
+    monkeypatch.setattr(HostedAiMixin, "_ai_privacy_accepted", lambda _self: True)
+
+    class Service:
+        signed_in = True
+        own_key_active = False
+        support_id = "A1B2-C3D4"
+
+        def __init__(self):
+            self.refreshed = False
+            self.refreshed_into = None
+            self.asked = None
+
+        def refresh_limits(self, on_done=None):
+            self.refreshed = True
+            self.refreshed_into = on_done
+
+        def unavailable_reason(self, feature=""):
+            return ""
+
+    return Service()
+
+
+@pytest.fixture
+def connected(monkeypatch):
+    """Connected, but with the consent gate left alone.
+
+    The companion to ``signed_in``: same service, no acceptance granted, so the
+    gate's own tests exercise the gate rather than a fixture's opinion of it.
+    """
+
+    class Service:
+        signed_in = True
+        own_key_active = False
+        support_id = "A1B2-C3D4"
+
+        def refresh_limits(self, on_done=None):
+            pass
+
+        def unavailable_reason(self, feature=""):
+            return ""
+
+    return Service()
+
+
+# --------------------------------------------------------------------------- #
+# The guard: an area that is off owns nothing
+# --------------------------------------------------------------------------- #
+
+
+def test_the_assistant_refuses_when_the_area_is_switched_off(lite_window, ai_frames, monkeypatch):
+    """The menus and the palette already hide these, so reaching here with the
+    area off means a stale accelerator. The thing being guarded is a network
+    request somebody declined, which is worth a second check."""
+    win = lite_window("some text")
+    monkeypatch.setattr(win.app, "feature_enabled", lambda area: area != "hosted_ai")
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert ai_frames["AiPadFrame"].last is None
+    assert any("switched off" in said for said in win.announcements)
+
+
+def test_every_ai_command_refuses_when_the_area_is_off(lite_window, ai_frames, monkeypatch):
+    win = lite_window("text")
+    monkeypatch.setattr(win.app, "feature_enabled", lambda area: area != "hosted_ai")
+
+    (lambda w: w.cmd_ai_ask_document())(win)
+    (lambda w: w.cmd_ai_usage())(win)
+    (lambda w: w.cmd_ai_sign_in())(win)
+
+    assert ai_frames["AiPadFrame"].last is None
+    assert ai_frames["AiUsageFrame"].last is None
+    assert ai_frames["AiSignInFrame"].last is None
+
+
+# --------------------------------------------------------------------------- #
+# Signed out: offer the way in rather than a dead end
+# --------------------------------------------------------------------------- #
+
+
+def test_the_assistant_offers_sign_in_when_this_computer_is_not_connected(
+    lite_window, ai_frames, monkeypatch
+):
+    """Not a refusal. Somebody who presses the AI key wants AI, and the next
+    thing they need is the one window that gets them there."""
+    win = lite_window("some text")
+
+    from quill.ui.hosted_ai_commands import HostedAiMixin
+
+    monkeypatch.setattr(HostedAiMixin, "_ai_privacy_accepted", lambda _self: True)
+
+    class SignedOut:
+        signed_in = False
+        own_key_active = False
+
+    monkeypatch.setattr(win, "_ai_service", lambda: SignedOut())
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert ai_frames["AiPadFrame"].last is None
+    assert ai_frames["AiSignInFrame"].last is not None
+    assert any("not connected" in said for said in win.announcements)
+
+
+def test_usage_does_not_open_when_signed_out(lite_window, ai_frames, monkeypatch):
+    """A usage window for an account that does not exist has nothing to show."""
+    win = lite_window("text")
+
+    from quill.ui.hosted_ai_commands import HostedAiMixin
+
+    monkeypatch.setattr(HostedAiMixin, "_ai_privacy_accepted", lambda _self: True)
+
+    class SignedOut:
+        signed_in = False
+        own_key_active = False
+
+    monkeypatch.setattr(win, "_ai_service", lambda: SignedOut())
+
+    (lambda w: w.cmd_ai_usage())(win)
+
+    assert ai_frames["AiUsageFrame"].last is None
+
+
+# --------------------------------------------------------------------------- #
+# What the pad is handed
+# --------------------------------------------------------------------------- #
+
+
+def test_the_assistant_hands_the_pad_the_selection_and_the_caret(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    win = lite_window("First paragraph.\n\nSecond paragraph.")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+    win.control.SetSelection(0, 16)
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    kwargs = ai_frames["AiPadFrame"].last["kwargs"]
+    assert kwargs["selection"] == "First paragraph."
+    assert kwargs["document_text"].startswith("First paragraph.")
+    assert kwargs["initial_action"] == ""
+
+
+def test_ask_about_this_document_opens_the_pad_on_the_question_action(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    """The one command whose input is a question rather than the selection,
+    which is why it has a chord of its own."""
+    win = lite_window("Some document text.")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    (lambda w: w.cmd_ai_ask_document())(win)
+
+    assert ai_frames["AiPadFrame"].last["kwargs"]["initial_action"] == "document_qna"
+
+
+def test_opening_the_pad_refreshes_what_the_service_allows(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    """So the size check and the excerpt count match the server rather than a
+    constant compiled in months ago."""
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert signed_in.refreshed is True
+
+
+def test_the_limits_answer_reaches_the_pad_for_its_catalogue_rows(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    """The one /v1/config fetch hands its answer to the pad that asked, which
+    adds any tools the service's catalogue describes as rows of its own."""
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+    added = []
+    monkeypatch.setattr(
+        ai_frames["AiPadFrame"],
+        "add_catalogue_rows",
+        lambda _self, limits: added.append(limits),
+        raising=False,
+    )
+
+    (lambda w: w.cmd_ai_assistant())(win)
+    signed_in.refreshed_into("the limits")
+
+    assert added == ["the limits"]
+
+
+def test_the_usage_window_is_handed_the_service(lite_window, ai_frames, monkeypatch, signed_in):
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    (lambda w: w.cmd_ai_usage())(win)
+
+    assert ai_frames["AiUsageFrame"].last is not None
+
+
+def test_sign_in_opens_even_when_already_connected(lite_window, ai_frames, monkeypatch, signed_in):
+    """It is Sign In *or Out*: somebody already connected uses this window to
+    check that, and to get to the way back out."""
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    (lambda w: w.cmd_ai_sign_in())(win)
+
+    assert ai_frames["AiSignInFrame"].last is not None
+
+
+# --------------------------------------------------------------------------- #
+# Applying an answer, and refusing to apply a stale one
+# --------------------------------------------------------------------------- #
+
+
+def test_replace_is_offered_when_the_selection_is_still_there(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    win = lite_window("First paragraph.\n\nSecond paragraph.")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    win._show_ai_result("summarize", "A summary.", "Used 1.", 0, 16, "First paragraph.", "")
+
+    assert ai_frames["AiResultFrame"].last["kwargs"]["on_replace"] is not None
+
+
+def test_replace_is_withheld_when_the_text_moved_while_the_answer_was_coming(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    """The editor stayed live while the request ran, so the offsets may now hold
+    something else entirely. Writing an answer over whatever happens to be there
+    would be a silent wrong edit -- and the undo stack would show it as
+    something the user did."""
+    win = lite_window("Totally different text now.")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    win._show_ai_result("summarize", "A summary.", "Used 1.", 0, 16, "First paragraph.", "")
+
+    assert ai_frames["AiResultFrame"].last["kwargs"]["on_replace"] is None
+    # Insert is still offered: it does not depend on the old range.
+    assert ai_frames["AiResultFrame"].last["kwargs"]["on_insert"] is not None
+
+
+def test_replace_goes_in_as_one_undoable_edit(lite_window, monkeypatch, signed_in):
+    """Control Z takes back the whole answer, not forty separate writes."""
+    win = lite_window("First paragraph.\n\nSecond paragraph.")
+    win._replace_range(0, 16, "A shorter one.")
+    assert win.control.GetValue().startswith("A shorter one.")
+    assert "Second paragraph." in win.control.GetValue()
+
+
+def test_insert_below_puts_the_answer_after_the_paragraph_not_inside_it(
+    lite_window, monkeypatch, signed_in
+):
+    """An answer dropped mid-sentence is an answer somebody has to tidy up."""
+    win = lite_window("First paragraph.\n\nSecond paragraph.")
+    win.control.SetInsertionPoint(5)
+
+    win._insert_below("A summary.")
+
+    value = win.control.GetValue()
+    assert value.startswith("First paragraph.\n\nA summary.")
+    assert "Second paragraph." in value
+
+
+def test_an_answer_never_reaches_the_document_on_its_own(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    """The whole rule: AI never edits without a keystroke saying so. Showing a
+    result changes nothing until somebody presses a button in that window."""
+    win = lite_window("Original text.")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    win._show_ai_result("summarize", "A summary.", "Used 1.", 0, 8, "Original", "")
+
+    assert win.control.GetValue() == "Original text."
+
+
+# --------------------------------------------------------------------------- #
+# The privacy agreement
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def agreement(monkeypatch):
+    """The agreement dialog, answered by the test. Defaults to declining.
+
+    Cancel-by-default, like every other dialog in this harness: refusing consent
+    is the branch people forget to write, and it is the branch that must leave
+    the feature unusable.
+    """
+    import quill.ui.hosted_ai_dialogs as dialogs
+
+    calls = {"shown": 0, "answer": False, "reviewed": 0}
+
+    def fake(parent, *, accepted=False):
+        # A review of an accepted agreement is counted separately: its answer
+        # means "withdraw", and a test must say so on purpose.
+        if accepted:
+            calls["reviewed"] += 1
+            return calls.get("withdraw", False)
+        calls["shown"] += 1
+        return calls["answer"]
+
+    monkeypatch.setattr(dialogs, "ask_ai_privacy_agreement", fake)
+    return calls
+
+
+def test_ai_does_nothing_until_the_agreement_is_accepted(
+    lite_window, ai_frames, agreement, monkeypatch, connected
+):
+    """The area being on is not consent. It can be switched on by a profile, by
+    a settings import, or by somebody else using this machine."""
+    win = lite_window("some text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert agreement["shown"] == 1
+    assert ai_frames["AiPadFrame"].last is None
+
+
+def test_accepting_the_agreement_lets_the_command_through_at_once(
+    lite_window, ai_frames, agreement, monkeypatch, connected
+):
+    """An offer, not a refusal. Somebody who pressed the AI key wants AI, so
+    accepting continues into the thing they asked for rather than making them
+    press it again."""
+    win = lite_window("some text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = True
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert ai_frames["AiPadFrame"].last is not None
+    from quill.core.ai.gateway_privacy import AGREEMENT_VERSION
+
+    assert win.app.settings.ai_privacy_accepted_version == AGREEMENT_VERSION
+
+
+def test_an_accepted_agreement_is_not_asked_for_again(
+    lite_window, ai_frames, agreement, monkeypatch, connected
+):
+    from quill.core.ai.gateway_privacy import AGREEMENT_VERSION
+
+    win = lite_window("some text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = AGREEMENT_VERSION
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert agreement["shown"] == 0
+    assert ai_frames["AiPadFrame"].last is not None
+
+
+def test_a_newer_agreement_asks_again(lite_window, ai_frames, agreement, monkeypatch, connected):
+    """Versioned rather than a boolean, so a material change to what is sent or
+    kept can ask again instead of an old yes silently covering a new thing."""
+    win = lite_window("some text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0  # an older yes, or none
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert agreement["shown"] == 1
+
+
+def test_the_privacy_command_shows_the_agreement_when_it_is_not_accepted(
+    lite_window, agreement, monkeypatch
+):
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = 0
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert agreement["shown"] == 1
+
+
+def test_the_privacy_command_withdraws_an_accepted_agreement(lite_window, agreement, monkeypatch):
+    """Door one of three, in its "take it back" direction -- when Withdraw is
+    what the person chose."""
+    from quill.core.ai.gateway_privacy import AGREEMENT_VERSION
+
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = AGREEMENT_VERSION
+    agreement["withdraw"] = True
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert win.app.settings.ai_privacy_accepted_version == 0
+    assert any("signed out" in said for said in win.announcements)
+
+
+def test_withdrawing_also_signs_this_computer_out(lite_window, agreement, monkeypatch):
+    """Leaving a token on disk for a service somebody just said they do not
+    agree to use would be keeping the credential for the exact thing they
+    withdrew from."""
+    from quill.core.ai.gateway_privacy import AGREEMENT_VERSION
+
+    class Service:
+        signed_in = True
+        own_key_active = False
+
+        def __init__(self):
+            self.signed_out = False
+
+        def sign_out(self):
+            self.signed_out = True
+
+    service = Service()
+    win = lite_window("text")
+    win.app.ai_service = service
+    win.app.settings.ai_privacy_accepted_version = AGREEMENT_VERSION
+    agreement["withdraw"] = True
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert service.signed_out is True
+
+
+def test_reading_an_accepted_agreement_again_changes_nothing(lite_window, agreement, monkeypatch):
+    """Reported 2026-09-25: pressing Ctrl+Alt+Shift+K to read the agreement
+    again -- which the documentation invites -- withdrew it on the spot and
+    signed the computer out. Now it shows the agreement; keeping is the default,
+    and keeping says nothing."""
+    from quill.core.ai.gateway_privacy import AGREEMENT_VERSION
+
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = AGREEMENT_VERSION
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert agreement["reviewed"] == 1
+    assert win.app.settings.ai_privacy_accepted_version == AGREEMENT_VERSION
+    assert win.announcements == []
+
+
+def test_declining_leaves_the_feature_present_and_unusable(
+    lite_window, ai_frames, agreement, monkeypatch, connected
+):
+    """Not switched back off. A switch that flips itself back is a switch
+    somebody will fight -- and they would be right to: they did turn it on, and
+    what they declined was the sending."""
+    win = lite_window("some text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = False
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert ai_frames["AiPadFrame"].last is None
+    assert win.app.feature_enabled("hosted_ai") is True
+
+
+def test_switching_the_area_on_offers_the_agreement(lite_window, agreement, monkeypatch):
+    """Door two of three, and the one somebody can arrive at without meaning
+    to: applying the Everything profile turns the area on along with seventeen
+    others, and a profile is not consent."""
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = 0
+
+    win._offer_ai_privacy_on_enable()
+
+    assert agreement["shown"] == 1
+    assert any("will not send anything" in said for said in win.announcements)
+
+
+def test_the_agreement_says_what_is_sent_and_what_is_kept():
+    """The two facts somebody needs to decide. If either ever stops being in
+    there, the version number should have gone up."""
+    from quill.core.ai.gateway_privacy import SUMMARY, agreement_text
+
+    text = agreement_text()
+    assert "OpenAI" in text
+    assert "What QUILL keeps" in text
+    assert "What QUILL does not keep" in text
+    assert "What you wrote" in text
+    # And it always says how to say no.
+    assert "If you would rather not" in text
+    assert "OpenAI" in SUMMARY
+
+
+# --------------------------------------------------------------------------- #
+# Focus, and the door that is always open
+# --------------------------------------------------------------------------- #
+
+
+def test_every_ai_window_says_where_focus_should_land(lite_window, monkeypatch, signed_in):
+    """Reported from actually running it: the Sign In window did not take focus.
+
+    The cause was ``SetFocus()`` in a constructor. On wxMSW focus given to a
+    control in a window that has not been shown yet is discarded when the window
+    finally is -- so every one of those calls was silently doing nothing. The
+    other dialogs in QUILL Lite get away with it because they are ``wx.Dialog``s,
+    which ``Show()`` activates; these are ``wx.Frame``s parented to an MDI child,
+    which it does not.
+    """
+    from quill.ui.hosted_ai_dialogs import focus_on
+
+    class Frame:
+        pass
+
+    class Control:
+        pass
+
+    frame, control = Frame(), Control()
+    focus_on(frame, control)
+    assert frame._focus_target is control
+
+
+def test_showing_a_window_actually_gives_it_focus(
+    lite_window, ai_frames, monkeypatch, signed_in, wx_call_after
+):
+    """The outcome, not the mechanism.
+
+    An earlier version of this asserted that ``wx.CallAfter`` was used, which is
+    a detail that changed the moment the no-running-app path was added. What has
+    to stay true is that the window somebody opened ends up with focus -- the
+    thing that was broken.
+
+    Deferred work runs inline (``wx_call_after``): whether a wx.App is alive
+    in this worker is decided by which files ran before, and with one alive
+    the focus call waits for an event loop no unit test runs.
+    """
+    wx_call_after()
+    win = lite_window("some text")
+    monkeypatch.setattr(win, "_ai_service", lambda: signed_in)
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    pad = ai_frames["AiPadFrame"].last
+    assert pad is not None
+    # _show_ai_window keeps the instance it showed; the recorder only keeps the
+    # construction, so reach for the frame through the call it made.
+    assert getattr(win, "_last_shown_ai_window", None) is not None
+    assert win._last_shown_ai_window.focused is True
+
+
+def test_taking_focus_survives_a_window_closed_in_the_meantime(lite_window):
+    """A user can close a window between Show() and the next idle cycle, and a
+    focus call into a destroyed control is a crash rather than a missed focus."""
+    from quill.ui.hosted_ai_dialogs import take_focus
+
+    class Gone:
+        def __bool__(self):
+            return False
+
+    take_focus(Gone())  # must not raise
+
+
+def test_the_privacy_agreement_is_reachable_with_the_feature_switched_off():
+    """Reported: the privacy option should work whether or not AI is enabled.
+
+    A consent control that disappears along with the feature it governs is a
+    consent control you cannot withdraw from -- and somebody has to be able to
+    read what they would be agreeing to *before* agreeing to it.
+    """
+    from quill.core.lite.command_areas import visible_commands
+
+    off = visible_commands(lambda area: area != "hosted_ai")
+    rows = [row for row in off if row[0] == "&Tools|&AI"]
+    assert [row[3] for row in rows] == ["cmd_ai_privacy"]
+    # And the submenu that holds it survives with it.
+    assert any(row[4] == "sub" and row[1] == "&AI" for row in off)
+
+
+def test_the_privacy_command_runs_with_the_feature_switched_off(
+    lite_window, agreement, monkeypatch
+):
+    c = lite_window("text")
+    monkeypatch.setattr(c.app, "feature_enabled", lambda area: area != "hosted_ai")
+    c.app.settings.ai_privacy_accepted_version = 0
+
+    (lambda w: w.cmd_ai_privacy())(c)
+
+    assert agreement["shown"] == 1
+
+
+def test_accepting_from_the_privacy_command_switches_the_feature_on(
+    lite_window, agreement, monkeypatch, connected
+):
+    """Whichever door you came through, saying yes leaves you with a working
+    feature. Being sent to find a second switch would be a yes that did
+    nothing."""
+    from quill.core.ai.gateway_privacy import AGREEMENT_VERSION
+
+    class Features:
+        def __init__(self):
+            self.disabled = {"hosted_ai"}
+
+        def is_enabled(self, area):
+            return area not in self.disabled
+
+        def set_enabled(self, area, enabled):
+            self.disabled.discard(area) if enabled else self.disabled.add(area)
+
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.features = Features()
+    monkeypatch.setattr(win.app, "feature_enabled", lambda a: win.app.features.is_enabled(a))
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = True
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert win.app.settings.ai_privacy_accepted_version == AGREEMENT_VERSION
+    assert win.app.features.is_enabled("hosted_ai") is True
+    assert any("AI help is on" in said for said in win.announcements)
+
+
+# --------------------------------------------------------------------------- #
+# What the agreement says on the way past, and what the windows do twice
+# --------------------------------------------------------------------------- #
+
+
+def test_escaping_the_agreement_says_nothing(lite_window, ai_frames, agreement, monkeypatch):
+    """Escape changed nothing, and the reader announces the caret arriving back
+    in the document. A sentence on top of that is the over-announcing GATE-13
+    exists to catch -- and it was said on every Escape from every door."""
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = False
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert agreement["shown"] == 1
+    assert win.announcements == []
+
+
+def test_accepting_on_the_way_to_sign_in_does_not_send_you_back_to_sign_in(
+    lite_window, ai_frames, agreement, monkeypatch, connected, wx_call_after
+):
+    """The agreement used to answer "choose Tools, AI, Sign In or Out" to
+    somebody who had just chosen exactly that. The window they asked for is the
+    answer; the reader announces it when it takes focus."""
+    wx_call_after()  # the window opens after the agreement, deferred
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = True
+
+    (lambda w: w.cmd_ai_sign_in())(win)
+
+    assert ai_frames["AiSignInFrame"].last is not None
+    assert win.announcements == []
+
+
+def test_the_privacy_door_says_it_took_even_when_the_area_was_already_on(
+    lite_window, agreement, monkeypatch, connected
+):
+    """The sentence moved out of the dialog and into the caller, and this is the
+    case that proves it had to: nothing about the *features* changed, so a
+    message built around switching the area on could not be said here at all."""
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = True
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert any("AI help is on" in said for said in win.announcements)
+
+
+def test_accepting_the_agreement_goes_straight_on_to_connecting(
+    lite_window, ai_frames, agreement, monkeypatch, connected, wx_call_after
+):
+    """Nobody accepts the agreement for any reason but to connect, so a computer
+    that is not connected yet lands in the Connect window rather than being told
+    to go and find it in a menu (reported 2026-09-25)."""
+    wx_call_after()  # the window opens after the agreement, deferred
+    connected.signed_in = False
+    win = lite_window("text")
+    monkeypatch.setattr(win, "_ai_service", lambda: connected)
+    win.app.settings.ai_privacy_accepted_version = 0
+    agreement["answer"] = True
+
+    (lambda w: w.cmd_ai_privacy())(win)
+
+    assert ai_frames["AiSignInFrame"].last is not None
+    assert win.announcements == [], "the reader announces the window; nothing to add"
+
+
+def test_asking_for_a_window_twice_raises_the_one_that_is_open(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    """A second Sign-In window built over the first announces nothing, because
+    a frame opening where a frame already is announces nothing -- so the second
+    press was indistinguishable by ear from a key that is not bound."""
+    win = lite_window("text")
+
+    (lambda w: w.cmd_ai_sign_in())(win)
+    first = ai_frames["AiSignInFrame"].last
+    (lambda w: w.cmd_ai_sign_in())(win)
+
+    assert ai_frames["AiSignInFrame"].last is first, "no second window was built"
+
+
+def test_closing_a_window_lets_the_next_press_open_it_again(
+    lite_window, ai_frames, monkeypatch, signed_in
+):
+    win = lite_window("text")
+
+    (lambda w: w.cmd_ai_sign_in())(win)
+    win._ai_windows["sign_in"].close()
+    ai_frames["AiSignInFrame"].last = None
+    (lambda w: w.cmd_ai_sign_in())(win)
+
+    assert ai_frames["AiSignInFrame"].last is not None
+
+
+# --------------------------------------------------------------------------- #
+# Use My Own OpenAI Key: a saved key lifts every limit; removing it goes back
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def own_key_dialog(monkeypatch):
+    """The Use My Own OpenAI Key window, answered without a screen."""
+    import wx
+
+    import quill.ui.dialog_contract as contract
+    import quill.ui.hosted_ai_own_key as own_key_ui
+
+    state = {"answer": wx.ID_OK, "shown": 0, "applied": 0}
+
+    class Dialog:
+        def __init__(self, parent, settings, announce):
+            state["shown"] += 1
+
+        def apply(self, settings):
+            state["applied"] += 1
+            settings.ai_own_key_model = "gpt-test"
+            return "AI help uses your own OpenAI key, with no limits."
+
+        def Destroy(self):
+            pass
+
+    monkeypatch.setattr(own_key_ui, "OwnKeyDialog", Dialog)
+    monkeypatch.setattr(contract, "show_modal_dialog", lambda _d, _t: state["answer"])
+    return state
+
+
+def test_own_key_refuses_when_the_area_is_off(lite_window, own_key_dialog, monkeypatch):
+    win = lite_window("text")
+    monkeypatch.setattr(win.app, "feature_enabled", lambda area: area != "hosted_ai")
+
+    (lambda w: w.cmd_ai_own_key())(win)
+
+    assert own_key_dialog["shown"] == 0
+    assert any("switched off" in said for said in win.announcements)
+
+
+def test_own_key_needs_no_agreement_and_saves_what_the_window_chose(lite_window, own_key_dialog):
+    """The free service's agreement is about QUILL's servers; this route never
+    touches them, and the window itself says where the text goes."""
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = 0
+    before = win.app.saved_settings
+
+    (lambda w: w.cmd_ai_own_key())(win)
+
+    assert own_key_dialog["applied"] == 1
+    assert win.app.settings.ai_own_key_model == "gpt-test"
+    assert win.app.saved_settings == before + 1
+    assert any("no limits" in said for said in win.announcements)
+
+
+def test_cancelling_own_key_changes_nothing(lite_window, own_key_dialog):
+    import wx
+
+    own_key_dialog["answer"] = wx.ID_CANCEL
+    win = lite_window("text")
+    before = win.app.saved_settings
+
+    (lambda w: w.cmd_ai_own_key())(win)
+
+    assert own_key_dialog["applied"] == 0
+    assert win.app.saved_settings == before
+
+
+def test_with_a_saved_key_usage_opens_the_own_key_window(lite_window, ai_frames, monkeypatch):
+    """A different window, not the allowance one: there is nothing to fetch."""
+    import quill.ui.hosted_ai_own_key as own_key_ui
+    from quill.ui.hosted_ai_commands import HostedAiMixin
+
+    Window = type("OwnKeyUsageFrame", (_FakeFrame,), {"last": None})
+
+    class Service:
+        signed_in = False
+        own_key_active = True
+
+    service = Service()
+    win = lite_window("text")
+    monkeypatch.setattr(HostedAiMixin, "_ai_privacy_accepted", lambda _self: True)
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+    monkeypatch.setattr(own_key_ui, "OwnKeyUsageFrame", Window)
+
+    (lambda w: w.cmd_ai_usage())(win)
+
+    assert Window.last["args"][1] is service
+    assert ai_frames["AiUsageFrame"].last is None
+
+
+def test_a_saved_key_lifts_the_limits_and_removing_it_restores_them(monkeypatch):
+    """No switch: the key's presence is the whole state."""
+    from quill.core.ai import own_key
+    from quill.ui.hosted_ai_service import AiService
+
+    class App:
+        class settings:  # noqa: N801 - a stand-in namespace
+            ai_own_key_model = ""
+
+    service = AiService(App())
+    monkeypatch.setattr(own_key, "has_own_key", lambda *_a: True)
+    assert service.own_key_active
+    assert service.limits is own_key.OWN_KEY_LIMITS
+    assert service.unavailable_reason("summarize") == ""
+
+    monkeypatch.setattr(own_key, "has_own_key", lambda *_a: False)
+    assert not service.own_key_active
+    assert service.limits is not own_key.OWN_KEY_LIMITS
+
+
+# --------------------------------------------------------------------------- #
+# A ChatGPT subscription, and Ask About an Image (2026-09-29)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def chatgpt_window(monkeypatch):
+    """The account window, replaced by a recorder where the command looks it up."""
+    import quill.ui.hosted_ai_chatgpt as chatgpt_ui
+
+    Window = type("ChatGptFrame", (_FakeFrame,), {"last": None})
+    monkeypatch.setattr(chatgpt_ui, "ChatGptFrame", Window)
+    return Window
+
+
+class _PlanService:
+    """A service signed in with ChatGPT, whose image requests are recorded."""
+
+    signed_in = False
+    own_key_active = False
+    chatgpt_active = True
+    direct = True
+    route = "chatgpt"
+
+    def __init__(self):
+        self.chatgpt = object()
+        self.images = []
+
+    def refresh_limits(self, on_done=None):
+        pass
+
+    def unavailable_reason(self, feature=""):
+        return ""
+
+    def describe_image(self, path, question, *, on_done, on_error):
+        self.images.append((path, question))
+        on_done("A red door.")
+
+
+def test_the_chatgpt_window_refuses_when_the_area_is_off(lite_window, chatgpt_window, monkeypatch):
+    win = lite_window("text")
+    monkeypatch.setattr(win.app, "feature_enabled", lambda area: area != "hosted_ai")
+
+    (lambda w: w.cmd_ai_chatgpt())(win)
+
+    assert chatgpt_window.last is None
+    assert any("switched off" in said for said in win.announcements)
+
+
+def test_the_chatgpt_window_needs_no_agreement_and_gets_this_apps_account(
+    lite_window, chatgpt_window, monkeypatch
+):
+    """The free service's agreement is about QUILL's servers, which this route
+    never touches; the account handed over is the service's own."""
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = 0
+    service = _PlanService()
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_ai_chatgpt())(win)
+
+    assert chatgpt_window.last is not None
+    assert chatgpt_window.last["args"][1] is service.chatgpt
+    assert callable(chatgpt_window.last["kwargs"]["on_change"])
+
+
+def test_the_lite_app_signs_in_as_quill_lite(tmp_path):
+    """OpenAI shows the agent's name on the consent page; it must be this app's."""
+    from quill.apps.lite import QuillLiteApp
+    from quill.apps.lite_services import LiteServicesMixin
+    from quill.ui.hosted_ai_service import AiService
+
+    assert issubclass(QuillLiteApp, LiteServicesMixin)
+
+    class App(LiteServicesMixin):
+        data_dir = tmp_path
+        settings = None
+
+    service = AiService(App())
+    assert service.chatgpt.agent_name == "QUILL Lite"
+
+
+def test_usage_opens_the_account_window_on_a_plan(
+    lite_window, ai_frames, chatgpt_window, monkeypatch
+):
+    from quill.ui.hosted_ai_commands import HostedAiMixin
+
+    win = lite_window("text")
+    monkeypatch.setattr(HostedAiMixin, "_ai_privacy_accepted", lambda _self: True)
+    monkeypatch.setattr(win, "_ai_service", lambda: _PlanService())
+
+    (lambda w: w.cmd_ai_usage())(win)
+
+    assert chatgpt_window.last is not None
+    assert ai_frames["AiUsageFrame"].last is None
+
+
+def test_the_pad_opens_on_a_plan_with_no_connection_to_the_free_service(
+    lite_window, ai_frames, monkeypatch
+):
+    win = lite_window("text")
+    win.app.settings.ai_privacy_accepted_version = 0
+    monkeypatch.setattr(win, "_ai_service", lambda: _PlanService())
+
+    (lambda w: w.cmd_ai_assistant())(win)
+
+    assert ai_frames["AiPadFrame"].last is not None
+    assert ai_frames["AiSignInFrame"].last is None
+
+
+def test_ask_about_an_image_without_a_sign_in_opens_the_account_window(
+    lite_window, chatgpt_window, monkeypatch
+):
+    win = lite_window("text")
+    service = _PlanService()
+    service.chatgpt_active = False
+    service.direct = False
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_ai_image())(win)
+
+    assert chatgpt_window.last is not None
+    assert service.images == []
+    assert any("ChatGPT subscription" in said for said in win.announcements)
+
+
+@pytest.fixture
+def image_dialog(monkeypatch, tmp_path):
+    """Ask About an Image's dialog, answered without a window."""
+    import wx
+
+    import quill.ui.dialog_contract as contract
+    import quill.ui.hosted_ai_image as image_ui
+
+    picture = tmp_path / "door.png"
+    picture.write_bytes(b"png")
+    state = {"answer": wx.ID_OK, "shown": 0, "path": picture, "question": "What colour?"}
+
+    class Dialog:
+        def __init__(self, parent, *, announce=None):
+            state["shown"] += 1
+
+        def chosen(self):
+            return state["path"], state["question"]
+
+        def Destroy(self):
+            pass
+
+    monkeypatch.setattr(image_ui, "AskImageDialog", Dialog)
+    monkeypatch.setattr(contract, "show_modal_dialog", lambda _d, _t: state["answer"])
+    return state
+
+
+def test_ask_about_an_image_sends_the_picture_and_shows_the_answer(
+    lite_window, ai_frames, image_dialog, monkeypatch
+):
+    win = lite_window("text")
+    service = _PlanService()
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_ai_image())(win)
+
+    assert image_dialog["shown"] == 1
+    assert service.images == [(image_dialog["path"], "What colour?")]
+    shown = ai_frames["AiResultFrame"].last
+    assert shown is not None
+    assert shown["kwargs"]["action"] == "image"
+    assert shown["kwargs"]["text"] == "A red door."
+    assert shown["kwargs"]["on_replace"] is None
+    assert shown["kwargs"]["on_insert"] is not None
+
+
+def test_cancelling_ask_about_an_image_sends_nothing(
+    lite_window, ai_frames, image_dialog, monkeypatch
+):
+    import wx
+
+    image_dialog["answer"] = wx.ID_CANCEL
+    win = lite_window("text")
+    service = _PlanService()
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_ai_image())(win)
+
+    assert service.images == []
+    assert ai_frames["AiResultFrame"].last is None
+
+
+def test_an_image_answer_never_reaches_the_document_on_its_own(
+    lite_window, ai_frames, image_dialog, monkeypatch
+):
+    win = lite_window("text")
+    before = win.control.GetValue()
+    monkeypatch.setattr(win, "_ai_service", lambda: _PlanService())
+
+    (lambda w: w.cmd_ai_image())(win)
+
+    assert win.control.GetValue() == before
+
+
+# --------------------------------------------------------------------------- #
+# Tidy Dictated Text (2026-09-29)
+# --------------------------------------------------------------------------- #
+
+
+class _TidyService(_PlanService):
+    def __init__(self):
+        super().__init__()
+        self.asked = []
+
+    def ask(self, feature, prompt, chunks, *, on_done, on_error, **extra):
+        self.asked.append((feature, prompt, chunks))
+        on_done("Tidied text.", None)
+
+
+def test_tidy_dictation_needs_a_direct_route_and_opens_the_account_window(
+    lite_window, chatgpt_window, monkeypatch
+):
+    win = lite_window("some dictated words")
+    service = _TidyService()
+    service.chatgpt_active = False
+    service.direct = False
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_dictation_tidy())(win)
+
+    assert service.asked == []
+    assert chatgpt_window.last is not None
+    assert any("Tidy Dictated Text uses" in said for said in win.announcements)
+
+
+def test_tidy_dictation_sends_the_selection_and_offers_replace(lite_window, ai_frames, monkeypatch):
+    win = lite_window("first one\n\nsecond paragraph here\n\nthird")
+    win.control.SetSelection(11, 32)
+    service = _TidyService()
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_dictation_tidy())(win)
+
+    assert service.asked == [("tidy_dictation", "second paragraph here", None)]
+    shown = ai_frames["AiResultFrame"].last
+    assert shown["kwargs"]["action"] == "tidy_dictation"
+    assert shown["kwargs"]["text"] == "Tidied text."
+    assert shown["kwargs"]["on_replace"] is not None
+    shown["kwargs"]["on_replace"]("Tidied text.")
+    assert win.control.GetValue() == "first one\n\nTidied text.\n\nthird"
+
+
+def test_tidy_dictation_without_a_selection_takes_the_paragraph_at_the_caret(
+    lite_window, ai_frames, monkeypatch
+):
+    win = lite_window("first one\n\nsecond paragraph here\n\nthird", cursor=15)
+    win.control.SetSelection(15, 15)
+    service = _TidyService()
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_dictation_tidy())(win)
+
+    assert service.asked == [("tidy_dictation", "second paragraph here", None)]
+    shown = ai_frames["AiResultFrame"].last
+    assert shown["kwargs"]["on_replace"] is not None
+
+
+def test_tidy_dictation_on_an_empty_document_says_so(lite_window, ai_frames, monkeypatch):
+    win = lite_window("")
+    service = _TidyService()
+    monkeypatch.setattr(win, "_ai_service", lambda: service)
+
+    (lambda w: w.cmd_dictation_tidy())(win)
+
+    assert service.asked == []
+    assert any("nothing here to tidy" in said for said in win.announcements)
+
+
+def test_the_paragraph_span_finds_the_paragraph_and_its_offsets():
+    from quill.ui.hosted_ai_chatgpt_commands import _paragraph_span
+
+    text = "alpha\n\nbeta gamma\n\ndelta"
+    assert _paragraph_span(text, 0) == (0, 5, "alpha")
+    assert _paragraph_span(text, 9) == (7, 17, "beta gamma")
+    assert _paragraph_span(text, len(text)) == (19, 24, "delta")
+    assert _paragraph_span("", 3) == (0, 0, "")

@@ -1,0 +1,456 @@
+"""What happens while you type: abbreviations, autocorrect, and the spell check.
+
+Features that watch the keystroke rather than the menu, and the only places in
+QUILL Lite where the app changes text the user did not ask it to change. All
+of them are switchable, and the ones that change text start off.
+
+**Abbreviations** (:mod:`quill.core.abbreviations`, QUILL's own engine and
+QUILL's own manager dialog) live in :mod:`quill.apps.lite_window_abbreviations`
+since 2026-10-16, inherited here. Type ``addr`` and a space and get your
+address. The library is **QUILL Lite's own** by default, in QUILL Lite's own
+data folder; Preferences has a switch -- off by default -- that points it at
+QUILL's shared ``abbreviations.json`` instead, the one Inkwell and QUILL use.
+A machine that has never had QUILL installed must not grow a Quill data folder
+because somebody opened a text file.
+
+**AutoCorrect for misspellings and Enter in a list**
+(:mod:`quill.apps.lite_window_typing_assist`, QUILL's rules from
+:mod:`quill.core.autocorrect` and :mod:`quill.core.list_continuation`). The key
+handlers below call in there: a space or Enter may correct the word it ends,
+and Enter may continue a list.
+
+**Autocorrect** (:mod:`quill.core.autoformat`, QUILL's rules). Curly quotes and
+em dashes from a double hyphen; misspelling correction is the separate setting
+above, under the same area. :meth:`_autoformat` has no sentence-capital rule
+and never has, whatever three descriptions used to say. It ships
+**off** (:data:`quill.core.lite.features.DEFAULT_OFF`), because every one of
+those is welcome in prose and actively wrong in a configuration file, a code
+snippet or a CSV -- and QUILL Lite is used for all four. Turning it on is one
+checkbox in Tools > Customize Features.
+
+Neither runs in plain text mode by accident: both are keyed off ``EVT_CHAR``
+after the character has landed, and both leave the text alone when their area is
+off.
+
+**Overtype** is the fourth. The native control implements insert-versus-overwrite
+itself and toggles it on VK_INSERT, and it will not report which mode it is in --
+so QUILL Lite mirrors the mode, and every route that changes it comes through
+:meth:`~quill.ui.richedit_editing.RichEditDocument.toggle_overtype` (which is
+also what QUILL's own command calls). The Insert key is watched rather than
+bound: it is NVDA's and JAWS's modifier and must never be claimed, but the
+control answers it regardless, so the mirror has to see it go past or the Typing
+Mode cell would start lying the first time somebody pressed it.
+
+**Tab mode** is the fifth, and the only one that changes what an ordinary key
+*means*. QUILL Lite is a Notepad replacement, so its Tab types a tab character --
+that is the default, and it is the opposite of QUILL's, where Tab runs the smart
+line indent. The divergence is deliberate and is the only one on this page:
+QUILL is a document editor whose Tab is almost always about structure, while a
+file opened in QUILL Lite is as likely to be a configuration file where a tab is
+data. Both products ship the same toggle so either default can be left behind,
+and in both Shift+Tab outdents whatever the mode, so a stray indent can be
+undone without first switching back.
+
+**Spell check** is the third thing watching the keystroke, and the only one that
+never changes the text -- it schedules
+:meth:`~quill.apps.lite_window_spelling.DocumentSpellingMixin.schedule_live_spell_check`
+and nothing more. It is here rather than on ``EVT_TEXT`` so that a paste, which
+is not typing, does not trigger a check of a word the user never typed.
+"""
+
+from __future__ import annotations
+
+import wx
+
+from quill.apps.lite_window_abbreviations import DocumentAbbreviationsMixin
+from quill.apps.lite_window_typing_assist import DocumentTypingAssistMixin
+from quill.core.autoformat import autoformat_allows, is_dash_merge, smart_quote_for
+from quill.core.sound_events import SoundEvent
+from quill.ui.richedit_editing import RICH
+
+__all__ = ["DocumentTypingMixin"]
+
+#: The characters autocorrect reacts to. Everything else is passed straight
+#: through, so the common case costs one set membership test per keystroke.
+_QUOTES = {'"', "'"}
+
+
+def overwrite_now(frame: object) -> bool:
+    """Whether typing overwrites, asked of the control rather than remembered.
+
+    A module function because three places need the answer -- the status cell,
+    the View menu's check mark and the command itself -- and two of them are
+    called unbound against stub frames, where a method on a sibling mixin is not
+    there to be called. Falls back to the mirror when the host cannot be asked.
+    """
+    ask = getattr(getattr(frame, "editor", None), "overtype_active", None)
+    live = ask() if callable(ask) else None
+    if live is None:
+        return bool(getattr(frame, "_overwrite_mode", False))
+    # Keep the fallback honest, so a surface that stops answering does not
+    # start answering with something years out of date.
+    frame._overwrite_mode = bool(live)  # type: ignore[attr-defined]
+    return bool(live)
+
+
+class DocumentTypingMixin(DocumentAbbreviationsMixin, DocumentTypingAssistMixin):
+    """Abbreviation expansion and autocorrect, on the way through EVT_CHAR."""
+
+    # -- overtype ------------------------------------------------------------ #
+
+    def _init_overwrite(self) -> None:
+        """Start in insert mode, which is where a freshly built control starts."""
+        #: Mirrors the control, which keeps the mode and will not report it.
+        self._overwrite_mode = False
+        #: Up only while :meth:`cmd_toggle_overwrite` is handing the control a
+        #: synthesised Insert; the watcher must not read that as the user.
+        self._synthetic_insert_key = False
+        #: True: Tab types a tab character. False: Tab runs the smart line
+        #: indent. Neither is the default any more -- the document kind decides
+        #: through the shared quill.core.tab_behaviour rule QUILL reads too
+        #: (bad.md T3, P1.21) -- and this holds the answer only once somebody
+        #: has used the toggle, which is what _tab_mode_chosen records.
+        self._tab_inserts_literal = True
+        self._tab_mode_chosen = False
+
+    def _cue_deletion(self, code: int) -> None:
+        """Sound the Delete and Backspace keys, which never reached a command.
+
+        Reported: "the delete key does not play a sound, or I do not hear one."
+        It did not. ``cmd_delete`` posts the earcon and ``cmd_delete`` is the
+        *menu item*; the Del key goes straight into the control, which deletes
+        the character itself and tells nobody. Edit > Delete chimed and the key
+        that everybody actually presses did not -- the same shape as cut, copy
+        and paste, which is why ``bind_clipboard_cues`` exists.
+
+        The **earcon only**, never the spoken half of ``_action``. A deletion is
+        a keystroke, repeats while the key is held, and the screen reader
+        already says the character that went; a sentence per press would be the
+        over-announcement GATE-13 is about, and a status message per press would
+        bury whatever the bar was actually reporting. Somebody who wants no
+        sound here switches ``text_deleted`` off in the sound pack, which is the
+        control that already exists for every other earcon.
+
+        Silent when the press deletes nothing -- Delete at the end of the
+        document, Backspace at the start, anything at all in a read-only one. A
+        tone that says something went when nothing did is worse than no tone,
+        because it is the tone somebody is listening to instead of looking.
+        """
+        if not self._deletes_something(code):
+            return
+        self._cue(SoundEvent.TEXT_DELETED)
+
+    def _deletes_something(self, code: int) -> bool:
+        """Whether this press will actually remove text. Never raises."""
+        try:
+            if not self.control.IsEditable():
+                return False
+            start, end = self.control.GetSelection()
+            if end > start:
+                return True
+            if code == wx.WXK_BACK:
+                return start > 0
+            return start < self.control.GetLastPosition()
+        except (AttributeError, RuntimeError, TypeError):
+            return False
+
+    def _on_key_down(self, event: wx.KeyEvent) -> None:
+        """Watch the Insert key go past, and keep the mirror true.
+
+        Never bound, only watched: Insert is the screen reader's modifier, and
+        ``Skip`` is what lets the control do the overtype it was always going
+        to do. All this adds is that the status cell knows.
+        """
+        code = event.GetKeyCode()
+        # A side effect, not a branch: the key goes on to the control, which
+        # does the deleting. All this adds is that it is audible.
+        if code in (wx.WXK_DELETE, wx.WXK_BACK):
+            self._cue_deletion(code)
+        if code == wx.WXK_INSERT and not self._synthetic_insert_key:
+            self._overwrite_mode = not self._overwrite_mode
+            self._touch_status()
+            self._sync_check_items()
+            event.Skip()
+            return
+        if code == wx.WXK_TAB and self._handle_tab(event):
+            return
+        # In a table the arrows move by cell and say it (lite_window_tables.py).
+        table_arrow = getattr(self, "_table_arrow", None)
+        if table_arrow is not None and table_arrow(event):
+            return
+        # Enter: correct the word it ends, then continue a list if it is one
+        # (lite_window_typing_assist.py). Plain Enter only; Shift+Enter is a
+        # line break, not a new item.
+        if code in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER) and not (
+            event.ControlDown() or event.AltDown() or event.ShiftDown()
+        ):
+            self._autocorrect_word("\n")
+            if self._handle_list_return():
+                return
+        # Escape drops a waiting F8 marker. It could not be cancelled at all
+        # before 2026-09-16: cancel_extend_selection existed and nothing called
+        # it, so once F8 was pressed the marker waited forever and pressing F8
+        # again silently moved it somewhere else. The state is invisible, so
+        # the only way out was to complete a selection you did not want
+        # (bad.md L4). Escape is what a listener reaches for, and it is free
+        # here -- the control does nothing with it in a plain edit.
+        if code == wx.WXK_ESCAPE and self.cancel_extend_selection():
+            return
+        # Escape also leaves Extend Selection Mode, which is a different state
+        # from a waiting F8 marker: the marker is a place, the mode is a
+        # sticky Shift. Both are invisible, so both answer Escape and both say
+        # they did.
+        if code == wx.WXK_ESCAPE and self.cancel_extend_selection_mode():
+            return
+        # Extend Selection Mode owns the navigation keys while it is on, and
+        # must see them BEFORE the control does -- on wxMSW an arrow pressed
+        # with text selected collapses the selection and stops, which is what
+        # broke QUILL Lite's own attempt at this (bad.md P2.13, 5.3a).
+        if self.handle_extend_selection_key(event):
+            return
+        # Shift+F10 and the Applications key, opened here rather than left to
+        # wx. Reported 2026-09-12: "I misspelled a word and arrow to it and
+        # pressed shift+f10 and got no spelling information." The menu is built
+        # by EVT_CONTEXT_MENU, which wxMSW raises from WM_CONTEXTMENU -- and the
+        # editor is a native RichEdit that wx subclasses, so whether the
+        # keyboard form of that message ever arrives is not ours to rely on. A
+        # right-click always worked, which is exactly the shape of bug that
+        # looks like "the feature is missing" to somebody who never uses a
+        # mouse. Opening it from the key that was pressed needs no such luck.
+        if self._is_context_menu_key(event):
+            self.open_context_menu_at_caret()
+            return
+        if self._swallow_native_formatting_key(event):
+            return
+        event.Skip()
+
+    def _swallow_native_formatting_key(self, event: wx.KeyEvent) -> bool:
+        """Stop the control formatting a document that has no formatting.
+
+        QUILL Lite builds plain and Markdown documents on the same Rich Edit
+        control QUILL does, and for the same reason -- it is what gives braille
+        and the reader a text surface worth reading. The control brings its own
+        chords: every native key QUILL Lite does not bind (``Ctrl+Shift+=`` for
+        superscript and its friends) applies a formatting run to a document
+        that cannot hold one, so the window and the file it will write disagree
+        and nothing says so (bad.md R9).
+
+        Said once per document, from the same shared sentence QUILL uses, so
+        the two products cannot explain one dead key two ways. A chord
+        QUILL Lite binds never reaches here: the menu accelerator runs first.
+        """
+        from quill.core.native_richedit_keys import (
+            native_formatting_effect,
+            native_formatting_notice,
+            notice_kind_label,
+        )
+
+        if getattr(self.editor, "mode", None) == RICH:
+            return False
+        # getattr, not a direct call: a key event reaches this handler from
+        # several places, and the guard must never be the reason a keystroke
+        # raises. No key code means nothing to swallow.
+        unicode_key = getattr(event, "GetUnicodeKey", None)
+        key_code = getattr(event, "GetKeyCode", None)
+        try:
+            raw = (unicode_key() if callable(unicode_key) else 0) or (
+                key_code() if callable(key_code) else 0
+            )
+            key = chr(int(raw))
+        except (ValueError, OverflowError, TypeError):
+            return False
+
+        def held(name: str) -> bool:
+            probe = getattr(event, name, None)
+            return bool(probe()) if callable(probe) else False
+
+        effect = native_formatting_effect(
+            ctrl=held("ControlDown"),
+            shift=held("ShiftDown"),
+            alt=held("AltDown"),
+            key=key,
+        )
+        if effect is None:
+            return False
+        seen = getattr(self, "_native_key_notices", None)
+        if seen is None:
+            seen = set()
+            self._native_key_notices = seen
+        if effect not in seen:
+            seen.add(effect)
+            # Through the shared table, not .lower(): lower-casing this
+            # window's own "HTML" said "a html document" where QUILL said
+            # "an HTML document", for the same key in the same file.
+            self._announce(
+                native_formatting_notice(effect, notice_kind_label(self.document_kind_label()))
+            )
+        return True
+
+    @staticmethod
+    def _is_context_menu_key(event: wx.KeyEvent) -> bool:
+        """Shift+F10 or the Applications key, and nothing else.
+
+        Plain F10 is the menu bar and must be left alone; Ctrl+Shift+F10 is not
+        this either, so the modifiers are checked rather than assumed.
+        """
+        code = event.GetKeyCode()
+        if code == wx.WXK_WINDOWS_MENU:
+            return not (event.ControlDown() or event.AltDown())
+        return (
+            code == wx.WXK_F10
+            and event.ShiftDown()
+            and not (event.ControlDown() or event.AltDown())
+        )
+
+    def _handle_tab(self, event: wx.KeyEvent) -> bool:
+        """Indent or outdent instead of typing a tab. ``True`` if it was handled.
+
+        Shift+Tab outdents in *either* mode, so a stray indent can be undone
+        without first leaving literal-tab mode. Plain Tab is only intercepted
+        when the smart mode is on; otherwise it is left alone and the control --
+        built with ``TE_PROCESS_TAB`` -- types the character itself, which is
+        what a Notepad replacement is expected to do.
+
+        The outcome is spoken as the new depth ("4 spaces", "1 tab") rather than
+        "Indented 1 line", because leading whitespace is precisely what a screen
+        reader does not read back: the count is the only way to hear what the
+        keystroke actually did.
+        """
+        # In a table, Tab and Shift+Tab move cell to cell, as in Word, whatever
+        # the Tab mode is (lite_window_tables.py).
+        held = [getattr(event, name, lambda: False)() for name in ("ControlDown", "AltDown")]
+        table_tab = getattr(self, "_table_tab", None)  # composed in lite_window_tables.py
+        if not any(held) and table_tab is not None and table_tab(backwards=event.ShiftDown()):
+            return True
+        if event.ShiftDown():
+            self.cmd_outdent(announce=False)
+        elif self._tab_types_a_tab():
+            return False
+        else:
+            self.cmd_indent(announce=False)
+        self._announce(self.describe_indent_at_cursor())
+        return True
+
+    def _tab_types_a_tab(self) -> bool:
+        """Whether Tab types a tab character right now (bad.md T3, P1.21).
+
+        The toggle wins once it has been used; otherwise the document kind
+        decides, through the rule QUILL reads too. QUILL Lite typed a tab in
+        every kind and QUILL indented in every kind, and each was wrong in the
+        other's documents -- a tab in a Markdown list item breaks the list.
+        """
+        from quill.core.tab_behaviour import tab_inserts_a_tab
+
+        if self._tab_mode_chosen:
+            return self._tab_inserts_literal
+        return tab_inserts_a_tab(self.markup_surface())
+
+    def cmd_toggle_tab_mode(self) -> None:
+        """Switch the Tab key between typing a tab and indenting the line."""
+        self._tab_inserts_literal = not self._tab_types_a_tab()
+        self._tab_mode_chosen = True
+        self._touch_status()
+        self._sync_check_items()
+        self._announce(
+            "Tab key types a tab character"
+            if self._tab_inserts_literal
+            else "Tab key indents the line"
+        )
+
+    def cmd_toggle_overwrite(self) -> None:
+        """Switch between inserting and overwriting, in the control as well.
+
+        Refuses rather than lies when there is no native control to tell: a
+        status cell that misreports what typing is about to do, to somebody who
+        cannot check by looking, is the one failure this bar exists to prevent.
+        """
+        toggle = getattr(self.editor, "toggle_overtype", None)
+        self._synthetic_insert_key = True
+        try:
+            moved = bool(toggle()) if callable(toggle) else False
+        except Exception:  # noqa: BLE001 - the mirror stays honest either way
+            moved = False
+        finally:
+            self._synthetic_insert_key = False
+        if not moved:
+            self._announce("Overwrite mode is not available on this editing surface")
+            return
+        self._overwrite_mode = not self._overwrite_mode
+        self._sync_check_items()
+        self._announce("Overwrite mode on" if self._overwrite_mode else "Insert mode on")
+
+    def _on_char(self, event: wx.KeyEvent) -> None:
+        """Watch the keystroke. Almost always: let it through untouched.
+
+        Bound to ``EVT_CHAR`` rather than ``EVT_TEXT`` because both features
+        need to know *which* character arrived and to be able to refuse it --
+        a smart quote replaces the straight one the user pressed, so the plain
+        one must never be inserted in the first place.
+        """
+        code = event.GetUnicodeKey()
+        typed = chr(code) if code else ""
+        if typed == " " and self._autocorrect_word(typed):
+            return  # the space went in with the corrected word, as one undo step
+        if typed and self.app.feature_enabled("autoformat") and self._autoformat(typed):
+            return  # handled: the replacement went in instead of the keystroke
+        event.Skip()
+        # After the keystroke, on a timer: the check has to see the finished
+        # word, and judging one the user is still typing would report every
+        # word as wrong on its way to being right.
+        self.schedule_live_spell_check()
+        if typed and self.app.feature_enabled("abbreviations"):
+            # After the character lands, not before: an abbreviation is
+            # recognised by the trigger that follows it, so the trigger has to
+            # be in the buffer for try_expand to see it.
+            wx.CallAfter(self._maybe_expand)
+
+    # ------------------------------------------------------------------ #
+    # Autocorrect
+    # ------------------------------------------------------------------ #
+
+    def _autoformat(self, typed: str) -> bool:
+        """Replace the keystroke where a rule applies. ``True`` when it did.
+
+        Three gates, and they answer different questions. The Customize Features
+        area is "do I want this at all"; the two settings are "which of the two
+        rules" (QUILL's granularity, taken on 2026-09-17 -- curly quotes and em
+        dashes are different opinions, bad.md T5); and the document kind is the
+        one the app answers for itself, because a curly quote in a ``.json`` is
+        a syntax error nobody asked for and no setting can express "except in
+        code" (bad.md T4).
+        """
+        if not autoformat_allows(self.document_language()):
+            return False
+        settings = self.app.settings
+        position = self.control.GetInsertionPoint()
+        if position and self.control.GetSelection()[0] != self.control.GetSelection()[1]:
+            return False  # a selection is a replacement, not a typed character
+        # One character, not the whole document. This runs on *every
+        # keystroke*, and reading the buffer out of the control to look at the
+        # character behind the caret was the single hottest O(N) in the app --
+        # QUILL has read it this way since #1346 (bad.md T1).
+        preceding = self.control.GetRange(position - 1, position) if position else ""
+        if typed in _QUOTES:
+            if not bool(getattr(settings, "autoformat_smart_quotes", False)):
+                return False
+            self._insert_replacing(smart_quote_for(preceding, typed), back=0)
+            return True
+        if (
+            typed == "-"
+            and bool(getattr(settings, "autoformat_dashes", False))
+            and is_dash_merge(preceding)
+        ):
+            # The second hyphen of "--" becomes an em dash, eating the first.
+            self._insert_replacing("—", back=1)
+            self._cue(SoundEvent.WORD_CORRECTED)
+            return True
+        return False
+
+    def _insert_replacing(self, text: str, *, back: int) -> None:
+        """Put *text* in, having first removed *back* characters behind the caret."""
+        position = self.control.GetInsertionPoint()
+        if back:
+            self.control.Remove(max(0, position - back), position)
+        self.control.WriteText(text)
+        self._set_modified(True)
+        self._touch_status()

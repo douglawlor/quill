@@ -1,0 +1,156 @@
+"""Clip Library commands for MainFrame (#895) — a rolling history of kept
+Fragments beneath Copy Tray's curated 12 slots.
+
+Extracted into a mixin (CQ-1) so new command handlers don't grow
+``main_frame.py``. ``ClipLibraryMixin`` relies on ``self.editor``, ``self.frame``,
+``self._announce``, ``self._set_status``, and ``self._show_modal_dialog`` staying
+on ``MainFrame``, exactly like ``CopyTrayMixin``.
+"""
+
+from __future__ import annotations
+
+import wx
+
+from quill.core.clip_library import ClipLibrary
+from quill.core.fragment import Fragment
+
+
+class ClipLibraryMixin:
+    """A rolling clip history, complementary to the 12-slot Copy Tray."""
+
+    def _clip_library(self) -> ClipLibrary:
+        if not hasattr(self, "_clip_library_instance"):
+            from quill.core import paths
+
+            self._clip_library_instance = ClipLibrary(paths.app_data_dir())
+        return self._clip_library_instance
+
+    def keep_selection_in_clip_library(self) -> None:
+        """Remember the current editor selection as a new Clip Library entry."""
+        start, end = self.editor.GetSelection()
+        if start == end:
+            self._announce("Select text first to keep it in the Clip Library")
+            return
+        text = self.editor.GetValue()[start:end]
+        frag = Fragment(markup=text, source="Document")
+        if self._clip_library().remember(frag):
+            # _announce, not _set_status: the status setter speaks through the
+            # bare announce() and is throttled by announcement_throttle_ms, so
+            # these outcomes reached speech sometimes and braille and the
+            # announcement log never. An outcome a listener cannot re-read is
+            # an outcome they have to remember (bad.md C8).
+            self._announce("Kept in the Clip Library.")
+        else:
+            self._announce("Already in the Clip Library.")
+
+    def _on_editor_text_copy(self, event: object) -> None:
+        """Auto-capture a copy **or a cut** into the Clip Library, when opted in.
+
+        Bound to ``wx.EVT_TEXT_COPY`` and ``wx.EVT_TEXT_CUT``, which the native
+        control fires for every copy and every cut regardless of trigger (menu,
+        Ctrl+C, Ctrl+X, or right-click) -- the one mechanism that does not
+        require guessing which UI path was used. Off by default
+        (``clip_library_autocapture``); always skips the event so the native
+        operation itself is never affected.
+
+        **The cut half was missing until 2026-09-17** (bad.md C1, P2.18), and
+        it is the half that matters most: a copy leaves the text where it was,
+        so losing it from the history costs nothing. A cut takes it away, and
+        the clip library is then the only copy outside the undo stack.
+        QUILL Lite captures both.
+        """
+        if getattr(self.settings, "clip_library_autocapture", False):
+            start, end = self.editor.GetSelection()
+            if start != end:
+                text = self.editor.GetValue()[start:end]
+                self._clip_library().remember(Fragment(markup=text, source="Document"))
+        skip = getattr(event, "Skip", None)
+        if callable(skip):
+            skip()
+
+    def keep_fragment_in_clip_library(self, frag: Fragment) -> None:
+        """Remember an already-built Fragment (e.g. a Look Up encyclopedia entry)."""
+        if self._clip_library().remember(frag):
+            self._announce(f"Kept {frag.title or 'this'} in the Clip Library.")
+        else:
+            self._announce("Already in the Clip Library.")
+
+    def open_clip_library(self) -> None:
+        from quill.core.clip_library import empty_reason
+        from quill.core.fragment import FragmentFormat
+        from quill.ui.clip_library_dialog import ClipLibraryDialog
+
+        library = self._clip_library()
+        raw_format = str(getattr(self.settings, "content_handoff_format", "text"))
+        try:
+            content_format = FragmentFormat(raw_format)
+        except ValueError:
+            content_format = FragmentFormat.TEXT
+
+        def _promote(index: int) -> None:
+            self._promote_clip_to_tray(index)
+
+        dlg = ClipLibraryDialog(
+            self.frame,
+            library,
+            announce_cb=self._announce,
+            promote_cb=_promote,
+            content_format=content_format,
+            paste_cb=self._paste_clip_at_caret,
+            # An empty list says nothing, and the history is off by default on
+            # purpose -- so an empty library reads as a broken feature to
+            # somebody who has just copied four things (reported 2026-09-22).
+            empty_message=empty_reason(
+                autocapture=bool(getattr(self.settings, "clip_library_autocapture", False)),
+                # getattr: the binding lookup is a MainFrame service, and this
+                # mixin is exercised against hosts that do not have it.
+                keep_clip_key=str(
+                    getattr(self, "_binding_for", lambda _id: "")(
+                        "edit.keep_selection_in_clip_library"
+                    )
+                    or ""
+                ),
+            ),
+        )
+        dlg.show()
+        dlg.close()
+
+    def _paste_clip_at_caret(self, text: str) -> None:
+        """Insert *text* where the caret is, as a single undoable edit.
+
+        ``WriteText`` rather than a whole-document rewrite: the native control
+        keeps its own undo record, so Ctrl+Z takes back the paste and not the
+        paragraph before it.
+
+        The read-back is the accessibility of the command, not decoration: a
+        screen reader says nothing when an app writes text on its own behalf,
+        and the dialog that was focused has just closed (bad.md C9).
+        """
+        if not text:
+            return
+        self.editor.WriteText(text)
+        self.document.set_text(self.editor.GetValue())
+        self._announce_result(f"Pasted {len(text)} characters from the Clip Library")
+
+    def _promote_clip_to_tray(self, index: int) -> None:
+        from quill.core.copy_tray import CopyTray
+
+        tray: CopyTray = self._tray()
+        with wx.TextEntryDialog(
+            self.frame,
+            f"Copy Tray slot to promote this clip into (1-{tray.SLOT_COUNT}):",
+            "Promote to Copy Tray",
+        ) as entry_dlg:
+            if self._show_modal_dialog(entry_dlg, "Promote to Copy Tray") != wx.ID_OK:
+                return
+            raw = entry_dlg.GetValue().strip()
+        try:
+            slot = int(raw)
+        except ValueError:
+            self._announce("Enter a slot number.")
+            return
+        if not 1 <= slot <= tray.SLOT_COUNT:
+            self._announce(f"Slot must be 1-{tray.SLOT_COUNT}.")
+            return
+        self._clip_library().promote_to_tray(index, tray, slot)
+        self._announce(f"Promoted to Copy Tray slot {slot}.")

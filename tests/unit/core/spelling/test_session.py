@@ -221,3 +221,83 @@ def test_case_match_title():
 
 def test_case_match_lower():
     assert _case_match("teh", "the") == "the"
+
+
+# ------------------------------------------------------------------
+# Ranked spelling mode (Alt+Shift+F7, community feature request)
+# ------------------------------------------------------------------
+
+
+def test_ranked_session_starts_on_most_frequent_word():
+    # "teh" occurs 3 times, "wrold" once -- ranked mode should present a
+    # "teh" occurrence first even though "wrold" comes first in the text.
+    text = "wrold teh cat teh sat teh mat"
+    s = ReviewSession(text=text, dictionary=SMALL_DICT, ranked=True)
+    issue = s.current()
+    assert issue is not None
+    assert issue.word == "teh"
+
+
+def test_unranked_session_stays_in_document_order():
+    text = "wrold teh cat teh sat teh mat"
+    s = ReviewSession(text=text, dictionary=SMALL_DICT, ranked=False)
+    issue = s.current()
+    assert issue is not None
+    assert issue.word == "wrold"
+
+
+def test_ranked_session_change_all_surfaces_next_most_frequent():
+    # After Change All clears every "teh", "wrold" (the only one left)
+    # should become current -- the ranking re-evaluates after each action.
+    text = "wrold teh cat teh sat teh mat"
+    s = ReviewSession(text=text, dictionary=SMALL_DICT, ranked=True)
+    s.apply_change_all("the")
+    issue = s.current()
+    assert issue is not None
+    assert issue.word == "wrold"
+
+
+def test_ranked_session_ignore_once_moves_to_next_occurrence_of_same_word():
+    text = "teh cat teh sat teh mat wrold"
+    s = ReviewSession(text=text, dictionary=SMALL_DICT, ranked=True)
+    first = s.current()
+    assert first is not None and first.word == "teh"
+    s.apply_ignore_once()
+    second = s.current()
+    # Still "teh" -- two occurrences remain, still the most frequent word.
+    assert second is not None
+    assert second.word == "teh"
+
+
+def test_the_review_skips_words_the_host_has_already_ignored() -> None:
+    """F7 was the one route that did not honour the session ignores.
+
+    The live check, Ctrl+F7 and the right-click menu all consult the window's
+    IgnoreList; the full review built its ReviewSession without it, so a word
+    somebody had deliberately skipped was the first thing the review stopped on
+    (bad.md S6).
+    """
+    from quill.core.spelling.context_menu import IgnoreList
+
+    text = "brxwn zzqua"
+    ignores = IgnoreList()
+    ignores.ignore_word("brxwn")
+
+    session = ReviewSession(text=text, dictionary=set(), ignores=ignores)
+    assert [issue.word for issue in session._issues] == ["zzqua"]
+
+
+def test_no_ignore_list_is_the_old_behaviour() -> None:
+    session = ReviewSession(text="brxwn zzqua", dictionary=set())
+    assert [issue.word for issue in session._issues] == ["brxwn", "zzqua"]
+
+
+def test_an_ignore_list_that_raises_costs_the_filtering_not_the_review() -> None:
+    """A list that cannot answer must not be able to stop F7 opening."""
+
+    class _Broken:
+        def skips(self, _text, _item):
+            raise RuntimeError("no")
+
+    session = ReviewSession(text="brxwn", dictionary=set(), ignores=_Broken())
+    assert [issue.word for issue in session._issues] == ["brxwn"]

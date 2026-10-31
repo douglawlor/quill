@@ -31,6 +31,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from quill.tools.persistence_entries_dictation import DICTATION_ENTRIES
+from quill.tools.persistence_entries_family import FAMILY_ENTRIES
+from quill.tools.persistence_entries_radio import RADIO_LISTENER_ENTRIES
+from quill.tools.persistence_entries_studio import STUDIO_ENTRIES
+
 _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 
 _PERSIST_CALLEE = "write_json_atomic"
@@ -52,7 +57,37 @@ _CLASSIFICATIONS: dict[str, str] = {
 _REVIEWED_PERSISTENCE: dict[str, str] = {
     # --- versioned (the contract) ---
     "core/settings.py::save_settings": "versioned",
+    # Dictation's own stores: persistence_entries_dictation.
+    **DICTATION_ENTRIES,
+    "core/transcribe/settings.py::save_settings": "versioned",  # QUILL Transcribe
+    "core/dictation_owner.py::claim": "marker",  # who owns Dictate Anywhere; lock-backed
+    # qc.md X-03 and X-05 (2026-10-03): small, self-describing, "version": 1 stamped;
+    # an unreadable file reads as nothing on and nothing shared.
+    "core/settings_recipes.py::save_state": "marker",
+    "core/family_preferences.py::_write": "marker",
+    # Release channels (plan 6.2, 5.1): which channel each app is on, one small
+    # version-stamped file for the family; unknown keys are carried forward and
+    # an unreadable file reads as everything on Stable. The format ledger is the
+    # machinery "safe to go back?" will be decided from: it only ever goes up.
+    "core/updater/channels.py::save_channels": "marker",
+    "core/data_format_ledger.py::record": "framework",
+    # Release channels, Phase 2: the highest feed sequence each app has seen
+    # (the anti-replay mark) and the last good signed list beside it. Losing it
+    # costs one replay window and an offline answer; it is re-verified on read.
+    "core/updater/feed_fetch.py::_remember": "cache",
+    # Phase 4: lowering the ledger after a saved copy is restored is part of
+    # the same machinery; the update helper's books (pending update, kept
+    # installer, ageing) are regenerable -- losing them costs one undo.
+    "core/data_format_ledger.py::lower": "framework",
+    "core/updater/apply.py::_write": "cache",
+    # ear.md B3: what this device last shared (fingerprints, first-seen times,
+    # tombstones, carried fields). Version-stamped; losing it re-sends once.
+    "core/sync/subscriptions_sync.py::_save_state": "cache",
     "core/keymap.py::save_keymap": "versioned",
+    # QUILL Lite's own keys. Same contract and the same reason: a schema stamp
+    # and a delta of the user's overrides, never a snapshot, so a key improved
+    # in a later version still reaches somebody who launched the app once.
+    "core/lite/keymap.py::save_keymap": "versioned",
     "core/keymap.py::load_keymap": "versioned",
     "core/features.py::save": "versioned",
     "core/custom_profiles.py::save_custom_profiles": "versioned",
@@ -67,14 +102,34 @@ _REVIEWED_PERSISTENCE: dict[str, str] = {
     "core/data_location.py::request_legacy_data_import": "framework",
     "core/storage_mode.py::save_storage_mode": "framework",
     "core/recovery.py::_save_state": "framework",
+    # QUILL Lite's own stores, in %LOCALAPPDATA%\QuillLite rather than QUILL's
+    # data folder -- see quill/core/lite/paths.py for why that separation is
+    # deliberate. The recovery slot is the same shape as QUILL's: aside-copy
+    # metadata that exists only between a crash and the next launch.
+    "core/lite/recovery.py::write_meta": "framework",
+    # A delta store by construction: only fields that differ from the code
+    # default are written, plus a schema stamp. That is what the versioned
+    # contract buys -- a later change of default reaches everybody who never
+    # expressed a preference -- taken directly rather than through the
+    # migration machinery, which has nothing to migrate from at 1.0.0.
+    "core/lite/settings.py::save": "versioned",
+    "core/converter_settings.py::save": "versioned",
+    "core/publish/auphonic_plan.py::save_pending": "versioned",  # Converter Auphonic resume
     "core/speech/dictation/recovery.py::save_metadata": "framework",
     # --- export / output (user picks the file) ---
-    "core/keymap.py::export_keyboard_pack": "export",
+    # "Move my setup to another machine" (11.10): the import writes each store
+    # the user chose to bring, from a file they chose, over a declared
+    # inventory -- the read half of an export rather than a store of its own.
+    # Every file it writes is one the audit already classifies on its own line.
+    "core/setup_transfer.py::import_setup_report": "export",
+    "core/keymap_kqp.py::export_keyboard_pack": "export",  # out of keymap.py (GATE-11)
     "core/keymap.py::export_keymap": "export",
     "core/features.py::export_feature_profile_file": "export",
     "core/share_package.py::write_package_file": "export",
     "core/speech/batch_manifest.py::write_manifest": "export",
+    "core/speech/job_file.py::save_job": "export",
     "core/brf_sidecar.py::write_sidecar": "export",
+    "io/illumination.py::write_illumination": "export",
     # --- secret (credential store) ---
     "core/assistant_ai.py::save_assistant_api_key": "secret",
     "platform/windows/credential_store.py::_write_store": "secret",
@@ -82,16 +137,266 @@ _REVIEWED_PERSISTENCE: dict[str, str] = {
     "core/remote_sites.py::delete_password": "secret",
     "core/publishing.py::save_publishing_secret": "secret",
     # --- cache / recency / log (regenerable) ---
+    # Audio Studio: saved SFTP destinations and the folder feed's show settings
+    # are user-created, additive-shaped stores; the listening position and the
+    # incremental-rebuild fingerprints are regenerable.
+    # A list of catalogue addresses the user chose to add. Additive and
+    # self-describing: an unknown key is ignored on read and a built-in that
+    # is not in the file keeps its shipped default, so a newer build adding a
+    # field cannot change what an older one already searches.
+    # This machine's sync settings: a folder, a device label, two switches.
+    # Additive and self-describing, and never the recovery phrase -- that is
+    # a key and lives in the platform credential store.
+    "core/sync/places_config.py::save": "content",
+    # Quill Radio download preferences: a root folder and four filing
+    # switches. Additive and self-describing; a damaged file reads as the
+    # defaults, which is where every install starts anyway.
+    # Where each remembered file was last seen on *this* machine. A cache in
+    # the strict sense: a stale entry is dropped on read, losing it costs a
+    # row in a list, and it is deliberately never synced.
+    "core/media/local_paths.py::remember": "cache",
+    "core/media/local_paths.py::forget": "cache",
+    # Where each app's main window opens. A marker in the strict sense: three
+    # trivially-defaulted values per app, every one of them re-derived from the
+    # window the moment it is closed, and losing the file costs one launch at a
+    # different size. Deliberately not "versioned": the whole point of the
+    # default is that a build which changes its mind about it reaches everybody
+    # who never chose otherwise, which a migration contract would freeze.
+    "core/window_geometry.py::save_geometry": "marker",
+    # The show/hide key the listener chose for Weather, Converter or Media
+    # Player (2026-10-05), schema-stamped. An app missing from the file has not
+    # decided yet, which is what makes the "your key is now off" sentence a
+    # once-only thing; a key that is present is the listener's and is never
+    # rewritten by a later build.
+    "core/show_hide_keys.py::save_show_hide_key": "versioned",
+    # The sound card a player app was last sent to ("" = Windows' choice); a lost
+    # file is the system default. NOT in a portable backup: a device id names
+    # hardware on one computer and nothing on the next.
+    "ui/media/output_device_apps.py::save_device_pref": "marker",
+    **FAMILY_ENTRIES,  # App Sounds and Slider Keys: persistence_entries_family
+    **STUDIO_ENTRIES,  # QUILL Studio's capture files: persistence_entries_studio
+    "core/radio/download_prefs.py::save": "content",
+    "core/library/catalogs.py::save": "content",
+    "core/publish/destinations.py::save_destinations": "content",
+    "core/publish/feed_folder.py::save_feed_config": "content",
+    # Audio Studio Phase 2 (standalone port-in): per-book volume/mute prefs,
+    # the user's book library (folders/favorites), the Recently Played history,
+    # the play queue, and the sleep timer setting -- all user-created,
+    # additive-shaped stores with tolerant loaders (a corrupt file degrades to
+    # empty/default), same shape as the radio/podcasts stores above.
+    "core/audio_studio/book_prefs.py::save_prefs": "content",
+    "core/audio_studio/history.py::save_history": "content",
+    "core/audio_studio/library.py::save_library": "content",
+    "core/audio_studio/play_queue.py::save_queue": "content",
+    "core/audio_studio/sleep_timer.py::save_sleep_setting": "content",
+    # Component refcounts: which installed apps still need each shared component.
+    # Regenerable -- each app re-asserts its REQUIRED_COMPONENTS on launch -- so
+    # loss is self-healing, not user data.
+    "core/components.py::_save": "cache",
+    # QuillVille companion apps (Quill Radio/Weather/Cast) + shared runtime.
+    # app_features and the weather monitor config are user choices with tolerant
+    # loaders (a corrupt file degrades to all-on / defaults), same shape as the
+    # radio/podcasts content stores. The runtime marker/refs and the monitor's
+    # already-notified id set are regenerable machinery: the marker is re-dropped
+    # by the installer, refcounts are re-asserted by each app on launch, and a
+    # lost notified-id set at worst re-announces an alert already seen.
+    "core/app_features.py::save_app_features": "content",
+    "core/weather/monitor.py::save_config": "content",
+    "core/runtime_marker.py::write_marker": "framework",
+    "core/runtime_refs.py::_save": "cache",
+    "core/weather/monitor.py::save_notified_ids": "cache",
+    "core/radio/favorites.py::save_favorites": "content",
+    # --- 2026-08-21: the Choose Columns / chapters / Listening Places wave ---
+    # Which columns a list speaks and in what order, per surface. A user choice
+    # with real structure (order plus a hidden set), an additive shape and a
+    # tolerant loader: an unknown column id is dropped on read and a corrupt
+    # file degrades to the app's catalogue defaults, which is where every
+    # install starts. Same store shape as quick_actions, deliberately.
+    "core/media/list_columns.py::save_column_layouts": "content",
+    # Which places are in the Go To menu and in what order. A user-arranged
+    # list with an additive shape and a tolerant loader: an unknown id is
+    # dropped on read, a corrupt file falls back to the default ten, and a
+    # destination added in a later release is pooled rather than inserted --
+    # so a saved layout can never renumber what somebody has learned.
+    "core/radio/go_to.py::save_layout": "content",
+    # The shared Go To machinery both apps write through; each supplies its
+    # own file name (radio-go-to.json, cast-go-to.json).
+    "core/go_to_menu.py::save_layout": "content",
+    # The user-ordered action list per content type, whose first entry is the
+    # default for Enter. Same reasoning as list_columns above.
+    "core/quick_actions.py::save_quick_actions": "content",
+    # An observed log of what was played and for how long, behind Listening
+    # Stats and Year in Review. Not user-authored, capped by a retention
+    # window, rebuilt as you listen: losing it costs the report, not the
+    # library. Same call as radio/song_history.py.
+    "core/media_stats.py::save_sessions": "cache",
+    # Radio -> Cast instruction handoff: "play next", "add to queue", "send to
+    # the Inbox", written by Radio and consumed by Cast at merge. The exact
+    # counterpart of radio_listens (which carries what Radio *heard*) and
+    # classified the same way: loss means one instruction is missed, which is
+    # why an older Cast that never opens the file leaves it waiting rather than
+    # consuming it.
+    "core/podcasts/radio_actions.py::record_action": "cache",
+    "core/podcasts/radio_actions.py::merge_radio_actions": "cache",
+    # Listening Places (spec listening-places/1): this device's file in a
+    # folder any podcast app may read and write. User data, and the one entry
+    # here whose shape is NOT ours alone to change -- the format is published,
+    # with JSON conformance fixtures both implementations test against, so a
+    # field may be added but never repurposed. Every device writes exactly one
+    # file and reads everyone else's, which is what stops a cloud drive
+    # producing a conflicted copy.
+    "core/sync/listening_places.py::write_device_file": "content",
+    # Quill Radio's own record: recently played, resume-on-launch, the sound
+    # enhancements, the subscribed-feed cadence. User-authored settings that
+    # would have to be set again by hand, so content rather than cache. The
+    # write moved to history_store when the record and the file were split
+    # under GATE-11; history.py re-exports it, and both spellings are listed
+    # so an importer of either is covered.
+    # Reminders somebody set by hand, one at a time, about programmes that
+    # happen once. Losing the file means missing the thing you asked to be
+    # told about, and no amount of recomputation brings it back -- content,
+    # not cache, and the reason the store is atomic like the rest.
+    "core/radio/reminders.py::save_reminders": "content",
+    # 2026-10-11: the same history written from a worker; Undo Recovery's schema-checked marker.
+    "core/radio/history_store.py::save_history_snapshot": "content",
+    "core/undo_recovery.py::prepare_restore": "versioned",
+    # An observed log of what each station played, not user-authored config:
+    # every field is additive with a tolerant loader, there is no default whose
+    # meaning could silently change, and losing it costs only the "what was that
+    # song earlier?" record. Capped per station and rebuilt as you listen.
+    "core/radio/song_history.py::save_song_history": "cache",
+    # Chapters worked out from a transcript or an audio scan, kept so the
+    # expensive tiers run once. Regenerable by definition -- deleting it costs
+    # only the recompute -- and it is deliberately invalidated whenever the
+    # audio file's size or mtime changes, so it can never outlive its episode.
+    "core/podcasts/chapter_inference.py::save_cached_inference": "cache",
+    # Radio -> Cast listening handoff: latest position/finished per episode,
+    # consumed by Cast at merge. Loss = Cast misses one session; harmless.
+    # The speed you chose for a show, remembered per feed. A preference, but a
+    # trivially defaulted one: losing it plays the next episode at 1x, which is
+    # where it started.
+    "core/podcasts/radio_listens.py::remember_show_speed": "marker",
+    # "Don't ask me again" for the confirmations that offer it (Mark All as
+    # Played, and the delete prompts). A boolean per question; losing it asks
+    # once more, which is the safe direction.
+    "core/podcasts/ask_prefs.py::set_should_ask": "marker",
+    "core/podcasts/radio_listens.py::record_listen": "cache",
+    "core/podcasts/radio_listens.py::merge_radio_listens": "cache",
+    # Two-machines guard for synced data folders: {machine, pid, at}.
+    "core/profile_heartbeat.py::note_profile_use": "marker",
+    "core/radio/wake_timer.py::save_wake_setting": "content",
+    "core/radio/recording.py::save_recording_settings": "content",
+    "core/radio/recording_schedule.py::save_schedule": "content",
+    "core/podcasts/subscriptions.py::save_library": "content",
+    "core/podcasts/history.py::save_history": "content",
+    # Item 43: which episode was selected in each feed. A convenience the
+    # listener would notice losing but can rebuild by arrowing; a damaged file
+    # reads as an empty memory.
+    "core/podcasts/episode_cursor.py::save": "cache",
+    "core/podcasts/episode_notes.py::save_episode_notes": "content",
+    # Quick Actions (1.1.0): the listener's own ordering of the episode,
+    # podcast, and queue action lists. Content -- it is a preference they
+    # arranged by hand and would notice losing -- but it self-repairs against
+    # the build's known action set on every read, so a file from a newer or
+    # older QUILL Cast can never strand a menu.
+    "core/podcasts/quick_actions.py::save_quick_actions": "content",
+    # Listening statistics (1.1.0): an append-only session log, pruned on
+    # write against a 90-day retention window and hard-capped. Content: it is
+    # a record of what the listener did, exportable as CSV, and losing it
+    # loses history nothing else holds.
+    "core/podcasts/stats.py::save_sessions": "content",
+    "core/unlock_codes.py::save": "content",
+    # A listening position is the LEAST reproducible thing in the media
+    # stack: lose it and there is no way to recompute where somebody was in
+    # a thirty-hour book. It was classified "cache" (regenerable) here,
+    # which is exactly wrong -- and would have made it a candidate for any
+    # future prune-the-caches sweep. The store now lives in
+    # core/media/positions.py, keyed portably so it can also sync.
+    "core/media/positions.py::_write": "content",
+    # Quill Radio 3.0's own resume store, and content for exactly the same
+    # reason as core/media/positions.py above: a place in a four-hour LibriVox
+    # chapter cannot be recomputed. Deliberately a *second* store rather than a
+    # reuse -- positions.py keys on a file's name and size, and nothing Radio
+    # plays here is a file, so these key on the normalised stream URL. A
+    # prune-the-caches sweep must never be able to take either of them.
+    "core/radio/resume.py::_write": "content",
+    # The servers and channels a listener added by hand. Nothing regenerates
+    # them: no directory lists somebody's church or school Icecast box, which is
+    # the entire reason the branch exists. Content, and small.
+    "core/radio/my_servers.py::_write": "content",
+    "core/radio/youtube_channels.py::_write": "content",
+    # Saved YouTube playlists and single videos (the YouTube branch's shelf),
+    # same shape and same reasoning as the channel store above it.
+    "core/radio/youtube_saved.py::_write": "content",
+    # Local Media's playlists: paths and the tags read from them, never file
+    # contents. Schema-stamped, loaded through versioned_store (a pre-release
+    # shape migrates once, with a backup; a newer file is never downgraded).
+    "core/radio/local_media.py::save_library": "versioned",
+    "core/lineups/store.py::update": "versioned",  # lineups.json, shared, locked
+    "core/lineups/handoff.py::write_request": "cache",  # Cast-to-Radio play request
+    "ui/lineups/commands.py::cmd_export_rules": "export",
+    # Notify Me About New Videos: which followed channels ring, and the ids of
+    # uploads already seen (so nothing is announced twice). Losing it only means
+    # the next check is a fresh baseline; the stamp is the last check's time.
+    "core/radio/youtube_channel_alerts.py::_write": "content",
+    "core/radio/youtube_channel_alerts.py::stamp": "cache",
+    # Use my YouTube sign-in: only on/off, a browser NAME, or a cookies.txt
+    # PATH -- never a cookie value (youtube_signin.py; redaction.py drops
+    # cookie-shaped lines). Machine-specific, so Export My Setup leaves it.
+    "core/radio/youtube_signin.py::save": "marker",
+    # Skip Sponsor Segments: on/off and which SponsorBlock categories -- nothing
+    # about any video. Losing it only turns skipping off again.
+    "core/radio/youtube_sponsorblock.py::save": "marker",
+    # Browse levels, cached so opening a source does not re-download its whole
+    # index every time (the Xiph genre page alone is 5 MB). Regenerable by
+    # definition -- every entry has a live fetch behind it -- and each answer
+    # carries its own age so a stale one can say so rather than imply currency.
+    "core/radio/directory_cache.py::save": "cache",
+    "core/speech/synth_cache.py::save_cache": "cache",
     "core/palette.py::save_palette_usage": "cache",
     "core/recent.py::save_recent_files": "cache",
+    "core/recent.py::_save_path_list": "cache",
     "core/search_history.py::add_search_term": "cache",
     "core/notifications.py::save_notifications": "cache",
     "core/notifications.py::clear_notifications": "cache",
+    # Remote feature kill switch: the locally-cached set of features a signed
+    # safety advisory has disabled, so the lock persists offline/across restarts.
+    "core/safety/feature_lock.py::save_feature_locks": "cache",
     "core/diagnostics.py::record_diagnostic_event": "cache",
     "core/sessions.py::add_recent_session": "cache",
     "core/sessions.py::clear_recent_sessions": "cache",
     "core/watch_queue.py::_save_locked": "cache",
+    "core/ai/activity_log.py::append": "cache",
+    # Resumable batch-run record (#1323): regenerable model results keyed by unit
+    # id so an interrupted bulk run resumes instead of restarting. It stamps its
+    # own version + a run signature and drops the record wholesale on any mismatch
+    # (start clean, never migrate/blend), so losing it just recomputes -- no
+    # schema-migration concern.
+    "core/ai/resume_record.py::_write": "cache",
+    # Recent Problems (11.5): a bounded, newest-first log of what failed, kept
+    # so a spoken failure that was missed is still findable. Regenerable in the
+    # only sense that matters -- losing it costs the record of past failures,
+    # never a setting or anything the user made.
+    "core/problem_log.py::save_problems": "cache",
+    # Where somebody had got to in each tutorial, one file per app (radio,
+    # cast, weather, quill). Losing one costs a bookmark in a lesson and nothing
+    # else -- no setting, nothing the user made -- and an unknown slug is kept
+    # rather than dropped on read, so a renamed lesson in a later build cannot
+    # erase a place this build never heard of.
+    "core/tutorials/progress.py::save_progress": "cache",
+    # A note, your own tags, a favourite's key: persistence_entries_radio.
+    **RADIO_LISTENER_ENTRIES,
     # --- marker / small state flags ---
+    # Radio's active-recording resume marker (R1-R4): transient state written
+    # when a recording starts and cleared on clean stop; absent by default, and
+    # its loss just means no resume offer on the next launch.
+    # Quiet hours (11.9): four small flags -- on/off, two clock strings and one
+    # override. Trivially defaulted (off, 22:00-07:00), and a lost file means
+    # the apps speak, which is the shipped behaviour rather than a surprise.
+    "core/quiet_hours.py::save_quiet_hours": "marker",
+    "core/radio/recording_resume.py::save_marker": "marker",
+    # "Asked once" for the portable favorites offer (2026-09-26): {asked, copied}.
+    "core/radio/portable_migration.py::remember_answer": "marker",
     "core/onboarding.py::mark_assistant_onboarding_complete": "marker",
     "core/onboarding.py::mark_glow_onboarding_complete": "marker",
     "core/onboarding.py::mark_onboarding_complete": "marker",
@@ -100,21 +405,82 @@ _REVIEWED_PERSISTENCE: dict[str, str] = {
     "core/onboarding.py::mark_trust_consent_complete": "marker",
     "core/onboarding.py::mark_watch_folder_onboarding_complete": "marker",
     "core/github/consent.py::save_github_consent_complete": "marker",
-    "ui/main_frame.py::_maybe_run_first_run_onboarding": "marker",
+    "core/spotify/consent.py::save_spotify_consent_complete": "marker",
+    "ui/main_frame_onboarding_flow.py::_maybe_run_first_run_onboarding": "marker",
     "core/ai/model_manager.py::save_ai_enabled": "marker",
     "core/ai/external_engine.py::set_external_engines_enabled": "marker",
     "core/speech/service.py::save_input_device": "marker",
+    "core/ai/quick_switch.py::save_preferred_harness_id": "marker",
+    "core/ai/onboarding.py::_save_state": "marker",
     # --- content (user-created data; additive) ---
-    "core/abbreviations.py::save_abbreviation_library": "content",
+    # Moved to core/abbreviations_store.py under GATE-11; the classification
+    # travels with it, and the shape is unchanged (every field defaults, and
+    # a field nobody set is not written).
+    "core/abbreviations_store.py::save_abbreviation_library": "content",
+    # "Bring My QUILL Lite Settings": merges QUILL Lite's copy of a store into
+    # QUILL's, on an explicit ask, with QUILL winning every collision. It
+    # writes only the five stores listed in SHARED_CONTENT_STORES, and each of
+    # those files is classified content on its own line above -- the merge adds
+    # entries to an existing shape, it does not invent one.
+    "core/lite_bridge.py::merge_json_store": "content",
+    # The same ask, QUILL Lite's half: flips the share-with-QUILL switches on in
+    # QUILL Lite's settings.json so the two stop keeping separate copies. It
+    # reads the raw file and writes it back with only those booleans changed,
+    # so the schema stamp core/lite/settings.py::save wrote is preserved and
+    # every other field is left exactly as it was found.
+    "core/lite_bridge.py::enable_lite_sharing": "marker",
     "core/assistant_prompts.py::save_custom_prompts": "content",
     "core/ai/custom_instructions.py::save_instructions": "content",
     "core/ai/sessions.py::save_session": "content",
+    # Which device this computer is, which gateway it talks to, and when it
+    # connected -- and nothing else. **The token is not here**: it lives in the
+    # credential store (``gateway_session.save_token``), which is why this file
+    # is a marker rather than a secret. Trivially defaulted: an empty
+    # GatewaySession reads as "not connected", which is exactly what a lost or
+    # unreadable file should mean, and the next sign-in rewrites it.
+    "core/ai/gateway_session.py::save_session": "marker",
+    # The ChatGPT sign-in's non-secret state (<data>/ai/chatgpt.json): the
+    # issued client id, the host id, the account label, the chosen model and
+    # the web-search switch. Same shape and same reasons as the gateway
+    # session beside it; the refresh token itself goes to the OS store.
+    # One file per app since 2026-10-02 (chatgpt-<slug>.json), split into its
+    # own module under GATE-11; the shape and the reasons are unchanged.
+    "core/ai/chatgpt_state.py::save_state": "marker",
+    # The pending "last time it closed, it could not save" sentence (qc.md
+    # F-06): written once at close, read and deleted at the next launch, and
+    # trivially defaulted -- a lost file means nothing is said.
+    "core/shutdown_report.py::persist": "marker",
     "core/ai/style.py::save_style": "content",
     "core/bookmarks.py::save": "content",
+    # Per-book media time-point bookmarks (position_ms + optional label/note),
+    # keyed by book. User-created, additive/self-describing, tolerant loader
+    # (a corrupt file degrades to {}) -- same shape as core/bookmarks.py::save.
+    "core/media/bookmarks.py::_write": "content",
+    "core/clip_library.py::_save": "content",
     "core/copy_tray.py::_save": "content",
+    "core/favorite_folders.py::save": "content",
+    "core/header_footer_store.py::save": "content",
+    # GitHub Items pinned repos + favorites (GHManage parity): local bookmarks
+    # keyed by owner/repo and URL — user content, tolerant loader (unknown
+    # fields ignored, corrupt file degrades to empty).
+    "core/github/saved_items.py::save": "content",
+    # Emoji picker recently-used + favorites: same shape and same tolerance as
+    # saved_items.py above (a corrupt file degrades to empty, unknown fields
+    # ignored) -- losing this list is mildly annoying, not data loss, and it
+    # never affects the emoji catalog itself (a separate, read-only file).
+    "core/emoji_usage.py::save": "content",
+    "core/inline_notes.py::save": "content",
     "core/macros.py::save": "content",
     "core/notebook_store.py::save_notebook": "content",
+    "core/story/storage.py::save_project": "content",
     "core/prompt_library.py::_save": "content",
+    "core/work_persona.py::_save": "content",
+    # Restore points: content-addressed document snapshots + a per-document
+    # index carrying schema_version 1; entries are additive/self-describing and
+    # corrupt indexes degrade to empty (tests/unit/core/test_restore_points.py).
+    "core/restore_points.py::record_restore_point": "content",
+    "core/restore_points.py::prune_restore_points": "content",
+    "core/skill_store.py::_save_state": "content",
     "core/sessions.py::save_session": "content",
     "core/snippets.py::save_snippet_library": "content",
     "core/speech/pronunciation.py::save_dictionary": "content",
@@ -122,10 +488,29 @@ _REVIEWED_PERSISTENCE: dict[str, str] = {
     "core/sticky_notes.py::save_sticky_notes": "content",
     "core/undo_store.py::save_undo_history": "content",
     "core/spelling/session.py::undo_last": "content",
-    "core/spellcheck.py::add_word_to_scope": "content",
+    "core/spell_dictionaries.py::add_word_to_scope": "content",
     "core/speech/voice_blacklist.py::save_blacklist": "content",
     "core/verbosity/storage.py::save_custom": "content",
     "core/trust.py::save_trusted_locations": "content",
+    # Weather locations: user-created saved places (display name, lat/lon,
+    # resolved name, query) -- additive and self-describing, and a corrupt file
+    # degrades to empty; content, like trust.py::save_trusted_locations above.
+    "core/weather/locations.py::save_locations": "content",
+    # --- needs-versioning (real config; contract adoption backlogged) ---
+    # Audio Studio app-shell prefs (close-window action, etc.) written by the
+    # reverse-vendored quill/apps/studio.py. Small app config with no schema
+    # stamp yet -- backlogged like the other app prefs rather than mislabelled.
+    "apps/studio.py::_save_app_prefs": "needs-versioning",
+    # Weather settings: real user config (units, forecast/outlook counts, which
+    # current-conditions details and alert severities show). It has no schema
+    # stamp yet, so it is honestly backlogged to adopt the versioned contract
+    # rather than mislabelled as content.
+    "core/weather/settings.py::save_settings": "needs-versioning",
+    # Quill Inkwell's own preferences (whether system-wide expansion is on, the
+    # injection route, excluded applications, tray behaviour). Real user config
+    # with no schema stamp yet, so it is honestly backlogged alongside the other
+    # per-app preference stores. Note this is *not* where abbreviations live:
+    # those are the shared, versioned core/abbreviations.py library.
     # --- config stores now stamped per the contract (was: needs-versioning) ---
     "core/assistant_ai.py::save_assistant_connection_settings": "versioned",
     "core/assistant_ai.py::save_provider_model": "versioned",
@@ -134,6 +519,11 @@ _REVIEWED_PERSISTENCE: dict[str, str] = {
     "core/ai/model_tiers.py::_write_raw": "versioned",
     "core/publishing.py::save_publishing_connections": "versioned",
     "core/publishing_linkage.py::save_publishing_linkage_registry": "versioned",
+    # Quill Inkwell's own preferences: stamped with schema_version, every
+    # field defaulted individually on read, and a file from a newer build is
+    # read but never written back over (which is how a preference silently
+    # disappears when two machines run different builds).
+    "core/expansion/settings.py::save_settings": "versioned",
     "core/quillin_settings.py::save_settings": "versioned",
     "core/quillins/loader.py::save_state": "versioned",
     "core/remote_sites.py::save_sites": "versioned",
@@ -143,7 +533,8 @@ _REVIEWED_PERSISTENCE: dict[str, str] = {
     "core/menu_customization.py::save_menu_customization": "versioned",
     "core/profile_startup.py::save_profile_startup_config": "versioned",
     "ui/ai_hub_dialog.py::_save_deepgram_max_speakers": "versioned",
-    "ui/main_frame_power_tools.py::toggle_read_only_guard": "versioned",
+    # The Read-Only Guard list, shared by both editors since 2026-10-16.
+    "core/read_only_guards.py::set": "versioned",
 }
 
 

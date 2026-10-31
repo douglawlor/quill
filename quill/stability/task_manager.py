@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from quill.core.error_codes import CodedError
 from quill.stability.wx_dispatch import call_ui_safely
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,8 @@ RESULT_CANCELLED: TaskResult = "cancelled"
 RESULT_FAILED: TaskResult = "failed"
 
 
-class CancelledError(Exception):
-    pass
+class CancelledError(CodedError):
+    code = "QUILL-STABILITY-TASK-CANCELLED"
 
 
 @dataclass(slots=True)
@@ -52,6 +53,24 @@ class CancellationToken:
     def raise_if_cancelled(self) -> None:
         if self.is_cancelled():
             raise CancelledError("Operation cancelled")
+
+
+@dataclass(slots=True)
+class UiLifetimeToken:
+    """Invalidate on the UI thread before destroying the owning surface.
+
+    This suppresses UI delivery, not worker execution or result retention.
+    A replacement surface must use a new token, never revive the old one.
+    """
+
+    _invalidated: threading.Event = field(default_factory=threading.Event)
+
+    def invalidate(self) -> None:
+        self._invalidated.set()
+
+    @property
+    def is_alive(self) -> bool:
+        return not self._invalidated.is_set()
 
 
 @dataclass(slots=True)
@@ -79,6 +98,7 @@ class TaskManager:
         )
         self._tasks: dict[str, QuillTask] = {}
         self._lock = threading.Lock()
+        self._ui_lifetime = UiLifetimeToken()
 
     def submit(
         self,
@@ -91,15 +111,28 @@ class TaskManager:
         on_progress: Callable[[str, Any], None] | None = None,
         safe_to_cancel: bool = True,
         safe_to_kill: bool = False,
+        ui_lifetime: UiLifetimeToken | None = None,
         **kwargs: Any,
     ) -> QuillTask:
         operation_id = str(uuid.uuid4())
         token = CancellationToken()
 
+        def deliver(callback: Callable[..., Any], payload: Any) -> None:
+            if not self._ui_lifetime.is_alive or (
+                ui_lifetime is not None and not ui_lifetime.is_alive
+            ):
+                return
+
+            def guarded() -> None:
+                if self._ui_lifetime.is_alive and (ui_lifetime is None or ui_lifetime.is_alive):
+                    callback(operation_id, payload)
+
+            call_ui_safely(guarded)
+
         def report_progress(payload: Any) -> None:
             if on_progress is None:
                 return
-            call_ui_safely(on_progress, operation_id, payload)
+            deliver(on_progress, payload)
 
         def wrapped() -> Any:
             started = time.monotonic()
@@ -119,7 +152,7 @@ class TaskManager:
                     duration_ms,
                 )
                 if on_success is not None:
-                    call_ui_safely(on_success, operation_id, result)
+                    deliver(on_success, result)
                 return result
             except BaseException as exc:
                 duration_ms = (time.monotonic() - started) * 1000
@@ -138,7 +171,7 @@ class TaskManager:
                         duration_ms,
                     )
                 if on_failure is not None:
-                    call_ui_safely(on_failure, operation_id, exc)
+                    deliver(on_failure, exc)
                 # L-13: pre-tag the in-flight task with its terminal state so
                 # the done-callback does not have to re-derive it from the
                 # future (which can race with ``future.cancelled()`` and
@@ -149,11 +182,15 @@ class TaskManager:
                     task.result_summary = RESULT_FAILED
                 raise
 
-        future = self._executor.submit(wrapped)
+        # Bind ``task`` *before* submitting so ``wrapped``'s except block (which
+        # pre-tags ``task.result_summary``) never runs against an unbound name:
+        # a fast-failing func could reach the closure before the assignment,
+        # turning the real exception into a ``NameError``. The future is a
+        # throwaway placeholder replaced the instant ``submit`` returns.
         task = QuillTask(
             operation_id=operation_id,
             name=name,
-            future=future,
+            future=concurrent.futures.Future(),
             cancellation_token=token,
             started_at=time.monotonic(),
             timeout_seconds=timeout_seconds,
@@ -162,6 +199,8 @@ class TaskManager:
             submitted_at=time.time(),
             result_summary=RESULT_PENDING,
         )
+        future = self._executor.submit(wrapped)
+        task.future = future
         with self._lock:
             self._tasks[operation_id] = task
         future.add_done_callback(self._make_done_callback(task, operation_id))
@@ -191,13 +230,20 @@ class TaskManager:
         if task is None:
             return False
         task.cancellation_token.cancel()
-        return task.future.cancel()
+        # A not-yet-started future cancels outright. A *running* future cannot
+        # be cancelled (``future.cancel()`` returns False), but the cooperative
+        # cancellation token has still been signalled, so report success for a
+        # cooperatively-cancellable task rather than a misleading False.
+        if task.future.cancel():
+            return True
+        return task.safe_to_cancel
 
     def snapshot(self) -> list[QuillTask]:
         with self._lock:
             return list(self._tasks.values())
 
     def shutdown(self, wait: bool = True, cancel_pending: bool = False) -> None:
+        self._ui_lifetime.invalidate()
         self._executor.shutdown(wait=wait, cancel_futures=cancel_pending)
 
     def _remove_task(self, operation_id: str) -> None:

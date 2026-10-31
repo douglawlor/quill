@@ -112,8 +112,27 @@ class BrailleCommandsMixin:
         # Translation submenu: only shown when the braille pack is installed
         # and not in safe mode. The menu is dynamically built from brf_profiles.json
         # so it reflects whatever profiles the installed pack provides.
-        if not getattr(self, "_safe_mode", False) and self._is_braille_pack_available():
-            menu.AppendSubMenu(self._build_translation_menu(), "&Translation")
+        if not getattr(self, "_safe_mode", False):
+            if self._is_braille_pack_available():
+                menu.AppendSubMenu(self._build_translation_menu(), "&Translation")
+            else:
+                # Footprint unbundle: the pack is fetched on demand. Offer it in
+                # context so Translation/BRF export is one click away.
+                self._id_braille_get_pack = wx.NewIdRef()
+                menu.Append(
+                    self._id_braille_get_pack,
+                    "&Download Braille Translation Pack...",
+                )
+                self.frame.Bind(
+                    wx.EVT_MENU,
+                    # Route through the Optional Components hub (preselected on the
+                    # braille row) rather than calling download_braille_pack()
+                    # directly: the hub's Download button reopens itself via
+                    # on_done afterward, so the user stays in a guided flow
+                    # instead of being dropped back into the editor.
+                    lambda _e: self.open_optional_components(preselect="braille"),
+                    id=self._id_braille_get_pack,
+                )
 
         return menu
 
@@ -129,7 +148,22 @@ class BrailleCommandsMixin:
         wx = self._wx
         translation = wx.Menu()
 
-        # --- UEB section (always first, hardcoded for quick access) ---
+        # --- The magical path first: no code/grade questions asked ---
+        self._id_braille_back_auto = wx.NewIdRef()
+        self._id_braille_convert_file = wx.NewIdRef()
+        translation.Append(
+            self._id_braille_back_auto,
+            self._menu_label(
+                "Back-Translate to &Text (Auto-Detect Code)", "braille.back_translate_auto"
+            ),
+        )
+        translation.Append(
+            self._id_braille_convert_file,
+            self._menu_label("Convert BRF &File to Document...", "braille.convert_brf_file"),
+        )
+        translation.AppendSeparator()
+
+        # --- UEB section (hardcoded for quick access) ---
         self._id_braille_tr_ueb_g2 = wx.NewIdRef()
         self._id_braille_tr_ueb_g1 = wx.NewIdRef()
         self._id_braille_tr_sel = wx.NewIdRef()
@@ -220,6 +254,8 @@ class BrailleCommandsMixin:
         if getattr(self, "_safe_mode", False) or not is_braille_pack_installed():
             return []
         return [
+            ("Back-Translate to Text (Auto-Detect Code)", "braille.back_translate_auto"),
+            ("Convert BRF File to Document...", "braille.convert_brf_file"),
             ("Translate to UEB Grade 2", "braille.translate_ueb_g2"),
             ("Translate to UEB Grade 1", "braille.translate_ueb_g1"),
             ("Translate Selection to UEB", "braille.translate_selection"),
@@ -279,6 +315,12 @@ class BrailleCommandsMixin:
             wx.EVT_MENU, lambda _e: self.recalculate_braille_page_map(), id=self._id_braille_recalc
         )
         if self._braille_translation_items():
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.back_translate_auto(), id=self._id_braille_back_auto
+            )
+            self.frame.Bind(
+                wx.EVT_MENU, lambda _e: self.convert_brf_file(), id=self._id_braille_convert_file
+            )
             self.frame.Bind(
                 wx.EVT_MENU, lambda _e: self.translate_to_ueb_g1(), id=self._id_braille_tr_ueb_g1
             )
@@ -375,6 +417,16 @@ class BrailleCommandsMixin:
             ),
             ("braille.back_translate", "Back-Translate UEB (draft)", self.back_translate_ueb),
             (
+                "braille.back_translate_auto",
+                "Back-Translate to Text (Auto-Detect Braille Code)",
+                self.back_translate_auto,
+            ),
+            (
+                "braille.convert_brf_file",
+                "Convert BRF File to Document...",
+                self.convert_brf_file,
+            ),
+            (
                 "braille.translate_standard_g2",
                 "Translate to Standard American Braille Contracted (Legacy Grade 2)",
                 self.translate_to_standard_g2,
@@ -456,7 +508,7 @@ class BrailleCommandsMixin:
         )
 
     def _announce_not_braille(self) -> None:
-        self._set_status("Not a braille document")
+        self._set_status_quiet("Not a braille document")
         self._announce("This is not a braille document.")
 
     def _say(self, message: str) -> None:
@@ -689,6 +741,158 @@ class BrailleCommandsMixin:
             ),
         )
 
+    def back_translate_auto(self) -> None:
+        """Back-translate without asking which code the braille is in.
+
+        Detects the code (UEB G1/G2, EBAE G1/G2, computer braille) from a
+        sample of the selection or document, announces what was found, and
+        opens the draft -- the user never picks a table.
+        """
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+        selection = editor.GetStringSelection()
+        source = selection if selection.strip() else editor.GetValue()
+        scope = "selection" if selection.strip() else "document"
+        detection = self._detect_braille_code(source)
+        if detection is None:
+            return
+        self._translate_and_open(
+            source=source,
+            table=detection.table,
+            draft=True,
+            label=lambda result: (
+                f"Detected {detection.label}. Back-translation draft from {scope}: "
+                f"{len(result.split())} words. Use Save As to export it as "
+                "Markdown, HTML, Word, or plain text."
+            ),
+        )
+
+    def convert_brf_file(self) -> None:
+        """One-shot: pick any .brf/.brl file, auto-detect its code, open as text.
+
+        The opened draft is a normal document, so Save As exports it to
+        Markdown, HTML, Word, or plain text -- BRF in, any format out,
+        without the user ever choosing a braille code.
+        """
+        from pathlib import Path
+
+        wx = self._wx
+        with wx.FileDialog(
+            self.frame,
+            "Convert BRF File to Document",
+            wildcard=("Braille files (*.brf;*.brl)|*.brf;*.brl|All files (*.*)|*.*"),
+            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+        ) as dialog:  # dialog_button_contract: exempt
+            if dialog.ShowModal() != wx.ID_OK:
+                return
+            chosen = dialog.GetPath()
+        try:
+            # BRF is ASCII by definition; errors="replace" keeps a stray byte
+            # from failing the whole conversion.
+            text = Path(chosen).read_text(encoding="utf-8", errors="replace")
+        except OSError as error:
+            message = f"Could not read {Path(chosen).name}: {error}"
+            self._say(message)
+            self._show_message_box(message, "Convert BRF File", self._wx.ICON_ERROR | self._wx.OK)
+            return
+        detection = self._detect_braille_code(text)
+        if detection is None:
+            return
+        name = Path(chosen).name
+        self._translate_and_open(
+            source=text,
+            table=detection.table,
+            draft=True,
+            label=lambda result: (
+                f"Converted {name}. Detected {detection.label}: "
+                f"{len(result.split())} words. Use Save As to export it as "
+                "Markdown, HTML, Word, or plain text."
+            ),
+        )
+
+    def _detect_braille_code(self, source: str):
+        """Detect the braille code of *source*, or None after surfacing the error."""
+        from quill.core import braille_worker_client as worker
+        from quill.core.braille_detect import detect_braille_table
+
+        if not source.strip():
+            self._say("Nothing to translate.")
+            return None
+        self._say("Detecting braille code...")
+        try:
+            return detect_braille_table(source)
+        except worker.WorkerError as exc:
+            message = f"Could not detect the braille code: {exc}"
+            self._say(message)
+            self._show_message_box(
+                message, "Braille Translation", self._wx.ICON_ERROR | self._wx.OK
+            )
+            return None
+
+    def _convert_brf_file_request(self, request: object, target) -> None:
+        """File > Convert File with a .brf/.brl source (auto-detected code).
+
+        Detects the braille code, back-translates the whole file, and writes
+        the chosen output format: text-like formats directly, everything else
+        via Pandoc from a Markdown intermediate. The user picked BRF in the
+        same Convert File dialog as any other document -- no braille-specific
+        dialog to find.
+        """
+        from pathlib import Path
+
+        source_path = Path(request.source_path)
+        try:
+            text = source_path.read_text(encoding="utf-8", errors="replace")
+        except OSError as error:
+            message = f"Could not read {source_path.name}: {error}"
+            self._say(message)
+            self._show_message_box(message, "Convert File", self._wx.ICON_ERROR | self._wx.OK)
+            return
+        detection = self._detect_braille_code(text)
+        if detection is None:
+            return
+        from quill.core import braille_worker_client as worker
+
+        try:
+            draft = worker.back_translate(text, table=detection.table, timeout=60.0)
+        except worker.WorkerError as exc:
+            message = f"Back-translation failed: {exc}"
+            self._say(message)
+            self._show_message_box(message, "Convert File", self._wx.ICON_ERROR | self._wx.OK)
+            return
+        token = str(request.output_token)
+        if token in ("gfm", "markdown", "commonmark", "plain"):
+            try:
+                target.write_text(draft, encoding="utf-8", newline="\n")
+            except OSError as error:
+                self._show_message_box(
+                    f"Could not write {target.name}: {error}",
+                    "Convert File",
+                    self._wx.ICON_ERROR | self._wx.OK,
+                )
+                return
+        else:
+            import tempfile
+
+            from quill.io.pandoc import PandocError, convert_file_with_pandoc
+
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    intermediate = Path(tmp) / (source_path.stem + ".md")
+                    intermediate.write_text(draft, encoding="utf-8", newline="\n")
+                    convert_file_with_pandoc(
+                        intermediate, target, from_format="markdown", to_format=token
+                    )
+            except (PandocError, OSError) as error:
+                self._show_message_box(
+                    f"Conversion failed: {error}",
+                    "Convert File",
+                    self._wx.ICON_ERROR | self._wx.OK,
+                )
+                return
+        self._say(f"Converted {source_path.name}. Detected {detection.label}. Saved {target.name}.")
+
     def translate_to_standard_g2(self) -> None:
         editor = getattr(self, "editor", None)
         if editor is None:
@@ -758,10 +962,20 @@ class BrailleCommandsMixin:
                 else worker.forward_translate(source, table=table)
             )
         except worker.WorkerError as exc:
-            self._say(f"Translation failed: {exc}")
+            # A spoken-only failure (_say alone) is easy to miss entirely --
+            # a real dialog makes a specific failure (e.g. liblouis missing,
+            # or a launch failure) impossible to mistake for "nothing
+            # happened" when nothing was actually heard.
+            message = f"Translation failed: {exc}"
+            self._say(message)
+            style = self._wx.ICON_ERROR | self._wx.OK
+            self._show_message_box(message, "Braille Translation", style)
             return
         if not result:
-            self._say("Translation failed: the worker returned an empty result.")
+            message = "Translation failed: the worker returned an empty result."
+            self._say(message)
+            style = self._wx.ICON_ERROR | self._wx.OK
+            self._show_message_box(message, "Braille Translation", style)
             return
         from quill.core.document import Document
 

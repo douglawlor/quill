@@ -22,6 +22,7 @@ def run_subprocess_safely(
     *,
     timeout_seconds: float = 30.0,
     cwd: str | None = None,
+    input: str | None = None,  # noqa: A002 - matches subprocess.run's own parameter name
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess with a timeout and clear, logged failure handling.
 
@@ -34,6 +35,13 @@ def run_subprocess_safely(
       directory is validated before launch so a caller cannot accidentally point
       the child process at a missing or non-directory path; callers are expected
       to pass a trusted, absolute directory they control.
+    - ``input``, when given, is piped to the child's stdin instead of being
+      folded into ``args``. A payload of arbitrary/unbounded size (e.g. a
+      whole document's text) must never become a command-line argument --
+      Windows' CreateProcess has a roughly 32K total command-line length
+      limit, so an argv-embedded payload silently fails to launch once a
+      caller's input grows past that (braille_worker_client hit exactly this
+      with a large document). Stdin has no such ceiling.
 
     Raises:
         ValueError: if ``args`` is empty or ``cwd`` is not an existing directory.
@@ -64,9 +72,23 @@ def run_subprocess_safely(
             arg_list,
             cwd=cwd,
             text=True,
+            # #954: without an explicit encoding, subprocess.run decodes
+            # stdout/stderr using the system's preferred locale encoding --
+            # on Windows that is often a legacy code page (e.g. CP1252), not
+            # UTF-8. Bundled tools like Pandoc always emit UTF-8 regardless of
+            # the host locale, so a mismatched default decode could fail
+            # inside the reader thread and silently leave stdout as None
+            # (surfacing as "Pandoc succeeded but produced an empty
+            # document," #954) rather than raising anywhere visible. UTF-8 is
+            # forced here for every caller, and "replace" guarantees a
+            # visible mojibake fallback instead of a silent empty result if a
+            # tool ever emits genuinely non-UTF-8 bytes.
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=timeout_seconds,
             check=False,
+            input=input,
             **extra_kwargs,
         )
         logger.info(

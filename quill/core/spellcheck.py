@@ -19,6 +19,7 @@ set and the suggestion corpus.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 from collections import defaultdict
@@ -26,12 +27,71 @@ from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 
-from quill.core.paths import app_data_dir
-from quill.core.storage import read_json, write_json_atomic
+# The language catalogue lives in spell_languages (a GATE-11 extraction). The
+# re-exports keep every existing caller -- and the tests that monkeypatch these
+# names as attributes of *this* module -- working unchanged.
+# The personal, document and project dictionaries moved to spell_dictionaries
+# (GATE-11, 2026-10-30); re-exported so every caller keeps importing them here.
+from quill.core.spell_dictionaries import (
+    add_word_to_scope as add_word_to_scope,
+)
+from quill.core.spell_dictionaries import (
+    load_combined_dictionary as load_combined_dictionary,
+)
+from quill.core.spell_dictionaries import (
+    load_scope_dictionary as load_scope_dictionary,
+)
+from quill.core.spell_dictionaries import (
+    personal_dictionary_revision as personal_dictionary_revision,
+)
+from quill.core.spell_languages import (
+    DEFAULT_LANGUAGE as _DEFAULT_LANGUAGE,
+)
+from quill.core.spell_languages import (
+    downloaded_languages as downloaded_languages,
+)
+from quill.core.spell_languages import (
+    installable_languages as installable_languages,
+)
+from quill.core.spell_languages import (
+    installed_languages as installed_languages,
+)
+from quill.core.spell_languages import (
+    language_display_name,
+    managed_hunspell_dir,
+    managed_spell_dir,
+)
+from quill.core.spellcheck_spans import masked_for_checking, spell_kind_for, word_is_checkable
 
 logger = logging.getLogger(__name__)
 
-_WORD_PATTERN = re.compile(r"[A-Za-z][A-Za-z']*")
+# ``(?<![0-9])`` is the ordinal guard, and it is a bug fix rather than a
+# refinement. Without it "the 13th of May" reports **"th"** as a misspelling --
+# at an offset inside a number, for a word the user did not type -- because the
+# pattern starts at the first letter it finds and the digits before it are
+# invisible to it. "1st" and "23rd" escaped only by luck: "st" and "rd" happen
+# to be in the wordlist and "th" does not.
+#
+# The same guard covers every other letters-after-digits shape a document is
+# full of and no dictionary contains: 3D, 2x, MP3's siblings, 1080p, v2beta,
+# and the units in "500ml" and "12pt". Each was a spoken interruption for a
+# screen-reader user and none of them was ever a spelling mistake.
+#: A word, in any language the document might be in (bad.md S4).
+#:
+#: It was ``[A-Za-z][A-Za-z']*``, and the walk-left beside it used
+#: ``str.isalpha()`` -- so the two halves of one checker disagreed about
+#: what a word is: `caf\u00e9` was flagged as `caf`, `na\u00efve` as `na` and `ve`,
+#: and a curly apostrophe split `don\u2019t` in two. The same word was silent
+#: on one path and flagged on another, which reads as a checker that cannot
+#: make up its mind.
+#:
+#: ``\\w`` under Python's default Unicode rules is the letters, and the two
+#: apostrophes are added explicitly: the typographic one is what every word
+#: processor inserts for you, including this one. Digits stay excluded from
+#: the *first* character, which is the ordinal guard the comment above
+#: describes, and the lookbehind still refuses letters that follow digits.
+_APOSTROPHES = "'\u2019"
+_WORD_PATTERN = re.compile(r"(?<![0-9])[^\W\d_][\w" + _APOSTROPHES + r"]*")
 
 # Tiny last-resort corpus. Real validation comes from the bundled wordlist
 # or pyenchant; this only exists so the module never raises if data is
@@ -108,6 +168,31 @@ _WORDLIST_CACHE: frozenset[str] | None = None
 _ENCHANT_DICT: object | None = None
 _ENCHANT_TRIED: bool = False
 
+# The active Hunspell language; the default and the catalogue live in
+# spell_languages, re-exported above.
+_ACTIVE_LANGUAGE = _DEFAULT_LANGUAGE
+
+
+def active_language() -> str:
+    """The Hunspell language tag the backend currently validates against."""
+    return _ACTIVE_LANGUAGE
+
+
+def set_active_language(lang: str | None) -> None:
+    """Set the spell-check language (e.g. ``"en_US"``, ``"fr_FR"``).
+
+    A blank/None value resets to the default. Drops the cached enchant dict so the
+    next check resolves the new language (the next :func:`_try_enchant` rebuilds a
+    fresh broker, which also picks up a just-downloaded dictionary).
+    """
+    global _ACTIVE_LANGUAGE
+    new = (lang or _DEFAULT_LANGUAGE).strip() or _DEFAULT_LANGUAGE
+    if new == _ACTIVE_LANGUAGE:
+        return
+    _ACTIVE_LANGUAGE = new
+    reset_caches()
+
+
 # #316: length-bucketed wordlist caches, keyed on the wordlist frozenset
 # id so a reload of the bundled wordlist (reset_caches) automatically
 # rebuilds the buckets on next access.  This avoids the O(W) scan of the
@@ -123,7 +208,9 @@ _LENGTH_BUCKETS_BY_WORDLIST_ID: dict[int, dict[int, list[str]]] = {}
 # cheap.  The key includes the dictionary's frozenset identity so a
 # user edit to the personal/document/project dictionaries invalidates
 # the cache automatically.
-_MISSPELLINGS_CACHE: dict[tuple[str, int], list[Misspelling]] = {}
+#: Keyed on the text, the dictionary, and the spell rule and extension the
+#: file name picked, because the same text checks differently as a script.
+_MISSPELLINGS_CACHE: dict[tuple[str, int, str, str], list[Misspelling]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,19 +256,29 @@ def _try_enchant() -> object | None:
         # back to the wordlist backend (a backend-selection race).
         resolved: object | None = None
         try:
+            # Point enchant at our managed dir so downloaded dictionaries are
+            # discoverable, then import. ENCHANT_CONFIG_DIR is read when a broker
+            # is constructed, so it must be set before the first broker is built;
+            # an empty managed dir is harmless (bundled en_US still resolves).
+            os.environ["ENCHANT_CONFIG_DIR"] = str(managed_spell_dir())
+            managed_hunspell_dir().mkdir(parents=True, exist_ok=True)
             import enchant  # type: ignore[import-not-found]
         except Exception:
             resolved = None
         else:
             try:
-                # Prefer en_US; fall back to the first installed English variant
-                # if en_US isn't available on this system.
-                if enchant.dict_exists("en_US"):
-                    resolved = enchant.Dict("en_US")
+                # A *fresh* broker rescans providers, so a dictionary downloaded
+                # earlier this session is picked up without a restart. Resolve the
+                # active language, then en_US, then the first English variant.
+                broker = enchant.Broker()
+                for lang in (_ACTIVE_LANGUAGE, "en_US"):
+                    if lang and broker.dict_exists(lang):
+                        resolved = broker.request_dict(lang)
+                        break
                 else:
-                    for lang in enchant.list_languages():
+                    for lang in broker.list_languages():
                         if lang.lower().startswith("en"):
-                            resolved = enchant.Dict(lang)
+                            resolved = broker.request_dict(lang)
                             break
             except Exception:
                 resolved = None
@@ -252,6 +349,33 @@ def backend_info() -> BackendInfo:
     )
 
 
+def install_language(
+    lang: str,
+    progress: object | None = None,
+    *,
+    should_cancel: object | None = None,
+) -> Path:
+    """Download + verify + unpack the Hunspell dictionary for *lang* on demand.
+
+    Routes through :mod:`quill.core.release_assets` (pinned, SHA-256-verified,
+    Safe-Mode gated). On success the dictionary lands in
+    :func:`managed_hunspell_dir` and the backend cache is dropped so the new
+    language is usable without a restart. Raises ``release_assets.ReleaseAssetError``
+    (or ``DownloadCancelled``) on failure so the caller can degrade cleanly.
+    """
+    from quill.core import release_assets
+
+    target = release_assets.fetch_component(
+        f"spell-{lang}",
+        managed_hunspell_dir(),
+        progress=progress,  # type: ignore[arg-type]
+        should_cancel=should_cancel,  # type: ignore[arg-type]
+        label=f"Downloading {language_display_name(lang)} dictionary...",
+    )
+    reset_caches()
+    return target
+
+
 def is_known_word(token: str, extra: set[str] | frozenset[str] | None = None) -> bool:
     """Check whether *token* is spelled correctly.
 
@@ -285,6 +409,11 @@ def is_known_word(token: str, extra: set[str] | frozenset[str] | None = None) ->
     return lowered in _STUB_WORDS
 
 
+def _suffix_of(filename: str | Path | None) -> str:
+    """The extension that picks the spell rule, for the misspellings cache key."""
+    return Path(str(filename)).suffix.lower() if filename else ""
+
+
 @dataclass(frozen=True, slots=True)
 class Misspelling:
     word: str
@@ -292,7 +421,9 @@ class Misspelling:
     end: int
 
 
-def list_misspellings(text: str, dictionary: set[str]) -> list[Misspelling]:
+def list_misspellings(
+    text: str, dictionary: set[str], *, filename: str | Path | None = None
+) -> list[Misspelling]:
     """Return every misspelling in *text*, honouring *dictionary*.
 
     #315: the result is memoized on the ``(text, frozenset(dictionary))``
@@ -302,14 +433,19 @@ def list_misspellings(text: str, dictionary: set[str]) -> list[Misspelling]:
     document, or project dictionary, so cache invalidation is
     automatic; ``reset_caches()`` also clears the cache for perf
     benchmarks.
+
+    *filename* decides what is read at all (:mod:`quill.core.spellcheck_spans`):
+    web addresses, email addresses and paths are never words, and in code
+    or markup only the strings, comments and text are. The scan runs over a
+    same-length mask, so every offset is still an offset in *text*.
     """
     dictionary_key = frozenset(item.lower() for item in dictionary)
-    cache_key = (text, hash(dictionary_key))
+    cache_key = (text, hash(dictionary_key), spell_kind_for(filename), _suffix_of(filename))
     cached = _MISSPELLINGS_CACHE.get(cache_key)
     if cached is not None:
         return list(cached)
     misspellings: list[Misspelling] = []
-    for match in _WORD_PATTERN.finditer(text):
+    for match in _WORD_PATTERN.finditer(masked_for_checking(text, filename)):
         token = match.group(0)
         if not is_known_word(token, dictionary_key):
             misspellings.append(Misspelling(word=token, start=match.start(), end=match.end()))
@@ -317,7 +453,132 @@ def list_misspellings(text: str, dictionary: set[str]) -> list[Misspelling]:
     return list(misspellings)
 
 
-def next_misspelling(text: str, cursor: int, dictionary: set[str]) -> Misspelling | None:
+def rank_misspellings_by_frequency(misspellings: list[Misspelling]) -> list[Misspelling]:
+    """Reorder *misspellings* by how often each word occurs, most frequent first.
+
+    Kurzweil-1000-style "ranked spelling" (community feature request): instead
+    of reviewing errors in document order, review the word that recurs the
+    most first -- a single OCR misread or a repeated typo like "teh" for "the"
+    is usually the fastest way to clear the bulk of a list, since fixing one
+    entry via "Add to Dictionary" or a mental correction resolves every
+    occurrence at once.
+
+    Case-insensitive grouping (``Teh``/``teh`` count together), ties broken by
+    first-occurrence position so the ranking is stable and reproducible. Pure
+    reordering -- does not deduplicate; every occurrence is still present in
+    the result, just grouped and sorted by its word's total count.
+    """
+    counts: dict[str, int] = {}
+    first_seen: dict[str, int] = {}
+    for item in misspellings:
+        key = item.word.lower()
+        counts[key] = counts.get(key, 0) + 1
+        if key not in first_seen:
+            first_seen[key] = item.start
+    return sorted(
+        misspellings,
+        key=lambda item: (-counts[item.word.lower()], first_seen[item.word.lower()], item.start),
+    )
+
+
+def misspelling_at(
+    text: str, position: int, dictionary: set[str], *, filename: str | Path | None = None
+) -> Misspelling | None:
+    """The misspelled word starting exactly at *position*, or None.
+
+    The bounded form of :func:`next_misspelling` for the as-you-type hint
+    (#1346 round 3). The hint only ever accepts a word beginning at the caret,
+    but ``next_misspelling`` keeps scanning past every correctly-spelled word
+    until it finds *a* misspelling somewhere -- so on a clean document it
+    spell-checked everything from the caret to the end, per pause in typing,
+    to produce an answer the caller then discarded. This inspects exactly one
+    word: the first at or after *position*, rejected without further scanning
+    when it does not start there.
+
+    The scan begins one character early for the same reason
+    :func:`next_misspelling` starts at the cursor itself: a regex scan started
+    mid-word matches a tail fragment. When ``text[position - 1]`` is a word
+    character, the fragment starting there is skipped and the following whole
+    word cannot start at *position* -- exactly the answer the unbounded scan
+    gave for that shape.
+    """
+    for match in _WORD_PATTERN.finditer(text, max(0, position - 1)):
+        if match.start() < position:
+            continue  # tail fragment of a straddling word, or an earlier word
+        if match.start() != position:
+            return None
+        token = match.group(0)
+        if is_known_word(token, dictionary):
+            return None
+        if not word_is_checkable(text, match.start(), match.end(), filename):
+            return None
+        return Misspelling(word=token, start=match.start(), end=match.end())
+    return None
+
+
+def misspelling_behind(
+    text: str,
+    cursor: int,
+    dictionary: set[str],
+    *,
+    require_terminator: bool = True,
+    filename: str | Path | None = None,
+) -> Misspelling | None:
+    """The misspelled word you have just *finished*, or None.
+
+    The question spell-check-as-you-type actually has, and until 2026-09-10 no
+    function in this module answered it. Both editors asked
+    :func:`misspelling_at` instead, which by construction matches only a word
+    **beginning exactly at the caret** -- it is the bounded helper written for a
+    different question. Typing left to right the caret is always at or past the
+    *end* of the word just completed, so the condition was never true and the
+    whole as-you-type alert was unreachable: no earcon, no status line, nothing,
+    unless you happened to arrow back onto the first letter of a bad word. The
+    feature shipped, was documented, had settings, and had never once fired.
+
+    "Finished" means there is a terminator between the word and the caret -- a
+    space, a comma, a newline, anything that is not part of a word. That rule is
+    what stops the checker judging "recie" while somebody is still typing
+    "receive", which is the failure mode that makes a live checker intolerable:
+    it cries wolf on the way to every long word. *require_terminator* exists for
+    a caller that has some other reason to believe the word is complete.
+
+    Cheap by construction: it walks left over at most a handful of characters
+    and matches one word, so it can sit in the typing path. Nothing here scans
+    the document.
+    """
+    if cursor <= 0:
+        return None
+    end = min(cursor, len(text))
+    # Step back over whatever terminated the word -- usually one space, but a
+    # sentence can end ". " and a list item ", ".
+    while end > 0 and not _is_word_character(text[end - 1]):
+        end -= 1
+    if end == min(cursor, len(text)) and require_terminator:
+        return None  # the caret is still inside the word; it may be unfinished
+    if end <= 0:
+        return None
+    start = end
+    while start > 0 and _is_word_character(text[start - 1]):
+        start -= 1
+    match = _WORD_PATTERN.match(text, start)
+    if match is None or match.end() != end:
+        # The run of word characters is not a word this checker recognises as
+        # one -- a bare apostrophe, or letters immediately after digits, which
+        # the ordinal guard in _WORD_PATTERN deliberately refuses. Both are
+        # silence rather than a report.
+        return None
+    token = match.group(0)
+    if is_known_word(token, dictionary):
+        return None
+    if not word_is_checkable(text, match.start(), match.end(), filename):
+        return None  # the tail of a web address, or code outside a string
+    return Misspelling(word=token, start=match.start(), end=match.end())
+
+
+def next_misspelling(
+    text: str, cursor: int, dictionary: set[str], *, filename: str | Path | None = None
+) -> Misspelling | None:
     # Start the regex scan at the cursor position itself so the engine matches
     # whole words (a mid-word cursor would otherwise match a tail fragment).
     # Then skip any whole-word match that doesn't begin strictly after the
@@ -327,24 +588,87 @@ def next_misspelling(text: str, cursor: int, dictionary: set[str]) -> Misspellin
         if match.start() <= cursor:
             continue
         token = match.group(0)
-        if not is_known_word(token, dictionary):
+        if not is_known_word(token, dictionary) and word_is_checkable(
+            text, match.start(), match.end(), filename
+        ):
             return Misspelling(word=token, start=match.start(), end=match.end())
     return None
 
 
-def previous_misspelling(text: str, cursor: int, dictionary: set[str]) -> Misspelling | None:
+def previous_misspelling(
+    text: str, cursor: int, dictionary: set[str], *, filename: str | Path | None = None
+) -> Misspelling | None:
     previous: Misspelling | None = None
     scan_until = max(0, cursor)
     for match in _WORD_PATTERN.finditer(text, 0, scan_until):
         if match.end() > cursor:
             break
         token = match.group(0)
-        if not is_known_word(token, dictionary):
+        if not is_known_word(token, dictionary) and word_is_checkable(
+            text, match.start(), match.end(), filename
+        ):
             previous = Misspelling(word=token, start=match.start(), end=match.end())
     return previous
 
 
-def misspelling_at_position(text: str, position: int, dictionary: set[str]) -> Misspelling | None:
+def no_misspelling_message(
+    text: str, cursor: int, dictionary: set[str], *, ahead: bool, filename: str | Path | None = None
+) -> str:
+    """What to say when there is no misspelling in the direction asked for.
+
+    Ctrl+F7 and Ctrl+Shift+F7 search forward and backward from the caret and do
+    not wrap, so right after typing a misspelling the caret sits past it and
+    there is no *next* one. A bare "No further misspellings" is then both
+    misleading -- it reads as "your document is clean" -- and a dead end, since
+    it does not say that turning round would find seven.
+
+    QUILL has answered this way since #9; QUILL Lite said the bare sentence with
+    no count at all (bad.md S9). Shared here rather than copied, because two
+    editors describing the same silence in two different ways is exactly the
+    divergence the family plan exists to remove.
+    """
+    direction = "ahead" if ahead else "behind"
+    other_key = "behind" if ahead else "ahead"
+    other = (
+        previous_misspelling(text, cursor, dictionary, filename=filename)
+        if ahead
+        else next_misspelling(text, cursor, dictionary, filename=filename)
+    )
+    if other is None:
+        return "No misspellings found"
+    found = list_misspellings(text, dictionary, filename=filename)
+    count = sum(1 for m in found if (m.end <= cursor) == ahead)
+    plural = "" if count == 1 else "s"
+    return f"No misspellings {direction}; {count} misspelling{plural} {other_key}"
+
+
+def misspelling_at_position(
+    text: str, position: int, dictionary: set[str], *, filename: str | Path | None = None
+) -> Misspelling | None:
+    """The misspelling at *position*, or the one that ends there (bad.md S5).
+
+    A caret sits at the *end* of the word you have just typed, and this needed
+    ``start <= position < end``, so the answer for the word under the cursor
+    was "there is no word" at the one moment somebody most often asks. Two
+    context menus worked around it by retrying at ``position - 1``; the four
+    keyboard commands did not, so the same question got two answers depending
+    on how it was asked. The retry belongs here, once.
+    """
+    if position < 0 or position > len(text):
+        return None
+    found = _misspelling_covering(text, position, dictionary, filename)
+    if found is not None:
+        return found
+    if position > 0 and _is_word_character(text[position - 1]):
+        # The caret is just past the last letter: the word ending here is the
+        # word being asked about.
+        return _misspelling_covering(text, position - 1, dictionary, filename)
+    return None
+
+
+def _misspelling_covering(
+    text: str, position: int, dictionary: set[str], filename: str | Path | None = None
+) -> Misspelling | None:
     # Find the word boundary around `position` directly rather than scanning
     # every word in the document. Walk left to the start of the current word,
     # then match forward once.
@@ -361,11 +685,19 @@ def misspelling_at_position(text: str, position: int, dictionary: set[str]) -> M
     token = match.group(0)
     if is_known_word(token, dictionary):
         return None
+    if not word_is_checkable(text, match.start(), match.end(), filename):
+        return None
     return Misspelling(word=token, start=match.start(), end=match.end())
 
 
 def _is_word_character(character: str) -> bool:
-    return character.isalpha() or character == "'"
+    """One definition of "inside a word", shared with :data:`_WORD_PATTERN`.
+
+    The pair used to disagree -- the pattern was ASCII and this was Unicode --
+    which is how the same word came to be silent on one path and flagged on
+    another (bad.md S4).
+    """
+    return character.isalpha() or character in _APOSTROPHES
 
 
 def suggest_words(word: str, dictionary: set[str], limit: int = 8) -> list[str]:
@@ -436,63 +768,3 @@ def _length_buckets(wordlist: frozenset[str]) -> dict[int, list[str]]:
         frozen: dict[int, list[str]] = dict(buckets)
         _LENGTH_BUCKETS_BY_WORDLIST_ID[key] = frozen
         return frozen
-
-
-def add_word_to_scope(
-    word: str,
-    scope: str,
-    document_path: Path | None,
-    project_root: Path | None,
-) -> None:
-    token = word.strip().lower()
-    if not token:
-        return
-    path = _dictionary_path(scope, document_path, project_root)
-    if path is None:
-        return
-    existing = load_scope_dictionary(scope, document_path, project_root)
-    existing.add(token)
-    write_json_atomic(path, sorted(existing))
-
-
-def load_combined_dictionary(
-    document_path: Path | None,
-    project_root: Path | None,
-) -> set[str]:
-    personal = load_scope_dictionary("personal", document_path, project_root)
-    document = load_scope_dictionary("document", document_path, project_root)
-    project = load_scope_dictionary("project", document_path, project_root)
-    return personal | document | project
-
-
-def load_scope_dictionary(
-    scope: str,
-    document_path: Path | None,
-    project_root: Path | None,
-) -> set[str]:
-    path = _dictionary_path(scope, document_path, project_root)
-    if path is None:
-        return set()
-    raw = read_json(path, default=[])
-    if not isinstance(raw, list):
-        logger.warning("Scope dictionary %s is malformed; falling back to empty set", path)
-        return set()
-    return {item.strip().lower() for item in raw if isinstance(item, str) and item.strip()}
-
-
-def _dictionary_path(
-    scope: str,
-    document_path: Path | None,
-    project_root: Path | None,
-) -> Path | None:
-    if scope == "personal":
-        return app_data_dir() / "dictionaries" / "personal.json"
-    if scope == "document":
-        if document_path is None:
-            return None
-        return document_path.with_suffix(document_path.suffix + ".quill-dict.json")
-    if scope == "project":
-        if project_root is None:
-            return None
-        return project_root / ".quill-dictionary.json"
-    return None

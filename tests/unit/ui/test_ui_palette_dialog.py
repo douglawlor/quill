@@ -3,8 +3,30 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from quill.core.commands import CommandRegistry
 from quill.ui.palette import CommandPaletteDialog
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_real_wx_after_fake_install():
+    """``_install_fake_wx`` swaps ``sys.modules['wx']`` for a ``SimpleNamespace``
+    stand-in and never puts the real module back. That leak is invisible inside
+    this module (every test re-installs the fake via ``_build_dialog``), but it
+    poisons later test modules that ``import wx`` at call time instead of at
+    module load -- notably ``test_voice_browser_dialog``, whose in-function
+    ``import wx`` then raises ``'SimpleNamespace' has no attribute 'Frame'`` in
+    the full suite (and in CI). Snapshot the real module and restore it once
+    this module's tests are done.
+    """
+    saved = sys.modules.get("wx")
+    saved_present = "wx" in sys.modules
+    yield
+    if saved_present:
+        sys.modules["wx"] = saved
+    else:
+        sys.modules.pop("wx", None)
 
 
 class _Event:
@@ -137,6 +159,8 @@ def _install_fake_wx() -> None:
         SearchCtrl=_SearchCtrl,
         StaticText=_StaticText,
         ListBox=_ListBox,
+        # quill.ui.dpi.dip_size builds its result with wx.Size (#1702).
+        Size=lambda width, height: (width, height),
         DEFAULT_DIALOG_STYLE=0,
         RESIZE_BORDER=0,
         TE_PROCESS_ENTER=0,
@@ -189,13 +213,14 @@ def test_palette_arrow_keys_move_from_search_to_results() -> None:
     dialog._on_char_hook(down)  # noqa: SLF001
     assert dialog.results.GetSelection() == 1
     assert dialog.results.focused is True
-    # _announce_at() sets status.label to command.title (no "Selected:" prefix)
-    assert dialog.status.label == "Replace"
+    # _announce_at() speaks title plus shortcut, so screen-reader users hear
+    # the keystroke the visual list label already shows.
+    assert dialog.status.label == "Replace, Ctrl+H"
 
     up = _Event(dialog._wx.WXK_UP)  # noqa: SLF001
     dialog._on_char_hook(up)  # noqa: SLF001
     assert dialog.results.GetSelection() == 0
-    assert dialog.status.label == "Find"
+    assert dialog.status.label == "Find, Ctrl+F"
 
 
 def test_palette_escape_closes_buttonless_dialog() -> None:
@@ -212,3 +237,138 @@ def test_palette_escape_closes_buttonless_dialog() -> None:
 
     assert escape.skipped is False
     assert dialog.dialog.ended_with == dialog._wx.ID_CANCEL  # noqa: SLF001
+
+
+def test_palette_speaks_why_a_command_is_unavailable() -> None:
+    # Error specificity: a locked command's row and refusal both carry the
+    # reason sentence from the registry's availability probe, not a bare
+    # "(unavailable)".
+    _install_fake_wx()
+    registry = CommandRegistry()
+    registry.register("edit.find", "Find", lambda: None, "Ctrl+F")
+    registry.register("net.sync", "Sync Notes", lambda: None)
+    registry.set_availability_probe(
+        lambda cid: "Turned off by a safety update: sync bug." if cid == "net.sync" else ""
+    )
+    dialog = CommandPaletteDialog(parent=object(), command_registry=registry)
+
+    dialog.search.SetValue("sync")
+    dialog._on_search_changed(None)  # noqa: SLF001
+    assert dialog._filtered_commands[0].id == "net.sync"  # noqa: SLF001
+    dialog._announce_at(0)  # noqa: SLF001
+    assert "unavailable: Turned off by a safety update: sync bug." in dialog.status.label
+
+    dialog.results.SetSelection(0)
+    dialog._run_selected()  # noqa: SLF001
+    assert "Turned off by a safety update: sync bug." in dialog.status.label
+
+
+def test_palette_shows_a_key_the_registry_never_carried() -> None:
+    """Reported 2026-08-24: Quill Radio's palette listed everything with no key.
+
+    A command carries a binding only when whoever registered it passed one, and
+    the companion apps register most of theirs with a title and a handler
+    alone. The keys are in the keymap the menus are built from, so the palette
+    asks for them the same way -- and the row, the status line and the spoken
+    announcement all have to say it, because a palette that teaches the
+    keystroke only to whoever can see the list teaches half its audience
+    nothing.
+    """
+    _install_fake_wx()
+    registry = CommandRegistry()
+    registry.register("radio.acb_calendar", "ACB Media Schedule...", lambda: None)
+    dialog = CommandPaletteDialog(
+        parent=object(),
+        command_registry=registry,
+        binding_for=lambda cid: "Ctrl+Shift+N" if cid == "radio.acb_calendar" else None,
+    )
+
+    assert dialog.results._items == ["ACB Media Schedule... [Ctrl+Shift+N]"]
+    assert "Ctrl+Shift+N" in dialog.status.label
+
+    dialog._announce_at(0)  # noqa: SLF001
+    assert "Ctrl+Shift+N" in dialog.status.label
+
+
+def test_palette_prefers_the_live_keymap_over_the_registered_key() -> None:
+    """A rebind has to reach the palette. The keymap is what a rebind writes."""
+    _install_fake_wx()
+    registry = CommandRegistry()
+    registry.register("edit.find", "Find", lambda: None, "Ctrl+F")
+    dialog = CommandPaletteDialog(
+        parent=object(),
+        command_registry=registry,
+        binding_for=lambda _cid: "F3",
+    )
+
+    assert dialog.results._items == ["Find [F3]"]
+
+
+def test_palette_falls_back_when_the_keymap_lookup_fails() -> None:
+    """A broken resolver must cost a keystroke, never the list."""
+    _install_fake_wx()
+    registry = CommandRegistry()
+    registry.register("edit.find", "Find", lambda: None, "Ctrl+F")
+
+    def _boom(_cid: str) -> str:
+        raise RuntimeError("no keymap")
+
+    dialog = CommandPaletteDialog(parent=object(), command_registry=registry, binding_for=_boom)
+
+    assert dialog.results._items == ["Find [Ctrl+F]"]
+
+
+def test_go_to_anything_shows_the_keystroke_from_the_keymap() -> None:
+    """The second front door has to agree with the first about what to press.
+
+    ``GoToAnythingDialog`` had no keymap lookup at all until 2026-09-08: it read
+    only the key a registration happened to carry, so in QUILL -- where most
+    registrations carry none -- it listed commands bare while the Command
+    Palette and the menus beside it showed every key correctly. Two surfaces
+    offering the same command must not teach different answers.
+    """
+    _install_fake_wx()
+    from quill.ui.palette import GoToAnythingDialog
+
+    registry = CommandRegistry()
+    registry.register("edit.sort_lines", "Sort Lines", lambda: None)
+    dialog = GoToAnythingDialog(
+        parent=object(),
+        command_registry=registry,
+        binding_for=lambda cid: "Ctrl+Alt+S" if cid == "edit.sort_lines" else None,
+    )
+
+    # "  > " is the prefix that marks a command row apart from a heading row.
+    assert dialog.results._items == ["  > Sort Lines [Ctrl+Alt+S]"]
+
+
+def test_go_to_anything_prefers_the_live_keymap_over_the_registered_key() -> None:
+    """A rebind reaches this list too, not only the Command Palette's."""
+    _install_fake_wx()
+    from quill.ui.palette import GoToAnythingDialog
+
+    registry = CommandRegistry()
+    registry.register("edit.find", "Find", lambda: None, "Ctrl+F")
+    dialog = GoToAnythingDialog(
+        parent=object(),
+        command_registry=registry,
+        binding_for=lambda _cid: "F3",
+    )
+
+    assert dialog.results._items == ["  > Find [F3]"]
+
+
+def test_go_to_anything_falls_back_when_the_keymap_lookup_fails() -> None:
+    """A broken resolver must cost a keystroke, never the list."""
+    _install_fake_wx()
+    from quill.ui.palette import GoToAnythingDialog
+
+    registry = CommandRegistry()
+    registry.register("edit.find", "Find", lambda: None, "Ctrl+F")
+
+    def _boom(_cid: str) -> str:
+        raise RuntimeError("no keymap")
+
+    dialog = GoToAnythingDialog(parent=object(), command_registry=registry, binding_for=_boom)
+
+    assert dialog.results._items == ["  > Find [Ctrl+F]"]

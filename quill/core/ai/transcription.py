@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import ssl
 import uuid
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+from quill.core.error_codes import CodedError
+from quill.core.net import verified_ssl_context
 
 TRANSCRIPTION_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions"
 TRANSLATION_ENDPOINT = "https://api.openai.com/v1/audio/translations"
@@ -71,8 +73,8 @@ SUPPORTED_LANGUAGES: dict[str, str] = {
 }
 
 
-class TranscriptionError(Exception):
-    pass
+class TranscriptionError(CodedError):
+    code = "QUILL-AI-TRANSCRIBE-FAILED"
 
 
 class TranscriptionFileTooLargeError(TranscriptionError):
@@ -192,7 +194,7 @@ def _post_audio(
         },
         method="POST",
     )
-    ctx = ssl.create_default_context()
+    ctx = verified_ssl_context()
     try:
         with urlopen(req, context=ctx, timeout=300) as resp:
             raw = resp.read().decode("utf-8", errors="replace")

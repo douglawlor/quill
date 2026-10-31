@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.10" />
+  <meta name="generator" content="pandoc 3.10.1" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>release0.5.0</title>
+  <title>Introducing QUILL 0.5.0 Beta</title>
   <style>
     /* Default styles provided by pandoc.
     ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -41,7 +41,6 @@
       body {
         background-color: transparent;
         color: black;
-        font-size: 12pt;
       }
       p, h2, h3 {
         orphans: 3;
@@ -174,9 +173,69 @@
     }
     .display.math{display: block; text-align: center; margin: 0.5rem auto;}
   </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
 </head>
 <body>
-<h1 id="introducing-quill-0.5.0-beta">Introducing QUILL 0.5.0 Beta</h1>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="introducing-quill-050-beta">Introducing QUILL 0.5.0 Beta</h1>
 <h2 id="a-screen-reader-first-writing-environment-built-for-real-work">A
 screen-reader-first writing environment built for real work</h2>
 <p>QUILL 0.5.0 Beta is now available, and it represents a major step
@@ -204,7 +263,7 @@ attention.</p>
 still being honest about its beta status. Some areas will continue to
 grow, but the foundation is here: a complete writing environment shaped
 by accessibility from the first line of code.</p>
-<h2 id="download-quill-0.5.0-beta">Download QUILL 0.5.0 Beta</h2>
+<h2 id="download-quill-050-beta">Download QUILL 0.5.0 Beta</h2>
 <p>QUILL 0.5.0 Beta is available now for Windows.</p>
 <ul>
 <li><a
@@ -220,7 +279,7 @@ release assets.</li>
 <p>The installer requires Windows 10 or later, 64-bit. Run the installer
 and follow the prompts. QUILL will be available in your Start menu when
 complete.</p>
-<h2 id="what-is-new-in-quill-0.5.0-beta">What is new in QUILL 0.5.0
+<h2 id="what-is-new-in-quill-050-beta">What is new in QUILL 0.5.0
 Beta</h2>
 <p>QUILL 0.5.0 Beta brings together a broad set of features into one
 accessible writing environment.</p>
@@ -534,5 +593,6 @@ using <strong>Help, Report a Bug</strong>.</p>
 have too often been treated as an afterthought.</p>
 <p>With QUILL, accessibility is not the finish line.</p>
 <p>Accessibility is where we begin.</p>
+</main>
 </body>
 </html>

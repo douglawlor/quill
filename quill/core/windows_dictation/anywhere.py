@@ -1,0 +1,191 @@
+"""Dictate Anywhere: dictation's own engines, typing into other programs.
+
+dict.md 3.9 (gap 8), with the owner's answer to question 9: Quill Inkwell hosts
+it, because Inkwell already runs in the tray, already has system-wide keys and
+already types text into other programs. Both editors can start it (More
+Dictation Settings, **Dictate in Other Programs...**), and it runs the same
+shared controller, engines, words and commands -- so neither editor is behind,
+and the capability lives in shared code.
+
+This module is the wx-free part:
+
+* **What works in another program.** Punctuation and layout, spelling, the
+  capital and spacing modes, the language switch, "scratch that" (sent as
+  backspaces, only while the same window still has the focus), "stop
+  dictation". Nothing that needs to read the other program's text -- select,
+  go to, units, copying -- because Inkwell cannot see it:
+  :data:`EXTERNAL_COMMANDS`. Correcting works on the words dictation itself
+  typed there (D-10, 2026-10-16; :mod:`~quill.core.windows_dictation.external_edits`).
+* **The settings handed over.** Starting it from an editor writes that
+  editor's dictation settings to a small file in the shared data folder
+  (:func:`write_handoff`); Inkwell takes them when it starts or comes forward
+  (:func:`take_handoff`) and keeps its own copy, so it can run without the
+  editor afterwards. Kept in Inkwell's own settings file, so a portable copy
+  keeps it in the portable folder.
+* **The read-back defaults to a tone** in Inkwell: the screen reader echoes the
+  typed characters itself when its typing echo is on, and words said twice are
+  worse than once.
+
+wx-free.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, fields
+from pathlib import Path
+from typing import Any
+
+from quill.core.windows_dictation.settings_fields import DictationSettings, load_fields
+from quill.core.windows_dictation.vocabulary import Command
+
+__all__ = [
+    "EXTERNAL_COMMANDS",
+    "HANDOFF_FILE",
+    "SPOKEN_SUMMARY_COMMANDS",
+    "dictation_fields",
+    "external_refusal",
+    "settings_from",
+    "spoken_summary",
+    "stored_from",
+    "take_handoff",
+    "write_handoff",
+]
+
+HANDOFF_FILE = "dictate-anywhere.json"
+
+#: The commands that still make sense when the words go into another program.
+#: Everything else is answered with :func:`external_refusal`.
+EXTERNAL_COMMANDS = frozenset({
+    Command.SCRATCH,
+    Command.STOP,
+    Command.HELP,
+    Command.READ_BACK,
+    Command.SPELL_ON,
+    Command.SPELL_OFF,
+    Command.SPELL_WORDS,
+    Command.CAPS_ON,
+    Command.CAPS_OFF,
+    Command.ALL_CAPS_ON,
+    Command.ALL_CAPS_OFF,
+    Command.NO_SPACE_ON,
+    Command.NO_SPACE_OFF,
+    Command.SWITCH_SPANISH,
+    Command.SWITCH_ENGLISH,
+    # D-8 slice (2026-10-13): they only insert, and never read the target.
+    # The text is typed as one phrase; "scratch that" takes all of it back
+    # (quill/ui/windows_dictation_anywhere_library.py).
+    Command.INSERT_SNIPPET,
+    Command.EXPAND,
+    Command.PASTE_SLOT,
+    # D-23 (2026-10-16): a profile changes nothing in the other program, and
+    # bold and italic either retype the session's own last phrase with Markdown
+    # marks or say why they cannot (profile_mixin.py).
+    Command.BOLD_THAT,
+    Command.ITALIC_THAT,
+    Command.PROFILE_STANDARD,
+    Command.PROFILE_EMAIL,
+    Command.PROFILE_DOCUMENT,
+    Command.PROFILE_MARKDOWN,
+    Command.PROFILE_CHAT,
+    Command.PROFILE_CODING,
+    Command.PROFILE_VERBATIM,
+    # D-10 (2026-10-16): correcting the words this session typed, as backspaces
+    # and retyping, each checked first (external_edits.py, corrections.py).
+    Command.CORRECT,
+    Command.CHOOSE_1,
+    Command.CHOOSE_2,
+    Command.CHOOSE_3,
+    Command.CAPITALIZE,
+    Command.UPPERCASE,
+    Command.LOWERCASE,
+    Command.DELETE_SENTENCE,
+    Command.DELETE_PARAGRAPH,
+    Command.REPLACE_WORDS,
+    Command.CHANGE_THAT,
+})
+
+#: A read-back of a tone, for a mode where the screen reader echoes the typing.
+_ANYWHERE_DEFAULTS: dict[str, Any] = {"windows_dictation_phrase_feedback": "sound"}
+
+
+#: "what can I say" while dictating into another program (D-7): the five most
+#: useful things, said, rather than a window that takes the focus and so
+#: pauses dictation. Each is a phrase that works there (EXTERNAL_COMMANDS).
+SPOKEN_SUMMARY_COMMANDS: tuple[str, ...] = (
+    "scratch that",
+    "new line",
+    "start spelling",
+    "insert snippet and its name",
+    "stop dictation",
+)
+
+
+#: Of those, the ones that are commands and so need the command word in strict
+#: mode (D-1). "new line" is punctuation and "stop dictation" always works.
+_NEEDS_THE_WORD = frozenset({"scratch that", "start spelling", "insert snippet and its name"})
+
+
+def spoken_summary(full_list: str, *, prefix: str = "") -> str:
+    """The short answer to "what can I say" in another program. *full_list*
+    says where the whole list is, as the host can open it now. *prefix* is the
+    command word when strict mode needs it before every command (D-1)."""
+    said_as = [
+        f"{prefix} {phrase}" if prefix and phrase in _NEEDS_THE_WORD else phrase
+        for phrase in SPOKEN_SUMMARY_COMMANDS
+    ]
+    first, last = said_as[:-1], said_as[-1]
+    said = f"In another program, you can say {', '.join(first)}, or {last}."
+    return f"{said} {full_list}".strip()
+
+
+def external_refusal() -> str:
+    """What is said when a command needs to read the other program's text."""
+    return (
+        "That works in QUILL's own documents. In another program, say the words "
+        "again, or scratch that."
+    )
+
+
+def dictation_fields(settings: object) -> dict[str, Any]:
+    """Every dictation setting *settings* has, under the shared names."""
+    names = [field.name for field in fields(DictationSettings)]
+    return {name: getattr(settings, name) for name in names if hasattr(settings, name)}
+
+
+def settings_from(stored: dict[str, Any] | None) -> DictationSettings:
+    """A settings object for the shared windows, from Inkwell's stored copy."""
+    data = {**_ANYWHERE_DEFAULTS, **(stored or {})}
+    cleaned = load_fields(data)
+    known = {field.name for field in fields(DictationSettings)}
+    return DictationSettings(**{name: value for name, value in cleaned.items() if name in known})
+
+
+def stored_from(settings: DictationSettings) -> dict[str, Any]:
+    """What Inkwell writes back after its Dictation Settings window."""
+    return dict(asdict(settings))
+
+
+def write_handoff(data_dir: Path, settings: object) -> Path:
+    """Hand an editor's dictation settings to Inkwell; returns the file."""
+    from quill.core.storage import write_json_atomic
+
+    path = Path(data_dir) / HANDOFF_FILE
+    write_json_atomic(path, {"schema": 1, "dictation": dictation_fields(settings)})
+    return path
+
+
+def take_handoff(data_dir: Path) -> dict[str, Any] | None:
+    """The settings an editor handed over, once: the file is removed."""
+    import json
+
+    path = Path(data_dir) / HANDOFF_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    stored = data.get("dictation") if isinstance(data, dict) else None
+    return dict(stored) if isinstance(stored, dict) else None

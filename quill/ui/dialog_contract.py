@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 
+# accessible_label / set_accessible_name are re-exported here because the
+# #994 naming sweep imports them from this module at its ~100 call sites.
+# The implementation lives in accessible_names: its native NSAccessibility
+# push is the part VoiceOver actually hears — the SetName-only versions
+# these re-exports replace were live-verified inaudible on macOS (#1012).
+from quill.ui.accessible_names import accessible_label as accessible_label
+from quill.ui.accessible_names import ensure_accessible_names
+from quill.ui.accessible_names import set_accessible_name as set_accessible_name
+
 # Control classes that should receive initial keyboard focus when a custom
 # dialog opens, in priority order. These are the "content" controls a user came
 # to interact with — lists, trees, text fields, choices. Buttons (OK/Cancel)
@@ -57,14 +66,34 @@ def apply_modal_ids(
         dialog.SetEscapeId(escape_id)
     if escape_id is None and cancel_id is not None and hasattr(dialog, "SetEscapeId"):
         dialog.SetEscapeId(cancel_id)
-    if affirmative_label is not None and hasattr(dialog, "FindWindowById"):
-        button = dialog.FindWindowById(affirmative_id)
+    for button_id, label in ((affirmative_id, affirmative_label), (cancel_id, cancel_label)):
+        if label is None or button_id is None:
+            continue
+        # FindWindow searches this dialog's children; wx's FindWindowById
+        # without a parent searches every window in the app, and relabelled
+        # another window's OK button whenever one was created first.
+        find = getattr(dialog, "FindWindow", None) or getattr(dialog, "FindWindowById", None)
+        button = find(button_id) if find is not None else None
         if button is not None and hasattr(button, "SetLabel"):
-            button.SetLabel(affirmative_label)
-    if cancel_label is not None and hasattr(dialog, "FindWindowById"):
-        button = dialog.FindWindowById(cancel_id) if cancel_id is not None else None
-        if button is not None and hasattr(button, "SetLabel"):
-            button.SetLabel(cancel_label)
+            button.SetLabel(label)
+
+
+def ok_cancel_platform_order(ok_btn: object, cancel_btn: object) -> tuple[object, object]:
+    """Return ``(first, second)`` for a manual OK/Cancel button sizer row.
+
+    macOS reads Cancel on the left and the affirmative (OK) button on the
+    right; Windows/Linux read OK on the left and Cancel on the right (#53).
+    Use this when a dialog builds its own button ``BoxSizer`` instead of
+    ``wx.StdDialogButtonSizer`` so the pair follows native muscle memory. The
+    caller still owns the ``Add`` calls (and any stretch spacer / border gap),
+    and both buttons must carry their stock ``wx.ID_OK`` / ``wx.ID_CANCEL`` ids
+    so :func:`apply_modal_ids` and the dialog button-contract audit keep working.
+    """
+    import sys
+
+    if sys.platform == "darwin":
+        return cancel_btn, ok_btn
+    return ok_btn, cancel_btn
 
 
 def apply_listbox_activation(listbox: object, handler: Callable[[object], None]) -> None:
@@ -77,24 +106,126 @@ def apply_listbox_activation(listbox: object, handler: Callable[[object], None])
     calling *handler* for both. The key event is consumed on activation so the
     dialog's default button does not also fire. *handler* takes the wx event, so an
     existing double-click handler works unchanged.
+
+    Typing a row's text moves to it, and while a name is being typed Space is part
+    of the name rather than an activation (:mod:`quill.core.type_ahead`), so
+    "Meeting notes" reaches that row instead of opening "Meeting agenda" at the
+    space. Enter still activates and Escape still closes, always.
     """
+    import time
+
     import wx
 
+    from quill.core.type_ahead import TypeAheadBuffer
+
     listbox.Bind(wx.EVT_LISTBOX_DCLICK, handler)
+    # Typing a row's name moves to it, spaces and all; Space opens the row only
+    # when no name is being typed (quill/core/type_ahead.py, 2026-10-16).
+    typing = TypeAheadBuffer(open_suppression=0.0)
 
     def _on_key(event: object) -> None:
         code = event.GetKeyCode()
+        if code == wx.WXK_SPACE and typing.typing(time.monotonic()):
+            event.Skip()  # part of the name: EVT_CHAR carries it to _on_char
+            return
         has_selection = listbox.GetSelection() != wx.NOT_FOUND
         if has_selection and code in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER, wx.WXK_SPACE):
+            typing.reset()
             handler(event)
             return  # consume so the modal default button does not also activate
         event.Skip()
 
+    def _on_char(event: object) -> None:
+        key = event.GetUnicodeKey()
+        get_strings = getattr(listbox, "GetStrings", None)
+        modified = event.ControlDown() or event.AltDown()
+        if modified or get_strings is None or key in (wx.WXK_NONE, None) or key < 32:
+            event.Skip()
+            return
+        if key == 32 and not typing.typing(time.monotonic()):
+            event.Skip()  # a space that starts nothing is the list's own business
+            return
+        current = listbox.GetSelection()
+        result = typing.press(chr(key), list(get_strings()), current, time.monotonic())
+        found = result.index
+        if result.failed:
+            from quill.platform.sr_announce import announce
+
+            announce(f"No match for {result.query}")
+        elif found >= 0 and found != current:
+            listbox.SetSelection(found)
+            # What a click or an arrow key raises, so a details pane follows.
+            moved = wx.CommandEvent(wx.wxEVT_LISTBOX, listbox.GetId())
+            moved.SetEventObject(listbox)
+            moved.SetInt(found)
+            listbox.GetEventHandler().ProcessEvent(moved)
+        # Consumed either way: the native first-letter jump would fight the name.
+
     listbox.Bind(wx.EVT_KEY_DOWN, _on_key)
+    listbox.Bind(wx.EVT_CHAR, _on_char)
+
+
+def dialog_alive(dialog: object) -> bool:
+    """Return True when *dialog* is still safe to touch from a UI callback.
+
+    Background threads in several AI dialogs (AI Hub auto-probe / list-models /
+    test-connection, Thesaurus lookup, Document Q&A ask, Model Panel download)
+    post their result back to the UI thread via ``wx.CallAfter``. If the user
+    closed the dialog before the background work finished, the queued callback
+    would touch a destroyed ``wx.StaticText`` / ``wx.Button`` and raise
+    ``RuntimeError: wrapped C/C++ object of type StaticText has been deleted``
+    (#1067). Call this at the top of each such callback and no-op when False --
+    the result is no longer relevant once the dialog is gone.
+
+    Mirrors ``status_dialog.is_alive``. Best-effort: any failure to read the
+    window state is treated as "not alive" so a torn-down window never crashes
+    the callback that was trying to be careful.
+    """
+    try:
+        return bool(dialog) and not dialog.IsBeingDeleted()
+    except Exception:  # noqa: BLE001 - liveness check must never raise
+        return False
+
+
+def _selected_book_page(control: object) -> object | None:
+    """Return the currently selected page of a *book* control, else ``None``.
+
+    Book controls (``wx.Notebook`` and its ``Listbook`` / ``Treebook`` /
+    ``Choicebook`` / ``Toolbook`` / ``Simplebook`` / ``AuiNotebook`` siblings)
+    show only their selected page; the other pages are hidden. Detected by the
+    ``*book`` class-name suffix so a leaf control that merely exposes
+    ``GetSelection`` (``ListBox``, ``Choice``, ``ComboBox``) is never mistaken
+    for a page container.
+    """
+    if not type(control).__name__.lower().endswith("book"):
+        return None
+    get_selection = getattr(control, "GetSelection", None)
+    get_page = getattr(control, "GetPage", None)
+    if not callable(get_selection) or not callable(get_page):
+        return None
+    try:
+        index = get_selection()
+    except Exception:
+        return None
+    if not isinstance(index, int) or index < 0:
+        return None
+    try:
+        return get_page(index)
+    except Exception:
+        return None
 
 
 def _iter_descendant_controls(widget: object) -> Iterable[object]:
-    """Yield a widget's descendants in creation (tab) order, depth-first."""
+    """Yield a widget's descendants in creation (tab) order, depth-first.
+
+    A book control is confined to its selected page (see
+    :func:`_selected_book_page`): initial-focus routing must land on the first
+    control of the tab the user actually sees, never a hidden page's control and
+    never the tab strip itself (the notebook is not a preferred-focus class, so
+    it is skipped as a focus target regardless). This is what keeps a tabbed
+    dialog from opening with focus parked on the tab control instead of the
+    first field inside the active tab.
+    """
     get_children = getattr(widget, "GetChildren", None)
     if not callable(get_children):
         return
@@ -104,7 +235,11 @@ def _iter_descendant_controls(widget: object) -> Iterable[object]:
         return
     for child in children:
         yield child
-        yield from _iter_descendant_controls(child)
+        page = _selected_book_page(child)
+        if page is not None:
+            yield from _iter_descendant_controls(page)
+        else:
+            yield from _iter_descendant_controls(child)
 
 
 def _is_focusable(control: object) -> bool:
@@ -200,6 +335,74 @@ def focus_primary_control(
     return target
 
 
+# The "Entered/Exited <name> dialog" cues are opt-out via the
+# announce_dialog_transitions setting. Standalone dialogs call the module
+# helpers below directly (no MainFrame in scope), so the shell registers a
+# live lookup here at startup; None (bare unit tests, no shell) keeps the
+# cues on, matching the MainFrame wrappers' fallback for test doubles.
+_transition_announcement_policy: Callable[[], bool] | None = None
+
+
+def set_transition_announcement_policy(policy: Callable[[], bool] | None) -> None:
+    """Register the live announce_dialog_transitions lookup (None resets)."""
+    global _transition_announcement_policy
+    _transition_announcement_policy = policy
+
+
+def _transition_cues_enabled() -> bool:
+    if _transition_announcement_policy is None:
+        return True
+    try:
+        return bool(_transition_announcement_policy())
+    except Exception:
+        return True
+
+
+# The app-wide F1 handler, registered once at startup (Quill Radio's
+# context_help.activate()). When set, every window shown through
+# show_modal_dialog / show_modeless_surface answers F1 with context help --
+# which is what makes "every new surface has F1 help" true by construction:
+# the dialog gate already forces new surfaces through these two paths.
+_context_help_handler: Callable[[object], None] | None = None
+
+
+def set_context_help_handler(handler: Callable[[object], None] | None) -> None:
+    """Register the app-wide F1 context-help handler (None resets)."""
+    global _context_help_handler
+    _context_help_handler = handler
+
+
+def _install_context_help(window: object) -> None:
+    """Bind F1 on *window* once, when an app has registered a handler.
+
+    A window that answers F1 itself -- QUILL's Preferences hub and Command
+    Palette carry their own topic-based help -- marks itself with
+    ``_quill_owns_f1 = True`` and is left alone: the generic answer must never
+    shadow an authored one.
+    """
+    if _context_help_handler is None:
+        return
+    if getattr(window, "_quill_owns_f1", False):
+        return
+    if getattr(window, "_quill_f1_help_bound", False):
+        return
+    try:
+        import wx
+
+        def _on_char_hook(event: object, _window: object = window) -> None:
+            if event.GetKeyCode() == wx.WXK_F1 and not event.HasAnyModifiers():
+                handler = _context_help_handler
+                if handler is not None:
+                    handler(_window)
+                return
+            event.Skip()
+
+        window.Bind(wx.EVT_CHAR_HOOK, _on_char_hook)  # type: ignore[attr-defined]
+        window._quill_f1_help_bound = True  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001 - a help hook must never block a window
+        return
+
+
 def show_modal_dialog(
     dialog: object,
     label: str,
@@ -207,20 +410,100 @@ def show_modal_dialog(
     announce: Callable[[str], None] | None = None,
     enter_region: Callable[[str], None] | None = None,
     exit_region: Callable[[str], None] | None = None,
+    search_announce: Callable[[str], None] | None = None,
 ) -> int:
-    """Show a modal dialog with optional region and announcement hooks."""
+    """Show a modal dialog with optional region and announcement hooks.
+
+    *search_announce* speaks Find a setting's match count when *announce* is
+    withheld so the entry and exit cues stay silent."""
+    from quill.ui.preferences_search import install_preferences_search
+
+    settings_search = install_preferences_search(dialog, announce=search_announce or announce)
+    _install_context_help(dialog)
+    # macOS VoiceOver announces a control only by its own accessible name;
+    # the neighbouring StaticText that Windows screen readers use is not
+    # linked (#1012). Every modal dialog routes through here, so inferring
+    # names at show time fixes all of them globally. Guarded: a naming
+    # failure must never block a dialog from opening.
+    try:
+        ensure_accessible_names(dialog)
+    except Exception:  # noqa: BLE001
+        pass
+    speak_transitions = announce is not None and _transition_cues_enabled()
     if enter_region is not None:
         enter_region(label)
-    if announce is not None:
+    if speak_transitions:
         announce(f"Entered {label} dialog")
     try:
         result = dialog.ShowModal()
     finally:
-        if announce is not None:
+        if settings_search is not None:
+            settings_search.close()
+        if speak_transitions:
             announce(f"Exited {label} dialog")
         if exit_region is not None:
             exit_region(label)
     return result
+
+
+def show_modeless_surface(
+    frame: object,
+    label: str,
+    *,
+    announce: Callable[[str], None] | None = None,
+    enter_region: Callable[[str], None] | None = None,
+    focus: bool = True,
+) -> None:
+    """Show a modeless surface *frame* with the same accessibility onboarding a
+    modal dialog gets from :func:`show_modal_dialog`, minus the blocking loop.
+
+    The radio window model converts heavy surfaces from ``wx.Dialog`` to modeless
+    ``wx.Frame`` (so each carries the persistent menu bar + &Window menu). A
+    modeless frame does not run its own event loop, so this only does the
+    *entry* onboarding: infer accessible names (VoiceOver, #1012), announce
+    region entry, show the frame, and move focus to its first content control.
+    The matching *exit* side (region exit + "Exited ..." cue + WindowManager
+    unregister + raising the previous window) belongs in the frame's own
+    ``EVT_CLOSE`` handler, since teardown is event-driven, not inline.
+    """
+    from quill.ui.preferences_search import install_preferences_search
+
+    install_preferences_search(frame, announce=announce)
+    try:
+        ensure_accessible_names(frame)
+    except Exception:  # noqa: BLE001 - a naming failure must never block the window
+        pass
+    _install_context_help(frame)
+    if focus and enter_region is not None:
+        enter_region(label)
+    if focus and announce is not None and _transition_cues_enabled():
+        announce(f"Entered {label}")
+    show = getattr(frame, "Show" if focus else "ShowWithoutActivating", None)
+    if not callable(show):
+        show = getattr(frame, "Show", None)
+    if callable(show):
+        show()
+    if focus:
+        focus_primary_control(frame)
+
+
+def announce_surface_exit(label: str, announce: Callable[[str], None] | None) -> bool:
+    """Say "Exited <label>." if the listener asked for transition cues.
+
+    The exit half of :func:`show_modeless_surface`. That function honours
+    ``announce_dialog_transitions`` on the way *in* and leaves the way out to
+    each frame's own ``EVT_CLOSE`` handler -- and every one of those handlers
+    announced unconditionally, so a listener who had switched the cues off
+    still heard "Exited Browse Stations." every time they closed a window
+    (reported 2026-08-23). One helper, so the two halves of the same preference
+    cannot disagree again, and so a new surface gets the rule for free.
+
+    Returns whether anything was said, which is what a test asserts on.
+    """
+    if announce is None or not _transition_cues_enabled():
+        return False
+    announce(f"Exited {label}.")
+    return True
 
 
 def show_message_box(
@@ -239,11 +522,79 @@ def show_message_box(
     """
     import wx
 
-    if announce is not None:
+    speak_transitions = announce is not None and _transition_cues_enabled()
+    if speak_transitions:
         announce(f"Entered {caption} dialog")
     try:
         result = wx.MessageBox(message, caption, style, parent)
     finally:
-        if announce is not None:
+        if speak_transitions:
             announce(f"Exited {caption} dialog")
     return result
+
+
+def bind_close_button(window: object, button: object, *, modeless: bool) -> None:
+    """Make a Close/Cancel *button* actually close its *window*, either shape.
+
+    A ``wx.Dialog`` handles ``ID_CANCEL`` for free, so a Close button wired to
+    nothing still worked -- and every surface the radio window model converted
+    to a modeless ``wx.Frame`` (Browse Stations, Find Stations, Manage
+    Favorites, Schedule Recording) silently lost that, because a frame has no
+    such handling. The button did nothing; only Escape closed the window
+    (reported 2026-08-16). A button that looks like the way out and is not is
+    worse than no button, so this is the one way both shapes wire it:
+    ``Close()`` on a frame (its ``EVT_CLOSE`` does the teardown), ``EndModal``
+    on a dialog.
+    """
+    import wx
+
+    if button is None or window is None:
+        return
+
+    def _close(_event: object) -> None:
+        if modeless:
+            window.Close()  # type: ignore[attr-defined]
+            return
+        end_modal = getattr(window, "EndModal", None)
+        if callable(end_modal):
+            end_modal(wx.ID_CANCEL)
+        else:  # a frame passed as modal: closing is still the right answer
+            window.Close()  # type: ignore[attr-defined]
+
+    button.Bind(wx.EVT_BUTTON, _close)  # type: ignore[attr-defined]
+
+
+#: How wide a read-only prose box has to be before it reads as prose. Sixty-four
+#: characters is about the width of a line of a book; below roughly forty, a
+#: long word and a proportional font start putting one word on a line of its
+#: own.
+READABLE_COLUMNS = 64
+
+#: How tall the same box starts out. Four lines is the shortest thing that
+#: still looks like a paragraph rather than a field.
+READABLE_LINES = 4
+
+
+def readable_min_size(
+    window: object, *, columns: int = READABLE_COLUMNS, lines: int = READABLE_LINES
+) -> tuple[int, int]:
+    """A minimum size, in characters, for a read-only box that holds prose.
+
+    Measured from *window*'s own font rather than fixed in pixels: a listener
+    who has turned the system font up is exactly the person reading this box
+    rather than hearing it, and a pixel size shrinks for them at the moment it
+    should grow. ``GetTextExtent("M")`` is the widest glyph, so the answer is
+    generous on purpose.
+
+    It exists because a box with no minimum is only as wide as whatever else
+    the window happens to contain. Quill Radio's Station Details and Now
+    Playing readouts both sat in windows sized by their buttons, and at a small
+    window size they wrapped a word to a line -- reported 2026-09-14 as "one
+    word is appearing on lines frequently". A minimum size fixes it at the
+    source: the box asks for a readable width, and the window it is in cannot
+    be smaller than its contents.
+    """
+    import wx  # noqa: F401 - imported for symmetry with the rest of this module
+
+    char_width, char_height = window.GetTextExtent("M")  # type: ignore[attr-defined]
+    return (char_width * columns, char_height * lines + 8)

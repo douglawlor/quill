@@ -21,7 +21,7 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from scripts.generate_file_manifest import scan_files
+from scripts.generate_file_manifest import normalize_version, scan_files
 
 _PLATFORM_BOOTSTRAPPER: dict[str, str] = {
     "windows": "bootstrap.exe",
@@ -35,14 +35,20 @@ _MANIFEST_DIR = Path("docs/site/updates/manifests")
 
 def _find_latest_base_version(current_version: str, manifest_dir: Path) -> str | None:
     """Return highest version < current_version from available manifests (no packaging dep)."""
-    current_parts = tuple(int(x) for x in current_version.split("."))
+    try:
+        current_parts = tuple(int(x) for x in normalize_version(current_version).split("."))
+    except ValueError:
+        # Unparseable (pre-release suffix or malformed) — no delta base; the
+        # caller falls back to a full update ZIP instead of crashing the
+        # release build.
+        return None
     best: tuple[int, ...] | None = None
     best_str: str | None = None
     for p in manifest_dir.glob("manifest-*.json"):
         stem = p.stem
         ver_str = stem[len("manifest-") :]
         try:
-            parts = tuple(int(x) for x in ver_str.split("."))
+            parts = tuple(int(x) for x in normalize_version(ver_str).split("."))
         except ValueError:
             continue
         if parts < current_parts:
@@ -214,7 +220,10 @@ def main() -> int:
         "--output",
         type=Path,
         default=None,
-        help="Output ZIP path (default: release-artifacts/quill-{version}-update-{platform}.zip)",
+        help=(
+            "Output ZIP path "
+            "(default: dist/release-artifacts/quill-{version}-update-{platform}.zip)"
+        ),
     )
     parser.add_argument(
         "--install-prefix",
@@ -223,13 +232,13 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    version: str = args.version.strip()
+    version: str = normalize_version(args.version)
     platform: str = args.platform
     source_root: Path = args.source_root.resolve()
     manifest_dir = source_root / _MANIFEST_DIR
 
     output: Path = args.output or (
-        source_root / "release-artifacts" / f"quill-{version}-update-{platform}.zip"
+        source_root / "dist" / "release-artifacts" / f"quill-{version}-update-{platform}.zip"
     )
 
     # Determine mode: default to delta if a previous manifest can be found, else full

@@ -1,0 +1,390 @@
+"""Recently played podcast episodes, persisted as atomic JSON.
+
+Backs the Episode menu's Recently Played submenu and the standalone app's
+optional resume-on-launch behavior. Deliberately distinct from Continue
+Listening (Phase 4's virtual view of in-progress episodes): this is a
+straightforward "what did I recently play" log -- most recent first,
+capped, de-duplicated by (show_id, episode_guid). Mirrors
+``quill/core/radio/history.py``. wx-free, strict-typed.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from quill.core.podcasts import menu_mode, search_history, transcript_export
+from quill.core.podcasts.onboarding import OnboardingState
+
+_FILE_NAME = "podcast_history.json"
+_MAX_ENTRIES = 15
+
+
+@dataclass(slots=True)
+class PlayedEpisode:
+    show_id: str
+    episode_guid: str
+    show_title: str
+    episode_title: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "show_id": self.show_id,
+            "episode_guid": self.episode_guid,
+            "show_title": self.show_title,
+            "episode_title": self.episode_title,
+        }
+
+    @staticmethod
+    def from_dict(data: object) -> PlayedEpisode | None:
+        if not isinstance(data, dict):
+            return None
+        show_id = str(data.get("show_id", ""))
+        episode_guid = str(data.get("episode_guid", ""))
+        if not show_id or not episode_guid:
+            return None
+        return PlayedEpisode(
+            show_id=show_id,
+            episode_guid=episode_guid,
+            show_title=str(data.get("show_title", "")),
+            episode_title=str(data.get("episode_title", "")),
+        )
+
+
+@dataclass(slots=True)
+class PodcastHistory:
+    """Recently played episodes plus the resume-on-launch preference."""
+
+    episodes: list[PlayedEpisode] = field(default_factory=list)
+    resume_on_launch: bool = False
+    #: What the listener has already been shown of the first-run flow and the
+    #: one-shot tips. A nested record rather than three flat fields, because it
+    #: is one feature and reading it as one is how the caller uses it -- the
+    #: same shape Quill Radio's history carries.
+    onboarding: OnboardingState = field(default_factory=OnboardingState)
+    #: Silently check GitHub releases for a newer QUILL Cast on launch (the
+    #: same check Help > Check for Updates runs, just quiet unless a genuine
+    #: update is found); on by default, one checkbox in Preferences (Ctrl+,)
+    #: turns it off.
+    check_updates_on_startup: bool = True
+    #: ISO timestamp of the last update check (manual or automatic), so the
+    #: startup check only hits the network once a day, not on every launch.
+    last_update_check: str = ""
+    #: Speak "Entered/Exited X dialog" around every modal dialog. Off by
+    #: default, matching QUILL's own Settings.announce_dialog_transitions --
+    #: the standalone apps previously never wired this policy at all, so
+    #: dialog_contract.show_modal_dialog's "no policy set" fallback always
+    #: spoke it, unlike full QUILL where it is opt-in.
+    announce_dialog_transitions: bool = False
+    #: How much scaffolding an exported transcript keeps: speakers, timestamps,
+    #: both, or just the words. Per install, and named the same in both apps
+    #: (the same shape announce_dialog_transitions has) so a transcript saved
+    #: from Quill Radio and one saved from QUILL Cast come out alike.
+    #: See quill.core.podcasts.transcript_export.
+    transcript_detail: str = "speakers"
+    #: Alt+F4 sends QUILL Cast to the system tray (still playing) instead
+    #: of closing the window. Off by default; mirrors Quill Radio's
+    #: RadioHistory.alt_f4_to_tray.
+    alt_f4_to_tray: bool = False
+    #: Winamp classic-skin transport letters (Z X C V B, arrows to seek, J,
+    #: T, L) in the Now Playing window. Library and episode lists always keep
+    #: their letter typeahead. Mirrors Quill
+    #: Radio's RadioHistory.winamp_playback_keys, and shares its key map.
+    winamp_playback_keys: bool = True
+    #: What closing the window means: "ask" every time, "exit", or
+    #: "minimize" to the tray. Quill Radio has carried these three since it
+    #: had a tray icon; Cast had only the Alt+F4 checkbox, so the titlebar X
+    #: ended playback with no way to say otherwise (list.md 5.4).
+    #:
+    #: Shipped default is "exit", not "ask": Cast has always exited on close,
+    #: and an upgrade that starts asking a question is an upgrade that changed
+    #: somebody's Alt+F4 under them. "Ask every time" is one choice away in
+    #: Preferences, and the confirm dialog offers to remember the answer.
+    close_action: str = "exit"
+    #: Searches already run in Search Everywhere, most recent first. Rides
+    #: this file rather than one of its own so that clearing the recently
+    #: played list clears these too -- a second history nobody knew about is
+    #: worse than no history. See
+    #: :mod:`quill.core.podcasts.search_history` (list.md 5.5).
+    recent_searches: tuple[str, ...] = ()
+    #: The media-tools state the listener has already been told about, as
+    #: :meth:`quill.core.podcasts.media_health.CastMediaHealth.signature`
+    #: writes it. Empty means nothing has been said. See
+    #: :mod:`quill.ui.podcasts.media_preflight`.
+    media_notice_signature: str = ""
+    #: Bring Now Playing to the front when playback starts (qc.md 5). Off:
+    #: a window that steals focus on every Play is one somebody turns off.
+    switch_to_now_playing: bool = False
+    #: The QUILL Lineup Cast opens in ("" = none): Start Here in the Lineups window.
+    start_lineup_id: str = ""
+    #: How Copy Notes copies: plain, plain_links, markdown or formatted (5c).
+    notes_copy_format: str = "plain"
+    #: AI help (ear.md A1): off until switched on in Preferences, and then the
+    #: shared agreement still has to be accepted. The three fields below are
+    #: what the shared hosted-AI code reads from "the settings".
+    ai_help_enabled: bool = False
+    ai_privacy_accepted_version: int = 0
+    ai_own_key_model: str = ""
+    ai_own_key_provider: str = "openai"
+    #: View > Show: the one episode filter, applied to every list (qc.md 4.2).
+    episode_filter: str = "all"
+    #: The six notice kinds (core/podcasts/notices.py), each its own switch,
+    #: all on; the digest on launch; the desktop toasts; when Cast was last
+    #: open, which is what the digest counts from.
+    notify_new_episode: bool = True
+    notify_feed_failed: bool = True
+    notify_gone_quiet: bool = True
+    notify_download_finished: bool = True
+    notify_sleep_last_minute: bool = True
+    notify_import_finished: bool = True
+    launch_digest: bool = True
+    toasts_enabled: bool = True
+    #: Say what plays next about ten seconds before an episode ends (qc.md 18.4).
+    announce_up_next: bool = True
+    #: Sound, speech, both or silent for a one-key action's outcome (qc.md 18.7).
+    action_feedback: str = "both"
+    #: Defaults for a new watched folder (qc.md 5d): Preferences > Data.
+    wf_default_original: str = "keep"
+    wf_default_tell: str = "each"
+    wf_default_min_seconds: int = 30
+    wf_default_subfolders: bool = True
+    #: Personal Audio arrivals also wait in the Inbox (qc.md 5d), off.
+    inbox_personal_audio: bool = False
+    #: Share the family's shared choices with the other Quill apps (qc.md X-05).
+    share_family_prefs: bool = False
+    last_seen_at: str = ""
+    #: Look for new episodes on a timer. Named exactly as
+    #: :class:`quill.core.settings.Settings` names them, because
+    #: ``PodcastCheckMonitor`` reads its settings object duck-typed: inside
+    #: QUILL that object is ``Settings``, and standalone QUILL Cast has no
+    #: ``Settings`` at all -- which is why the background check silently never
+    #: ran there until this record started answering for it. Same names, one
+    #: monitor, one meaning.
+    #:
+    #: Off by default, and separate from Quill Radio's own cadence on purpose:
+    #: one shared switch would mean enabling the check here enabled it there
+    #: too, with no way to say "let Radio do it". What the two apps *do* share
+    #: is the record of when a check happened, so they never ask one publisher
+    #: twice (``PodcastLibrary.last_auto_check``).
+    podcast_check_enabled: bool = False
+    #: Minutes between checks; 0 is "manually only", an answer rather than the
+    #: absence of one. Normalised through
+    #: :mod:`quill.core.podcasts.refresh_policy`, which is the same list and
+    #: the same clamping Quill Radio uses.
+    podcast_check_interval_minutes: int = 60
+    #: An earcon each time a check runs, so an ambient thing can be heard to
+    #: be alive. Off by default: a sound four times an hour is a sound.
+    podcast_check_audible_tick: bool = False
+    #: Let what a check found cut across whatever is being spoken. Off by
+    #: default -- new episodes are news, not an emergency.
+    podcast_check_interrupt_speech: bool = False
+    #: Simple or Advanced menus (see core/podcasts/menu_mode.py). Simple is
+    #: the shipped default, which is safe here in a way it would not be in a
+    #: released app: Cast is not in RELEASED_APPS yet, so there is nobody whose
+    #: menu bar this changes underneath them. One row in the View menu switches
+    #: it, and every hidden row is still reachable by name in the palette.
+    menu_mode: str = "simple"
+    #: The arrow-navigable status bar along the bottom (F6), as Quill Radio and
+    #: the QUILL editor have. On by default, because a status bar nobody knows
+    #: about is a status bar nobody turns on -- and it refuses Tab focus, so it
+    #: costs a listener nothing until they press F6.
+    show_status_bar: bool = True
+    #: Hide podcasts with nothing unheard, in the library tree (ear.md R1).
+    #: Off by default: a tree whose rows disappear is a tree somebody has to be
+    #: told about first, and the View menu is where they will be.
+    hide_caught_up: bool = False
+
+    def record(
+        self, show_id: str, episode_guid: str, *, show_title: str, episode_title: str
+    ) -> None:
+        """Note that this episode just started playing; it moves to the front."""
+        self.episodes = [
+            e for e in self.episodes if (e.show_id, e.episode_guid) != (show_id, episode_guid)
+        ]
+        self.episodes.insert(
+            0,
+            PlayedEpisode(
+                show_id=show_id,
+                episode_guid=episode_guid,
+                show_title=show_title,
+                episode_title=episode_title,
+            ),
+        )
+        del self.episodes[_MAX_ENTRIES:]
+
+    @property
+    def last_played(self) -> PlayedEpisode | None:
+        return self.episodes[0] if self.episodes else None
+
+
+_SWITCHES: tuple[str, ...] = (
+    "notify_new_episode",
+    "notify_feed_failed",
+    "notify_gone_quiet",
+    "notify_download_finished",
+    "notify_sleep_last_minute",
+    "notify_import_finished",
+    "launch_digest",
+    "toasts_enabled",
+    "announce_up_next",
+    "wf_default_subfolders",
+)
+
+
+def _coerce_close_action(value: object) -> str:
+    """A stored close preference, or the shipped default.
+
+    Anything unreadable reads as "exit" -- the behaviour Cast has always had.
+    A junk value must not turn into "ask", which would start interrupting
+    Alt+F4 with a question nobody chose.
+    """
+    text = str(value or "").strip().lower()
+    return text if text in {"ask", "exit", "minimize"} else "exit"
+
+
+def _coerce_check_interval(value: object) -> int:
+    """A stored cadence, through the one shared normalisation (60 if absent).
+
+    Missing is *not* zero: an older file predates the setting, and reading it
+    as "manually only" would be inventing a choice nobody made. Zero written
+    down is a choice, and survives.
+    """
+    if value is None:
+        return 60
+    from quill.core.podcasts.refresh_policy import normalize_interval
+
+    return normalize_interval(value)
+
+
+def _store_path(data_dir: Path) -> Path:
+    return data_dir / _FILE_NAME
+
+
+def load_history(data_dir: Path) -> PodcastHistory:
+    """Read history (an absent or broken file reads as empty)."""
+    try:
+        raw = json.loads(_store_path(data_dir).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return PodcastHistory()
+    history = PodcastHistory()
+    if isinstance(raw, dict):
+        history.resume_on_launch = bool(raw.get("resume_on_launch", False))
+        history.check_updates_on_startup = bool(raw.get("check_updates_on_startup", True))
+        history.last_update_check = str(raw.get("last_update_check", ""))
+        history.announce_dialog_transitions = bool(raw.get("announce_dialog_transitions", False))
+        history.transcript_detail = transcript_export.normalize_detail(raw.get("transcript_detail"))
+        history.alt_f4_to_tray = bool(raw.get("alt_f4_to_tray", False))
+        history.winamp_playback_keys = bool(raw.get("winamp_playback_keys", True))
+        history.close_action = _coerce_close_action(raw.get("close_action"))
+        history.media_notice_signature = str(raw.get("media_notice_signature", ""))
+        history.recent_searches = search_history.from_json(raw.get("recent_searches"))
+        history.podcast_check_enabled = bool(raw.get("podcast_check_enabled", False))
+        history.podcast_check_interval_minutes = _coerce_check_interval(
+            raw.get("podcast_check_interval_minutes")
+        )
+        history.podcast_check_audible_tick = bool(raw.get("podcast_check_audible_tick", False))
+        history.podcast_check_interrupt_speech = bool(
+            raw.get("podcast_check_interrupt_speech", False)
+        )
+        history.menu_mode = menu_mode.normalize_mode(raw.get("menu_mode"))
+        history.show_status_bar = bool(raw.get("show_status_bar", True))
+        history.hide_caught_up = bool(raw.get("hide_caught_up", False))
+        history.switch_to_now_playing = bool(raw.get("switch_to_now_playing", False))
+        history.start_lineup_id = str(raw.get("start_lineup_id", "") or "")
+        from quill.core.podcasts.notes_export import normalize_format
+
+        history.notes_copy_format = normalize_format(raw.get("notes_copy_format"))
+        history.ai_help_enabled = bool(raw.get("ai_help_enabled", False))
+        try:
+            history.ai_privacy_accepted_version = int(
+                raw.get("ai_privacy_accepted_version", 0) or 0
+            )
+        except (TypeError, ValueError):
+            history.ai_privacy_accepted_version = 0
+        history.ai_own_key_model = str(raw.get("ai_own_key_model", "") or "")
+        history.episode_filter = str(raw.get("episode_filter", "all") or "all")
+        from quill.core.action_feedback import coerce as _feedback
+
+        history.action_feedback = (
+            _feedback(raw.get("action_feedback", "both")).value
+            if raw.get("action_feedback") is not None
+            else "both"
+        )
+        for switch in _SWITCHES:
+            setattr(history, switch, bool(raw.get(switch, True)))
+        history.inbox_personal_audio = bool(raw.get("inbox_personal_audio", False))
+        history.share_family_prefs = bool(raw.get("share_family_prefs", False))
+        history.wf_default_original = str(raw.get("wf_default_original", "keep") or "keep")
+        history.wf_default_tell = str(raw.get("wf_default_tell", "each") or "each")
+        try:
+            history.wf_default_min_seconds = max(0, int(raw.get("wf_default_min_seconds", 30)))
+        except (TypeError, ValueError):
+            history.wf_default_min_seconds = 30
+        history.last_seen_at = str(raw.get("last_seen_at", "") or "")
+        from quill.core.ai.own_key import normalize_provider
+
+        history.ai_own_key_provider = normalize_provider(raw.get("ai_own_key_provider"))
+        history.onboarding = OnboardingState.from_dict(raw.get("onboarding"))
+        entries = raw.get("episodes")
+        for entry in entries if isinstance(entries, list) else []:
+            played = PlayedEpisode.from_dict(entry)
+            if played is not None:
+                history.episodes.append(played)
+        del history.episodes[_MAX_ENTRIES:]
+    return history
+
+
+def save_history(data_dir: Path, history: PodcastHistory) -> None:
+    """Persist history atomically."""
+    from quill.core.persistence_outcome import guarded_write
+    from quill.core.storage import write_json_atomic
+
+    path = _store_path(data_dir)
+    guarded_write(
+        "QUILL Cast's settings",
+        path,
+        lambda: write_json_atomic(
+            path,
+            {
+                "resume_on_launch": history.resume_on_launch,
+                "check_updates_on_startup": history.check_updates_on_startup,
+                "last_update_check": history.last_update_check,
+                "announce_dialog_transitions": history.announce_dialog_transitions,
+                "alt_f4_to_tray": history.alt_f4_to_tray,
+                "winamp_playback_keys": history.winamp_playback_keys,
+                "close_action": history.close_action,
+                "media_notice_signature": history.media_notice_signature,
+                "recent_searches": search_history.to_json(history.recent_searches),
+                "podcast_check_enabled": history.podcast_check_enabled,
+                "podcast_check_interval_minutes": history.podcast_check_interval_minutes,
+                "podcast_check_audible_tick": history.podcast_check_audible_tick,
+                "podcast_check_interrupt_speech": history.podcast_check_interrupt_speech,
+                "menu_mode": history.menu_mode,
+                "show_status_bar": history.show_status_bar,
+                "hide_caught_up": history.hide_caught_up,
+                "switch_to_now_playing": history.switch_to_now_playing,
+                "start_lineup_id": history.start_lineup_id,
+                "notes_copy_format": history.notes_copy_format,
+                "ai_help_enabled": history.ai_help_enabled,
+                "ai_privacy_accepted_version": history.ai_privacy_accepted_version,
+                "ai_own_key_model": history.ai_own_key_model,
+                "ai_own_key_provider": history.ai_own_key_provider,
+                "episode_filter": history.episode_filter,
+                "action_feedback": history.action_feedback,
+                **{switch: getattr(history, switch, True) for switch in _SWITCHES},
+                "inbox_personal_audio": history.inbox_personal_audio,
+                "share_family_prefs": history.share_family_prefs,
+                "wf_default_original": history.wf_default_original,
+                "wf_default_tell": history.wf_default_tell,
+                "wf_default_min_seconds": history.wf_default_min_seconds,
+                "last_seen_at": history.last_seen_at,
+                # transcript_detail was read by load_history and missing from this
+                # list, so it has never persisted: a listener chose how much
+                # scaffolding an exported transcript keeps and the next launch forgot.
+                "transcript_detail": history.transcript_detail,
+                "onboarding": history.onboarding.to_dict(),
+                "episodes": [e.to_dict() for e in history.episodes],
+            },
+        ),
+    )

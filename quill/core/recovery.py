@@ -30,6 +30,15 @@ class RecoveryOffer:
     # How many times the user has dismissed this recovery offer without restoring.
     # The UI shows adaptive messaging when this reaches 3 (M-28 / §8.2).
     dismissal_count: int = 0
+    # #1045/#1046: the log excerpt that justified this offer, captured once
+    # here (while it is guaranteed still within the scan window) rather than
+    # re-scanned later when an "Email Support" click is finally made -- by
+    # then the current session's own routine logging may have grown
+    # quill.log enough to push the original evidence out of that window,
+    # making a correctly-justified offer look like an unexplained false
+    # positive in the filed report. None when the offer fired because the
+    # log was missing/unreadable (inconclusive, not evidence of anything).
+    error_evidence: str | None = None
 
 
 # Two layers of synchronization protect the read-modify-write of
@@ -93,17 +102,192 @@ def _release_file_lock(fd: int) -> None:
     os.close(fd)
 
 
-def begin_session(session_id: str) -> list[RecoveryOffer]:
+_LOG_ERROR_MARKERS = ("ERROR", "CRITICAL", "Traceback (most recent call last):")
+# Lines that match an error marker but are NOT an actionable crash. QUILL's own
+# #210 hard-exit watchdog logs its force-exit at ERROR level, so a slow-but-
+# committed shutdown that the watchdog finished off would otherwise read as a
+# crash and produce a log-only "unclean exit" recovery report with nothing but
+# the watchdog line behind it (the Group D noise, #1079/#1085/#1095). A line
+# containing one of these substrings is discounted.
+_BENIGN_ERROR_SUBSTRINGS = ("forcing exit (#210)",)
+
+
+def _is_actionable_error_line(line: str) -> bool:
+    """True when *line* is real crash evidence, not a benign shutdown line."""
+    if not any(marker in line for marker in _LOG_ERROR_MARKERS):
+        return False
+    return not any(benign in line for benign in _BENIGN_ERROR_SUBSTRINGS)
+
+
+# How much of the tail of quill.log to scan for error evidence (#940/#948):
+# routine idle-sweep entries run every few minutes, so a few hundred KB
+# comfortably covers the final minutes before an unclean exit without
+# reading a log that may have rotated across many prior sessions.
+_LOG_TAIL_SCAN_BYTES = 262_144
+
+
+def _read_log_tail(logs_dir: Path) -> str | None:
+    """Return the scanned tail of ``quill.log``, or ``None`` if unreadable."""
+    log_path = logs_dir / "quill.log"
+    if not log_path.is_file():
+        return None
+    try:
+        size = log_path.stat().st_size
+        with log_path.open("rb") as handle:
+            if size > _LOG_TAIL_SCAN_BYTES:
+                handle.seek(size - _LOG_TAIL_SCAN_BYTES)
+            return handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def _log_shows_actionable_error(logs_dir: Path) -> bool:
+    """True when ``quill.log`` has real error evidence near its end.
+
+    #940/#948: two crash-recovery reports had nothing in their log but
+    routine idle-sweep heartbeat entries -- no exception, no traceback --
+    consistent with the process being killed externally (an OS shutdown, a
+    forced close) rather than a QUILL-internal crash. Offering "Quill
+    detected an unclean exit" for that case gives the user a dialog with
+    nothing actionable behind it. Gate the offer on the log actually
+    containing error-level evidence; a log with none is treated the same as
+    a clean exit for recovery-offer purposes (the autosave snapshot itself
+    is untouched by this -- only the *offer* is suppressed).
+    """
+    tail = _read_log_tail(logs_dir)
+    if tail is None:
+        # No log at all is itself unusual/inconclusive; err toward still
+        # offering recovery rather than silently discarding a real crash
+        # whose log write failed.
+        return True
+    return any(_is_actionable_error_line(line) for line in tail.splitlines())
+
+
+def find_error_evidence(logs_dir: Path, *, context_lines: int = 3) -> str | None:
+    """Return the ``quill.log`` lines (with context) that justify an
+    unclean-exit offer, or ``None`` when no error marker is present.
+
+    #1013: a filed crash-recovery report showed only a routine log tail
+    with no visible justification for the offer -- because the *filed
+    report* only bundles the last few thousand characters of the log
+    (``stability.crash_submit.build_log_summary``), while the offer decision above
+    scans a much larger window (``_LOG_TAIL_SCAN_BYTES``). Real error
+    evidence earlier in that window never made it into the report, making
+    a correctly-justified offer look like a false positive. Callers that
+    write a crash-recovery report should include this excerpt explicitly so
+    the report is self-explanatory regardless of where the evidence falls.
+    """
+    tail = _read_log_tail(logs_dir)
+    if tail is None:
+        return None
+    lines = tail.splitlines()
+    hit_indexes = [i for i, line in enumerate(lines) if _is_actionable_error_line(line)]
+    if not hit_indexes:
+        return None
+    ranges: list[list[int]] = []
+    for i in hit_indexes:
+        start, end = max(0, i - context_lines), min(len(lines), i + context_lines + 1)
+        if ranges and start <= ranges[-1][1]:
+            ranges[-1][1] = max(ranges[-1][1], end)
+        else:
+            ranges.append([start, end])
+    return "\n...\n".join("\n".join(lines[start:end]) for start, end in ranges)
+
+
+def latest_crash_report(crash_dir: Path, *, min_mtime: float | None = None) -> str | None:
+    """Contents of the most recent ``crash-*.txt`` in *crash_dir*, or ``None``.
+
+    The top-level excepthook writes a full traceback to
+    ``app_data_dir()/crash-reports/crash-<ts>.txt`` on a real unhandled
+    exception. Stitching the newest one into a crash-recovery report turns a
+    log-only "unclean exit" into an actionable report with the real traceback.
+    ``min_mtime`` (a POSIX timestamp) drops reports older than the current
+    session so a stale crash from weeks ago is never attached. Best-effort:
+    any read error yields ``None`` rather than raising.
+    """
+    if not crash_dir.is_dir():
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for path in crash_dir.glob("crash-*.txt"):
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if min_mtime is not None and mtime < min_mtime:
+            continue
+        candidates.append((mtime, path))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    try:
+        text = candidates[0][1].read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def _prune_orphaned_session_state(state: dict[str, object]) -> None:
+    """Drop per-session bookkeeping for sessions with no autosave dir left.
+
+    ``cursor_positions`` and ``recovery_dismissal_counts`` are keyed by session
+    id and were never pruned, so they grew without bound across the lifetime of
+    an install. A session whose ``autosave/<id>`` directory no longer exists can
+    never be recovered, so its entries are dead weight -- remove them so the two
+    maps stay bounded by the number of live autosave dirs.
+    """
+    autosave_root = app_data_dir() / "autosave"
+    for field_name in ("cursor_positions", "recovery_dismissal_counts"):
+        raw = state.get(field_name)
+        if not isinstance(raw, dict):
+            continue
+        state[field_name] = {
+            key: value
+            for key, value in raw.items()
+            if isinstance(key, str) and (autosave_root / key).is_dir()
+        }
+
+
+def begin_session(
+    session_id: str,
+    *,
+    offer_untitled: bool = True,
+    keep_days: int = 0,
+) -> list[RecoveryOffer]:
+    """Open a session: prune what has expired, then offer what is left.
+
+    ``keep_days`` deletes autosave directories older than that many days and
+    defaults to 0 (keep everything) so every existing caller and test behaves
+    exactly as before; QUILL passes the user's setting. Only the previous
+    session is ever offered back, so every older directory is unreachable by
+    design -- see :func:`quill.core.autosave.prune_stale_autosave`.
+
+    ``offer_untitled`` is the ``recover_untitled_documents`` preference, and it
+    is applied to the *choice of snapshot*: with it off, a session whose only
+    unsaved work was a scratch window offers nothing.
+    """
     _validate_session_id(session_id)
+    if keep_days > 0:
+        from quill.core.autosave import prune_stale_autosave
+
+        try:
+            prune_stale_autosave(keep_days)
+        except Exception:  # noqa: BLE001 - housekeeping must never fail a launch
+            pass
     fd = _acquire_file_lock()
     try:
         with _state_lock:
             state = _load_state()
+            _prune_orphaned_session_state(state)
             offers: list[RecoveryOffer] = []
             previous_session = state.get("last_session_id")
             previous_clean = bool(state.get("clean_exit", True))
-            if isinstance(previous_session, str) and previous_session and not previous_clean:
-                latest = latest_session_snapshot(previous_session)
+            if (
+                isinstance(previous_session, str)
+                and previous_session
+                and not previous_clean
+                and _log_shows_actionable_error(app_data_dir() / "logs")
+            ):
+                latest = latest_session_snapshot(previous_session, include_untitled=offer_untitled)
                 if latest is not None and not _is_offer_dismissed(state, previous_session, latest):
                     cursor_position = _load_cursor_position(state, previous_session)
                     dismissal_count = _load_dismissal_count(state, previous_session)
@@ -113,6 +297,7 @@ def begin_session(session_id: str) -> list[RecoveryOffer]:
                             snapshot=latest,
                             cursor_position=cursor_position,
                             dismissal_count=dismissal_count,
+                            error_evidence=find_error_evidence(app_data_dir() / "logs"),
                         )
                     )
             state["last_session_id"] = session_id
@@ -122,6 +307,29 @@ def begin_session(session_id: str) -> list[RecoveryOffer]:
         if fd is not None:
             _release_file_lock(fd)
     return offers
+
+
+def begin_session_for(
+    settings: object, session_id: str, safe_mode: bool = False
+) -> list[RecoveryOffer]:
+    """:func:`begin_session` with the recovery policy read off *settings*.
+
+    All three parts of that policy in one place -- the two preferences and the
+    safe-mode answer, which is no offers and no housekeeping: safe mode exists so
+    a broken install can be started without touching anything it might be broken
+    by, and deleting a month of autosave directories on the way in is exactly
+    what it promises not to do.
+
+    Here rather than at the call site so ``main_frame.py`` stays one line wide,
+    which GATE-11 requires of a module that is already the largest in the tree.
+    """
+    if safe_mode:
+        return []
+    return begin_session(
+        session_id,
+        offer_untitled=bool(getattr(settings, "recover_untitled_documents", True)),
+        keep_days=int(getattr(settings, "recovery_keep_days", 0)),
+    )
 
 
 def mark_clean_exit(session_id: str) -> None:
@@ -150,19 +358,30 @@ def mark_recovery_offer_recovered(offer: RecoveryOffer) -> None:
     _record_offer_outcome(offer, outcome="recovered")
 
 
-def latest_session_snapshot(session_id: str) -> Path | None:
+def latest_session_snapshot(session_id: str, *, include_untitled: bool = True) -> Path | None:
     """Return the newest non-empty autosave ``.snap`` for *session_id*.
 
     Calls ``stat()`` exactly once per candidate file (#356 / #289): the
     previous implementation paid two syscalls per file (one to filter
     non-empty, one to sort by mtime).
+
+    ``include_untitled`` is the ``recover_untitled_documents`` preference, which
+    QUILL Lite answers the same way: a document that never had a file is a
+    different promise from one that did, and a user is allowed to say they only
+    want the second kind back. It is expressible here at all because an untitled
+    document snapshots under a known key -- see
+    :data:`quill.core.autosave.UNTITLED_KEY`.
     """
     _validate_session_id(session_id)
     root = app_data_dir() / "autosave" / session_id
     if not root.exists():
         return None
+    from quill.core.autosave import is_untitled_snapshot
+
     candidates: list[tuple[Path, float, int]] = []
     for path in root.glob("*.snap"):
+        if not include_untitled and is_untitled_snapshot(path):
+            continue
         try:
             info = path.stat()
         except OSError:

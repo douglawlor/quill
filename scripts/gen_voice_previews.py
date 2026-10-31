@@ -9,17 +9,22 @@ Requires:
   - Engine binaries / models already installed in their default locations
     (or specified via CLI flags)
 
+For Piper, both requirements can be met from the repo -- no hand-staging::
+
+    python scripts/fetch_build_deps.py --only piper      # stages build/deps/piper/piper.exe
+    python scripts/gen_voice_previews.py --engines piper \
+        --piper-exe build/deps/piper/piper.exe --fetch-missing-voices
+
 Usage
 -----
     python scripts/gen_voice_previews.py preview_text.txt
     python scripts/gen_voice_previews.py preview_text.txt --engines piper kokoro
     python scripts/gen_voice_previews.py preview_text.txt --overwrite
     python scripts/gen_voice_previews.py preview_text.txt --piper-exe C:/piper/piper.exe
-    python scripts/gen_voice_previews.py preview_text.txt --dectalk-exe C:/dectalk/say.exe
     python scripts/gen_voice_previews.py preview_text.txt \
         --espeak-exe "C:/Program Files/eSpeak NG/espeak-ng.exe"
 
-Engines: piper  kokoro  espeak  dectalk
+Engines: piper  kokoro  espeak  sapi5
 """
 
 from __future__ import annotations
@@ -33,7 +38,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PREVIEW_DIR = _REPO_ROOT / "quill" / "data" / "voice-previews"
-_ALL_ENGINES = ("piper", "kokoro", "espeak", "dectalk", "sapi5")
+_ALL_ENGINES = ("piper", "kokoro", "espeak", "sapi5")
 
 
 def _sapi5_short_name(voice_id: str) -> str:
@@ -91,6 +96,42 @@ def _wav_to_mp3(wav: Path, mp3: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _fetch_missing_piper_models(model_dir: Path, *, overwrite: bool) -> None:
+    """Download any catalog Piper voice whose ``.onnx`` is not in *model_dir*.
+
+    Reuses :func:`quill.core.speech.piper_install.download_piper_voice`, so each
+    voice comes from QUILL's SHA-verified ``assets-v1`` mirror when it is
+    published and falls back to upstream rhasspy/piper-voices otherwise --
+    exactly what a user's in-app download does. A voice that only *some* preview
+    run needs no longer has to be staged by hand.
+    """
+    from quill.core.speech.piper_install import PiperInstallError, download_piper_voice
+    from quill.core.voice_catalog import PIPER_VOICES
+
+    preview_dir = _PREVIEW_DIR / "piper"
+    missing = [
+        voice_id
+        for voice_id, _label in PIPER_VOICES
+        if not (model_dir / f"{voice_id}.onnx").exists()
+        # Nothing to synthesize for a voice that already has its preview, unless
+        # the caller is regenerating -- do not download ~60 MB to skip a file.
+        and (overwrite or not (preview_dir / f"{voice_id}.mp3").exists())
+    ]
+    if not missing:
+        print("  [piper] all catalog voice models needed for previews are present")
+        return
+
+    print(f"  [piper] fetching {len(missing)} missing voice model(s) into {model_dir}")
+    for voice_id in missing:
+        print(f"  [piper] fetch {voice_id} ...", end="", flush=True)
+        try:
+            download_piper_voice(voice_id, model_dir)
+            print(" OK")
+        except PiperInstallError as exc:
+            # Not fatal: the generator reports the voice as skipped below.
+            print(f" ERROR: {exc}")
+
+
 def _gen_piper(
     text: str,
     out_dir: Path,
@@ -98,8 +139,9 @@ def _gen_piper(
     piper_exe: str | None,
     piper_model_dir: str | None,
     overwrite: bool,
+    fetch_missing: bool = False,
 ) -> tuple[int, int, int]:
-    """Synthesize all catalog Piper voices. Returns (generated, skipped)."""
+    """Synthesize all catalog Piper voices. Returns (generated, skipped, errored)."""
     from quill.core.read_aloud import (
         default_piper_model_dir,
         discover_piper_executable,
@@ -110,9 +152,12 @@ def _gen_piper(
     exe = discover_piper_executable(piper_exe or "")
     if exe is None:
         print("  [piper] SKIP — piper executable not found (pass --piper-exe)")
-        return 0, 0
+        print("          Stage it with: python scripts/fetch_build_deps.py --only piper")
+        return 0, 0, 0
 
     model_dir = Path(piper_model_dir) if piper_model_dir else default_piper_model_dir()
+    if fetch_missing:
+        _fetch_missing_piper_models(model_dir, overwrite=overwrite)
     voices = list_piper_catalog_voices(model_dir)
 
     generated = skipped = errored = 0
@@ -287,56 +332,6 @@ def _gen_espeak(
     return generated, skipped, errored
 
 
-def _gen_dectalk(
-    text: str,
-    out_dir: Path,
-    *,
-    dectalk_exe: str | None,
-    dectalk_rate: int,
-    overwrite: bool,
-) -> tuple[int, int, int]:
-    """Synthesize all DECTalk voices. Returns (generated, skipped)."""
-    from quill.core.read_aloud import (
-        discover_dectalk_executable,
-        list_dectalk_voices,
-        synthesize_to_file_with_dectalk,
-    )
-
-    exe = discover_dectalk_executable(dectalk_exe or "")
-    if exe is None:
-        print("  [dectalk] SKIP — DECTalk executable not found (pass --dectalk-exe)")
-        return 0, 0
-
-    voices = list_dectalk_voices()
-    generated = skipped = errored = 0
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    for voice in voices:
-        mp3 = out_dir / f"{voice.id}.mp3"
-        if mp3.exists() and not overwrite:
-            print(f"  [dectalk] skip  {voice.id} (already exists)")
-            skipped += 1
-            continue
-
-        print(f"  [dectalk] gen   {voice.id} ...", end="", flush=True)
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as fh:
-            wav = Path(fh.name)
-        try:
-            synthesize_to_file_with_dectalk(
-                text, wav, executable_path=exe, voice=voice.id, rate=dectalk_rate
-            )
-            _wav_to_mp3(wav, mp3)
-            print(f" OK  ({mp3.stat().st_size // 1024} KB)")
-            generated += 1
-        except Exception as exc:  # noqa: BLE001
-            print(f" ERROR: {exc}")
-            errored += 1
-        finally:
-            wav.unlink(missing_ok=True)
-
-    return generated, skipped, errored
-
-
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -350,10 +345,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "text_file",
         nargs="?",
-        default=str(_REPO_ROOT / "phrase.txt"),
+        default=str(_REPO_ROOT / "scripts" / "phrase.txt"),
         help=(
             "Path to a plain-text file containing the preview text (1-3 sentences). "
-            "Defaults to phrase.txt in the repo root, the single phrase shared by all demos."
+            "Defaults to scripts/phrase.txt, the single phrase shared by all demos."
         ),
     )
     parser.add_argument(
@@ -374,18 +369,25 @@ def main(argv: list[str] | None = None) -> int:
         "--piper-model-dir", metavar="DIR", help="Directory containing .onnx model files."
     )
     parser.add_argument(
-        "--dectalk-exe",
-        metavar="PATH",
-        help="Path to DECtalk.dll (the synthesis runtime) or its folder.",
-    )
-    parser.add_argument(
-        "--dectalk-rate", type=int, default=180, help="DECTalk words-per-minute rate (default 180)."
+        "--fetch-missing-voices",
+        action="store_true",
+        help=(
+            "Download any catalog Piper voice model missing from --piper-model-dir "
+            "(mirror-first, same path as the in-app download) before generating."
+        ),
     )
     parser.add_argument("--espeak-exe", metavar="PATH", help="Path to espeak-ng executable.")
     parser.add_argument(
         "--espeak-rate", type=int, default=160, help="eSpeak words-per-minute rate (default 160)."
     )
     args = parser.parse_args(argv)
+
+    # Engine errors quote IPA phonemes (e.g. 'aɪ'), which a cp1252 console
+    # cannot encode -- printing one used to abort the whole run with a
+    # UnicodeEncodeError instead of reporting that single voice as failed.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
     # Verify ffmpeg is available.
     if shutil.which("ffmpeg") is None:
@@ -420,6 +422,7 @@ def main(argv: list[str] | None = None) -> int:
             piper_exe=args.piper_exe,
             piper_model_dir=args.piper_model_dir,
             overwrite=args.overwrite,
+            fetch_missing=args.fetch_missing_voices,
         )
         total_gen += g
         total_skip += s
@@ -441,20 +444,6 @@ def main(argv: list[str] | None = None) -> int:
             _PREVIEW_DIR / "espeak",
             espeak_exe=args.espeak_exe,
             espeak_rate=args.espeak_rate,
-            overwrite=args.overwrite,
-        )
-        total_gen += g
-        total_skip += s
-        total_err += e
-        print()
-
-    if "dectalk" in args.engines:
-        print("=== DECTalk ===")
-        g, s, e = _gen_dectalk(
-            text,
-            _PREVIEW_DIR / "dectalk",
-            dectalk_exe=args.dectalk_exe,
-            dectalk_rate=args.dectalk_rate,
             overwrite=args.overwrite,
         )
         total_gen += g

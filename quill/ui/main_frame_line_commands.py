@@ -32,9 +32,36 @@ from quill.core.line_ops import (
     move_lines_up,
     selected_line_bounds,
 )
+from quill.core.sound_events import SoundEvent
 
 
 class LineCommandsMixin:
+    def open_calculator(self) -> None:
+        """Tools > Calculator: an accessible scientific calculator that also does
+        statistics over the selected numbers, a pasted column, CSV, or a table.
+        Pre-fills with the current selection and can insert a result at the cursor."""
+        from quill.ui.calculator_dialog import CalculatorDialog
+
+        editor = getattr(self, "editor", None)
+        selection = ""
+        if editor is not None:
+            try:
+                selection = editor.GetStringSelection()
+            except Exception:  # noqa: BLE001 - a odd selection must not block the tool
+                selection = ""
+
+        def _insert(text: str) -> None:
+            ed = getattr(self, "editor", None)
+            if ed is not None:
+                ed.WriteText(text)
+
+        CalculatorDialog(
+            self.frame,
+            initial_text=selection,
+            insert_cb=_insert,
+            announce_cb=self._announce,
+        ).show()
+
     def move_line_up(self) -> None:
         # Selection-aware (issue #133): a multi-line selection moves as one block,
         # the status names the line count so the result is unambiguous to a screen
@@ -68,7 +95,11 @@ class LineCommandsMixin:
         self._apply_line_operation(duplicate_line, "Duplicated line")
 
     def delete_line(self) -> None:
+        # Text going away is the one edit with no natural sound of its own: the
+        # reader says nothing, the caret stays put, and the only evidence is
+        # that something you could read a moment ago is not there.
         self._apply_line_operation(delete_line, "Deleted line")
+        self.cue(SoundEvent.TEXT_DELETED)
 
     def join_lines(self) -> None:
         # Selection-aware (issue #135): joins the whole selection, or the
@@ -140,6 +171,18 @@ class LineCommandsMixin:
         )
 
     def quote_lines(self) -> None:
+        """Quote the lines, in whatever this document's markup calls a quote.
+
+        One verb since 2026-09-18 (bad.md 7.1, P2.5). `format.blockquote` was a
+        second command, on a second chord, in a second menu, doing the same
+        thing to the same lines -- in Markdown, literally the same `> `. The
+        only difference that was ever real is HTML, where a quote needs a
+        wrapper as well as per-line markers, so that is the branch that
+        survived; everything else is this one.
+        """
+        if self._effective_markup_kind() == "html":
+            self.format_blockquote()
+            return
         self._apply_text_block_operation(_quote_lines, "Quoted lines")
 
     def unquote_lines(self) -> None:
@@ -159,7 +202,38 @@ class LineCommandsMixin:
         self.editor.SetSelection(end, new_end)
         self._set_status(f"Duplicated {len(selected)} chars")
 
+    def select_sentence(self) -> None:
+        """Ctrl+Space: take the sentence the caret is in.
+
+        QUILL Lite has had this since it shipped and QUILL had none, which is
+        the rule violation that also explains why Ctrl+Space meant two
+        different things in the two products (bad.md P1.2, 5.3a). The span is
+        the shared ``quill.core.selection.sentence_span``.
+        """
+        from quill.core.selection import sentence_span
+
+        text = self.editor.GetValue()
+        start, end = sentence_span(text, self.editor.GetInsertionPoint())
+        if end <= start:
+            self._set_status("No sentence at the cursor")
+            return
+        self.editor.SetFocus()
+        self.editor.SetSelection(start, end)
+        self._announce_selection_scope("sentence", text, start, end)
+
     def select_chunk(self) -> None:
+        r"""Select Token: the run of characters the caret is in, of any kind.
+
+        Named Select Chunk until 2026-09-17, which named nothing a person could
+        picture. On a word it does exactly what Select Word does -- both use
+        ``\w`` -- so what it is actually for is the case Select Word cannot
+        answer at all: a run of **punctuation**, or a run of **whitespace**.
+        Selecting the ``::`` in a path, or the indent in front of a line, is a
+        thing you can only do with this (bad.md P1.2b, 5.3a).
+
+        It gave up ``Ctrl+Space`` to Select Sentence, which is what that chord
+        means in QUILL Lite and what people reach for far more often.
+        """
         text = self.editor.GetValue()
         cursor = self.editor.GetInsertionPoint()
         chunk_start, chunk_end = chunk_span(text, cursor)

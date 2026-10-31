@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Suggest a station or podcast - Community Picks - QUILL</title>
+  <meta name="description" content="Suggest a radio station or podcast for the Community Picks list that Quill Radio and QUILL Cast offer. No account needed.">
+  <!-- No third-party anything: no fonts, no analytics, no CDN. The only
+       script is this page's own.
+
+       connect-src names the submission server and nothing else. Without it
+       this page's own policy blocks the fetch before it leaves the browser,
+       and the failure looks exactly like the server being down - so the form
+       would appear broken while every part of it worked. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src https://lp.csedesigns.com; form-action 'none'; base-uri 'none'">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <span class="quill">QUILL</span>
+        <span class="tag">accessible software, built with you</span>
+      </a>
+      <nav class="site" aria-label="Primary">
+        <ul>
+          <li><a href="/index.html">QUILL home</a></li>
+          <li><a href="/radio.html">Quill Radio</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="prose" tabindex="-1">
+    <div class="wrap">
+      <h1>Suggest a station or podcast</h1>
+
+      <p>
+        Community Picks is a short list of good stations and podcasts that you
+        can open from the <strong>Community</strong> menu in Quill Radio. Know
+        one that should be on it? Tell us here.
+      </p>
+
+      <p>
+        <strong>You do not need an account or to sign in.</strong> Fill in the
+        form on this page, press <strong>Send suggestion</strong>, and it comes
+        straight to us.
+      </p>
+      <p>
+        If you are already in Quill Radio, the <strong>Community</strong> menu,
+        then <strong>Suggest a Station or Podcast</strong>, does the same thing
+        without leaving the app.
+        <a href="/radio.html">Quill Radio is free to download</a>.
+      </p>
+
+      <form id="suggest-form" novalidate aria-labelledby="suggest-form-heading">
+        <h2 id="suggest-form-heading">What are you suggesting?</h2>
+
+        <!-- Deliberately no role="alert". Focus is moved to the heading this
+             is filled with, and alert plus focus makes NVDA and JAWS read the
+             whole list twice, usually clipping the first reading.
+
+             At the top of the form, not the bottom: after focus lands here,
+             moving forward reaches the fields that need fixing rather than the
+             submit button. -->
+        <div id="errors" tabindex="-1"></div>
+
+        <!-- A <fieldset>, not the <p> the other fields use. Two controls
+             sharing one question is a different shape from one control with
+             one label: there is no id a <label for> could correctly point at.
+
+             Nothing is checked, deliberately. This is the only answer on the
+             form whose wrong value is invisible to the person who gave it - a
+             wrong name shows up in the confirmation, a wrong kind shows up
+             months later in somebody else's app, as an RSS feed filed under
+             stream_url. A radio group is the one control that can express
+             "not answered yet"; pre-checking one throws away the only thing
+             this conversion buys.
+
+             aria-describedby is on the inputs, not on the <fieldset>. NVDA and
+             JAWS read the description of whatever has focus, and focus in a
+             radio group is always on a radio - a hint parked on the group is
+             conforming and silent.
+
+             required on both, not just the first. One is enough to make the
+             group required for constraint validation, but the accessibility
+             mapping is per element: mark only the first and somebody who
+             arrows to the second is told nothing. novalidate suppresses the
+             browser's bubble, not the announcement. -->
+        <fieldset id="kind" class="field-group">
+          <legend>What is it? <span class="req" aria-hidden="true">(required)</span></legend>
+          <span id="kind-hint" class="hint">
+            This decides what kind of address we expect below.
+          </span>
+          <div class="radio-row">
+            <input type="radio" id="kind-stream" name="kind" value="stream"
+                   required aria-describedby="kind-hint">
+            <label for="kind-stream">A radio station (a live stream)</label>
+          </div>
+          <div class="radio-row">
+            <input type="radio" id="kind-podcast" name="kind" value="podcast"
+                   required aria-describedby="kind-hint">
+            <label for="kind-podcast">A podcast (an RSS feed)</label>
+          </div>
+        </fieldset>
+
+        <p>
+          <label for="title">Name <span class="req" aria-hidden="true">(required)</span></label><br>
+          <span id="title-hint" class="hint">What it should be called in the list.</span><br>
+          <input type="text" id="title" name="title" maxlength="120" required
+                 aria-describedby="title-hint">
+        </p>
+
+        <p>
+          <label for="url">Address <span class="req" aria-hidden="true">(required)</span></label><br>
+          <span id="url-hint" class="hint">
+            The stream address for a station, or the feed address for a podcast.
+            Either https:// or http:// is fine. Lots of community stations only
+            have an http address, and we are happy to list them.
+          </span><br>
+          <input type="url" id="url" name="url" required aria-describedby="url-hint">
+        </p>
+
+        <p>
+          <label for="description">Description <span class="req" aria-hidden="true">(required)</span></label><br>
+          <span id="description-hint" class="hint">
+            One or two sentences for someone who has never heard it. This is
+            what people read when they are deciding whether to listen, so just
+            say plainly what it is. Up to about 600 characters.
+          </span><br>
+          <!-- No maxlength on the textareas. A browser truncates a paste
+               silently: no event, no sound, nothing a screen reader can
+               announce. Checking the length instead means nothing is destroyed
+               and the message says by how much it is over. -->
+          <textarea id="description" name="description" rows="4" required
+                    aria-describedby="description-hint"></textarea>
+        </p>
+
+        <p>
+          <label for="language">Language</label><br>
+          <span id="language-hint" class="hint">
+            Such as en, or en-US. Optional, up to 16 characters.
+          </span><br>
+          <input type="text" id="language" name="language" maxlength="16"
+                 aria-describedby="language-hint">
+        </p>
+
+        <p>
+          <label for="collection">Which group does it belong in?</label><br>
+          <span id="collection-hint" class="hint">
+            Such as ACB Media, or Reading Services. Optional, up to 64
+            characters. If you are not sure, leave it to us.
+          </span><br>
+          <input type="text" id="collection" name="collection" maxlength="64"
+                 aria-describedby="collection-hint">
+        </p>
+
+        <p>
+          <label for="why">Why does it belong?</label><br>
+          <span id="why-hint" class="hint">
+            Anything that would help us decide. Optional, and not published.
+          </span><br>
+          <textarea id="why" name="why" rows="3" aria-describedby="why-hint"></textarea>
+        </p>
+
+        <!-- Rendered, then focused. Deliberately NOT a live region: focusing
+             into an aria-live container is the same double-announcement
+             problem as above. A heading goes in first, so the outcome is also
+             reachable afterwards with the H key. -->
+        <div id="result"></div>
+
+        <p>
+          <button type="submit" id="send">Send suggestion</button>
+          <!-- The only live region on this page, and it carries the in-flight
+               state only. Outcomes are delivered by moving focus, which is
+               reliable; a live region is not. -->
+          <span id="send-status" class="send-status"
+                role="status" aria-live="polite" aria-atomic="true"></span>
+        </p>
+      </form>
+
+      <h2>What happens next</h2>
+      <p>
+        Your suggestion reaches us as soon as you press the button. A person
+        reads every one. If we add it, it is usually on the list within a day,
+        and shows up in everyone's app the next time the list refreshes. Nobody
+        needs to update anything.
+      </p>
+
+      <h2 id="other-ways">Other ways to send a suggestion</h2>
+      <ul>
+        <li>
+          In Quill Radio: the <strong>Community</strong> menu, then
+          <strong>Suggest a Station or Podcast</strong>. You do not need an
+          account, and you never leave the app.
+        </li>
+        <li>
+          <a href="https://github.com/Community-Access/quill/issues/new?template=community_pick.yml">Fill
+          in the GitHub issue form on github.com</a>. This one does need a free
+          GitHub account.
+        </li>
+      </ul>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <p class="note">
+        <strong class="quill" style="color:var(--accent)">Community Picks</strong> is
+        a list of stations and podcasts chosen by listeners and checked by Community Access.
+      </p>
+      <nav aria-label="Documentation">
+        <h2>Documentation</h2>
+        <ul>
+          <li><a href="/docs/radio-userguide.html">Quill Radio user guide</a></li>
+          <li><a href="/faq.html">FAQ</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Project">
+        <h2>Project</h2>
+        <ul>
+          <li><a href="/radio.html">Download Quill Radio</a></li>
+          <li><a href="mailto:support@community-access.org">Email QUILL support</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="The QUILL family">
+        <h2>The QUILL family</h2>
+        <ul>
+          <li><a href="/index.html">QUILL writing environment</a></li>
+          <li><a href="/podcast/index.html">The QUILL Cast (learn QUILL by ear)</a></li>
+        </ul>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="/picks/suggest/suggest.js"></script>
+</body>
+</html>

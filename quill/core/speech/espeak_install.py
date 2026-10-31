@@ -15,14 +15,13 @@ blocked in Safe Mode, on an explicit user action only. Windows-only. wx-free.
 from __future__ import annotations
 
 import os
-import ssl
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from quill.core.error_codes import CodedError
 from quill.core.speech import models
 
 ProgressCallback = Callable[[float, str], None]
@@ -30,16 +29,25 @@ ProgressCallback = Callable[[float, str], None]
 # Pinned to 1.52.0, the latest stable Windows release.
 # The MSI bundles espeak-ng.exe, libespeak-ng.dll, and the full espeak-ng-data
 # language/voice directory (~40 MB), so no follow-on download is needed.
-# Asset filename is just "espeak-ng.msi" (no version suffix in this release).
+#
+# Hosted on QUILL's own "assets-v1" GitHub release rather than the upstream
+# espeak-ng release: the byte-identical MSI is re-published there so the
+# on-demand download has a single, controlled, SHA-pinned acquisition point
+# (matching the bundled-build pin in scripts/build_windows_distribution.py).
 ESPEAK_RELEASE_TAG = "1.52.0"
 ESPEAK_DOWNLOAD_URL = (
-    f"https://github.com/espeak-ng/espeak-ng/releases/download/{ESPEAK_RELEASE_TAG}/espeak-ng.msi"
+    "https://github.com/Community-Access/quill/releases/download/assets-v1/espeak-ng.msi"
 )
+# SHA-256 of the pinned espeak-ng.msi, verified before extraction (SEC-6).
+# Matches ESPEAK_PINNED_SHA256 in scripts/build_windows_distribution.py.
+ESPEAK_DOWNLOAD_SHA256 = "7f673c709ea5dd579d3b5ebb98688cc575328a6ab7438d2bc405b88cedaeafb9"
 _DOWNLOAD_TIMEOUT_S = 1800.0
 
 
-class EspeakInstallError(Exception):
+class EspeakInstallError(CodedError):
     """Raised when the eSpeak-NG download or extraction fails."""
+
+    code = "QUILL-SPEECH-ESPEAK-INSTALL"
 
 
 def espeak_install_supported() -> bool:
@@ -85,11 +93,23 @@ def install_espeak(
     dest = Path(dest_dir) if dest_dir is not None else managed_espeak_dir()
     dest.mkdir(parents=True, exist_ok=True)
 
+    from quill.core import release_assets
+
     fd, raw = tempfile.mkstemp(prefix="quill_espeak_", suffix=".msi")
     os.close(fd)
     tmp_msi = Path(raw)
     try:
-        _download_msi(ESPEAK_DOWNLOAD_URL, tmp_msi, progress_fn, timeout_seconds)
+        try:
+            release_assets.download_verified(
+                ESPEAK_DOWNLOAD_URL,
+                tmp_msi,
+                sha256=ESPEAK_DOWNLOAD_SHA256,
+                progress=progress_fn,
+                timeout=timeout_seconds,
+                label="Downloading eSpeak-NG...",
+            )
+        except release_assets.ReleaseAssetError as exc:
+            raise EspeakInstallError(str(exc)) from exc
         if progress_fn is not None:
             progress_fn(0.9, "Extracting eSpeak-NG (this may take a moment)...")
         _extract_msi(tmp_msi, dest)
@@ -100,45 +120,6 @@ def install_espeak(
     if progress_fn is not None:
         progress_fn(1.0, "Done.")
     return exe
-
-
-def _download_msi(
-    url: str,
-    target: Path,
-    progress_fn: ProgressCallback | None,
-    timeout_seconds: float,
-) -> None:
-    """Stream the eSpeak-NG MSI over verified HTTPS.
-
-    GATE-9 / network-egress: the only outbound call in this module. Runs on an
-    explicit user "download eSpeak-NG" action, refuses non-HTTPS URLs, and uses a
-    verified TLS context.
-    """
-    if not url.lower().startswith("https://"):
-        raise EspeakInstallError("eSpeak-NG download must use a secure (HTTPS) address.")
-    context = ssl.create_default_context()
-    request = urllib.request.Request(url, headers={"User-Agent": "QUILL"})
-    try:
-        with (
-            urllib.request.urlopen(  # noqa: S310 - HTTPS enforced above
-                request, timeout=timeout_seconds, context=context
-            ) as response,
-            target.open("wb") as out,
-        ):
-            total = int(response.headers.get("Content-Length", 0) or 0)
-            read = 0
-            while True:
-                chunk = response.read(1 << 16)
-                if not chunk:
-                    break
-                out.write(chunk)
-                read += len(chunk)
-                if progress_fn is not None and total > 0:
-                    progress_fn(min(read / total, 0.85), "Downloading eSpeak-NG...")
-    except EspeakInstallError:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise EspeakInstallError(f"Could not download eSpeak-NG: {exc}") from exc
 
 
 def _extract_msi(msi_path: Path, dest_dir: Path) -> None:

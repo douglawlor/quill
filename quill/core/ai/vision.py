@@ -21,9 +21,8 @@ from pathlib import Path
 
 from quill.core.assistant_ai import (
     _DEFAULT_MAX_TOKENS,
-    _RETRY_BACKOFF_SECONDS,
-    _RETRYABLE_CATEGORIES,
     AssistantConnectionSettings,
+    _chat_retry_wait,
     _FetchError,
     _post_chat,
     _validate_endpoint_security,
@@ -180,6 +179,24 @@ def describe_image(
     if policy_error:
         return None, policy_error
     model = (settings.model or "").strip() or default_model_for_provider(provider)
+    # Pre-flight (dynamic, no hardcoded model list): ask Ollama /api/show for the
+    # model's real capabilities. If it confirms the model lacks "vision", fail
+    # fast with an actionable message before a doomed request. If capabilities
+    # are unknown (Ollama down, old version without the capabilities field), do
+    # NOT guess -- proceed and let the server answer; its error body is surfaced
+    # by _detail_from_http_error. This stays correct as models are added/renamed.
+    if provider == "ollama":
+        from quill.core.ai.ollama_capabilities import fetch_model_capabilities
+
+        caps = fetch_model_capabilities(host, model)
+        if caps is not None and not any(c.lower() == "vision" for c in caps):
+            badge = ", ".join(caps) if caps else "text only"
+            return None, (
+                f"Your local model '{model}' cannot read images (capabilities: "
+                f"{badge}). Install a vision-capable model (for example, run "
+                "'ollama pull llava') and select it in AI Hub > AI Model & "
+                "Connection, then try again."
+            )
     if image_path.suffix.lower() in {".heic", ".heif"}:
         try:
             raw = _heic_to_jpeg_bytes(image_path)
@@ -212,16 +229,15 @@ def describe_image(
 
     last_error: _FetchError | None = None
     attempts = max(1, max_attempts)
-    for attempt in range(attempts):
+    for attempt in range(1, attempts + 1):
         text, error = _post_chat(endpoint, headers, body, provider, timeout_seconds=timeout_seconds)
         if error is None:
             return text, None
         last_error = error
-        if error.category not in _RETRYABLE_CATEGORIES:
+        wait = _chat_retry_wait(error, attempt, attempts)
+        if wait is None:
             break
-        if attempt + 1 < attempts:
-            backoff = _RETRY_BACKOFF_SECONDS[min(attempt, len(_RETRY_BACKOFF_SECONDS) - 1)]
-            time.sleep(backoff)
+        time.sleep(wait)
 
     if last_error is None:
         return None, "Could not reach AI endpoint."

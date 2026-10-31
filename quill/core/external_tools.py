@@ -3,8 +3,24 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+# A Finder-launched macOS .app bundle gets a minimal default PATH; it does not
+# inherit /usr/local/bin or /opt/homebrew/bin the way a login/interactive shell
+# does (those are sourced from the user's shell profile). A tool installed via
+# a .pkg installer (e.g. pandoc.org's own installer, not Homebrew) or via
+# Homebrew itself is then genuinely on disk but invisible to shutil.which().
+# Checked only after PATH itself comes up empty.
+_MACOS_FALLBACK_DIRS: tuple[str, ...] = (
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/opt/local/bin",  # MacPorts
+)
+
+# Where a standard macOS install puts the LibreOffice launcher (never on PATH).
+_MACOS_LIBREOFFICE_APP_DIR = "/Applications/LibreOffice.app/Contents/MacOS"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +67,7 @@ TOOL_DEFINITIONS: tuple[ExternalToolDefinition, ...] = (
             "Open Markdown, HTML, and plain-text conversion results as Quill tabs",
             "Prepare documents for downstream GLOW text workflows",
         ),
-        bundled_subpath=r"pandoc\pandoc.exe",
+        bundled_subpath="pandoc/pandoc.exe",
         executable_names=("pandoc.exe", "pandoc"),
         website_url="https://pandoc.org/",
         install_command="winget install --id JohnMacFarlane.Pandoc -e",
@@ -67,7 +83,7 @@ TOOL_DEFINITIONS: tuple[ExternalToolDefinition, ...] = (
             "Improve compatibility for older office formats",
             "Provide a stronger conversion fallback path for difficult documents",
         ),
-        bundled_subpath=r"libreoffice\program\soffice.exe",
+        bundled_subpath="libreoffice/program/soffice.exe",
         executable_names=("soffice.exe", "soffice", "libreoffice"),
         website_url="https://www.libreoffice.org/",
         install_command="winget install --id TheDocumentFoundation.LibreOffice -e",
@@ -84,7 +100,7 @@ TOOL_DEFINITIONS: tuple[ExternalToolDefinition, ...] = (
             "Spot structural HTML issues without a browser dependency",
             "Support future cleanup and repair previews inside Quill",
         ),
-        bundled_subpath=r"tidy-html5\tidy.exe",
+        bundled_subpath="tidy-html5/tidy.exe",
         executable_names=("tidy.exe", "tidy"),
         website_url="https://www.html-tidy.org/",
         install_command="winget install --id HTACG.tidy -e",
@@ -102,7 +118,7 @@ TOOL_DEFINITIONS: tuple[ExternalToolDefinition, ...] = (
             "Support future Markdown validation and cleanup workflows",
             "Flag authoring issues before Markdown leaves Quill",
         ),
-        bundled_subpath=r"pymarkdownlnt\pymarkdownlnt.exe",
+        bundled_subpath="pymarkdownlnt/pymarkdownlnt.exe",
         executable_names=("pymarkdown.exe", "pymarkdownlnt.exe", "pymarkdown"),
         website_url="https://pymarkdown.readthedocs.io/",
         install_command="pip install pymarkdownlnt",
@@ -131,6 +147,15 @@ def detect_tool(definition: ExternalToolDefinition) -> ExternalToolStatus:
             source="bundled",
             version=_tool_version(bundled),
         )
+    managed = _managed_tool_path(definition)
+    if managed is not None:
+        return ExternalToolStatus(
+            definition=definition,
+            installed=True,
+            path=str(managed),
+            source="downloaded",
+            version=_tool_version(managed),
+        )
     for executable_name in definition.executable_names:
         discovered = shutil.which(executable_name)
         if discovered:
@@ -141,6 +166,17 @@ def detect_tool(definition: ExternalToolDefinition) -> ExternalToolStatus:
                 source="system",
                 version=_tool_version(Path(discovered)),
             )
+    if sys.platform == "darwin":
+        for executable_name in definition.executable_names:
+            found = _macos_path_fallback(executable_name)
+            if found is not None:
+                return ExternalToolStatus(
+                    definition=definition,
+                    installed=True,
+                    path=found,
+                    source="system",
+                    version=_tool_version(Path(found)),
+                )
     return ExternalToolStatus(
         definition=definition,
         installed=False,
@@ -179,6 +215,48 @@ def copyable_install_command(tool_id: str) -> str:
     return get_external_tool_status(tool_id).definition.install_command
 
 
+def _macos_path_fallback(executable_name: str) -> str | None:
+    """Look for *executable_name* in well-known macOS install locations.
+
+    Only meaningful when ``shutil.which`` already came up empty -- see the
+    ``_MACOS_FALLBACK_DIRS`` comment for why a real, on-disk install can still
+    be invisible to a GUI app's PATH.
+    """
+    for directory in _MACOS_FALLBACK_DIRS:
+        candidate = Path(directory) / executable_name
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def libreoffice_executable() -> str | None:
+    """Resolve the LibreOffice ``soffice`` launcher, including the standard
+    macOS ``.app`` install that is neither on PATH nor in the Homebrew dirs.
+
+    A standard macOS install puts ``soffice`` at
+    ``/Applications/LibreOffice.app/Contents/MacOS/soffice`` -- never on PATH --
+    so the bare ``"soffice"`` argv used to fail on every standard Mac (#41).
+    Returns the executable path, or None when LibreOffice is not installed.
+    """
+    found = shutil.which("soffice")
+    if found:
+        return found
+    if sys.platform == "win32":
+        # The Windows installer never puts LibreOffice on PATH either; without
+        # this, a .doc/.xls/.ppt was refused on machines that had it (2026-10-16).
+        for variable in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"):
+            root = os.environ.get(variable, "").strip()
+            candidate = Path(root) / "LibreOffice" / "program" / "soffice.exe" if root else None
+            if candidate is not None and candidate.is_file():
+                return str(candidate)
+    if sys.platform == "darwin":
+        for directory in (_MACOS_LIBREOFFICE_APP_DIR, *_MACOS_FALLBACK_DIRS):
+            candidate = Path(directory) / "soffice"
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
 def _bundled_tool_path(definition: ExternalToolDefinition) -> Path | None:
     app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
     if app_root:
@@ -186,6 +264,24 @@ def _bundled_tool_path(definition: ExternalToolDefinition) -> Path | None:
         if candidate.exists():
             return candidate.resolve()
     return None
+
+
+def _managed_tool_path(definition: ExternalToolDefinition) -> Path | None:
+    """A copy fetched on demand into the app-data tools directory.
+
+    Pandoc is no longer bundled (footprint unbundle): the first conversion that
+    needs it downloads it here. Other tools have no managed download yet and
+    fall through to PATH detection.
+    """
+    if definition.tool_id != "pandoc":
+        return None
+    try:
+        from quill.core.pandoc_install import managed_pandoc_executable
+
+        managed = managed_pandoc_executable()
+    except Exception:  # noqa: BLE001 - resolution must never crash detection
+        return None
+    return managed.resolve() if managed is not None else None
 
 
 def _tool_version(executable: Path) -> str | None:

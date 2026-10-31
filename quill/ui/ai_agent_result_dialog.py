@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dpi import dip, dip_size
 
 
 class AIAgentResultDialog:
@@ -50,16 +51,21 @@ class AIAgentResultDialog:
         self._on_replace = on_replace_selection
         self._on_rerun = on_rerun
         self._show_modal = show_modal_dialog
+        # Stored so show() can hand it to _show_modal_dialog; the label is
+        # required (it names the modal region for screen readers).
+        self._title = title
 
         self.dialog = wx.Dialog(
             parent,
             title=title,
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(760, 620))
+        self.dialog.SetSize(dip_size(self.dialog, 760, 620))
         self._build_ui()
 
     def _build_ui(self) -> None:
+        from quill.ui.spoken_name import set_spoken_name
+
         wx = self._wx
         result = self._result
         root = wx.BoxSizer(wx.VERTICAL)
@@ -73,14 +79,15 @@ class AIAgentResultDialog:
                 style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SIMPLE,
             )
             self._step_list.SetName("Agent steps")
-            self._step_list.InsertColumn(0, "#", width=36)
-            self._step_list.InsertColumn(1, "Step", width=200)
-            self._step_list.InsertColumn(2, "Output preview", width=440)
+            set_spoken_name(self._step_list, "Agent steps")
+            self._step_list.InsertColumn(0, "#", width=dip(self._step_list, 36))
+            self._step_list.InsertColumn(1, "Step", width=dip(self._step_list, 200))
+            self._step_list.InsertColumn(2, "Output preview", width=dip(self._step_list, 440))
             for i, step in enumerate(result.steps):
                 self._step_list.InsertItem(i, str(i + 1))
                 self._step_list.SetItem(i, 1, step.label)
                 self._step_list.SetItem(i, 2, step.output[:80].replace("\n", " "))
-            self._step_list.SetMinSize(wx.Size(-1, 100))
+            self._step_list.SetMinSize(dip_size(self._step_list, -1, 100))
             log_sizer.Add(self._step_list, 1, wx.EXPAND | wx.ALL, 4)
             root.Add(log_sizer, 0, wx.EXPAND | wx.ALL, 8)
 
@@ -93,6 +100,7 @@ class AIAgentResultDialog:
             style=wx.TE_MULTILINE | wx.TE_READONLY,
         )
         self._output_ctrl.SetName("Agent output")
+        set_spoken_name(self._output_ctrl, "Agent output")
         out_sizer.Add(self._output_ctrl, 1, wx.EXPAND | wx.ALL, 4)
         root.Add(out_sizer, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
 
@@ -109,7 +117,7 @@ class AIAgentResultDialog:
         self._insert_btn = wx.Button(self.dialog, label="&Insert at Cursor")
         self._replace_btn = wx.Button(self.dialog, label="&Replace Selection")
         self._copy_btn = wx.Button(self.dialog, label="&Copy")
-        self._rerun_btn = wx.Button(self.dialog, label="Re-&Run")
+        self._rerun_btn = wx.Button(self.dialog, label="R&e-Run")
         close_btn = wx.Button(self.dialog, wx.ID_CLOSE, label="C&lose")
 
         apply_modal_ids(
@@ -163,6 +171,6 @@ class AIAgentResultDialog:
             self._on_rerun()
 
     def show(self) -> int:
-        result = self._show_modal(self.dialog)
+        result = self._show_modal(self.dialog, self._title)
         self.dialog.Destroy()
         return result

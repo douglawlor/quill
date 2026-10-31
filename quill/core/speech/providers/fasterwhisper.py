@@ -23,6 +23,7 @@ and download paths are thin wrappers over them.
 
 from __future__ import annotations
 
+import io
 import os
 import shutil
 from collections.abc import Iterable
@@ -148,7 +149,9 @@ class FasterWhisperProvider:
     # -- models ----------------------------------------------------------- #
 
     def list_supported_models(self) -> list[SpeechModelInfo]:
-        return list(catalog.FASTER_WHISPER_MODELS)
+        # offered() filters de-supported entries (large-v3: unmirrorable at
+        # ~3 GB fp16); an installed copy still resolves by id.
+        return catalog.offered(catalog.FASTER_WHISPER_MODELS)
 
     def list_installed_models(self) -> list[InstalledSpeechModel]:
         return [m for m in models.load_installed_models() if m.provider_id == PROVIDER_ID]
@@ -275,40 +278,38 @@ class FasterWhisperProvider:
 def _download_repo(
     repo_id: str, target: Path, info: SpeechModelInfo, progress: ProgressCallback | None
 ) -> None:
-    """Fetch a CTranslate2 model repo from the Hugging Face Hub into ``target``.
+    """Fetch a CTranslate2 model repo from QUILL's own assets-v1 mirror into ``target``.
 
-    GATE-9 / network-egress: the only outbound call here. It runs only on an
-    explicit user "download model" action and is blocked in Safe Mode by the
-    caller. ``huggingface_hub`` verifies TLS and file integrity.
+    QUILL no longer contacts Hugging Face: every offered Faster Whisper model is
+    re-hosted as a SHA-256-verified zip on the ``assets-v1`` release and unpacked
+    through the shared download core. The only unmirrored model is ``large-v3``
+    (~3 GB, above GitHub's 2 GiB/file release-asset limit); selecting it raises a
+    clear manual-install message instead of a network call.
+
+    GATE-9 / network-egress: the only outbound call is the shared, verified
+    ``release_assets`` download; it runs only on an explicit user "download model"
+    action and is blocked in Safe Mode by the caller.
     """
-    try:
-        from huggingface_hub import snapshot_download
-    except Exception as exc:  # noqa: BLE001
+    del repo_id  # models come from the mirror now, not a Hugging Face repo id
+    from quill.core.release_assets import ReleaseAssetError
+    from quill.core.speech import model_mirrors
+
+    mirror = model_mirrors.mirror_for(PROVIDER_ID, info.id)
+    if mirror is None:
         raise SpeechError(
-            "Downloading Faster Whisper models needs the 'huggingface_hub' package."
-        ) from exc
+            f"The '{info.display_name}' model is too large to download automatically "
+            f"(about {info.approximate_size_mb} MB, over the hosting size limit). "
+            "Use a smaller Faster Whisper model (Tiny through Distil-Large), which "
+            "download automatically, or obtain the model files manually."
+        )
     if progress is not None:
         progress(0.02, f"Downloading {info.display_name}...")
-    kwargs: dict[str, Any] = {"repo_id": repo_id, "local_dir": str(target)}
-    if info.revision:
-        kwargs["revision"] = info.revision  # pinned commit; huggingface_hub verifies files
-    from quill.core.speech.hf_auth import load_hf_token
-
-    token = load_hf_token()
-    if token:
-        kwargs["token"] = token
-    if progress is not None:
-        tqdm_cls = _make_progress_tqdm(info, progress)
-        if tqdm_cls is not None:
-            kwargs["tqdm_class"] = tqdm_cls
     try:
-        snapshot_download(**kwargs)
-    except Exception as exc:  # noqa: BLE001 - surface a clean message
+        model_mirrors.fetch_mirror_archive(
+            mirror, target, progress=progress, label=f"Downloading {info.display_name}..."
+        )
+    except ReleaseAssetError as exc:
         shutil.rmtree(target, ignore_errors=True)
-        from quill.core.speech.hf_auth import RATE_LIMIT_HELP, looks_rate_limited
-
-        if looks_rate_limited(exc):
-            raise SpeechError(RATE_LIMIT_HELP) from exc
         raise SpeechError(f"The model download failed: {exc}") from exc
 
 
@@ -329,6 +330,16 @@ def _make_progress_tqdm(info: SpeechModelInfo, progress: ProgressCallback) -> ty
     shared = {"done": 0}
 
     class _ProgressTqdm(_BaseTqdm):  # type: ignore[misc, valid-type]
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            # QUILL's bundled quill.exe is a windowed pythonw.exe with no
+            # console, so sys.stderr is None there -- tqdm's own default
+            # write target for its bar rendering. We report progress
+            # ourselves via progress() below and never need tqdm's own bar,
+            # so give it a real sink instead of crashing on "'NoneType'
+            # object has no attribute 'write'".
+            kwargs.setdefault("file", io.StringIO())
+            super().__init__(*args, **kwargs)  # type: ignore[no-untyped-call]
+
         def update(self, n: float | None = 1) -> bool | None:
             shared["done"] += int(n or 0)
             fraction = 0.02 + 0.95 * min(shared["done"] / total_bytes, 1.0)
@@ -336,5 +347,3 @@ def _make_progress_tqdm(info: SpeechModelInfo, progress: ProgressCallback) -> ty
             return super().update(n)  # type: ignore[no-any-return]
 
     return _ProgressTqdm
-    if progress is not None:
-        progress(0.99, f"Finishing {info.display_name}...")

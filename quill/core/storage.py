@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from quill.core.error_codes import CodedError
+
 logger = logging.getLogger(__name__)
 
 # On Windows os.replace can transiently fail with PermissionError when another
@@ -55,8 +57,10 @@ def retry_on_transient_lock[T](
     raise last_error
 
 
-class PathEscapeError(ValueError):
+class PathEscapeError(CodedError):
     """Raised when a write target resolves outside its permitted base directory."""
+
+    code = "QUILL-STORAGE-PATH-ESCAPE"
 
 
 def resolve_within(base: Path, candidate: Path) -> Path:
@@ -108,7 +112,10 @@ def read_json(path: Path, default: Any) -> Any:
 
 def write_json_atomic(path: Path, data: Any, *, base: Path | None = None) -> None:
     if base is not None:
-        resolve_within(base, path)
+        # Write to the *resolved* path, not the caller's original: validating one
+        # path and then writing another leaves a TOCTOU gap (a symlink/``..`` in
+        # the original could still point outside ``base``).
+        path = resolve_within(base, path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # Use a UUID-named temp file in the same directory so concurrent writers
     # cannot collide on a fixed name like path.suffix + ".tmp".
@@ -122,6 +129,86 @@ def write_json_atomic(path: Path, data: Any, *, base: Path | None = None) -> Non
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as file_handle:
             json.dump(data, file_handle, indent=2, sort_keys=True, ensure_ascii=False)
             file_handle.write("\n")
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    try:
+        _atomic_replace(temp_path, path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def write_text_atomic(
+    path: Path,
+    text: str,
+    *,
+    encoding: str = "utf-8",
+    newline: str = "",
+    base: Path | None = None,
+) -> None:
+    """Atomically write *text* to *path* (temp file + ``os.replace``).
+
+    The text/binary-document counterpart to :func:`write_json_atomic`. A crash or
+    interruption mid-write leaves the previous file intact rather than a
+    truncated file at the final path — important both for the user's real
+    document (``write_text_document``) and for the autosave snapshot that
+    recovery scans as the newest ``.snap`` (``autosave_document``), where a
+    partial write would otherwise become the recovery source.
+
+    *newline* is passed straight to the open file (``""`` disables Python's
+    universal-newline translation so the caller's already-normalized text is
+    written byte-for-byte).
+    """
+    if base is not None:
+        # Write to the resolved path (see write_json_atomic): closes the TOCTOU
+        # gap between validating and writing.
+        path = resolve_within(base, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, raw_temp = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=f".{uuid.uuid4().hex}.tmp",
+        dir=path.parent,
+    )
+    temp_path = Path(raw_temp)
+    try:
+        with os.fdopen(fd, "w", encoding=encoding, newline=newline) as file_handle:
+            file_handle.write(text)
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    try:
+        _atomic_replace(temp_path, path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def write_bytes_atomic(path: Path, data: bytes, *, base: Path | None = None) -> None:
+    """Atomically write raw *data* to *path* (temp file + ``os.replace``).
+
+    The binary counterpart to :func:`write_text_atomic`, added for rich-mode
+    autosave snapshots (RTF bytes): a truncated newest snapshot must never
+    become the recovery source.
+    """
+    if base is not None:
+        # Write to the resolved path (see write_json_atomic): closes the TOCTOU
+        # gap between validating and writing.
+        path = resolve_within(base, path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, raw_temp = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=f".{uuid.uuid4().hex}.tmp",
+        dir=path.parent,
+    )
+    temp_path = Path(raw_temp)
+    try:
+        with os.fdopen(fd, "wb") as file_handle:
+            file_handle.write(data)
             file_handle.flush()
             os.fsync(file_handle.fileno())
     except BaseException:

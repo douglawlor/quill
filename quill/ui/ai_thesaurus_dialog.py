@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, dialog_alive
+from quill.ui.dpi import dip, dip_size
 
 
 class AIThesaurusDialog:
@@ -56,7 +57,7 @@ class AIThesaurusDialog:
             title="AI Thesaurus",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(600, 480))
+        self.dialog.SetSize(dip_size(self.dialog, 600, 480))
         self._build_ui(initial_word)
 
     def _build_ui(self, initial_word: str) -> None:
@@ -91,8 +92,8 @@ class AIThesaurusDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SIMPLE,
         )
         self._list.SetName("Synonyms")
-        self._list.InsertColumn(0, "Synonym", width=160)
-        self._list.InsertColumn(1, "Usage note", width=380)
+        self._list.InsertColumn(0, "Synonym", width=dip(self._list, 160))
+        self._list.InsertColumn(1, "Usage note", width=dip(self._list, 380))
         root.Add(self._list, 1, wx.EXPAND | wx.ALL, 8)
 
         # Status
@@ -103,7 +104,7 @@ class AIThesaurusDialog:
         btn_row = wx.BoxSizer(wx.HORIZONTAL)
         self._replace_btn = wx.Button(self.dialog, label="&Replace Word")
         self._copy_btn = wx.Button(self.dialog, label="&Copy Synonym")
-        close_btn = wx.Button(self.dialog, wx.ID_CLOSE, label="C&lose")
+        close_btn = wx.Button(self.dialog, wx.ID_CLOSE, label="Close")
         apply_modal_ids(
             self.dialog,
             affirmative_id=close_btn.GetId(),
@@ -161,6 +162,8 @@ class AIThesaurusDialog:
         threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: AI bg thread
 
     def _on_results(self, entries: list) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the lookup finished (#1067)
         self._entries = entries
         self._list.DeleteAllItems()
         for i, entry in enumerate(entries):
@@ -181,6 +184,8 @@ class AIThesaurusDialog:
         self._lookup_btn.Enable(True)
 
     def _on_error(self, message: str) -> None:
+        if not dialog_alive(self.dialog):
+            return  # dialog closed before the lookup finished (#1067)
         self._status_label.SetLabel(f"Error: {message}")
         self._working = False
         self._lookup_btn.Enable(True)
@@ -219,5 +224,6 @@ class AIThesaurusDialog:
         self._status_label.SetLabel(f'Copied "{synonym}" to clipboard.')
 
     def show(self) -> None:
-        self._show_modal(self.dialog)
+        # the label is required (it names the modal region for screen readers).
+        self._show_modal(self.dialog, "AI Thesaurus")
         self.dialog.Destroy()

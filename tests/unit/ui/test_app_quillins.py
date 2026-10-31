@@ -1,0 +1,108 @@
+"""Tests for the companion-app Quillins wiring (composition + capability split).
+
+The heavy wx frame construction is avoided: composition is asserted via the MRO
+and source, and the app-neutral / editor-only capability split is exercised
+directly on ``_AppHostServices`` (which is wx-free to import).
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from quill.core.quillins.model import CapabilityError
+from quill.ui.app_quillins import QuillinsAppMixin
+from quill.ui.app_quillins_host import _AppHostServices
+
+_REPO = Path(__file__).resolve().parents[3]
+
+
+def _read(rel: str) -> str:
+    return (_REPO / rel).read_text(encoding="utf-8")
+
+
+# -- composition -------------------------------------------------------------
+
+
+def test_radio_and_cast_compose_the_mixin() -> None:
+    from quill.apps.podcasts import PodcastsAppFrame
+    from quill.apps.radio import RadioAppFrame
+
+    assert QuillinsAppMixin in RadioAppFrame.__mro__
+    assert QuillinsAppMixin in PodcastsAppFrame.__mro__
+
+
+def test_apps_init_the_host_and_add_the_menu() -> None:
+    # Radio's menu bar moved to apps/radio_menu_bar.py under F-08 (2026-10-03).
+    radio = _read("quill/apps/radio.py") + _read("quill/apps/radio_menu_bar.py")
+    # QUILL Cast's menu bar moved to apps/podcasts_menu.py in 1.1.0 (GATE-11).
+    cast = _read("quill/apps/podcasts.py") + _read("quill/apps/podcasts_menu.py")
+    assert 'self._init_app_quillins("radio")' in radio
+    assert 'self._init_app_quillins("cast")' in cast
+    # Radio spells it "Quilli&ns": QuillVille sits beside it on that bar and
+    # owns Alt+Q, so the obvious mnemonic was a menu that never opened
+    # (2026-08-26, tests/unit/ui/test_menu_bar_access_keys.py). Cast has no
+    # QuillVille menu, so Alt+Q is free there and it keeps it.
+    assert '_build_quillins_menu(), "Quilli&ns"' in radio
+    assert '_build_quillins_menu(), "&Quillins"' in cast
+
+
+def test_apps_shut_down_the_host() -> None:
+    # Cast's whole lifecycle block -- the close preference, the confirm and
+    # the teardown -- moved to apps/podcasts_close.py under GATE-11 when the
+    # three close answers landed (list.md 5.4).
+    # Radio's teardown moved to apps/radio_shutdown.py with the closing report
+    # (qc.md F-06), where every step is a guarded lambda.
+    # Since the 2026-10 integration Cast's teardown steps live in
+    # ui/podcasts/close_tasks.py, each a guarded call like Radio's.
+    cast = (
+        _read("quill/apps/podcasts.py")
+        + _read("quill/apps/podcasts_close.py")
+        + _read("quill/ui/podcasts/close_tasks.py")
+    )
+    radio = _read("quill/apps/radio.py") + _read("quill/apps/radio_shutdown.py")
+    assert "app._app_host.shutdown()" in radio
+    assert "run_radio_shutdown" in _read("quill/apps/radio.py")
+    assert 'getattr(getattr(host, "_app_host", None), "shutdown", None)' in cast
+
+
+# -- capability split (app-neutral vs editor-only) ---------------------------
+
+
+class _FakeSettings:
+    verbosity_speech_enabled = True
+
+
+class _FakeFrame:
+    settings = _FakeSettings()
+
+
+def test_editor_only_methods_raise_capability_error() -> None:
+    services = _AppHostServices(_FakeFrame())
+    for call in (
+        services.get_text,
+        services.get_selection,
+        services.get_cursor,
+        services.get_cursor_offset,
+        services.get_selection_range,
+    ):
+        with pytest.raises(CapabilityError):
+            call()
+    with pytest.raises(CapabilityError):
+        services.insert_text("x")
+    with pytest.raises(CapabilityError):
+        services.set_text("x")
+    with pytest.raises(CapabilityError):
+        services.replace_range(0, 0, "x")
+
+
+def test_net_is_not_available_yet() -> None:
+    services = _AppHostServices(_FakeFrame())
+    with pytest.raises(CapabilityError):
+        services.fetch("https://example.com", "GET", None)
+
+
+def test_app_neutral_verbosity_flag_reads_settings() -> None:
+    services = _AppHostServices(_FakeFrame())
+    assert services.is_verbosity_speech_enabled() is True

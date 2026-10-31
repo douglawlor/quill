@@ -1,0 +1,121 @@
+"""AI help with the user's own OpenAI key."""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+from quill.core.ai import own_key
+
+_REPO = Path(__file__).resolve().parents[4]
+
+
+def _gateway_prompts():
+    spec = importlib.util.spec_from_file_location(
+        "gateway_prompts", _REPO / "quill-ai-gateway" / "app" / "prompts.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_instructions_are_the_gateways_word_for_word() -> None:
+    """A summary is the same summary whichever way the request travels."""
+    gateway = _gateway_prompts()
+    for feature in gateway.SHIPPED_FEATURES:
+        system, user = own_key.request_for(feature, "PROMPT", ["ONE", "TWO"])
+        assert gateway.build_prompt(feature, "PROMPT", ["ONE", "TWO"]) == system + "\n\n" + user
+
+
+def test_every_shipped_feature_is_on_and_unlimited_by_an_allowance() -> None:
+    gateway = _gateway_prompts()
+    for feature in gateway.SHIPPED_FEATURES:
+        assert own_key.OWN_KEY_LIMITS.feature_available(feature)
+    assert own_key.OWN_KEY_LIMITS.max_input_tokens > 50_000
+
+
+def test_a_saved_key_alone_lifts_the_limits_and_removing_it_restores_them(monkeypatch) -> None:
+    monkeypatch.setattr(own_key, "has_own_key", lambda *_a: True)
+    assert own_key.own_key_active(object())
+    monkeypatch.setattr(own_key, "has_own_key", lambda *_a: False)
+    assert not own_key.own_key_active(object())
+
+
+def test_a_request_goes_to_openai_with_the_system_message(monkeypatch) -> None:
+    import quill.core.assistant_ai as assistant_ai
+
+    sent: dict[str, object] = {}
+
+    def fake(connection, key, prompt, **kwargs):  # noqa: ANN001, ANN003
+        sent.update(provider=connection.provider, model=connection.model, key=key, prompt=prompt)
+        sent.update(kwargs)
+        return "Short summary.", None
+
+    monkeypatch.setattr(assistant_ai, "load_provider_api_key", lambda _p: "sk-test")
+    monkeypatch.setattr(assistant_ai, "generate_assistant_response", fake)
+    answer = own_key.ask_with_own_key("summarize", "Long text", model="gpt-test")
+    assert answer == "Short summary."
+    assert sent["provider"] == "openai" and sent["model"] == "gpt-test"
+    assert sent["prompt"] == "Long text"
+    assert str(sent["system_prompt"]).startswith("Summarize the following text")
+
+
+def test_a_failure_is_a_sentence_with_a_code(monkeypatch) -> None:
+    import quill.core.assistant_ai as assistant_ai
+
+    monkeypatch.setattr(assistant_ai, "load_provider_api_key", lambda _p: "sk-test")
+    monkeypatch.setattr(
+        assistant_ai, "generate_assistant_response", lambda *a, **k: (None, "Invalid API key.")
+    )
+    with pytest.raises(own_key.OwnKeyError) as caught:
+        own_key.ask_with_own_key("rewrite", "text")
+    assert "Invalid API key" in str(caught.value)
+    assert caught.value.code == "QUILL-AI-OWN-KEY-FAILED"
+
+
+def test_no_key_says_so(monkeypatch) -> None:
+    import quill.core.assistant_ai as assistant_ai
+
+    monkeypatch.setattr(assistant_ai, "load_provider_api_key", lambda _p: "")
+    with pytest.raises(own_key.OwnKeyError, match="No OpenAI key"):
+        own_key.ask_with_own_key("explain", "text")
+
+
+def test_an_own_key_has_no_size_answer_or_excerpt_ceiling() -> None:
+    limits = own_key.OWN_KEY_LIMITS
+    assert limits.max_input_tokens >= own_key.UNLIMITED
+    assert limits.max_output_tokens >= own_key.UNLIMITED
+    assert limits.max_chunks_per_request >= own_key.UNLIMITED
+
+
+def test_an_own_key_request_sends_no_answer_ceiling(monkeypatch) -> None:
+    import quill.core.assistant_ai as assistant_ai
+
+    sent: dict[str, object] = {}
+
+    def fake(connection, key, prompt, **kwargs):  # noqa: ANN001, ANN003
+        sent.update(kwargs)
+        return "An answer.", None
+
+    monkeypatch.setattr(assistant_ai, "load_provider_api_key", lambda _p: "sk-test")
+    monkeypatch.setattr(assistant_ai, "generate_assistant_response", fake)
+    assert own_key.ask_with_own_key("ask", "What is a semicolon for?") == "An answer."
+    assert sent["max_tokens"] is None
+
+
+def test_the_size_warning_always_gives_a_cost_and_warns_only_when_true() -> None:
+    small = own_key.size_warning("A short passage.", "gpt-6-luna", free_limit_tokens=3000)
+    assert "no limits" in small
+    assert "less than 1 cent" in small
+    assert "free AI" not in small
+    assert "OpenAI refuses" not in small
+
+    big = own_key.size_warning("word " * 20_000, "gpt-6-luna", free_limit_tokens=3000)
+    assert "more than QUILL's free AI would accept" in big
+    assert "OpenAI refuses" not in big
+
+    huge = own_key.size_warning("word " * 120_000, "gpt-6-luna", free_limit_tokens=3000)
+    assert "OpenAI refuses it and nothing is charged" in huge

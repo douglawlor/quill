@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+_UI = Path(__file__).resolve().parents[3] / "quill" / "ui"
+
+
+def _src(name: str) -> str:
+    # SpeechCommandsMixin was split into main_frame_speech{,_downloads,_voice}.py
+    # (CQ-1); scan all three so contract pins survive wherever a handler landed.
+    if name == "main_frame_speech.py":
+        return "\n".join(
+            p.read_text(encoding="utf-8") for p in sorted(_UI.glob("main_frame_speech*.py"))
+        )
+    return (_UI / name).read_text(encoding="utf-8")
+
+
+def test_guided_speech_dialog_follows_contract_and_is_accessible() -> None:
+    src = _src("guided_speech_dialog.py")
+    # Dialog contract: modal ids + affirmative/escape.
+    assert "apply_modal_ids(" in src
+    assert "wx.ID_OK" in src and "wx.ID_CANCEL" in src
+    # Accessible engine choice (RadioBox) + model list, not free-form widgets.
+    assert "wx.RadioBox(" in src
+    assert "wx.ListBox(" in src
+    # Focus lands on a real control, never a button (screen-reader contract).
+    assert "engine_box.SetFocus()" in src
+    # Grouped radio (RadioBox with a group label) + self-describing labels
+    # so the trade-off is announced on focus.
+    assert 'label="Speech engine"' in src
+    assert "_engine_label(" in src
+    # Renders wx-free data; no engine/model logic baked into the UI.
+    assert "from quill.core.speech.guided_setup import" in src
+
+
+def test_guided_model_rows_name_their_tier_and_the_reason_is_text() -> None:
+    """D-22: each row says its tier, and the details box says which model suits
+    this computer and why, so the reason is read, not only tagged."""
+    from quill.core.speech.guided_setup import ModelChoice
+    from quill.ui.guided_speech_dialog import _details, _model_label
+
+    small = ModelChoice("small", "Small", "~465 MB", "", True, "Balanced", "Fits in 8 GB.")
+    tiny = ModelChoice("tiny", "Tiny", "~75 MB", "", False, "Lightweight")
+    assert _model_label(small) == "Small, Balanced — ~465 MB  (Recommended for your computer)"
+    assert _model_label(tiny) == "Tiny, Lightweight — ~75 MB"
+    assert _details("Light and fast.", [tiny, small]) == (
+        "Light and fast.\nRecommended model: Small, Balanced. Fits in 8 GB."
+    )
+    assert _details("Light and fast.", [tiny]) == "Light and fast."
+
+
+def test_guided_speech_dialog_returns_engine_and_model_selection() -> None:
+    src = _src("guided_speech_dialog.py")
+    # The dialog yields (engine_id, model_id) for the caller to install.
+    assert "tuple[str, str] | None" in src
+    assert "data.default_model(" in src  # preselects the smallest model
+
+
+def test_hub_offline_speech_row_opens_the_guided_picker() -> None:
+    src = _src("main_frame_speech.py")
+    # The hub's offline-speech row opens the guided picker, not the bare download.
+    assert '"whispercpp": self.open_guided_offline_speech' in src
+    assert "def open_guided_offline_speech" in src
+    assert "show_guided_speech_setup(" in src
+
+
+def test_guided_install_does_engine_then_model_and_returns_to_hub() -> None:
+    src = _src("main_frame_speech.py")
+    assert "def _install_offline_speech" in src
+    assert "def _ensure_offline_engine" in src
+    assert "provider.download_model(" in src  # install engine (if needed) then model
+    # returns to the hub, reselecting the engine row rather than resetting to the top
+    assert "on_ok=lambda: self.open_optional_components(preselect=engine_id)" in src
+    # the engine + model just installed become the default automatically
+    assert "self.settings.speech_provider = engine_id" in src
+    assert "self.settings.speech_default_model_id = model_id" in src
+
+
+def test_ensure_offline_engine_handles_pip_installed_engines() -> None:
+    src = _src("main_frame_speech.py")
+    # Faster Whisper and Nemotron share one data-driven pip-install path. Vosk
+    # left it on 2026-10-13: it is the podcast chapter engine only.
+    assert "pip_engines = {" in src
+    assert "ei.install_vosk" not in src
+    assert "ei.install_nemotron" in src
+    assert "ei.activate_engine_packs()" in src
+
+
+def test_dictation_dialog_set_default_action_is_handled() -> None:
+    # The Speech Hub's result handling lives in main_frame_speech_hub.py.
+    src = _src("main_frame_speech.py")
+    assert 'elif dict_result.action == "set_default" and dict_result.model_id:' in src
+    assert "self.settings.speech_default_model_id = dict_result.model_id" in src
+
+
+def test_speech_menu_consolidated_the_separate_download_items() -> None:
+    src = _src("main_frame_menu.py")
+    # These three moved into Download Optional Components / the guided picker.
+    assert "tools.speech_offline_engine" not in src
+    assert "tools.speech_engine_download" not in src
+    assert "Download &FFmpeg" not in src
+
+
+def test_test_button_no_model_remedy_reopens_the_guided_picker() -> None:
+    """Test's "no offline speech model yet" outcome reopens the same guided
+    engine+model picker used for the initial download, not the full multi-tab
+    Speech Settings dialog -- no complex detour just to grab a model."""
+    src = _src("main_frame_speech.py")
+    assert 'if getattr(result, "remedy", ""):' in src
+    assert "self.open_guided_offline_speech()" in src
+
+
+def test_hub_offers_audio_extras_download() -> None:
+    src = _src("main_frame_speech.py")
+    assert '"audio_extras": lambda: self.download_audio_extras(on_done=_back)' in src
+    assert "def download_audio_extras" in src
+    assert "install_mp3_support(" in src  # on-demand mutagen install
+    # The mpv half of the pack. This used to pin the raw '"libmpv",' argument of
+    # an inline fetch_component call; the download moved into
+    # quill.core.mpv_install (2026-08-21) so Quill Radio's Help > Get mpv and
+    # this hub cannot pick different target folders, and what matters now is
+    # that the hub calls that one installer.
+    assert "install_mpv(" in src  # on-demand mpv install, via core.mpv_install

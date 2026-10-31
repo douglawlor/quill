@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Building the QUILL Windows family</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="building-the-quill-windows-family">Building the QUILL Windows
+family</h1>
+<p>Run these commands in PowerShell from the repository root on Windows.
+They build unsigned local artifacts; they do not publish a release. Use
+a clean checkout at the commit you want to ship. Inno Setup 7, Pandoc
+3.10, and Python 3.14 are required. The build scripts check the Python
+environment and the shared runtime before packaging.</p>
+<p>QUILL Lite is an editor app in its own right. The <strong>Lite
+installer edition</strong> and <strong>Companion ZIP edition</strong> of
+other apps are retired. The Windows release set is a full installer and
+a portable ZIP for each app.</p>
+<h2 id="the-one-command-way">The one-command way</h2>
+<p><code>build-quill-apps.ps1</code> at the repository root runs steps 2
+to 5 below for the apps you name, in this order, with a log per step and
+plain-text progress (“Step 3 of 6: QUILL Cast”) that reads well with a
+screen reader. It rebuilds the shared runtime first, runs the
+joint-release sibling version check once, passes each app the build
+number its source declares, and collects every new installer and
+portable zip into one upload folder with a zip per app, an everything
+zip and <code>SHA256SUMS.txt</code>, under
+<code>dist/release-builds/&lt;date-time&gt;/</code>. Builds are unsigned
+unless you pass <code>-Sign</code>; nothing is published.</p>
+<p><strong>A build for distribution needs
+<code>-Release</code>.</strong> Without it the script makes a local dev
+build: every app is passed <code>-SkipPublishedCheck</code>, so none of
+them checks its version and build number against the releases already
+published. With <code>-Release</code> each app keeps that gate (it needs
+the network). The script builds with the system Python 3.14
+(<code>py -3.14</code>) unless you pass <code>-Python</code>; a
+repository <code>.venv</code> is never used unasked, because releases
+build with the system interpreter.</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="op">.</span>\build-quill-apps<span class="op">.</span><span class="fu">ps1</span> all <span class="op">-</span>Release <span class="op">-</span>KeepGoing   <span class="co"># a distribution build of everything</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="op">.</span>\build-quill-apps<span class="op">.</span><span class="fu">ps1</span> lite<span class="op">,</span>cast<span class="op">,</span>radio<span class="op">,</span>transcribe</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="op">.</span>\build-quill-apps<span class="op">.</span><span class="fu">ps1</span> transcribe <span class="op">-</span>DryRun        <span class="co"># print the commands, build nothing</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">Get-Help</span> <span class="op">.</span>\build-quill-apps<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Detailed        <span class="co"># every option</span></span></code></pre></div>
+<p>App names: <code>quill</code> (QUILL for All), <code>lite</code>,
+<code>inkwell</code>, <code>weather</code>, <code>beacon</code>,
+<code>social</code>, <code>converter</code>, <code>studio</code>,
+<code>cast</code>, <code>radio</code>, <code>transcribe</code>, or
+<code>all</code>. Step 1 below (installing the build environment) is
+still yours to do once.</p>
+<h2 id="1-prepare-the-build-environment">1. Prepare the build
+environment</h2>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="va">$ErrorActionPreference</span> <span class="op">=</span> <span class="st">&#39;Stop&#39;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="va">$python</span> <span class="op">=</span> py <span class="op">-</span><span class="dv">3.14</span> <span class="op">-</span>c <span class="st">&#39;import sys; print(sys.executable)&#39;</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="va">$iscc</span> <span class="op">=</span> <span class="fu">Join-Path</span> <span class="va">$env</span><span class="op">:</span><span class="va">LOCALAPPDATA</span> <span class="st">&#39;Programs\Inno Setup 7\ISCC.exe&#39;</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(-not</span> <span class="op">(</span><span class="fu">Test-Path</span> <span class="op">-</span>LiteralPath <span class="va">$iscc</span><span class="op">))</span> <span class="op">{</span> <span class="cf">throw</span> <span class="st">&#39;Install Inno Setup 7 or set $iscc to its ISCC.exe.&#39;</span> <span class="op">}</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m pip install <span class="op">--</span>find-links vendor<span class="op">/</span>wheels <span class="op">-</span>e <span class="st">&#39;.[runtime,packaging,dev]&#39;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>check_build_env<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>groups runtime<span class="op">,</span>packaging <span class="op">--</span>python <span class="va">$python</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>fetch_build_deps<span class="op">.</span><span class="fu">py</span></span></code></pre></div>
+<h3 id="before-a-distribution-build-confirm-everything-is-ready">Before
+a distribution build: confirm everything is ready</h3>
+<p>These checks build nothing, and each takes seconds to a few minutes.
+Run them on the commit you mean to ship; every one should pass. They
+were last run in full on 2026-10-23, on <code>main</code>, and all
+passed.</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Every Python package any app&#39;s build installs, in the system interpreter.</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>check_build_env<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>python <span class="va">$python</span> `</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>groups runtime<span class="op">,</span>packaging<span class="op">,</span>dev<span class="op">,</span>ui<span class="op">,</span>speech<span class="op">,</span>youtube<span class="op">,</span>windows-media<span class="op">,</span>live-dictation<span class="op">,</span>office-text<span class="op">,</span>ocr<span class="op">,</span>docx<span class="op">,</span>mp3<span class="op">,</span>nemotron</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m pip check                             <span class="co"># &quot;No broken requirements found.&quot;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co"># The pinned binaries (ffmpeg, libmpv, deno, piper), the built-in speech</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="co"># models and the updater&#39;s bootstrappers, each checksum-verified.</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>fetch_build_deps<span class="op">.</span><span class="fu">py</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>fetch_dictation_models<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>check</span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>fetch_bootstrappers<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>verify-only</span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Versions: one QUILL version everywhere, siblings not ahead of their releases.</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m quill<span class="op">.</span><span class="fu">tools</span><span class="op">.</span><span class="fu">check_version_consistency</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>check_sibling_versions<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>releasing quilllite <span class="op">--</span>releasing inkwell `</span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>releasing weather <span class="op">--</span>releasing beacon <span class="op">--</span>releasing social <span class="op">--</span>releasing converter `</span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>releasing studio <span class="op">--</span>releasing cast <span class="op">--</span>releasing radio <span class="op">--</span>releasing transcribe</span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Every gate, then the whole plan without building anything.</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m quill<span class="op">.</span><span class="fu">tools</span><span class="op">.</span><span class="fu">platform_report</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="op">.</span>\build-quill-apps<span class="op">.</span><span class="fu">ps1</span> all <span class="op">-</span>Release <span class="op">-</span>DryRun</span></code></pre></div>
+<p>The published-version gate, which <code>-Release</code> keeps,
+refuses a build number the app’s source does not declare. Each app’s
+source says which build it is (<code>_BUILD</code>, or
+<code>APP_BUILD</code>), and the script passes that number, so a version
+shipping for the first time ships as the build its source names, not
+build 1.</p>
+<p>Pandoc 3.10 or later renders the documents. A newer Pandoc than the
+one that rendered the tree changes only the stylesheet in each page’s
+head; re-render a document when its text changes, not to update that
+line.</p>
+<p>The shared runtime requires a Podcast Index key and secret. Set
+<code>QUILL_PODCAST_INDEX_KEY</code> and
+<code>QUILL_PODCAST_INDEX_SECRET</code>, set their <code>_FILE</code>
+counterparts to files containing the values, or retain an existing
+ignored <code>quill/_podcast_index_key.py</code> from a prior build. The
+key file must never be committed. The build stops if neither source
+supplies a pair.</p>
+<p>GitHub’s <code>dev-builds</code> workflow also requires repository
+secrets named <code>QUILL_PODCAST_INDEX_KEY</code> and
+<code>QUILL_PODCAST_INDEX_SECRET</code>. The workflow passes them only
+to the sibling build step. Without them, the shared runtime correctly
+refuses to package a broken podcast directory integration.</p>
+<h2 id="2-check-the-source-then-build-the-shared-runtime">2. Check the
+source, then build the shared runtime</h2>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m pytest <span class="op">-</span>q</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m ruff check <span class="op">.</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> <span class="op">-</span>m ruff format <span class="op">--</span>check <span class="op">.</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\runtime\build_runtime<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span></span></code></pre></div>
+<p>The runtime must be built <strong>before</strong> the sibling
+installers. It carries the shared <code>quill</code> package and all
+sibling app modules. Its output is
+<code>standalone/runtime/dist/QuillVilleRuntime/</code>.</p>
+<p>If the runtime inventory gate reports drift, inspect each named
+package against <code>pyproject.toml</code>. Rebaseline with
+<code>scripts/check_runtime_inventory.py standalone/runtime/dist/QuillVilleRuntime --write</code>
+only for an intentional package change, then rerun
+<code>build_runtime.ps1</code> so every remaining gate completes. On the
+first runtime build after 2026-10-17, expect the gate to report
+<code>lxml</code> with an explanation, because the runtime now ships
+Word support. Follow <em>Rebaselining after the Word support change</em>
+in section 5.</p>
+<h2 id="3-build-quill-for-all">3. Build QUILL for All</h2>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts<span class="op">/</span>build_windows_distribution<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>bundle-python <span class="op">--</span>compile-installer <span class="op">--</span>iscc-path <span class="va">$iscc</span> <span class="op">--</span>output-dir dist<span class="op">/</span>windows</span></code></pre></div>
+<p>The full installer is in <code>dist/windows/installer/Output/</code>;
+the portable folder is <code>dist/windows/portable/</code>. QUILL uses
+its own distribution builder rather than a
+<code>standalone/*/scripts/build_release.ps1</code> script.</p>
+<h2 id="4-build-the-windows-sibling-apps-in-order">4. Build the Windows
+sibling apps, in order</h2>
+<p>Builds are sequential because their installer scripts share
+<code>standalone/runtime/dist/QuillVilleRuntime/</code> as a staging
+area. Media apps add or remove ffmpeg and mpv there according to what
+each installer needs. Do not run sibling release scripts in parallel in
+the same checkout. Pass the same <code>$python</code> to every script so
+the release environment check sees the packages installed in step 1.</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\quilllite\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\inkwell\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\weather\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\beacon\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\social\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\converter\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\studio\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\cast\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\radio\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\transcribe\scripts\build_release<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span> <span class="op">-</span>Iscc <span class="va">$iscc</span> <span class="op">-</span>SkipSharedRuntime</span></code></pre></div>
+<p>Each sibling places its installer and portable ZIP in
+<code>standalone/&lt;app&gt;/dist/</code>. Use <code>-Sign</code> only
+for an approved signed release with signing credentials configured. The
+build scripts derive the app version and Windows build number; do not
+rename an artifact to imply a different version. For local unpublished
+Dev builds, Radio, Cast, QUILL Lite, Converter, Weather and Transcribe
+accept <code>-SkipPublishedCheck</code>. Production releases must retain
+the published-version gate.</p>
+<h2 id="5-verify-the-artifacts">5. Verify the artifacts</h2>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="va">$apps</span> <span class="op">=</span> <span class="st">&#39;quilllite&#39;</span><span class="op">,</span><span class="st">&#39;inkwell&#39;</span><span class="op">,</span><span class="st">&#39;weather&#39;</span><span class="op">,</span><span class="st">&#39;beacon&#39;</span><span class="op">,</span><span class="st">&#39;social&#39;</span><span class="op">,</span><span class="st">&#39;converter&#39;</span><span class="op">,</span><span class="st">&#39;studio&#39;</span><span class="op">,</span><span class="st">&#39;cast&#39;</span><span class="op">,</span><span class="st">&#39;radio&#39;</span><span class="op">,</span><span class="st">&#39;transcribe&#39;</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="cf">foreach</span> <span class="op">(</span><span class="va">$app</span> <span class="kw">in</span> <span class="va">$apps</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>    <span class="va">$files</span> <span class="op">=</span> <span class="fu">Get-ChildItem</span> <span class="op">-</span>LiteralPath <span class="st">&quot;standalone/</span><span class="va">$app</span><span class="st">/dist&quot;</span> <span class="op">-</span>File <span class="op">|</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>        <span class="fu">Where-Object</span> <span class="op">{</span> <span class="va">$_</span><span class="op">.</span><span class="fu">Extension</span> <span class="op">-</span>in <span class="st">&#39;.exe&#39;</span><span class="op">,</span><span class="st">&#39;.zip&#39;</span> <span class="op">-and</span> <span class="va">$_</span><span class="op">.</span><span class="fu">Name</span> <span class="op">-notmatch</span> <span class="st">&#39;(?i)(-Lite-Setup-|Companion)&#39;</span> <span class="op">}</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">((</span><span class="va">$files</span> <span class="op">|</span> <span class="fu">Where-Object</span> Extension <span class="op">-eq</span> <span class="st">&#39;.exe&#39;</span><span class="op">).</span><span class="fu">Count</span> <span class="op">-lt</span> <span class="dv">1</span> <span class="op">-or</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>        <span class="op">(</span><span class="va">$files</span> <span class="op">|</span> <span class="fu">Where-Object</span> Extension <span class="op">-eq</span> <span class="st">&#39;.zip&#39;</span><span class="op">).</span><span class="fu">Count</span> <span class="op">-lt</span> <span class="dv">1</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>        <span class="cf">throw</span> <span class="st">&quot;Missing full installer or portable ZIP for </span><span class="va">$app</span><span class="st">&quot;</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    <span class="va">$files</span> <span class="op">|</span> Get-FileHash <span class="op">-</span>Algorithm SHA256 <span class="op">|</span> <span class="fu">Select-Object</span> Path<span class="op">,</span>Hash</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(-not</span> <span class="op">(</span><span class="fu">Get-ChildItem</span> <span class="st">&#39;dist/windows/installer/Output/Quill-for-All-Setup-*.exe&#39;</span> <span class="op">-</span>File<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">throw</span> <span class="st">&#39;Missing QUILL for All installer&#39;</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3
+id="quill-lite-portable-the-pdf-reader-and-ocr-first-build-after-2026-10-17">QUILL
+Lite portable: the PDF reader and OCR (first build after
+2026-10-17)</h3>
+<p>The QUILL Lite portable ZIP now installs two more dependency groups,
+<code>office-text</code> (pdfplumber, which brings pdfminer.six and
+pypdfium2, plus pypdf and openpyxl) and <code>ocr</code> (the
+<code>winrt</code> Windows.Media.Ocr projection), so a portable copy
+opens PDFs and reads scanned pages the way the installed copy always
+has.</p>
+<p><strong>Done on 2026-10-24:</strong>
+<code>portable-inventory.json</code> was rebaselined from a real bundle.
+Besides the packages below, that build added three files Python 3.14.8’s
+embeddable package ships (<code>_remote_debugging.pyd</code>,
+<code>_zstd.pyd</code>, <code>libtommath.dll</code>; the 3.14 move had
+renamed the 3.13 entries by hand instead of rebaselining),
+<code>psutil</code> (a base dependency since 2026-10-09), and
+pillow-heif’s renamed DLLs. The steps are kept as the record. On the
+first build after this change, two things happened, and both were
+expected:</p>
+<ol type="1">
+<li><p><strong>The inventory gate stops the build.</strong>
+<code>build_portable.py</code> step 8 compares the bundle with
+<code>standalone/quilllite/portable-inventory.json</code> and reports
+<code>unexpected in site-packages:</code> for the new packages
+(<code>pdfplumber</code>, <code>pdfminer</code>, <code>pypdf</code>,
+<code>pypdfium2</code>, <code>pypdfium2_raw</code>,
+<code>openpyxl</code>, <code>et_xmlfile</code>, <code>winrt</code> and
+their <code>*.dist-info</code> names). Check the list holds only those
+and nothing swept from the build machine, then rebaseline from the real
+bundle and run the release script again:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts\check_runtime_inventory<span class="op">.</span><span class="fu">py</span> standalone\quilllite\dist\QuillLite <span class="op">--</span>layout portable <span class="op">--</span>manifest standalone\quilllite\portable-inventory<span class="op">.</span><span class="fu">json</span> <span class="op">--</span>write</span></code></pre></div>
+<p>Never hand-edit <code>portable-inventory.json</code>; it is only
+correct when written from a build.</p></li>
+<li><p><strong>The import check is stricter.</strong> Step 8 now imports
+<code>pdfplumber</code>, <code>pypdf</code>, <code>pypdfium2</code>,
+<code>winrt.windows.media.ocr</code>,
+<code>winrt.windows.graphics.imaging</code>, <code>quill.io.pdf</code>
+and <code>quill.io.docconvert</code> inside the bundle and fails the
+build if any of them cannot load, so a build that installed the groups
+but cannot use them does not ship.</p></li>
+</ol>
+<p>After the build, verify by hand on a computer without QUILL
+installed: unzip the portable ZIP, start <code>QuillLite.exe</code>,
+open a text PDF with Ctrl+O (it opens with its pages, not “This copy of
+QUILL Lite has no PDF reader”), open a scanned PDF and answer Yes
+(Windows OCR reads it), and use File &gt; Import / Convert Document on a
+picture of printed text. Note the ZIP’s new size beside the old one
+(299,961,055 bytes for 1.1.2); expect roughly 25 MB more unpacked. The
+checks are also in
+<code>docs/qa/screen-reader-checks-2026-10.md</code>.</p>
+<h3
+id="rebaselining-after-the-word-support-change-first-runtime-build-after-2026-10-17">Rebaselining
+after the Word support change (first runtime build after
+2026-10-17)</h3>
+<p>Jeff’s decision on 2026-10-17 was to make Word documents fully usable
+in QUILL and QUILL Lite, whatever the size. Until then the shared
+runtime spec (<code>standalone/runtime/quillville-runtime.spec</code>)
+listed <code>lxml</code> in its <code>excludes</code>. python-docx is
+pure Python, so it still froze into the runtime, but it raised the
+moment it imported lxml. As a result, every <em>installed</em> copy of
+QUILL and QUILL Lite opened a <code>.docx</code> as plain text and could
+not save a real Word document. The GLOW Word, PDF and PowerPoint audits
+failed too, because every GLOW auditor imports python-docx. Portable
+copies were fine, because pip installs lxml with python-docx.</p>
+<p>The spec no longer excludes lxml. It also names the Word stack
+(<code>lxml</code>, <code>docx</code>, <code>pptx</code>,
+<code>openpyxl</code> and every <code>acb_large_print</code> module) as
+hidden imports, so the Word path no longer depends on which optional
+imports the tracer happens to follow.</p>
+<p><strong>Done on 2026-10-24.</strong> The steps below were followed
+and <code>runtime-inventory.json</code> now lists <code>lxml</code> and
+<code>acb-large-print</code> (the second is
+<code>acb_large_print</code>’s package metadata, which it reads for its
+own version). That build also found five packages swept from the build
+machine through optional imports – <code>orjson</code>,
+<code>bcrypt</code>, <code>h2</code>, and <code>pythonnet</code> with
+<code>clr_loader</code> – so the spec now excludes them, and
+<code>build_runtime.ps1</code> prunes <code>h2</code>’s metadata, which
+<code>urllib3.http2</code> would otherwise pull in by name. A runtime
+build now passes the inventory gate with no rebaseline. The steps are
+kept as the record, and as the pattern for the next intentional
+addition.</p>
+<ol type="1">
+<li><p><strong>The runtime inventory gate stops the build, and says
+why.</strong> <code>check_runtime_inventory.py</code> reports:</p>
+<pre class="text"><code>  unexpected in _internal: lxml
+      expected: lxml was removed from the runtime spec&#39;s excludes on 2026-10-17 so python-docx can import ...</code></pre>
+<p>That reason comes from <code>KNOWN_ADDITIONS</code> in the gate. The
+only new top-level entry should be <code>lxml</code>, the folder holding
+lxml’s compiled <code>.pyd</code> files. If the gate names anything else
+as unexpected, treat it as ordinary drift and investigate it before you
+continue: do not rebaseline it away.</p></li>
+<li><p><strong>Prove Word works before you rebaseline.</strong> Run the
+import gate by hand against the dist the build just made:</p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts\check_runtime_imports<span class="op">.</span><span class="fu">py</span> standalone\runtime\dist\QuillVilleRuntime</span></code></pre></div>
+<p>It must end with
+<code>Runtime import gate: N modules checked, all correct.</code> Since
+this change it imports <code>lxml.etree</code>, <code>docx</code>,
+<code>pptx</code>, <code>openpyxl</code>, QUILL’s Word reader and
+writer, <code>quill.core.docx_open</code>, <code>quill_glow_core</code>
+and the four GLOW auditors. It then runs
+<code>quill.io.word_selfcheck</code> inside the frozen runtime: that
+writes a real <code>.docx</code> (a heading, a bold word and a table),
+opens it the way both editors do, saves it back to Word and reads the
+result. Any failure prints “Word support is broken in this runtime”
+along with the fix.</p></li>
+<li><p><strong>Rebaseline, then rebuild so every remaining gate
+runs.</strong></p>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="va">$python</span> scripts\check_runtime_inventory<span class="op">.</span><span class="fu">py</span> standalone\runtime\dist\QuillVilleRuntime <span class="op">--</span>write</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>git <span class="fu">diff</span> standalone\runtime\runtime-inventory<span class="op">.</span><span class="fu">json</span>   <span class="co"># should add &quot;lxml&quot; to _internal and nothing else</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="op">&amp;</span> <span class="op">.</span>\standalone\runtime\build_runtime<span class="op">.</span><span class="fu">ps1</span> <span class="op">-</span>Python <span class="va">$python</span></span></code></pre></div>
+<p>Commit the regenerated <code>runtime-inventory.json</code>. In the
+same commit, delete the <code>"lxml"</code> entry from
+<code>KNOWN_ADDITIONS</code> in
+<code>scripts/check_runtime_inventory.py</code>, because once the
+inventory lists lxml the explanation is no longer needed. Never
+hand-edit <code>runtime-inventory.json</code>: it is only correct when
+it is written from a build.</p></li>
+</ol>
+<p>The portable builds need no rebaseline for this change. Every
+portable already carries python-docx and lxml as base dependencies, and
+the QUILL Lite, Radio and Converter portable inventories already list
+<code>lxml</code>. The QUILL Lite product in
+<code>build_portable.py</code> now names the <code>docx</code> group as
+well, which adds no package, and its step-8 check
+(<code>check_word=True</code>) runs the same Word round trip. If that
+check fails, the portable build stops with “Bundled runtime failed the
+import check … the Word open-and-save round trip”. The
+<code>quill</code> product gains the <code>docx</code> and
+<code>office-text</code> groups; it has no committed inventory, so it
+only prints how to adopt one. QUILL for All’s own builder
+(<code>scripts/build_windows_distribution.py</code>) runs the same check
+after it prunes the embedded runtime (<code>_check_word_support</code>)
+and stops with “Word support check failed in the embedded runtime” if
+Word would fall back to text.</p>
+<p><strong>Check by hand after the build.</strong> On a computer where
+QUILL and QUILL Lite are <em>installed</em> from the new installers (not
+portable), do the following:</p>
+<ol type="1">
+<li>Open a <code>.docx</code> in QUILL Lite with Ctrl+O. You should hear
+“Opened as Rich Text. Headings and bold are shown formatted.”, not a
+text version of the file.</li>
+<li>Type a line, then press Ctrl+S. You should hear “Saved”, and the
+file should open in Word with its headings intact.</li>
+<li>Do the same in QUILL.</li>
+<li>Run a GLOW audit on a Word file and on a PDF in QUILL.</li>
+</ol>
+<p>Then repeat steps 1 to 3 from both portable ZIPs. These checks are
+also listed in <code>docs/qa/screen-reader-checks-2026-10.md</code>. The
+runtime grows by a few megabytes, the size of lxml’s compiled
+parser.</p>
+<p>The app directories <code>standalone/player/</code>,
+<code>standalone/radio-mac/</code>, and
+<code>standalone/weather-ios/</code> have no Windows
+<code>build_release.ps1</code> target. Build and test the macOS and iOS
+projects on their respective platform toolchains.</p>
+</main>
+</body>
+</html>

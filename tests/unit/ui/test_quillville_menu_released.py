@@ -1,0 +1,218 @@
+"""The QuillVille menu only offers apps that have shipped a public release."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from quill.ui import quillville_menu as qv
+
+
+class _FakeMenu:
+    def __init__(self) -> None:
+        self.labels: list[str] = []
+
+    def Append(self, _id: object, label: str) -> None:  # noqa: N802 - wx shape
+        self.labels.append(label)
+
+
+class _FakeWx:
+    _next = 1000
+
+    def Menu(self):  # noqa: N802 - wx shape
+        return _FakeMenu()
+
+    def NewIdRef(self):  # noqa: N802 - wx shape
+        _FakeWx._next += 1
+        return _FakeWx._next
+
+    EVT_MENU = object()
+
+
+def _build(exclude: str) -> list[str]:
+    wx = _FakeWx()
+    frame = SimpleNamespace(Bind=lambda *a, **k: None)
+    menu = qv.build_quillville_menu(
+        wx, frame, on_launch=lambda _k: None, exclude=exclude, retain=lambda _i: None
+    )
+    return menu.labels
+
+
+def test_unreleased_apps_are_not_offered() -> None:
+    # Quill Cast and Audio Studio are built but not released yet.
+    assert "cast" not in qv.RELEASED_APPS
+    assert "studio" not in qv.RELEASED_APPS
+    labels = _build(exclude="quill")
+    joined = " ".join(labels)
+    assert "Quill Cast" not in joined
+    assert "Audio Studio" not in joined
+
+
+def test_released_siblings_are_offered_and_self_is_excluded() -> None:
+    labels = _build(exclude="radio")  # from Quill Radio
+    # Every item carries a numbered accelerator (the house rule that a menu
+    # item always shows a way to reach it), so compare on the name alone.
+    # Access letters (Alt+Q, then the letter) are part of the label since 3.0.3.
+    names = [label.split(chr(9))[0].replace("&", "") for label in labels]
+    assert "Open QUILL" in names
+    assert "Open Quill Weather" in names
+    assert "Open Quill Radio" not in names  # self excluded
+    # ...and the keys are there, numbered in menu order. F-keys, not digits:
+    # Ctrl+Alt+Shift+digits are Quill Radio's quick-play favorites, and these
+    # launcher rows silently fought them until 2026-08-17. **From F7**, not F1:
+    # the first move landed the third launcher on power.count_occurrences
+    # (Ctrl+Alt+Shift+F3) and F4-F6 were already Quill Radio's Sort Favorites,
+    # so the block starts where six consecutive keys are actually free -- one
+    # for every row this menu can show. Read against the tuple rather than
+    # against a literal, so the next move is a one-line change there and not a
+    # test somebody has to notice is stale.
+    from quill.core.app_keymaps import SIBLING_APP_ACCELERATORS
+
+    assert [label.split(chr(9))[1] for label in labels][:2] == list(SIBLING_APP_ACCELERATORS[:2])
+    assert SIBLING_APP_ACCELERATORS[0] == "Ctrl+Alt+Shift+F7"
+
+
+def test_an_app_can_leave_a_sibling_off_its_own_menu(monkeypatch) -> None:
+    """Quill Radio ships 3.0 without Inkwell on its QuillVille menu.
+
+    Not by un-releasing Inkwell -- it stays on every other app's menu. A
+    listener opening a radio app has no reason to be offered a text expander,
+    and a menu item that opens one is a promise that release did not mean to
+    make.
+    """
+    from quill.ui import quillville_menu
+
+    monkeypatch.setattr(quillville_menu, "is_app_released", lambda _key: True)
+    offered: list[str] = []
+
+    class _Menu:
+        def Append(self, _id, label):
+            offered.append(label)
+
+    class _Wx:
+        Menu = _Menu
+        EVT_MENU = object()
+
+        @staticmethod
+        def NewIdRef():
+            return object()
+
+    class _Frame:
+        def Bind(self, *_args, **_kwargs):
+            return None
+
+    quillville_menu.build_quillville_menu(
+        _Wx,
+        _Frame(),
+        lambda _key: None,
+        exclude="radio",
+        retain=lambda _id: None,
+        also_exclude=("inkwell",),
+    )
+    assert not any("Inkwell" in label for label in offered)
+    # The rest of the family is untouched.
+    assert any("QUILL" in label for label in offered)
+
+
+# -- reachable without chords (BITS, 2026-09-28) ------------------------------
+
+
+class _Host:
+    """Just enough of an app shell: a registry, a keymap, and a binding lookup."""
+
+    def __init__(self, keymap: dict[str, str] | None = None) -> None:
+        from quill.core.commands import CommandRegistry
+
+        self.commands = CommandRegistry()
+        self.keymap = dict(keymap or {})
+
+    def _binding_for(self, command_id: str) -> str | None:
+        return self.keymap.get(command_id) or None
+
+
+def test_every_row_has_its_own_access_letter() -> None:
+    from quill.ui.quillville_menu import MENU_NAMES
+
+    letters = [name[name.index("&") + 1].lower() for name in MENU_NAMES.values()]
+    assert len(letters) == len(set(letters))
+    labels = _build(exclude="radio")
+    assert all("&" in label.split(chr(9))[0][len("Open ") :] for label in labels)
+
+
+def test_each_row_is_a_command_the_listener_can_rebind() -> None:
+    from quill.core.app_keymaps import SIBLING_APP_ACCELERATORS
+
+    frame = SimpleNamespace(Bind=lambda *a, **k: None)
+    host = _Host()
+    qv.build_quillville_menu(
+        _FakeWx(), frame, lambda _k: None, exclude="radio", retain=lambda _i: None, host=host
+    )
+    assert host.commands.get(qv.command_id("quill")) is not None
+    assert host.keymap[qv.command_id("quill")] == SIBLING_APP_ACCELERATORS[0]
+
+    rebound = _Host({qv.command_id("quill"): "Ctrl+Alt+1"})
+    menu = qv.build_quillville_menu(
+        _FakeWx(), frame, lambda _k: None, exclude="radio", retain=lambda _i: None, host=rebound
+    )
+    assert menu.labels[0] == "Open &QUILL	Ctrl+Alt+1"
+
+
+# -- QUILL Transcribe, released 2026-11-01 (Jeff, 2026-10-16) ------------------
+
+
+def test_transcribe_is_released_and_listed_last_on_the_fifth_key(monkeypatch) -> None:
+    """QUILL Transcribe joins every public QuillVille menu, last.
+
+    Last, so that no row anybody has learned changes key: in QUILL's public menu
+    Radio, Weather, Converter and Inkwell keep F7 to F10 and Transcribe takes
+    F11, the fifth and final launcher key (there is no sixth; see the comment
+    beside ``SIBLING_APP_ACCELERATORS``).
+    """
+    from quill.core.app_keymaps import SIBLING_APP_ACCELERATORS
+
+    monkeypatch.delenv("QUILL_DEV_BUILD", raising=False)
+    assert "transcribe" in qv.RELEASED_APPS
+    assert qv.QUILLVILLE_APP_ORDER[-1] == "transcribe"
+    labels = _build(exclude="quill")
+    assert [label.split(chr(9))[0].replace("&", "") for label in labels] == [
+        "Open Quill Radio",
+        "Open Quill Weather",
+        "Open Quill Converter",
+        "Open Quill Inkwell",
+        "Open QUILL Transcribe",
+    ]
+    assert [label.split(chr(9))[1] for label in labels] == list(SIBLING_APP_ACCELERATORS)
+    # QUILL Transcribe's own menu lists the five others and never itself.
+    own = " ".join(_build(exclude="transcribe"))
+    assert "Transcribe" not in own and own.count("Open ") == 5
+
+
+def test_the_tray_offers_transcribe_beside_the_first_three(monkeypatch) -> None:
+    """The tray keeps its short list and adds QUILL Transcribe, whose own home is
+    the tray; an unreleased app is never offered there either."""
+    import wx
+
+    from quill.ui import quillville_menu
+
+    monkeypatch.delenv("QUILL_DEV_BUILD", raising=False)
+    labels: list[str] = []
+    menu = SimpleNamespace(Append=lambda _id, label: labels.append(label))
+    monkeypatch.setattr(wx, "NewIdRef", lambda: object())
+    quillville_menu.append_sibling_items(
+        menu,
+        frame=SimpleNamespace(Bind=lambda *a, **k: None),
+        exclude="weather",
+        on_launch=lambda _k: None,
+        retain=lambda *_ids: None,
+    )
+    names = [label.split(chr(9))[0].replace("&", "") for label in labels]
+    assert names == ["Open QUILL", "Open Quill Radio", "Open QUILL Transcribe"]
+    monkeypatch.setattr(quillville_menu, "is_app_released", lambda key: key != "transcribe")
+    labels.clear()
+    quillville_menu.append_sibling_items(
+        menu,
+        frame=SimpleNamespace(Bind=lambda *a, **k: None),
+        exclude="weather",
+        on_launch=lambda _k: None,
+        retain=lambda *_ids: None,
+    )
+    assert not any("Transcribe" in label for label in labels)

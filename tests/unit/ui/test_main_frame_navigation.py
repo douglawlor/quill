@@ -14,6 +14,7 @@ from quill.core.features import FEATURE_DEFINITIONS, PROFILE_DEFINITIONS, featur
 from quill.core.locations import LocationRing
 from quill.core.search import SearchOptions
 from quill.core.spellcheck import Misspelling
+from quill.ui import main_frame_spell_voice
 from quill.ui.main_frame import MainFrame
 
 
@@ -167,7 +168,10 @@ class _Menu:
 
 def _build_frame(text: str, insertion_point: int = 0) -> MainFrame:
     frame = MainFrame.__new__(MainFrame)
-    frame.document = Document(path=Path("note.md"))
+    # text= keeps the stub document in sync with the stub editor, as the
+    # real app does on every EVT_TEXT -- the statusbar reads document.text
+    # for display since #1346 round 2 (zero buffer marshals).
+    frame.document = Document(path=Path("note.md"), text=text)
     frame.editor = _Editor(text=text, insertion_point=insertion_point)
     frame.statusbar = _StatusBar()
     frame.frame = _Frame()
@@ -219,6 +223,57 @@ def test_navigate_next_region_focuses_status_bar() -> None:
     frame.navigate_next_region()
     assert frame._active_region == "Status Bar"
     assert frame.statusbar.focused is True
+
+
+def test_navigating_to_the_status_bar_says_the_region_like_every_other_region(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The status bar used to be the exception, and for a reason that is gone.
+
+    Its cells announced themselves on focus -- label and value, the pair the
+    screen reader already reads off the button -- so the generic region line
+    was suppressed to stop "Status Bar" being said twice. The cells stopped
+    announcing on 2026-09-17 (GATE-13, bad.md H3), so the exception went with
+    them: one line, spoken once, naming the only thing the reader cannot know.
+    """
+    frame = _build_frame("hello")
+    frame.navigate_next_region()
+
+    assert frame._active_region == "Status Bar"
+    assert frame._status_message == "Focused Status Bar region"
+
+
+def test_a_cell_focus_says_nothing_at_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The button carries its own name and value; saying them again is noise.
+
+    Every arrow press along the bar was spoken twice before this. Over-
+    announcing is the failure nobody files -- it reads as "this app is chatty"
+    rather than as a bug -- which is exactly why GATE-13 exists.
+    """
+    import quill.ui.main_frame_statusbar as statusbar_module
+
+    spoken: list[str] = []
+    monkeypatch.setattr(statusbar_module, "announce", lambda message: spoken.append(message))
+
+    frame = _build_frame("hello")
+    frame._statusbar_cells = [
+        statusbar_module._StatusBarCell(item="message", button=object()),
+        statusbar_module._StatusBarCell(item="line_column", button=object()),
+    ]
+
+    class _Event:
+        def __init__(self) -> None:
+            self.skipped = False
+
+        def Skip(self) -> None:
+            self.skipped = True
+
+    event = _Event()
+    frame._on_statusbar_cell_focus(event, "line_column")
+    assert spoken == []
+    assert event.skipped is True
+    # It still tracks which cell has focus, which is what the arrow keys need.
+    assert frame._active_statusbar_cell_index == 1
 
 
 def _attach_split_preview(frame: MainFrame) -> object:
@@ -295,18 +350,22 @@ def test_document_tabs_region_absent_when_tab_control_hidden() -> None:
 def test_misspellings_behind_message_counts_the_other_direction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Patched in quill.core.spellcheck, which is where the sentence now lives:
+    # it moved out of main_frame_spellcheck.py on 2026-09-16 so QUILL Lite could
+    # say it too (bad.md S9), and a test that patches the module that merely
+    # calls it patches nothing.
+    from quill.core import spellcheck as mf
     from quill.core.spellcheck import Misspelling
-    from quill.ui import main_frame as mf
 
     # The unit env has no real spell backend, so drive the message logic with a
     # single known misspelling at [0, 5) (a stand-in for "teest good").
     miss = Misspelling(word="teest", start=0, end=5)
-    monkeypatch.setattr(mf, "list_misspellings", lambda _t, _d: [miss])
+    monkeypatch.setattr(mf, "list_misspellings", lambda _t, _d, **_k: [miss])
     monkeypatch.setattr(
-        mf, "find_next_misspelling", lambda _t, c, _d: miss if c <= miss.start else None
+        mf, "next_misspelling", lambda _t, c, _d, **_k: miss if c <= miss.start else None
     )
     monkeypatch.setattr(
-        mf, "find_previous_misspelling", lambda _t, c, _d: miss if c > miss.end else None
+        mf, "previous_misspelling", lambda _t, c, _d, **_k: miss if c > miss.end else None
     )
     frame = _build_frame("teest good")
     # Caret past the only misspelling: nothing ahead, one behind.
@@ -320,11 +379,11 @@ def test_misspellings_behind_message_counts_the_other_direction(
 def test_misspellings_behind_message_reports_none_when_clean(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from quill.ui import main_frame as mf
+    from quill.core import spellcheck as mf
 
-    monkeypatch.setattr(mf, "list_misspellings", lambda _t, _d: [])
-    monkeypatch.setattr(mf, "find_next_misspelling", lambda _t, _c, _d: None)
-    monkeypatch.setattr(mf, "find_previous_misspelling", lambda _t, _c, _d: None)
+    monkeypatch.setattr(mf, "list_misspellings", lambda _t, _d, **_k: [])
+    monkeypatch.setattr(mf, "next_misspelling", lambda _t, _c, _d, **_k: None)
+    monkeypatch.setattr(mf, "previous_misspelling", lambda _t, _c, _d, **_k: None)
     frame = _build_frame("good good")
     assert (
         frame._misspellings_behind_message("good good", 9, {"good"}, ahead=True)
@@ -361,7 +420,34 @@ def test_navigate_next_heading_announces_level_and_ordinal() -> None:
 
     frame.navigate_next_heading()
 
-    assert statuses == ["Moved to next heading, H2, 2 of 3: Child at line 3, column 1"]
+    # "Moved to next heading" went, and "H2" became "Heading 2" (bad.md R15).
+    # You pressed the next-heading key: that you moved to the next heading is
+    # the one thing you already knew, which is what GATE-13 is about -- and it
+    # is what every screen reader says navigating headings on a web page. The
+    # "2 of 3" stays, because it is the only part that says where you are in
+    # the document rather than what is under the caret. QUILL Lite says exactly
+    # this sentence now.
+    assert statuses == ["Heading 2, 2 of 3: Child at line 3, column 1"]
+
+
+def test_heading_navigation_speaks_once_not_again_on_key_release() -> None:
+    """The caret cue must not repeat a heading the command already named."""
+    text = "# Top\nIntro\n## Child\nBody\n"
+    frame = _build_frame(text, insertion_point=text.index("Intro"))
+    spoken: list[str] = []
+    frame._quill_feedback = lambda message, **_kw: spoken.append(message)  # type: ignore[method-assign]
+    frame._announce = lambda message, **_kw: spoken.append(message)  # type: ignore[method-assign]
+    frame._document_text_for_display = lambda: text  # type: ignore[method-assign]
+    frame._current_editor_mode = lambda: "markup"  # type: ignore[method-assign]
+    frame._effective_markup_kind = lambda: "markdown"  # type: ignore[method-assign]
+    frame.settings.browse_mode_move_detail = "position"
+    frame.reset_structure_announcer()
+    frame.announce_structure_at_caret()  # latch where the caret starts
+
+    frame.navigate_next_heading()
+    frame.announce_structure_at_caret()  # the hook that fires on key release
+
+    assert len(spoken) == 1, spoken
 
 
 def test_navigate_previous_heading_announces_level_and_ordinal() -> None:
@@ -373,7 +459,7 @@ def test_navigate_previous_heading_announces_level_and_ordinal() -> None:
 
     frame.navigate_previous_heading()
 
-    assert statuses == ["Moved to previous heading, H3, 3 of 3: Grandchild at line 5, column 1"]
+    assert statuses == ["Heading 3, 3 of 3: Grandchild at line 5, column 1"]
 
 
 def test_select_line_announces_scope_and_word_count() -> None:
@@ -384,7 +470,11 @@ def test_select_line_announces_scope_and_word_count() -> None:
 
     frame.select_line()
 
-    assert statuses == ["Selected line, 3 words."]
+    # No trailing full stop: the sentence comes from
+    # quill.core.selection.describe_selection now, which is QUILL Lite's shape
+    # as well, and QUILL Lite's announcement vocabulary carries none (bad.md
+    # L14). One shape means one punctuation too.
+    assert statuses == ["Selected line, 3 words"]
 
 
 def test_select_paragraph_announces_scope_and_word_count() -> None:
@@ -395,7 +485,71 @@ def test_select_paragraph_announces_scope_and_word_count() -> None:
 
     frame.select_paragraph()
 
-    assert statuses == ["Selected paragraph, 3 words."]
+    assert statuses == ["Selected paragraph, 3 words"]
+
+
+def test_an_f8_span_says_which_lines_it_reached() -> None:
+    """The one selection that carries a line range, and the only one that needs
+    it: an F8 span is arbitrary, so its reach cannot be worked out from a scope
+    name the way "Selected paragraph" can (bad.md L14, 5.3)."""
+    frame = _build_frame("one two three\nsecond line\n", insertion_point=0)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+    frame._selection_anchor = 0
+    frame.editor.SetInsertionPoint(18)
+
+    frame.complete_selection()
+
+    assert statuses == ["Selected 4 words, lines 1 to 2"]
+
+
+def test_completing_an_empty_f8_span_says_nothing_was_selected() -> None:
+    """It used to announce "Selected 0 characters, line 1 column 1 to line 1
+    column 1" -- a number, a place, and the same place again, to say the one
+    thing that matters: nothing happened. QUILL Lite's wording is the one a
+    listener can act on (bad.md L11)."""
+    frame = _build_frame("one two three\n", insertion_point=4)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+    frame._selection_anchor = 4
+
+    frame.complete_selection()
+
+    assert statuses == ["Selection cancelled, nothing selected"]
+
+
+def test_a_structural_select_on_a_blank_line_says_which_thing_is_missing() -> None:
+    """ "Selected line, 0 words" reports that something happened when nothing
+    did (bad.md L11)."""
+    frame = _build_frame("\n\nafter\n", insertion_point=0)
+    statuses: list[str] = []
+    frame._set_status = statuses.append  # type: ignore[method-assign]
+
+    frame.select_paragraph()
+
+    assert statuses == ["No paragraph at the cursor"]
+
+
+def test_a_structural_select_is_remembered_for_reselect() -> None:
+    """Only F8 ever set _last_selection, so the four commands people actually
+    reach for were the four Ctrl+Shift+F8 could not put back (bad.md L5)."""
+    frame = _build_frame("one two three\nsecond line\n", insertion_point=0)
+    frame._set_status = lambda *_a, **_k: None  # type: ignore[method-assign]
+
+    frame.select_line()
+
+    assert frame._last_selection == (0, 13)
+
+
+def test_clearing_a_selection_is_remembered_too() -> None:
+    """Clearing one is exactly the action people want undone (bad.md L5)."""
+    frame = _build_frame("one two three\n", insertion_point=0)
+    frame._set_status = lambda *_a, **_k: None  # type: ignore[method-assign]
+    frame.editor.SetSelection(0, 7)
+
+    frame.unselect_all()
+
+    assert frame._last_selection == (0, 7)
 
 
 def test_select_line_announces_singular_word() -> None:
@@ -406,7 +560,7 @@ def test_select_line_announces_singular_word() -> None:
 
     frame.select_line()
 
-    assert statuses == ["Selected line, 1 word."]
+    assert statuses == ["Selected line, 1 word"]
 
 
 def test_expand_selection_grows_and_announces_scope() -> None:
@@ -436,7 +590,7 @@ def test_shrink_selection_restores_previous_span() -> None:
     assert frame.editor.GetSelection() == expanded
 
 
-def test_shrink_selection_with_empty_stack_reports() -> None:
+def test_shrink_selection_with_nothing_smaller_says_so() -> None:
     text = "alpha beta\n"
     frame = _build_frame(text, insertion_point=0)
     statuses: list[str] = []
@@ -444,7 +598,37 @@ def test_shrink_selection_with_empty_stack_reports() -> None:
 
     frame.shrink_selection()
 
-    assert statuses == ["No selection to shrink"]
+    assert statuses == ["Nothing smaller to select"]
+
+
+def test_shrink_never_jumps_to_a_span_you_have_left() -> None:
+    """The bug the expansion stack was (bad.md L3), reproduced live 2026-09-17.
+
+    Expand around one paragraph, then select something else entirely. The stack
+    still held the first span and Shrink popped it, so the command took you
+    somewhere you had not been for several keystrokes -- and the stack could
+    hold an empty pair too, so Shrink would collapse the selection and announce
+    that it had shrunk something.
+
+    It computes from the text now, which is what QUILL Lite has always done and
+    is strictly better rather than merely simpler: a history can only answer
+    for selections you reached by *expanding*, and the text can answer for any
+    selection at all.
+    """
+    text = "alpha beta gamma\n\nsecond paragraph here\n"
+    frame = _build_frame(text, insertion_point=0)
+    frame._set_status = lambda *_a, **_k: None  # type: ignore[method-assign]
+
+    frame.editor.SetSelection(0, 16)
+    frame.expand_selection()
+    # ...and now somewhere else entirely.
+    frame.editor.SetSelection(18, 39)
+
+    frame.shrink_selection()
+
+    start, end = frame.editor.GetSelection()
+    assert (start, end) != (0, 16), "Shrink jumped back to the span you left"
+    assert 18 <= start < end <= 39, f"shrank outside the current selection: {(start, end)}"
 
 
 def test_persistent_undo_steps_across_history() -> None:
@@ -529,6 +713,29 @@ def test_statusbar_hides_cells_for_disabled_features() -> None:
     # Cells with no feature mapping (or always-on features) remain.
     assert "message" in items
     assert "line_column" in items
+
+
+def test_statusbar_message_hides_when_it_duplicates_another_visible_cell() -> None:
+    """The generic Message cell has nothing left to say once another visible
+    cell is already showing the exact same text -- saying it twice through two
+    different cells is confusing noise, not extra information."""
+    frame = _build_frame("hello", insertion_point=0)
+    line_column_text = frame._statusbar_text_for_item("line_column")
+    frame._status_message = line_column_text
+
+    items = frame._statusbar_items()
+
+    assert "message" not in items
+    assert "line_column" in items
+
+
+def test_statusbar_message_stays_when_it_says_something_new() -> None:
+    frame = _build_frame("hello", insertion_point=0)
+    frame._status_message = "Saved"
+
+    items = frame._statusbar_items()
+
+    assert "message" in items
 
 
 def test_statusbar_hides_modified_message_when_title_shows_dirty_state() -> None:
@@ -763,6 +970,30 @@ def test_enter_continues_markdown_list_item() -> None:
     assert frame._status_message == "Continued list item"
 
 
+def test_enter_on_a_list_item_leaves_a_guarded_document_alone() -> None:
+    """The Read-Only Guard (2026-10-16): Enter's list continuation is an edit."""
+    frame = _build_frame("- item", insertion_point=6)
+    frame.document.source_metadata["read_only_guard"] = True
+    frame._wx = type(
+        "WX",
+        (),
+        {
+            "WXK_INSERT": 45,
+            "WXK_F8": 119,
+            "WXK_RETURN": 13,
+            "WXK_NUMPAD_ENTER": 370,
+            "WXK_TAB": 9,
+            "WXK_ESCAPE": 27,
+            "WXK_SPACE": 32,
+        },
+    )()
+    event = _KeyEvent(13)
+
+    frame._on_editor_key_down(event)
+
+    assert frame.editor.GetValue() == "- item"
+
+
 def test_enter_on_empty_list_item_exits_list() -> None:
     frame = _build_frame("- ", insertion_point=2)
     frame._wx = type(
@@ -956,8 +1187,8 @@ def test_open_misspelling_list_jumps_to_selected_occurrence(
     frame._spell_dictionary = lambda: {"hello", "word"}  # type: ignore[method-assign]
     frame._show_tree_navigator = lambda **_kwargs: item  # type: ignore[method-assign]
     monkeypatch.setattr(
-        "quill.ui.main_frame.list_misspellings",
-        lambda _text, _dictionary: [item],
+        "quill.ui.main_frame_spellcheck.list_misspellings",
+        lambda _text, _dictionary, **_k: [item],
     )
 
     frame.open_misspelling_list()
@@ -1037,6 +1268,136 @@ def test_go_to_bookmark_without_bookmarks_announces() -> None:
     frame.go_to_bookmark()
 
     assert frame._status_message == "No bookmarks available. Bookmarks are named jump points."
+
+
+def test_set_temp_bookmark_then_go_to_it_round_trips() -> None:
+    frame = _build_frame("alpha\nbeta\ngamma\n", insertion_point=12)
+    frame._temp_bookmark = None
+    frame._active_tab = lambda: frame._document_tabs[frame._active_tab_index]  # type: ignore[method-assign]
+
+    frame.set_temp_bookmark()
+    assert frame._status_message == "Temporary bookmark set"
+    assert frame._temp_bookmark == 12
+
+    frame.editor.SetInsertionPoint(0)
+    frame.go_to_temp_bookmark()
+
+    assert frame.editor.GetInsertionPoint() == 12
+    assert frame._status_message == "Jumped to temporary bookmark"
+
+
+def test_go_to_temp_bookmark_when_unset_announces() -> None:
+    frame = _build_frame("alpha\n", insertion_point=0)
+    frame._temp_bookmark = None
+
+    frame.go_to_temp_bookmark()
+
+    assert frame._status_message == "No temporary bookmark set"
+
+
+def test_temp_bookmark_commands_are_registered_with_chords_and_a_feature() -> None:
+    """#1317: temp bookmarks lost their command ids, chords, and menu items.
+
+    The historical Ctrl+Shift+K / Alt+Shift+K chords were reassigned to Unquote
+    Lines and Keep Unique Lines, leaving both commands unreachable. Guard the
+    re-registration surface so it cannot silently regress again.
+    """
+    from quill.core.feature_command_map import COMMAND_FEATURE_MAP
+    from quill.core.keymap import DEFAULT_KEYMAP
+    from quill.core.keymap_packs import _PACK_LABELS
+
+    # Ctrl+J went to Justify on 2026-09-16 -- Word's key, WordPad's and
+    # QUILL Lite's -- and the temporary bookmark took the chord Justify
+    # vacated. Go To keeps Ctrl+Shift+J, so the pair stays a pair.
+    assert DEFAULT_KEYMAP["navigate.set_temp_bookmark"] == "Ctrl+Alt+J"
+    assert DEFAULT_KEYMAP["navigate.go_to_temp_bookmark"] == "Ctrl+Shift+J"
+    assert _PACK_LABELS["navigate.set_temp_bookmark"] == "Set Temporary Bookmark"
+    assert _PACK_LABELS["navigate.go_to_temp_bookmark"] == "Go to Temporary Bookmark"
+    assert COMMAND_FEATURE_MAP["navigate.set_temp_bookmark"] == "core.navigate"
+    assert COMMAND_FEATURE_MAP["navigate.go_to_temp_bookmark"] == "core.navigate"
+
+
+def test_temp_bookmark_chords_do_not_collide_with_another_default() -> None:
+    from quill.core.keymap import DEFAULT_KEYMAP
+
+    owners = [cmd for cmd, chord in DEFAULT_KEYMAP.items() if chord == "Ctrl+Alt+J"]
+    owners_ctrl_shift_j = [cmd for cmd, chord in DEFAULT_KEYMAP.items() if chord == "Ctrl+Shift+J"]
+    assert owners == ["navigate.set_temp_bookmark"]
+    assert owners_ctrl_shift_j == ["navigate.go_to_temp_bookmark"]
+    # And the chord it gave up is Justify's, alone.
+    assert [cmd for cmd, chord in DEFAULT_KEYMAP.items() if chord == "Ctrl+J"] == ["format.justify"]
+
+
+def test_toggle_fold_folds_then_unfolds_heading_section() -> None:
+    frame = _build_frame("# Title\nBody line one\nBody line two\n", insertion_point=0)
+    frame._folded_regions = set()
+
+    frame.toggle_fold()
+    assert frame._status_message == 'Folded: 3 lines under "Title"'
+    assert len(frame._folded_regions) == 1
+
+    frame.toggle_fold()
+    assert frame._status_message == 'Unfolded: "Title"'
+    assert frame._folded_regions == set()
+
+
+def test_toggle_fold_with_no_region_announces() -> None:
+    frame = _build_frame("plain text, no headings\n", insertion_point=0)
+    frame._folded_regions = set()
+
+    frame.toggle_fold()
+
+    assert frame._status_message == "No foldable region at the cursor"
+
+
+def test_next_fold_jumps_to_next_heading_and_announces_state() -> None:
+    text = "# One\nAAA\n# Two\nBBB\n"
+    frame = _build_frame(text, insertion_point=0)
+    frame._folded_regions = set()
+
+    frame.next_fold()
+
+    assert frame.editor.GetInsertionPoint() == text.index("# Two")
+    assert frame._status_message == '"Two", expanded, 2 lines'
+
+
+def test_previous_fold_jumps_back_and_announces_folded_state() -> None:
+    text = "# One\nAAA\n# Two\nBBB\n"
+    frame = _build_frame(text, insertion_point=len(text))
+    frame._folded_regions = {(0, text.index("# Two"))}
+
+    frame.previous_fold()
+
+    assert frame.editor.GetInsertionPoint() == text.index("# Two")
+    assert frame._status_message == '"Two", expanded, 2 lines'
+
+    frame.editor.SetInsertionPoint(text.index("# Two"))
+    frame.previous_fold()
+
+    assert frame.editor.GetInsertionPoint() == 0
+    assert frame._status_message == '"One", folded, 2 lines'
+
+
+def test_list_folds_jumps_to_selected_region() -> None:
+    text = "# One\nAAA\n# Two\nBBB\n"
+    frame = _build_frame(text, insertion_point=0)
+    frame._folded_regions = set()
+    two_start = text.index("# Two")
+    frame._show_tree_navigator = lambda **_kwargs: (two_start, len(text))  # type: ignore[method-assign]
+
+    frame.list_folds()
+
+    assert frame.editor.GetInsertionPoint() == two_start
+    assert frame._status_message == '"Two", expanded, 2 lines'
+
+
+def test_list_folds_with_no_regions_announces() -> None:
+    frame = _build_frame("plain text\n", insertion_point=0)
+    frame._folded_regions = set()
+
+    frame.list_folds()
+
+    assert frame._status_message == "No foldable regions in this document"
 
 
 def test_selection_action_specs_adapt_to_scope() -> None:
@@ -1157,7 +1518,13 @@ def test_find_next_does_not_wrap_when_setting_disabled() -> None:
 
     frame.find_next()
 
-    assert frame._status_message == "No matches found from the current position"
+    # Reworded 2026-09-10: the old sentence named neither the end it stopped at
+    # nor the fix. Wrapping-off is not "there is no such text" -- the answer is
+    # to go to the other end and press again -- and a listener who is told the
+    # wrong one of those stops looking for a word that is in the document.
+    assert frame._status_message == (
+        "No more matches. Reached the end of the document, and wrapping is off."
+    )
 
 
 def test_find_next_wraps_when_setting_enabled() -> None:
@@ -1297,7 +1664,7 @@ def test_profile_choice_label_includes_description() -> None:
 def test_print_document_cancel_reports_cancelled() -> None:
     frame = _build_frame("alpha", insertion_point=0)
     frame._print_data = object()
-    frame._build_text_printout = lambda *_args: type(  # type: ignore[method-assign]
+    frame._build_text_printout = lambda *_args, **_kwargs: type(  # type: ignore[method-assign]
         "_Printout",
         (),
         {"Destroy": lambda self: None},
@@ -1333,22 +1700,37 @@ def test_print_document_cancel_reports_cancelled() -> None:
 
 
 def test_spellcheck_hint_bell_debounces_same_word(monkeypatch: pytest.MonkeyPatch) -> None:
-    frame = _build_frame("alpha wrng", insertion_point=6)
+    # A *finished* word: the alert now asks "what word did you just complete?"
+    # rather than "is a word starting exactly at the caret misspelled?", which
+    # is a question typing left to right never produces -- and is why this
+    # feature had never once fired outside a test.
+    frame = _build_frame("alpha wrng ", insertion_point=11)
     bells: list[str] = []
     frame._wx = type("WX", (), {"Bell": staticmethod(lambda: bells.append("bell"))})()
     frame._last_live_misspelling_feedback = None
     frame._last_live_misspelling_feedback_at = 0.0
     frame._spell_dictionary = lambda: {"alpha"}  # type: ignore[method-assign]
-    monkeypatch.setattr(
-        main_frame_module,
-        "find_next_misspelling",
-        lambda *_args, **_kwargs: Misspelling("wrng", 6, 10),
-    )
-    ticks = iter([10.0, 10.1, 11.2])
-    monkeypatch.setattr(main_frame_module.time, "monotonic", lambda: next(ticks))
+    # A clock that is *set*, not consumed. It used to be a three-item iterator,
+    # which silently assumed the hint reads the clock exactly once per call --
+    # so the moment anything else on the path took a reading (the status
+    # message stamping itself for expiry, 2026-09-22) the test died of
+    # StopIteration rather than of the behaviour it is about.
+    now = [10.0]
+    # The hint moved to main_frame_spell_voice when "how a misspelling is
+    # voiced" became one subject in one module.
+    monkeypatch.setattr(main_frame_spell_voice.time, "monotonic", lambda: now[0])
+    # The alert prefers the sound pack's earcon and rings the bell only when the
+    # sound system is off. The sound manager is process-global, so a test that
+    # ran earlier and left it active with a pack loaded turned every bell here
+    # into an earcon and this test failed by order alone. Pin it off.
+    from quill.ui import sound_manager
+
+    monkeypatch.setattr(sound_manager, "is_active", lambda: False)
 
     frame._announce_spellcheck_hint()
+    now[0] = 10.1
     frame._announce_spellcheck_hint()
+    now[0] = 11.2
     frame._announce_spellcheck_hint()
 
     assert bells == ["bell", "bell"]
@@ -1552,18 +1934,22 @@ def test_prompt_file_search_uses_modal_ids() -> None:
         def AddGrowableCol(self, _col: int, _proportion: int) -> None:
             return None
 
+    class _Helped:
+        def SetHelpText(self, _text: str) -> None:
+            return None
+
     class _StaticText:
         def __init__(self, _parent: object, label: str) -> None:
             self.label = label
 
-    class _DirPickerCtrl:
+    class _DirPickerCtrl(_Helped):
         def __init__(self, _parent: object, path: str) -> None:
             self.path = path
 
         def GetPath(self) -> str:
             return self.path
 
-    class _TextCtrl:
+    class _TextCtrl(_Helped):
         def __init__(self, _parent: object, value: str = "", style: int = 0) -> None:
             self.value = value
             self.style = style
@@ -1577,7 +1963,7 @@ def test_prompt_file_search_uses_modal_ids() -> None:
         def Bind(self, _event: object, _handler: object) -> None:
             return None
 
-    class _Choice:
+    class _Choice(_Helped):
         def __init__(self, _parent: object, choices: list[str]) -> None:
             self.choices = choices
             self.selection = 0
@@ -1591,7 +1977,7 @@ def test_prompt_file_search_uses_modal_ids() -> None:
         def GetStringSelection(self) -> str:
             return self.choices[self.selection]
 
-    class _CheckBox:
+    class _CheckBox(_Helped):
         def __init__(self, _parent: object, label: str) -> None:
             self.label = label
             self.value = False
@@ -1647,7 +2033,7 @@ def test_prompt_file_search_uses_modal_ids() -> None:
     assert result is None
 
 
-def test_show_notifications_dialog_uses_close_for_affirmative_and_escape() -> None:
+def test_show_notifications_dialog_opens_selected_target_explicitly() -> None:
     frame = MainFrame.__new__(MainFrame)
 
     class _Dialog:
@@ -1656,6 +2042,7 @@ def test_show_notifications_dialog_uses_close_for_affirmative_and_escape() -> No
             self.size = size
             self.affirmative_id: int | None = None
             self.escape_id: int | None = None
+            self.modal_result: int | None = None
 
         def SetAffirmativeId(self, value: int) -> None:
             self.affirmative_id = value
@@ -1669,8 +2056,8 @@ def test_show_notifications_dialog_uses_close_for_affirmative_and_escape() -> No
         def Destroy(self) -> None:
             return
 
-        def EndModal(self, _result: int) -> None:
-            return
+        def EndModal(self, result: int) -> None:
+            self.modal_result = result
 
     class _BoxSizer:
         def __init__(self, _orientation: int) -> None:
@@ -1706,17 +2093,23 @@ def test_show_notifications_dialog_uses_close_for_affirmative_and_escape() -> No
             self.handlers[event_type] = handler
 
     class _Button:
+        made: list[_Button] = []
+
         def __init__(self, _parent: object, id: int | None = None, label: str = "") -> None:
             self.id = id
             self.label = label
             self.enabled = True
             self.handlers: dict[int, object] = {}
+            type(self).made.append(self)
 
         def Enable(self, enabled: bool) -> None:
             self.enabled = enabled
 
         def Bind(self, event_type: int, handler: object) -> None:
             self.handlers[event_type] = handler
+
+        def SetHelpText(self, _text: str) -> None:
+            return
 
     wx = type(
         "WX",
@@ -1734,9 +2127,13 @@ def test_show_notifications_dialog_uses_close_for_affirmative_and_escape() -> No
             "RIGHT": 16,
             "ID_CLEAR": 1001,
             "ID_CLOSE": 1000,
+            "ID_OK": 1002,
             "NOT_FOUND": -1,
             "EVT_LISTBOX": 200,
+            "EVT_LISTBOX_DCLICK": 202,
+            "EVT_KEY_DOWN": 203,
             "EVT_BUTTON": 201,
+            "CallAfter": lambda _wx, callback, *args: callback(*args),
         },
     )()
     frame._wx = wx
@@ -1746,22 +2143,30 @@ def test_show_notifications_dialog_uses_close_for_affirmative_and_escape() -> No
             timestamp="2026-01-01T00:00:00Z",
             category="info",
             message="Done",
+            target="dictation-transcript:0123456789abcdef0123456789abcdef",
         )
     ]
     frame._copy_to_clipboard = lambda _text: True
     frame._set_status = lambda _text: None
+    opened: list[str] = []
+    frame.open_notification_target = opened.append  # type: ignore[method-assign]
 
     def _show_modal(dialog: object, label: str) -> int:
         assert label == "Notifications"
-        assert dialog.affirmative_id == wx.ID_CLOSE  # type: ignore[attr-defined]
+        assert dialog.affirmative_id == wx.ID_OK  # type: ignore[attr-defined]
         assert dialog.escape_id == wx.ID_CLOSE  # type: ignore[attr-defined]
-        return wx.ID_CLOSE
+        open_button = next(button for button in _Button.made if button.label == "&Open")
+        open_button.handlers[wx.EVT_BUTTON](None)  # type: ignore[index,operator]
+        assert dialog.modal_result == wx.ID_OK  # type: ignore[attr-defined]
+        return wx.ID_OK
 
     frame._show_modal_dialog = _show_modal  # type: ignore[method-assign]
+    _Button.made.clear()
 
     result = frame._show_notifications_dialog()
 
-    assert result == wx.ID_CLOSE
+    assert result == wx.ID_OK
+    assert opened == ["dictation-transcript:0123456789abcdef0123456789abcdef"]
 
 
 def test_find_previous_sets_anchor_and_keeps_free_movement_when_mode_is_on() -> None:
@@ -1904,11 +2309,16 @@ def test_prompt_untrusted_location_uses_single_checkbox_dialog() -> None:
     assert captured["checkbox"] == "Trust this folder for future opens"
 
 
-def test_prompt_unsaved_changes_action_uses_native_yes_no_cancel() -> None:
-    # #23: the dialog must use the platform's native Yes/No/Cancel buttons
-    # without overriding labels, so the built-in Y/N/Esc keyboard
-    # accelerators fire on every platform (overriding labels with
-    # SetYesNoCancelLabels disables them on at least macOS Cocoa).
+def test_prompt_unsaved_changes_action_asks_in_words_where_it_can(monkeypatch) -> None:
+    """Word's words where the platform keeps its keyboard, native where it does not.
+
+    #23 was written as a blanket rule -- never override the labels, because on
+    macOS Cocoa the override also drops the built-in Y/N/Esc accelerators, and
+    clearer words are not worth the keyboard. bad.md F12 narrowed it to the
+    platform that actually has the defect: everywhere else, "Yes" and "No" make
+    somebody work out which of two irreversible answers "No" is, so the buttons
+    say Save, Don't Save and Cancel like every other editor.
+    """
     frame = _build_frame("hello")
     captured: dict[str, object] = {}
     dialogs: list[_MessageDialog] = []
@@ -1949,18 +2359,27 @@ def test_prompt_unsaved_changes_action_uses_native_yes_no_cancel() -> None:
         lambda _dialog, _label, **_kwargs: wx.ID_NO  # type: ignore[method-assign]
     )
 
+    from quill.core import close_prompt
+
+    monkeypatch.setattr(close_prompt.sys, "platform", "win32")
     result = frame._prompt_unsaved_changes_action(
         "Unsaved changes",
         "You have unsaved changes. Save before closing?",
     )
 
     assert result == wx.ID_NO
-    # Native labels = native accelerators; we MUST NOT call
-    # SetYesNoCancelLabels, because that override is what was disabling Y/N.
-    assert dialogs[0].set_label_calls == []
+    assert dialogs[0].set_label_calls == [("Save", "Don't Save", "Cancel")]
     # Style must still request YES_NO + CANCEL + ICON_WARNING so the
     # platform synthesises the three buttons (and their accelerators).
     assert captured["style"] == wx.YES_NO | wx.CANCEL | wx.ICON_WARNING
+
+    # macOS keeps the native pair: there, the override is what disables Y/N.
+    monkeypatch.setattr(close_prompt.sys, "platform", "darwin")
+    frame._prompt_unsaved_changes_action(
+        "Unsaved changes",
+        "You have unsaved changes. Save before closing?",
+    )
+    assert dialogs[1].set_label_calls == []
 
 
 def test_prompt_table_shape_reprompts_invalid_values() -> None:
@@ -2118,3 +2537,393 @@ def test_quick_nav_panel_context_no_search_query_has_no_hits() -> None:
 
 def test_quick_nav_command_mapped_to_navigation_feature() -> None:
     assert feature_for_command("navigate.quick_nav") == "core.navigate"
+
+
+def test_page_cell_activates_go_to_page() -> None:
+    frame = _build_frame("hello", insertion_point=0)
+    called: list[bool] = []
+    frame.go_to_page = lambda: called.append(True)  # type: ignore[method-assign]
+    frame._activate_statusbar_cell("page")
+    assert called == [True]
+
+
+def test_page_cell_suppressed_when_braille_active() -> None:
+    frame = _build_frame("hello", insertion_point=0)
+    frame.document = Document(
+        text="hello\fworld",
+        source_metadata={
+            "source_kind": "brf",
+            "brf_suffix": "brf",
+            "brf_cell_width": 40,
+            "brf_line_height": 25,
+            "brf_non_ascii_offsets": [],
+            "brf_had_bom": False,
+            "brf_profile": "ueb_english",
+        },
+    )
+    frame.editor.GetCurrentPos = lambda: 0  # type: ignore[attr-defined]
+    frame._get_action_suggestion = lambda: None  # type: ignore[method-assign]
+    frame._ai_engine_should_autoshow = lambda: False  # type: ignore[method-assign]
+
+    items = frame._statusbar_items()
+
+    assert "braille" in items
+    assert "page" not in items
+
+
+def _go_to_page_wx(typed_value: str) -> object:
+    class _TextEntryDialog:
+        def __init__(self, _parent: object, message: str, _title: str, value: str) -> None:
+            self.message = message
+
+        def __enter__(self) -> _TextEntryDialog:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def GetValue(self) -> str:
+            return typed_value
+
+    # _TextEntryDialog is assigned as the class itself (not a lambda/function):
+    # a plain function stored in a dynamically-created class's dict is bound
+    # as a method when read off an instance (implicit self), which would
+    # shift every positional argument by one. A class reference isn't a
+    # descriptor, so it stays a plain callable.
+    return type(
+        "WX",
+        (),
+        {
+            "TextEntryDialog": _TextEntryDialog,
+            "ICON_ERROR": 8,
+            "OK": 16,
+            "ID_OK": 1,
+        },
+    )()
+
+
+def test_go_to_page_offers_real_pages_where_the_file_has_them() -> None:
+    """Form feeds are real page boundaries, so the rows are real page numbers.
+
+    The Go To Page *prompt* is gone: Page is now a row of the one Go To window
+    (bad.md 5.4, P1.6), so what is worth testing is the list of places it
+    offers rather than a dialog that no longer exists.
+    """
+    text = "page onepage twopage three"
+    frame = _build_frame(text, insertion_point=0)
+    targets = frame._go_to_page_targets(text)
+    assert [target.label for target in targets] == ["1", "2", "3"]
+    assert targets[1].position == text.index("page two")
+
+
+def test_an_estimated_page_says_so_in_its_own_row() -> None:
+    """The tilde and the word "estimated" travel together, the same promise the
+    status bar's Page cell makes: a page number without them is a real one."""
+    text = " ".join(["word"] * 900)  # 3 pages at 300 words a page
+    frame = _build_frame(text, insertion_point=0)
+    labels = [target.label for target in frame._go_to_page_targets(text)]
+    assert labels
+    assert all(label.startswith("~") and "(estimated)" in label for label in labels)
+
+
+def test_a_short_document_offers_the_one_page_it_has() -> None:
+    """Out of range is now unreachable rather than an error message: you pick
+    from the pages that exist."""
+    text = " ".join(["word"] * 10)
+    frame = _build_frame(text, insertion_point=0)
+    assert len(frame._go_to_page_targets(text)) == 1
+
+
+def test_go_to_page_opens_the_one_go_to_window() -> None:
+    """The old command keeps its id, for a rebinding or a palette search, and
+    lands in the same place as Ctrl+G."""
+    frame = _build_frame("one\ntwo", insertion_point=0)
+    opened: list[bool] = []
+    frame.go_to = lambda: opened.append(True)  # type: ignore[method-assign]
+    frame.go_to_page()
+    frame.go_to_line()
+    assert opened == [True, True]
+
+
+def test_focus_is_in_document_surface_before_editor_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression for #951 (macOS): a global EVT_CHAR_HOOK can fire before the
+    # first document tab creates self.editor/self.notebook (or after the last
+    # tab closes and they're torn down); _focus_is_in_document_surface used to
+    # read self.editor/self.notebook directly, unlike the already-defensive
+    # getattr(self, "_documents_panel", None) two lines above it, so an early
+    # or late keystroke raised AttributeError instead of just reporting "not
+    # in the document surface."
+    import wx as real_wx
+
+    class _FocusedWidget:
+        def GetParent(self) -> object | None:
+            return None
+
+    monkeypatch.setattr(real_wx.Window, "FindFocus", staticmethod(lambda: _FocusedWidget()))
+
+    frame = MainFrame.__new__(MainFrame)
+    frame._wx = real_wx
+
+    assert frame._focus_is_in_document_surface() is False
+
+
+class _CharHookEvent:
+    def __init__(self, key_code: int, *, ctrl: bool, alt: bool, shift: bool) -> None:
+        self._key_code = key_code
+        self._ctrl = ctrl
+        self._alt = alt
+        self._shift = shift
+        self.skipped = False
+
+    def GetKeyCode(self) -> int:
+        return self._key_code
+
+    def ControlDown(self) -> bool:
+        return self._ctrl
+
+    def AltDown(self) -> bool:
+        return self._alt
+
+    def ShiftDown(self) -> bool:
+        return self._shift
+
+    def Skip(self) -> None:
+        self.skipped = True
+
+
+def test_alt_shift_digit_sets_quick_bookmark_directly() -> None:
+    # Numbered quick bookmarks are a direct chord, not a Quick Nav sub-mode --
+    # Alt+Shift+3 must set slot 3 in one keystroke with no modal step.
+    frame = _build_frame("alpha\nbeta\ngamma\n", insertion_point=7)
+    frame._bookmarks = {}
+    frame._active_tab = lambda: frame._document_tabs[frame._active_tab_index]  # type: ignore[method-assign]
+    frame._focus_is_in_document_surface = lambda: True  # type: ignore[method-assign]
+    frame._handle_quill_key_mode_event = lambda _event: False  # type: ignore[method-assign]
+
+    event = _CharHookEvent(ord("3"), ctrl=False, alt=True, shift=True)
+    frame._on_char_hook(event)
+
+    assert frame._bookmarks == {"Quick 3": 7}
+    assert frame._status_message == "Quick bookmark 3 set"
+    assert event.skipped is False
+
+
+def test_ctrl_alt_shift_digit_jumps_to_quick_bookmark_directly() -> None:
+    frame = _build_frame("alpha\nbeta\ngamma\n", insertion_point=0)
+    frame._bookmarks = {"Quick 7": 11}
+    frame._focus_is_in_document_surface = lambda: True  # type: ignore[method-assign]
+    frame._handle_quill_key_mode_event = lambda _event: False  # type: ignore[method-assign]
+
+    event = _CharHookEvent(ord("7"), ctrl=True, alt=True, shift=True)
+    frame._on_char_hook(event)
+
+    assert frame.editor.GetInsertionPoint() == 11
+    assert frame._status_message == "Jumped to quick bookmark 7"
+
+
+def test_bare_digit_key_does_not_trigger_quick_bookmark() -> None:
+    # A plain digit keystroke (typing "3" into the document) must not be
+    # captured by the quick-bookmark interception.
+    frame = _build_frame("alpha\n", insertion_point=0)
+    frame._bookmarks = {}
+    frame._focus_is_in_document_surface = lambda: True  # type: ignore[method-assign]
+    frame._handle_quill_key_mode_event = lambda _event: False  # type: ignore[method-assign]
+
+    event = _CharHookEvent(ord("3"), ctrl=False, alt=False, shift=False)
+    frame._on_char_hook(event)
+
+    assert frame._bookmarks == {}
+    assert event.skipped is True
+
+
+def test_extract_and_reveal_portable_update_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Regression: a downloaded portable .zip previously left the user with
+    # only "Open folder"/"Close" and no in-app way to extract it. This
+    # verifies the new handler actually extracts and reveals the result.
+    from quill.core.updates import GitHubRelease
+
+    frame = MainFrame.__new__(MainFrame)
+    frame._status_message = "Ready"
+    frame._notifications: list[tuple[str, str]] = []
+    frame._announcements: list[str] = []
+    frame._set_status = lambda msg: setattr(frame, "_status_message", msg)  # type: ignore[method-assign]
+    frame._set_status_quiet = lambda msg: setattr(frame, "_status_message", msg)  # type: ignore[method-assign]
+    frame._record_notification = (  # type: ignore[method-assign]
+        lambda msg, category="info": frame._notifications.append((msg, category))
+    )
+    frame._announce = lambda msg, **_kw: frame._announcements.append(msg)  # type: ignore[method-assign]
+
+    revealed: list[Path] = []
+    frame._reveal_in_folder = lambda target: revealed.append(target)  # type: ignore[method-assign]
+
+    extract_calls: list[tuple[Path, Path]] = []
+
+    def fake_extract(zip_path, dest_dir):
+        extract_calls.append((Path(zip_path), Path(dest_dir)))
+
+    monkeypatch.setattr("quill.core.updates.extract_portable_update", fake_extract)
+
+    release = GitHubRelease(
+        version="0.9.0 Beta 3",
+        download_url="https://example.invalid/x.zip",
+        published_at="",
+        notes="",
+        prerelease=True,
+    )
+    target = Path("C:/fake/updates/Quill-Portable-v0.9.0-beta.3.zip")
+
+    frame._extract_and_reveal_portable_update(release, target)
+
+    assert extract_calls == [(target, target.parent / "Quill-Portable-0.9.0 Beta 3")]
+    assert revealed == [target.parent / "Quill-Portable-0.9.0 Beta 3"]
+    assert any("extracted" in msg.lower() for msg in frame._announcements)
+    assert frame._status_message == "Extracted update 0.9.0 Beta 3"
+
+
+def test_extract_and_reveal_portable_update_failure_is_reported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quill.core.updates import GitHubRelease
+
+    frame = MainFrame.__new__(MainFrame)
+    frame._status_message = "Ready"
+    frame._notifications: list[tuple[str, str]] = []
+    frame._set_status = lambda msg: setattr(frame, "_status_message", msg)  # type: ignore[method-assign]
+    frame._set_status_quiet = lambda msg: setattr(frame, "_status_message", msg)  # type: ignore[method-assign]
+    frame._record_notification = (  # type: ignore[method-assign]
+        lambda msg, category="info": frame._notifications.append((msg, category))
+    )
+    reveal_called = []
+    frame._reveal_in_folder = lambda target: reveal_called.append(target)  # type: ignore[method-assign]
+
+    def fake_extract(zip_path, dest_dir):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("quill.core.updates.extract_portable_update", fake_extract)
+
+    release = GitHubRelease(
+        version="0.9.0 Beta 3",
+        download_url="https://example.invalid/x.zip",
+        published_at="",
+        notes="",
+        prerelease=True,
+    )
+    target = Path("C:/fake/updates/Quill-Portable-v0.9.0-beta.3.zip")
+
+    frame._extract_and_reveal_portable_update(release, target)
+
+    assert reveal_called == []
+    assert frame._status_message == "Update extraction failed"
+    assert any("failed" in msg.lower() for msg, _cat in frame._notifications)
+
+
+def test_offer_post_download_actions_offers_extract_for_zip_not_install() -> None:
+    # Source-contract check (real wx.Dialog construction needs a live wx.App,
+    # which this headless suite doesn't run): a .zip target must be treated
+    # as extractable, never as a runnable installer, and vice versa.
+    src = (
+        Path(main_frame_module.__file__)
+        .with_name("main_frame_updates.py")
+        .read_text(encoding="utf-8")
+    )
+    assert 'extractable = target.suffix.lower() == ".zip"' in src
+    assert '"Extract now"' in src
+    assert "_extract_and_reveal_portable_update(release, target)" in src
+    # The old behavior (zip treated as non-runnable, non-extractable, only
+    # ever "Open folder"/"Close") must not have silently regressed back.
+    assert 'runnable = target.suffix.lower() in {".exe", ".msi"}' in src
+
+
+def test_toggle_overwrite_mode_moves_the_control_not_just_the_status_cell() -> None:
+    """The command used to flip a flag and tell the control nothing.
+
+    ``_overwrite_mode`` is read in exactly one place -- the status bar -- so a
+    toggle that skipped the control left the cell claiming "Overwrite" while
+    typing still inserted, to somebody who cannot check by looking. The native
+    RICHEDIT50W owns overtype and honours VK_INSERT, so the fix is to hand it
+    the key. Assert on the messages sent, not only on the flag.
+    """
+    frame = _build_frame("hello", insertion_point=0)
+    guarded: list[bool] = []
+
+    class _RichEdit:
+        def toggle_overtype(self) -> bool:
+            guarded.append(frame._synthetic_insert_key)
+            return True
+
+    frame.editor.quill_richedit = _RichEdit()  # type: ignore[attr-defined]
+    frame._synthetic_insert_key = False
+
+    frame.toggle_overwrite_mode()
+
+    # The guard has to be up for the whole send, because the synthesised key
+    # comes back through this frame's own EVT_KEY_DOWN and would otherwise
+    # flip the flag straight back.
+    assert guarded == [True]
+    assert frame._synthetic_insert_key is False
+    assert frame._overwrite_mode is True
+    assert frame.statusbar.status[2] == "Overwrite"
+
+
+def test_toggle_overwrite_mode_refuses_when_the_control_cannot_be_told() -> None:
+    """A surface with no native control cannot overtype, so saying it did would lie."""
+    frame = _build_frame("hello", insertion_point=0)
+
+    frame.toggle_overwrite_mode()
+
+    assert frame._overwrite_mode is False
+    assert "not available" in frame._status_message
+
+
+def test_toggle_overwrite_mode_to_the_state_already_held_sends_nothing() -> None:
+    """Otherwise an explicit ``enabled=`` would toggle the control out of step."""
+    frame = _build_frame("hello", insertion_point=0)
+    frame._overwrite_mode = False
+
+    class _RichEdit:
+        def toggle_overtype(self) -> bool:
+            pytest.fail("the control must not be told")
+
+    frame.editor.quill_richedit = _RichEdit()  # type: ignore[attr-defined]
+
+    frame.toggle_overwrite_mode(enabled=False)
+
+    assert frame._overwrite_mode is False
+
+
+def test_synthesised_insert_key_does_not_double_toggle_the_flag() -> None:
+    frame = _build_frame("hello", insertion_point=0)
+    frame._wx = type("WX", (), {"WXK_INSERT": 45})()
+    frame._overwrite_mode = True
+    frame._synthetic_insert_key = True
+    event = _KeyEvent(45)
+
+    frame._on_editor_key_down(event)
+
+    assert frame._overwrite_mode is True
+    assert event.skipped is True
+
+
+def test_describe_indent_depth_answers_on_demand() -> None:
+    """QUILL had the phrasing for years and nothing bound to it.
+
+    ``format_ops.describe_indent_depth`` was reachable only through the
+    announce-as-you-move toggle and the Tab key -- both of which speak while you
+    are moving and go quiet at the moment you stop and wonder what the shape of
+    the file is. Leading whitespace is the one part of a line a screen reader
+    does not read back, so on demand is the only time the answer is any use.
+    """
+    frame = _build_frame("no indent\n\t   tabbed\n", insertion_point=len("no indent\n") + 5)
+
+    frame.describe_indent_depth()
+
+    assert frame._status_message == "1 tab, 3 spaces"
+
+
+def test_describe_indent_depth_says_so_when_there_is_none() -> None:
+    """Silence is indistinguishable by ear from a key that is not bound."""
+    frame = _build_frame("flush left", insertion_point=3)
+
+    frame.describe_indent_depth()
+
+    assert frame._status_message == "No indentation"

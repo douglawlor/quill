@@ -4,6 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from quill.core.document import Document
+from quill.core.storage import write_text_atomic
+from quill.core.text_decoding import decode_as, decode_bytes, is_utf8_family
 
 # Braille text family (#226 / BR-004). Saving any of these must round-trip
 # byte-for-byte (#235 / BR-012): no line-ending normalization, no trailing
@@ -32,7 +34,39 @@ def _emit_save_warning(message: str) -> None:
         pass
 
 
-_UTF8_BOM = b"\xef\xbb\xbf"
+#: The two UTF-16 byte-order marks, and what each means (bad.md F6, P1.8).
+#: A UTF-16 file opened as UTF-8 did not raise -- most of its bytes decode as
+#: cp1252 through the fallback below -- so it opened as a document with a NUL
+#: between every letter, which reads as gibberish and SAVES as gibberish. The
+#: BOM is the only reliable signal and Notepad has used it since Windows 95.
+_UTF16_BOMS: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xfe", "utf-16"),  # little-endian, which is what Windows writes
+    (b"\xfe\xff", "utf-16"),  # big-endian; the codec reads the BOM either way
+)
+
+
+def detect_utf16(raw: bytes) -> str | None:
+    """``"utf-16"`` when *raw* begins with a UTF-16 byte-order mark, else None.
+
+    BOM only, deliberately. Heuristics over NUL density guess wrong on binary
+    files and on short ones, and a wrong guess here corrupts a document the
+    person then saves. A UTF-16 file without a BOM is rare, and Windows writes
+    one; the honest answer for the rest is the fallback chain.
+
+    ``b"\xff\xfe\x00\x00"`` is UTF-32 LE, whose first two bytes are the UTF-16
+    LE mark. It is excluded rather than mis-read as an empty UTF-16 document.
+    """
+    if raw[:4] == b"\xff\xfe\x00\x00":
+        return None
+    for bom, name in _UTF16_BOMS:
+        if raw.startswith(bom):
+            return name
+    return None
+
+
+# #867: a plain-text open must never crash on a non-UTF-8 file. The fallback
+# chain (cp1252, then latin-1, which cannot fail) lives in the shared
+# quill.core.text_decoding since 2026-10-04, so both editors read one way.
 
 
 def read_text_document(path: Path, encoding: str = "utf-8") -> Document:
@@ -43,32 +77,42 @@ def read_text_document(path: Path, encoding: str = "utf-8") -> Document:
     # as LF, and a leading BOM showed up as an editable U+FEFF at the cursor.
     raw = path.read_bytes()
 
-    had_bom = raw.startswith(_UTF8_BOM)
-    is_utf8 = encoding.replace("-", "").replace("_", "").lower() == "utf8"
-    if had_bom and is_utf8:
-        # Decode with utf-8-sig so the BOM is dropped from the editable text,
-        # and remember it via the encoding so the writer re-adds it on save:
-        # opening a BOM file and saving it must round-trip byte-for-byte (#649).
-        decode_encoding = "utf-8-sig"
-        stored_encoding = "utf-8-sig"
+    # The default is the family's one lossless decoder (2026-10-04), shared
+    # with QUILL Lite: a BOM, strict UTF-8, strict cp1252, then latin-1, which
+    # cannot fail -- so a file always opens and always saves back byte for
+    # byte. An explicit encoding is an instruction, and a reader that overrules
+    # it cannot be used to open a file the way its owner says it is
+    # (test_text.py has said so since #867): it is decoded strictly and raises.
+    if is_utf8_family(encoding):
+        decoded = decode_bytes(raw)
     else:
-        decode_encoding = encoding
-        stored_encoding = encoding
-    text = raw.decode(decode_encoding)
+        decoded = decode_as(raw, encoding)
+    text = decoded.text
+    # The encoding a BOM or a fallback revealed is said once on open
+    # (_announce_encoding_fallback); UTF-16's BOM and both fallbacks count.
+    detected_encoding = None if is_utf8_family(decoded.encoding) else decoded.encoding
 
-    # Detect the original line ending from the raw bytes, then hand the editor
-    # LF-only text (wx normalises to LF anyway); the writer converts back to the
-    # stored line ending on save.
-    line_ending = "\r\n" if b"\r\n" in raw else "\n"
+    # Detect the original line ending, then hand the editor LF-only text (wx
+    # normalises to LF anyway); the writer converts back on save. From the
+    # decoded text, because a UTF-16 CRLF is not the bytes b"\r\n".
+    line_ending = "\r\n" if "\r\n" in text else "\n"
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    source_metadata: dict[str, object] = {
+        "source_kind": "text",
+        "engine": "plain text",
+        "quality_score": 100,
+    }
+    if detected_encoding is not None:
+        source_metadata["encoding_detected"] = detected_encoding
 
     return Document(
         text=text,
         path=path,
         modified=False,
-        encoding=stored_encoding,
+        encoding=decoded.encoding,
         line_ending=line_ending,
-        source_metadata={"source_kind": "text", "engine": "plain text", "quality_score": 100},
+        source_metadata=source_metadata,
     )
 
 
@@ -81,8 +125,10 @@ def write_text_document(document: Document, path: Path | None = None) -> Path:
         return _write_brf_document(document, target_path)
 
     text = _normalize_line_endings(document.text, document.line_ending)
-    with target_path.open("w", encoding=document.encoding, newline="") as file_handle:
-        file_handle.write(text)
+    # Write atomically (temp + os.replace) so a crash mid-save can't corrupt the
+    # user's document at its real location — the previous file stays intact
+    # until the new one is fully written and fsynced.
+    write_text_atomic(target_path, text, encoding=document.encoding, newline="")
     document.mark_saved(target_path)
     return target_path
 
@@ -110,8 +156,7 @@ def _write_brf_document(document: Document, target_path: Path) -> Path:
             f"{target_path.name} was saved with {count} non-braille-ASCII "
             f"character{plural} preserved as-is."
         )
-    with target_path.open("w", encoding=encoding, newline="") as file_handle:
-        file_handle.write(text)
+    write_text_atomic(target_path, text, encoding=encoding, newline="")
     document.mark_saved(target_path)
     return target_path
 

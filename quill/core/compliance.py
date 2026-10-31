@@ -6,12 +6,16 @@ import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 
+from quill.core.error_codes import CodedError
+
 _NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+")
 _PROJECT_URL_PREFERENCE = ("homepage", "source", "repository", "documentation")
 
 
-class ComplianceConfigError(ValueError):
+class ComplianceConfigError(CodedError):
     """Raised when a project metadata file (``pyproject.toml``) cannot be parsed."""
+
+    code = "QUILL-COMPLIANCE-CONFIG-INVALID"
 
 
 def _load_pyproject(path: Path) -> dict[str, object]:
@@ -34,11 +38,12 @@ _DEPENDENCY_METADATA_OVERRIDES: dict[str, tuple[str, str]] = {
     "elevenlabs": ("MIT", "https://github.com/elevenlabs/elevenlabs-python"),
     "hatchling": ("MIT", "https://github.com/pypa/hatch"),
     "accessible_output2": ("MIT", "https://github.com/accessibleapps/accessible_output2"),
-    "html_to_text": ("MIT", "https://github.com/accessibleapps/html_to_text"),
+    "html_to_text": ("Apache-2.0", "https://github.com/emludei/html_to_text"),
     "libloader": ("MIT", "https://github.com/accessibleapps/libloader"),
     "keynote-parser": ("MIT", "https://pypi.org/project/keynote-parser/"),
     "llama-cpp-python": ("MIT", "https://github.com/abetlen/llama-cpp-python"),
     "markitdown": ("MIT", "https://github.com/microsoft/markitdown"),
+    "sherpa-onnx": ("Apache-2.0", "https://github.com/k2-fsa/sherpa-onnx"),
     "mypy": ("MIT", "https://github.com/python/mypy"),
     "prismatoid": ("MIT", "https://pypi.org/project/prismatoid/"),
     "pyenchant": ("LGPL-2.1-or-later", "https://github.com/pyenchant/pyenchant"),
@@ -60,8 +65,8 @@ _DEPENDENCY_USAGE_NOTES: dict[str, str] = {
     "elevenlabs": "Optional premium cloud TTS (audio export) via the ElevenLabs SDK.",
     "hatchling": "Build backend used for packaging metadata.",
     "html_to_text": (
-        "Converts HTML from clipboard pastes to clean plain text"
-        " while preserving document structure (AccessibleApps, MIT)."
+        "The PyPI package is emludei's Apache-2.0 project; its API differs "
+        "from the AccessibleApps converter expected by the clipboard cleaner."
     ),
     "keynote-parser": "Apple Keynote parsing for import workflows.",
     "llama-cpp-python": "Python bridge for on-device llama.cpp inference.",
@@ -78,12 +83,50 @@ _DEPENDENCY_USAGE_NOTES: dict[str, str] = {
     "pytest-xdist": "Parallel test execution.",
     "regex": "Core regular expression engine.",
     "ruff": "Linting and formatting.",
+    "sherpa-onnx": "ONNX runtime for every local dictation and transcription model.",
     "speechrecognition": "Speech-recognition helper components.",
     "wx-accessible-webview": "Accessible web preview and dialog surfaces.",
     "wxpython": "Desktop UI framework.",
 }
 
 _BUNDLED_COMPONENTS: tuple[dict[str, str], ...] = (
+    {
+        "name": "OptiLab Core (Lanes Audio / dgl1984)",
+        # Two scopes now: the ffmpeg adaptation (live playback) AND the
+        # engine itself, vendored under quill/native/optilab/upstream at
+        # v1.4.0 for exact processing of saved files. Vendoring makes the
+        # licence a real obligation, so LICENSE and NOTICE ship beside it.
+        "scope": "adapted-dsp + vendored-source",
+        # The mapping in core/optilab.py tracks 1.4.0; this entry said 1.2.0,
+        # which mattered because the licence changed in between.
+        "version": "1.4.0",
+        # NOT plain Apache-2.0. Upstream LICENSE states "v1.3.0 and later" are
+        # Apache-2.0 **with the Commons Clause v1.0**, which withholds the right
+        # to *sell* the Software. This entry previously recorded 1.2.0 /
+        # Apache-2.0 -- accurate when written, wrong once the mapping moved to
+        # 1.4.0, and a compliance record is the one place that must not lag.
+        "license": "Apache-2.0 WITH Commons-Clause",
+        "homepage": "https://github.com/dgl1984/optilab",
+        "source": "",
+        "notes": (
+            "Sound Enhancements' broadcast-polish modes (Podcast Leveler, Stream "
+            "Polish, Smooth Limiter) are a faithful adaptation of OptiLab Core's "
+            "DSP, reproduced as ffmpeg filter chains for live playback. The "
+            "engine itself (native/core/OptiLabCore.h/.cpp) is additionally "
+            "vendored unmodified at v1.4.0 under quill/native/optilab/upstream "
+            "-- with its LICENSE and NOTICE -- and linked into QUILL's own "
+            "adapter (quill/native/optilab/quill_optilab.cpp, which contains no "
+            "DSP). One optional setting runs that engine on saved recordings "
+            "and conversions, and (opt-in) on live listening via the local "
+            "relay. The LICENSE and NOTICE are redistributed beside the "
+            "executable in installed and portable builds. "
+            "Upstream's NOTICE grants royalty-free "
+            "commercial use of OptiLab Core as a tool for producing, "
+            "processing, broadcasting or streaming audio; the Commons Clause "
+            "restricts selling the Software itself, which QUILL does not do. "
+            "With thanks to dgl1984."
+        ),
+    },
     {
         "name": "WordNet 2.1 (Princeton University)",
         "scope": "bundled-data",
@@ -137,6 +180,21 @@ _BUNDLED_COMPONENTS: tuple[dict[str, str], ...] = (
         "homepage": "https://huggingface.co/hexgrad/Kokoro-82M",
         "source": "",
         "notes": "Optional neural speech voices.",
+    },
+    {
+        "name": "NVIDIA Nemotron Speech Streaming (English)",
+        "scope": "bundled-speech",
+        "version": "0.6b int8",
+        "license": "NVIDIA Open Model License",
+        "homepage": "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b",
+        "source": "",
+        "notes": (
+            "Optional offline English dictation model (Cache-Aware "
+            "FastConformer-RNNT), run on the CPU via sherpa-onnx. Downloaded on "
+            "demand from QUILL's assets-v1 release; the model NOTICE.txt records "
+            "provenance and the license. Commercial use and redistribution are "
+            "permitted under the NVIDIA Open Model License."
+        ),
     },
     {
         "name": "DECtalk",

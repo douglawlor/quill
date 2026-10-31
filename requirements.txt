@@ -4,31 +4,42 @@
 #  pyproject [macos] / [dev] extras, not here, so a runtime install stays clean.)
 
 # Core (always required)
-regex>=2024.0.0
+regex>=2026.9.10
 
 # Hardened XML parsing for untrusted document inputs (DOCX/XLSX/ODT/PPTX/EPUB)
 # — disables entity expansion to block billion-laughs denial-of-service files.
 defusedxml>=0.7.1
 
+# Windows COM — SAPI 5 Read Aloud and self-voicing announcements, the Rich Edit
+# TOM surface, the Narrator bridge, and persona .lnk shortcuts (WScript.Shell).
+# A base dependency, not a UI one: quill/core reaches it through
+# persona_launcher.py and read_aloud.py.
+comtypes>=1.4.17; sys_platform == "win32"
+
 # UI
-wxPython>=4.2.5
+# Exact pin (not a floor): wxPython 4.3.x tracks wxWidgets master, which is
+# API/ABI unstable between 4.3.x releases. Ship what acceptance tested.
+wxPython==4.3.1
 # Accessible wx.html2.WebView surfaces (chat, preview, About, update dialogs).
 wx-accessible-webview>=0.2.0
-# Windows SAPI 5 text-to-speech (Read Aloud + self-voicing announcements).
-comtypes>=1.4; sys_platform == "win32"
+# pywin32 — win32gui for active-window screen capture (AI image description) and
+# win32api.ShellExecute for the update bootstrapper hand-off. Previously
+# undeclared and present only transitively, even though the Windows build script
+# prunes its unused extras on purpose.
+pywin32>=312; sys_platform == "win32"
 
 # CA bundle for verified HTTPS (update checks) — Python on macOS otherwise has
 # no trusted roots wired into urllib (CERTIFICATE_VERIFY_FAILED).
-certifi>=2026.6.17
+certifi>=2026.10.19
 
 # Prism screen-reader speech bridge (Windows) — routes announcements to
 # NVDA / JAWS / Narrator instead of speaking over them.
-prismatoid>=0.16.6; sys_platform == "win32"
+prismatoid>=0.18.2; sys_platform == "win32"
 
 # macOS platform integration (VoiceOver announcements, Keychain) and the
 # Apple Foundation Models backend used by Ask Quill on macOS.
-pyobjc>=12.2.1; sys_platform == "darwin"
-apple-fm-sdk>=0.2.0; sys_platform == "darwin"
+pyobjc>=12.2.2; sys_platform == "darwin"
+apple-fm-sdk>=0.2.1; sys_platform == "darwin"
 
 # Spell check (optional)
 pyenchant>=3.3.0
@@ -38,12 +49,16 @@ pyenchant>=3.3.0
 # (e.g. Phi-4-mini Q4) into <app data>/models or set QUILL_LLAMA_MODEL.
 # Use llama-cpp-python CPU wheels to avoid source builds and Windows long-path failures.
 # Pin to the newest version with a prebuilt CPU wheel on the index below
-# (currently 0.3.19, cp310-cp313 win_amd64). A higher floor (>=0.3.31) has no
-# prebuilt wheel, so pip silently falls back to the PyPI sdist and compiles
-# llama.cpp from source via CMake -- which hangs. Bump this only when the index
-# publishes a newer wheel for the supported Python versions.
+# (py3-none-win_amd64 wheels; 0.3.36 is the newest (checked 2026-10-11) — 0.3.31 has NO wheel there,
+# so that pin silently fell back to the PyPI sdist and pip tried to compile
+# llama.cpp from source via CMake, which fails or hangs). Bump only after
+# confirming the index actually publishes a wheel for the new version:
+#   curl -s https://abetlen.github.io/llama-cpp-python/whl/cpu/llama-cpp-python/
+# and look for llama_cpp_python-<version>-py3-none-win_amd64.whl. Dependabot
+# cannot check that — it reads PyPI, where an sdist always exists — so a
+# dependency bump of this pin is only safe once somebody has looked.
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama-cpp-python==0.3.19
+llama-cpp-python==0.3.36
 
 # Dictation / voice input (mic permission required).
 SpeechRecognition>=3.17.0
@@ -55,11 +70,18 @@ SpeechRecognition>=3.17.0
 # non-Windows interpreters. Install them explicitly with `pip install .[ocr]`
 # on a supported Windows Python.
 
+# Quillin signature verification (Ed25519 / minisign-shaped). Bundled at runtime
+# so every shipping build can verify publisher-signed Quillins in the Quillins
+# Manager; previously this was dev/CI-only ([signing]/[dev] extras), so real
+# users always saw "PyNaCl is not installed" and could never verify a Quillin
+# (#919 follow-up). Mirrors pyproject.toml's [ui] extra.
+PyNaCl>=1.6.2
+
 # Structured document import (Word/PowerPoint/Excel/Pages/PDF fallback).
 # Only the converters Quill actually routes through MarkItDown are pulled in
 # (docx, pptx, xlsx, xls, pdf). The `[all]` extra additionally bundles audio
 # transcription (pydub/SpeechRecognition), youtube-transcript-api, and the
 # Azure Document Intelligence / Content Understanding SDKs, none of which Quill
 # uses — excluding them keeps the installed surface small.
-keynote-parser>=1.14.4.0
-markitdown[docx,pptx,xlsx,xls,pdf]>=0.1.6
+keynote-parser>=1.14.5.0
+markitdown[docx,pptx,xlsx,xls,pdf]>=0.1.8

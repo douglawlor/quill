@@ -243,6 +243,58 @@ def generate_all() -> None:
         vol=0.55,
     )
 
+    # -- spelling_alert: "the slip" ------------------------------------------
+    # A note that starts in tune and slides flat. That is the whole design, and
+    # it is the sound of the thing it reports: a word that was almost right.
+    #
+    # It has to be unique in this pack, because it fires more often than any
+    # other earcon here -- every completed misspelled word while somebody is
+    # typing -- and an alert you cannot tell from four other alerts is one you
+    # learn to ignore. Every negative cue in Ink is either a *discrete* two-note
+    # descent (search_not_found, ai_error, conversation_error,
+    # radio_stream_error) or a buzz (error). Nothing else *glides*, so a
+    # continuous bend is recognisable before the first tenth of it has played
+    # and cannot be confused with any of them.
+    #
+    # Four properties it has to have, and each is why a number is what it is:
+    #
+    # * **Short.** 58 ms, tick included. It lands between two keystrokes, not
+    #   across them.
+    # * **Quiet.** vol 0.38, the lowest of any alert in the pack. It fires
+    #   during typing, which is the moment a listener can least afford volume.
+    # * **Legible anyway.** A 3 ms noise tick opens it, so it cuts through a
+    #   synthesiser mid-sentence on shape rather than on loudness -- which is
+    #   the trade every alert that fires this often has to make.
+    # * **Not alarming.** It falls, it decays, and it resolves nowhere. The
+    #   bend is 200 cents and it *accelerates* (t squared), so the ear hears a
+    #   note going flat rather than a musical interval being played. A whole
+    #   tone stated as two notes would be a tune; slid into, it is a slip.
+    def slip_env(i: int, n: int) -> float:
+        return exp_decay(i, 20) * edge(i, n, 3)
+
+    def _slip(f_from: float, f_to: float, dur_ms: float) -> list[float]:
+        """A triangle glide whose bend accelerates: in tune, then falling away."""
+        n = ms(dur_ms)
+        out = []
+        for i in range(n):
+            t = i / max(n - 1, 1)
+            freq = f_from * ((f_to / f_from) ** (t * t))
+            env = slip_env(i, n)
+            # A touch of the octave for body. Any more and the glide reads as a
+            # chord sliding rather than one note going wrong.
+            out.append((tri_at(freq, i) + 0.25 * sine_at(freq * 2, i)) * env)
+        peak = max((abs(x) for x in out), default=1.0) or 1.0
+        return [x / peak for x in out] if peak > 1.0 else out
+
+    write_wav(
+        "spelling.wav",
+        _concat(
+            _noise(3, lambda i, n: exp_decay(i, 1.2) * 0.5),
+            _slip(523.25, 466.16, 55),
+        ),
+        vol=0.38,
+    )
+
     # -- document_saved: very soft low tick with 2nd harmonic (settled) ------
     def save_env(i: int, n: int) -> float:
         return exp_decay(i, 30) * edge(i, n, 3)
@@ -481,8 +533,564 @@ def generate_all() -> None:
         vol=0.55,
     )
 
+    # -- Voice conversation cues (Hey QUILL Phase 2) ------------------------
+    # Warm bell sequences on consonant intervals (plan §3.3).
+    # Each note is a soft inharmonic bell; a sequence is
+    # concatenated with tiny gaps so it rings rather than beeps.
+    def _bell_seq(freqs: list[float], note_ms: float, gap_ms: float = 24) -> list[float]:
+        parts: list[list[float]] = []
+        for index, freq in enumerate(freqs):
+            if index:
+                parts.append(_silence(gap_ms))
+            parts.append(_bell(freq, note_ms))
+        return _concat(*parts)
+
+    # ------------------------------------------------------------------
+    # Audio identity: per-slot earcons, the
+    # 5-percent progress ladder, selection and document-boundary cues, and
+    # the soundcard keep-alive. Slot identity rides a C-major pentatonic so
+    # every numbered slot is a note you learn; families differ by timbre.
+    # ------------------------------------------------------------------
+
+    def _pentatonic(degree: int, base: float = 261.63) -> float:
+        """Frequency of pentatonic scale degree N (C D E G A, octave-wrapped)."""
+        offsets = (0, 2, 4, 7, 9)
+        octave, position = divmod(degree, len(offsets))
+        return base * (2.0 ** (octave + offsets[position] / 12.0))
+
+    # -- copy_slot_1..12: soft marimba tap at the slot's own pitch -----------
+    # A tiny noise attack + a warm sine-with-octave body, short enough to
+    # never delay the spoken confirmation that follows it.
+    def marimba_env(i: int, n: int) -> float:
+        return exp_decay(i, 26) * edge(i, n, 2)
+
+    for slot in range(1, 13):
+        freq = _pentatonic(slot - 1)
+        write_wav(
+            f"copy_slot_{slot}.wav",
+            _concat(
+                _noise(3, _click_env),
+                _mix(
+                    _tone(freq, 85, sine_at, marimba_env),
+                    _tone(freq * 2, 85, sine_at, lambda i, n: marimba_env(i, n) * 0.35),
+                ),
+            ),
+            vol=0.55,
+        )
+
+    # -- bookmark_slot_0..9: bright triangle chirp at the slot's pitch -------
+    # Same scale, different voice: a quick upward glide into the slot note so
+    # bookmarks never blur into copy-tray taps.
+    for slot in range(10):
+        freq = _pentatonic(slot)
+        write_wav(
+            f"bookmark_slot_{slot}.wav",
+            _sweep(freq * 0.84, freq, 70, tri_at, _swell_env(3, 12, 0.35, 22)),
+            vol=0.5,
+        )
+
+    # -- progress_5..progress_100: a rising blip ladder ----------------------
+    # Pitch climbs one octave across the run (320 Hz at 5%, 640 Hz at 100%).
+    # Quarter marks (25/50/75) add a soft perfect fifth so the landmarks
+    # stand out; 100% resolves with a tiny two-note "done".
+    def blip_env(i: int, n: int) -> float:
+        return adsr(i, n, ms(2), ms(8), 0.4, ms(14))
+
+    for pct in range(5, 101, 5):
+        freq = 320.0 * (2.0 ** (pct / 100.0))
+        layers = [_tone(freq, 42, sine_at, blip_env)]
+        if pct in (25, 50, 75):
+            layers.append(_tone(freq * 1.5, 42, sine_at, lambda i, n: blip_env(i, n) * 0.3))
+        blip = _mix(*layers)
+        if pct == 100:
+            blip = _concat(blip, _silence(14), _tone(freq * 1.25, 60, sine_at, blip_env))
+        write_wav(f"progress_{pct}.wav", blip, vol=0.42)
+
+    # -- progress_tick: the indeterminate heartbeat --------------------------
+    write_wav("progress_tick.wav", _tone(500, 26, sine_at, _click_env), vol=0.3)
+
+    # -- selection_started / selection_completed: a mirrored gate ------------
+    # Two quick triangle notes rising a fourth to open the selection; the
+    # exact reverse closes it. Shorter and lighter than the SSH connect pair
+    # so the families never collide.
+    selection_open = _concat(
+        _tone(523, 40, tri_at, _swell_env(2, 8, 0.35, 14)),
+        _silence(8),
+        _tone(698, 55, tri_at, _swell_env(2, 10, 0.35, 18)),
+    )
+    write_wav("selection_started.wav", selection_open, vol=0.5)
+    write_wav("selection_completed.wav", list(reversed(selection_open)), vol=0.5)
+
+    # -- document_top / document_bottom: ceiling tick, floor thud ------------
+    def ceiling_env(i: int, n: int) -> float:
+        return exp_decay(i, 10) * edge(i, n, 2)
+
+    write_wav("document_top.wav", _tone(1318, 45, sine_at, ceiling_env), vol=0.45)
+
+    def floor_env(i: int, n: int) -> float:
+        return exp_decay(i, 22) * edge(i, n, 3)
+
+    write_wav(
+        "document_bottom.wav",
+        _mix(
+            _tone(165, 70, sine_at, floor_env),
+            _tone(330, 70, sine_at, lambda i, n: floor_env(i, n) * 0.25),
+        ),
+        vol=0.5,
+    )
+
+    # -- keepalive: two seconds of true silence ------------------------------
+    # Played on a timer (opt-in) purely to keep USB/Bluetooth audio devices
+    # from powering down and clipping the start of the next real earcon.
+    write_wav("keepalive.wav", _silence(2000), vol=0.0)
+
+    # on: C-E-G rising — a warm "hello".
+    write_wav("conversation_on.wav", _bell_seq([523, 659, 784], 150), vol=0.55)
+    # off: falling — settle "goodbye".
+    write_wav("conversation_off.wav", _bell_seq([659, 523, 392], 150), vol=0.55)
+    # wake: bright two-note lift — "I'm here" (used from Phase 3).
+    write_wav("conversation_wake.wav", _bell_seq([587, 880], 130), vol=0.55)
+    # listen: soft two-note — "go ahead" (quieter; it fires often).
+    write_wav("conversation_listen.wav", _bell_seq([523, 659], 120), vol=0.38)
+    # review: gentle rise — "got it".
+    write_wav("conversation_review.wav", _bell_seq([659, 784], 130), vol=0.50)
+    # ready: sparkle — "answer's here / done".
+    write_wav("conversation_ready.wav", _bell_seq([659, 988], 150), vol=0.55)
+    # idle: single soft tone — "resting".
+    write_wav("conversation_idle.wav", _bell(440, 220), vol=0.34)
+    # thinking tick: quiet blip — "still working".
+    write_wav("conversation_thinking_tick.wav", _bell(330, 150), vol=0.28)
+    # error: low fall — "something's off" (calm, not alarming).
+    write_wav("conversation_error.wav", _bell_seq([392, 294], 150), vol=0.5)
+
+    # ------------------------------------------------------------------
+    # Companion-app cues. These fourteen ids shipped in the catalogue with
+    # no sounds and no call sites, so Radio, Cast, Weather and Beacon were
+    # silent. Each family gets its own voice, so you know WHICH app spoke
+    # before you parse WHAT it said: Radio is warm sine (broadcast), Cast is
+    # bell-like (an episode is a discrete thing), Weather is a deliberate
+    # alert, Beacon is a single capture blip.
+    # ------------------------------------------------------------------
+
+    def radio_env(i: int, n: int) -> float:
+        return adsr(i, n, ms(4), ms(14), 0.42, ms(22))
+
+    # connecting: a rising fifth — reaching out, not yet arrived.
+    write_wav(
+        "radio_connecting.wav",
+        _concat(
+            _tone(392, 55, sine_at, radio_env),
+            _silence(10),
+            _tone(587, 65, sine_at, radio_env),
+        ),
+        vol=0.55,
+    )
+    # playing: that fifth resolving up to the octave — arrival.
+    radio_playing = _concat(
+        _tone(587, 50, sine_at, radio_env),
+        _silence(8),
+        _mix(
+            _tone(784, 90, sine_at, radio_env),
+            _tone(1568, 90, sine_at, lambda i, n: radio_env(i, n) * 0.2),
+        ),
+    )
+    write_wav("radio_playing.wav", radio_playing, vol=0.55)
+    # stopped: the exact time-reverse of playing — unmistakably its opposite.
+    write_wav("radio_stopped.wav", list(reversed(radio_playing)), vol=0.55)
+    # buffering: two soft equal pulses — waiting, going nowhere yet.
+    buffer_pulse = _tone(440, 45, sine_at, lambda i, n: exp_decay(i, 16) * edge(i, n, 3))
+    write_wav("radio_buffering.wav", _concat(buffer_pulse, _silence(70), buffer_pulse), vol=0.40)
+    # stream error: a falling minor third with a breath of noise — audibly in
+    # the radio family (so you know it is the stream), clearly negative, and
+    # not the harsh generic error buzz.
+    write_wav(
+        "radio_stream_error.wav",
+        _concat(
+            _noise(5, _click_env),
+            _mix(
+                _tone(466, 70, sine_at, radio_env),
+                _tone(466, 70, sqr_at, lambda i, n: radio_env(i, n) * 0.12),
+            ),
+            _silence(8),
+            _tone(370, 95, sine_at, radio_env),
+        ),
+        vol=0.55,
+    )
+    # recording started / stopped: a firm low-to-high pair and its mirror,
+    # deliberately lower and rounder than transcription's rec_start/rec_stop
+    # so "the radio is recording" never sounds like "dictation is listening".
+    radio_rec = _concat(
+        _tone(294, 70, sine_at, radio_env),
+        _silence(10),
+        _tone(440, 95, sine_at, radio_env),
+    )
+    write_wav("radio_recording_started.wav", radio_rec, vol=0.6)
+    write_wav("radio_recording_stopped.wav", list(reversed(radio_rec)), vol=0.6)
+    # favorite added: a bright quick lift — a small delight.
+    write_wav(
+        "radio_favorite_added.wav",
+        _concat(
+            _tone(880, 40, tri_at, _swell_env(2, 8, 0.35, 14)),
+            _tone(1320, 55, tri_at, _swell_env(2, 10, 0.35, 20)),
+        ),
+        vol=0.5,
+    )
+
+    # Reminder: the one cue in these apps that arrives because the listener
+    # asked to be interrupted at a moment they chose. So it is deliberately
+    # *unlike* its neighbours -- three rising bell tones on a major triad, the
+    # third held, which reads as a question being asked rather than a task
+    # reporting itself finished. Bell-voiced so it carries over speech without
+    # being sharp, and quiet enough (0.45) that it is a tap on the shoulder
+    # rather than an alarm; the weather alert is the app's only alarm and it
+    # sounds nothing like this on purpose.
+    write_wav(
+        "radio_reminder.wav",
+        _concat(
+            _bell(587, 110),  # D5
+            _silence(30),
+            _bell(740, 110),  # F#5
+            _silence(30),
+            _bell(880, 300),  # A5, held -- the unresolved "well?"
+        ),
+        vol=0.45,
+    )
+
+    # Cast: bell-voiced. Started and complete are inversions of each other.
+    write_wav("cast_download_started.wav", _bell_seq([523, 659], 120), vol=0.5)
+    write_wav("cast_download_complete.wav", _bell_seq([659, 523], 120), vol=0.5)
+    # episode finished: a longer, lower resolve — the end of a listen.
+    write_wav("cast_episode_finished.wav", _bell_seq([523, 392], 200), vol=0.45)
+
+    # Weather: a real alert. Two urgent tones then a held third — musical
+    # rather than a klaxon, but this fires for genuine warnings, so it is the
+    # one cue in the pack that must never be easy to ignore.
+    weather_env = _swell_env(3, 10, 0.55, 20)
+    write_wav(
+        "weather_alert.wav",
+        _concat(
+            _tone(880, 90, sine_at, weather_env),
+            _silence(50),
+            _tone(880, 90, sine_at, weather_env),
+            _silence(50),
+            _mix(
+                _tone(1046, 200, sine_at, _swell_env(4, 20, 0.5, 60)),
+                _tone(698, 200, sine_at, lambda i, n: _swell_env(4, 20, 0.5, 60)(i, n) * 0.35),
+            ),
+        ),
+        vol=0.7,
+    )
+
+    # Beacon: a capture is an instant, so its cue is one.
+    write_wav(
+        "beacon_captured.wav",
+        _concat(_noise(4, _click_env), _tone(988, 45, tri_at, _swell_env(2, 8, 0.3, 16))),
+        vol=0.5,
+    )
+    write_wav(
+        "beacon_sync_complete.wav",
+        _concat(
+            _tone(659, 45, tri_at, _swell_env(2, 8, 0.3, 14)),
+            _silence(8),
+            _tone(988, 70, tri_at, _swell_env(2, 10, 0.35, 24)),
+        ),
+        vol=0.5,
+    )
+
     print("Done.")
+
+    # =====================================================================
+    # The desktop-parity family (2026-09-10)
+    # =====================================================================
+    # Every desktop suite since the nineties has had a sound scheme, and the
+    # events in it are the same everywhere because they are the moments a user
+    # actually has: open, save, close, cut, copy, paste, delete, undo, redo,
+    # print, and the four message tones. QUILL had earcons for its own clever
+    # features and none for those -- so the sounds fired for an abbreviation
+    # expanding and stayed silent for a paste.
+    #
+    # For a listener that ordering is exactly backwards. The clever features
+    # announce themselves in words; the ordinary ones are silent by design,
+    # because a screen reader says nothing when a paste lands. An earcon is the
+    # only feedback those moments can have without speech, which makes them the
+    # ones that most needed sounds.
+    #
+    # The family rule, so nineteen new cues do not become nineteen new things to
+    # learn: **related events share a timbre and differ by direction.** Undo and
+    # redo are one figure played backwards from each other. Open and close are
+    # one bell pair rising and falling. Cut, copy and paste are one clipboard
+    # timbre in three positions. You learn a family once and read its members.
+
+    # -- Clipboard: one timbre, three gestures -----------------------------
+    # A dry wooden tick, high and very short, because the clipboard is the
+    # fastest thing anybody does repeatedly and a tone with a tail would smear
+    # into the next keystroke.
+    def clip_env(i: int, n: int) -> float:
+        return exp_decay(i, 7) * edge(i, n, 1.5)
+
+    def _tick(freq: float, dur_ms: float = 26) -> list[float]:
+        return _mix(
+            _tone(freq, dur_ms, tri_at, clip_env),
+            _noise(dur_ms, lambda i, n: exp_decay(i, 2) * 0.30),
+        )
+
+    # cut: two ticks, very close -- the scissors gesture.
+    write_wav("text_cut.wav", _concat(_tick(1480), _silence(22), _tick(1245)), vol=0.42)
+    # copy: one tick and its quieter shadow -- there are two of it now.
+    write_wav(
+        "text_copied.wav",
+        _concat(_tick(1245), _silence(38), _mix([s * 0.45 for s in _tick(1245)])),
+        vol=0.42,
+    )
+    # paste: the tick lands, and something arrives under it. A falling fifth
+    # settling, so the gesture reads as "put down" rather than "picked up".
+    write_wav(
+        "text_pasted.wav",
+        _mix(
+            _concat(_tick(1245), _silence(60)),
+            _concat(_silence(18), _sweep(784, 523, 70, sine_at, lambda i, n: exp_decay(i, 24))),
+        ),
+        vol=0.46,
+    )
+    # delete: a dry low thud with a breath of noise -- something removed, not
+    # something moved. Deliberately the lowest of the four.
+    write_wav(
+        "text_deleted.wav",
+        _mix(
+            _tone(196, 70, tri_at, lambda i, n: exp_decay(i, 16) * edge(i, n, 2)),
+            _noise(28, lambda i, n: exp_decay(i, 5) * 0.22),
+        ),
+        vol=0.44,
+    )
+
+    # -- Undo and redo: one figure, played both ways -----------------------
+    # The pair has to be *mirror* images, not merely different: undo and redo
+    # are the only two commands in an editor whose entire meaning is direction,
+    # and a listener who has to think about which sound they just heard has
+    # lost the benefit. So redo is undo reversed, sample for sample.
+    def _swoop(f_from: float, f_to: float) -> list[float]:
+        return _mix(
+            _sweep(f_from, f_to, 95, tri_at, lambda i, n: adsr(i, n, ms(4), ms(30), 0.45, ms(40))),
+            _sweep(
+                f_from * 2,
+                f_to * 2,
+                95,
+                sine_at,
+                lambda i, n: adsr(i, n, ms(4), ms(30), 0.18, ms(40)),
+            ),
+        )
+
+    undo_swoop = _swoop(587.33, 440.00)  # D5 down to A4: taking something back
+    write_wav("undo_performed.wav", undo_swoop, vol=0.50)
+    write_wav("redo_performed.wav", list(reversed(undo_swoop)), vol=0.50)
+    # nothing to undo: a muted tap against a wall. No pitch movement at all,
+    # which is the point -- the stack did not move either.
+    write_wav(
+        "nothing_to_undo.wav",
+        _mix(
+            _tone(147, 55, tri_at, lambda i, n: exp_decay(i, 10) * edge(i, n, 2)),
+            _noise(20, lambda i, n: exp_decay(i, 4) * 0.18),
+        ),
+        vol=0.38,
+    )
+
+    # -- Documents and the app: one bell pair, four directions -------------
+    # Bells rather than the sine blips document_created uses, so the pair is
+    # audibly a different family from "a new empty document" -- opening a file
+    # and creating one are different events and used to sound alike.
+    write_wav("document_opened.wav", _bell_seq([523, 784], 100), vol=0.52)
+    write_wav("document_closed.wav", _bell_seq([784, 523], 100), vol=0.48)
+
+    # The app itself: three notes, so a launch is unmistakably not a document.
+    # Rising for hello, the same three falling for goodbye.
+    #
+    # A *warm triangle swell*, not a bell, and that is a correction rather than
+    # a preference. The first version of this was `_bell_seq([659, 523, 392])`,
+    # which is note for note what conversation_off already plays -- two
+    # different events making one sound, which is the one thing an earcon set
+    # cannot afford. Changing the notes alone would not have been enough
+    # either: the conversation cues own the bell timbre in this pack, so the
+    # app's own cue takes a different instrument and keeps the whole family
+    # clear of them. C-G-C, an opening fifth into the octave, so a launch reads
+    # as a door rather than as a chord.
+    def _breath(freq: float, dur_ms: float, peak: float = 1.0) -> list[float]:
+        return _mix(
+            _tone(freq, dur_ms, tri_at, lambda i, n: _swell_env(8, 22, 0.5, 30)(i, n) * peak),
+            _tone(
+                freq * 2,
+                dur_ms,
+                sine_at,
+                lambda i, n: _swell_env(8, 22, 0.5, 30)(i, n) * peak * 0.22,
+            ),
+        )
+
+    app_hello = _concat(
+        _breath(261.63, 95),
+        _silence(10),
+        _breath(392.00, 95),
+        _silence(10),
+        _breath(523.25, 150),
+    )
+    write_wav("app_started.wav", app_hello, vol=0.52)
+    write_wav(
+        "app_exiting.wav",
+        _concat(
+            _breath(523.25, 95),
+            _silence(10),
+            _breath(392.00, 95),
+            _silence(10),
+            _breath(261.63, 150),
+        ),
+        vol=0.46,
+    )
+
+    # -- Printing: a mechanism, then a resolution --------------------------
+    print_tick = _tone(880, 30, sqr_at, lambda i, n: exp_decay(i, 6) * edge(i, n, 2))
+    write_wav("print_started.wav", _concat(print_tick, _silence(45), print_tick), vol=0.34)
+    write_wav(
+        "print_complete.wav",
+        _concat(print_tick, _silence(45), print_tick, _silence(30), _bell(1047, 150)),
+        vol=0.46,
+    )
+
+    # -- The message tones -------------------------------------------------
+    # error and warning already exist. These are the other two every desktop
+    # has, and QUILL had neither: a neutral one for "here is a fact" and a
+    # rising one for "I need an answer". Rising, because a question rises --
+    # that is the one piece of prosody every listener already reads.
+    write_wav("information.wav", _bell(659, 170), vol=0.42)
+    # A bell, then a *bend upward* -- and the bend is the point. The first
+    # version was `_bell_seq([587, 880])`, which is note for note what
+    # conversation_wake plays: two events, one sound. Discrete notes were never
+    # going to work here anyway, because every other cue in the pack is made of
+    # discrete notes. A glide is the prosody of a spoken question, it is the
+    # only rising glide in the message family, and it cannot be mistaken for a
+    # two-note lift no matter which two notes that lift uses.
+    write_wav(
+        "question.wav",
+        _concat(
+            _bell(587, 95),
+            _sweep(659, 988, 130, tri_at, lambda i, n: _swell_env(6, 20, 0.5, 45)(i, n)),
+        ),
+        vol=0.44,
+    )
+    # task complete: two quick ticks and a bell landing on top of them. The
+    # first attempt was `_bell_seq([659, 880])`, which starts on the same note
+    # and runs to nearly the same length as conversation_review -- close enough
+    # that the two were one sound to the ear. Two *ticks* before the bell is a
+    # different shape, not merely different pitches, so it reads as "that
+    # finished" rather than as another bell in the conversation family. Also
+    # unlike ai_done, which is the assistant's own arpeggio: a background job
+    # ending is not an answer arriving.
+    complete_tick = _tone(784, 26, tri_at, lambda i, n: exp_decay(i, 6) * edge(i, n, 2))
+    write_wav(
+        "task_complete.wav",
+        _concat(complete_tick, _silence(26), complete_tick, _silence(20), _bell(1319, 190)),
+        vol=0.50,
+    )
+
+    # -- voice_preview_generating: its own sound at last -------------------
+    # It shared ai_start.wav with ai_thinking_started, which is two events
+    # making one sound -- and the two are not even the same kind of waiting.
+    # The assistant thinking is a question in flight; a voice preview is an
+    # engine warming up, which is what this is: a breath of noise opening into
+    # a tone, like a throat clearing before it speaks.
+    write_wav(
+        "voice_preview.wav",
+        _mix(
+            _noise(70, lambda i, n: min(1.0, i / max(1, ms(30))) * exp_decay(i, 40) * 0.16),
+            _concat(
+                _silence(18),
+                _sweep(330, 494, 90, tri_at, lambda i, n: _swell_env(6, 18, 0.45, 30)(i, n)),
+            ),
+        ),
+        vol=0.42,
+    )
+
+    # -- The four editor events that had no sound at all -------------------
+    # word_corrected: a fast flip up a semitone -- something was swapped for
+    # something better, and it happened *to* you rather than by you.
+    write_wav(
+        "word_corrected.wav",
+        _concat(
+            _tone(988, 32, tri_at, lambda i, n: exp_decay(i, 8) * edge(i, n, 2)),
+            _tone(1047, 42, tri_at, lambda i, n: exp_decay(i, 12) * edge(i, n, 2)),
+        ),
+        vol=0.40,
+    )
+    # list_entered: three tiny ticks, because a list is a number of things.
+    list_tick = _tone(1319, 20, sine_at, lambda i, n: exp_decay(i, 5) * edge(i, n, 1.5))
+    write_wav(
+        "list_entered.wav",
+        _concat(list_tick, _silence(28), list_tick, _silence(28), list_tick),
+        vol=0.32,
+    )
+    # transcription_word_inserted: the quietest cue in the pack, because it
+    # fires once per spoken word. Any louder and dictation becomes a woodpecker.
+    write_wav(
+        "transcription_word_inserted.wav",
+        _tone(1568, 16, sine_at, lambda i, n: exp_decay(i, 3) * edge(i, n, 1)),
+        vol=0.20,
+    )
+
+    generate_cast_outcomes()
+    generate_radio_resumed()
+
+
+def generate_radio_resumed() -> None:
+    """Quill Radio's resume earcon (xradio2 4.5, todo P3 Radio extras 2).
+
+    A tape spooling back up to speed: a short whir of noise under a sine that
+    sweeps up into the playing cue's own D, so it reads as "the same thing,
+    carrying on" rather than "something new arrived". Kept apart from
+    ``radio_playing`` on purpose -- resuming where you left off and tuning in
+    are different events, and a listener can tell which happened before the
+    audio does.
+    """
+
+    def spool_env(i: int, n: int) -> float:
+        return adsr(i, n, ms(10), ms(40), 0.5, ms(40))
+
+    whir = _noise(150, lambda i, n: spool_env(i, n) * 0.10)
+    climb = _sweep(220, 587, 150, sine_at, spool_env)
+    write_wav("radio_resumed.wav", _mix(whir, climb), vol=0.45)
+
+
+def generate_cast_outcomes() -> None:
+    """QUILL Cast's three one-key outcomes (qc.md section 18 item 7).
+
+    Bell-voiced like the rest of Cast's cues, short because they answer a
+    key press, and shaped by meaning: added climbs, removed falls away, and
+    marked as played is one settled note with a soft fifth under it.
+    """
+    added = _concat(_bell(784, 70), _silence(14), _bell(1175, 110))
+    write_wav("cast_queue_added.wav", added, vol=0.42)
+    removed = _concat(_bell(622, 70), _silence(14), _bell(415, 120))
+    write_wav("cast_removed.wav", removed, vol=0.38)
+    marked = _mix(_bell(988, 260), [x * 0.45 for x in _bell(659, 260)])
+    write_wav("cast_marked_played.wav", marked, vol=0.40)
+
+
+def generate_inline_note_line() -> None:
+    """The caret has entered a line that carries an inline note (2026-10-17).
+
+    Heard while arrowing through a document, so it is the quietest and
+    shortest kind of cue: two soft bell taps a sixth apart, like a margin mark
+    being touched, with no noise transient to read as a keyboard click. It
+    plays once on arrival and never while the caret moves along the same line.
+    """
+    tap = _concat(_bell(1319, 45), _silence(10), _bell(1047, 70))
+    write_wav("inline_note_line.wav", tap, vol=0.30)
 
 
 if __name__ == "__main__":
-    generate_all()
+    import sys
+
+    if "--inline-note-line" in sys.argv:
+        generate_inline_note_line()
+    elif "--cast-outcomes" in sys.argv:
+        generate_cast_outcomes()
+    elif "--radio-resumed" in sys.argv:
+        generate_radio_resumed()
+    else:
+        generate_all()

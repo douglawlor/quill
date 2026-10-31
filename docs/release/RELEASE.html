@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Release Process</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-release-process">QUILL Release Process</h1>
+<p>This file documents the operational steps for cutting a QUILL
+release. It is the canonical checklist referenced from
+<code>MAINTAINERS.md</code> and the release notes.</p>
+<h2 id="pre-tag-checklist">Pre-tag checklist</h2>
+<ol type="1">
+<li><p><strong>Wave sign-off.</strong> All issues in the active waves
+for this release are closed, with their PRs merged into the release
+branch.</p></li>
+<li><p><strong>Quality gates green.</strong> On the release branch
+head:</p>
+<ul>
+<li><code>pytest -q</code></li>
+<li><code>ruff check .</code></li>
+<li><code>ruff format --check .</code></li>
+<li><code>mypy quill\core quill\io</code></li>
+<li><code>python -m quill.tools.quillin_lint &lt;dir&gt; --strict</code></li>
+<li><code>python -m quill.tools.menu_lint</code></li>
+</ul></li>
+<li><p><strong>Docs in sync.</strong> <code>CHANGELOG.md</code>,
+<code>docs/release notes/release&lt;X&gt;.md</code>, the user guide, and
+<code>CONTROL_REFERENCE.md</code> agree on the closed issues, the menu
+paths, and the shipped feature set. When a base dependency changes,
+reconcile every committed
+<code>standalone/*/portable-inventory.json</code>, including
+Windows-only transitive requirements for each product’s extras. Inspect
+the actual bundle’s drift and dependency metadata before rebaselining
+with
+<code>python scripts\check_runtime_inventory.py &lt;portable-dir&gt; --layout portable --manifest &lt;product-inventory&gt; --write</code>;
+do not bypass the inventory gate. Pure-Python modules in the frozen
+shared runtime may live inside its PYZ archive rather than appear as
+directories in <code>_internal</code>, so verify archive contents before
+concluding that an absent directory means the dependency is missing.
+<strong>PyMuPDF source and license gate.</strong> PyMuPDF is part of the
+shared runtime through GLOW. Every installed app edition that installs
+that runtime carries it, even where the app does not expose GLOW.
+Standalone portable builds use app-specific dependency groups and
+currently omit the GLOW extra. Before each public release:</p>
+<ul>
+<li>Inspect the staged shared runtime, each installer package, and each
+portable artifact. Record which contain PyMuPDF; do not infer portable
+contents from the shared-runtime inventory.</li>
+<li>For every artifact that contains PyMuPDF, verify its version and
+binary hash; update the catalogue’s source URL and checksum if the
+version changes.</li>
+<li>Regenerate the notices with
+<code>python -m quill.tools.build_third_party_notices --write</code>.
+Confirm the Artifex copyright, full AGPL-3.0 text, exact source archive,
+and checksum appear in the runtime and app notices.</li>
+<li>Preserve an immutable source snapshot for the build: the exact QUILL
+commit, dependency lock and vendored inputs, the PyMuPDF source archive,
+and the build instructions in
+<code>docs/legal/PYMUPDF-AGPL-REVIEW.md</code>. Publish the source
+location next to the corresponding binary release and retain it for the
+period required by the applicable licence. Moving runtime slot tags are
+not source snapshots.</li>
+<li>Do not make the next public runtime or app release until counsel or
+Artifex has reviewed the combined-work/source-scope and section 13
+questions in <code>docs/legal/PYMUPDF-AGPL-REVIEW.md</code>, and the
+release source offer has been checked against that advice. <strong>Other
+GPL-family components.</strong> Inventory the actual staged libmpv,
+mutagen, pillow-heif, FFmpeg, eSpeak NG, Pandoc and Git artifacts and
+their versions and build options. Verify applicable licences, notices
+and corresponding source and build inputs for each shipped artifact.
+Obtain legal review of combined-work and source-offer obligations where
+unresolved; a separate process or a repository link alone is not proof
+of compliance.</li>
+</ul>
+<p><strong>Accessibility.</strong> Before each public release:</p>
+<ul>
+<li>Add the release’s entry to
+<code>docs/accessibility-progress.md</code> (completed, open, known
+limitations, links) and link it from the release notes.</li>
+<li>Record any keyboard, screen reader or manual runs in
+<code>docs/accessibility-testing.md</code>, and update “Known
+limitations” and “Supported environments” in
+<code>docs/ACCESSIBILITY.md</code> to match.</li>
+<li>Credit accessibility contributions in the release notes only with
+each contributor’s consent and in the form they chose; describe the
+work, never the person’s disability or assistive technology. Run
+<code>node .github/scripts/a11y-credits.mjs --since &lt;previous tag&gt;</code>
+and paste the block it prints: items labelled <code>credit: yes</code>
+or <code>credit: anonymous</code> closed since that tag, as code and
+other contributions. It also warns about <code>credit: asked</code>
+items with no answer after 14 days; leave those contributors out, or ask
+them again.</li>
+</ul></li>
+<li><p><strong>Translations template current.</strong>
+<code>quill/locale/quill.pot</code> shows the target version stamp and a
+fresh <code>POT-Creation-Date</code>.</p></li>
+<li><p><strong>No <code>.po</code> or <code>.mo</code> files
+ship.</strong> Verified with
+<code>git ls-files | grep -E '\.(po|mo)$'</code> returning
+empty.</p></li>
+<li><p><strong>Manifest regenerated.</strong>
+<code>docs/site/updates/manifests/manifest-&lt;X&gt;.json</code> exists
+for the target version, alongside the historical <code>0.5.0</code>
+manifest that the public feed still points at during
+pre-release.</p></li>
+<li><p><strong>Quillin Hub service code shipped.</strong>
+<code>quillin-hub/</code> is a Flask service in this repo; the registry
+API, Submission Forge, sync worker, and smoke test are all in-tree.
+Public deployment (<code>hub.quillforall.org</code> – DNS, hosting,
+Postgres) is a separate ops track and is tracked separately from the
+release cut. The Ed25519 publisher signature gate
+(<code>quill/tools/signing.py</code> plus the Submission Forge
+fail-closed hook) and the deployment runbook
+(<code>docs/release/quillin-hub-deployment.md</code>) are in; the
+protocol is documented in <code>docs/signing.md</code>.</p></li>
+</ol>
+<h2 id="tag-time-flip">Tag-time flip</h2>
+<ol start="7" type="1">
+<li><strong>Flip the GitHub Pages update feed.</strong> Until the 0.7.0
+stable tag is cut,
+<code>docs/site/updates/manifests/manifest-0.5.0.json</code> is the
+public feed so testers checking for updates do not see a phantom bump.
+When tagging the stable release, replace the feed manifest with
+<code>manifest-&lt;X&gt;.json</code> and re-sign the update feed
+(<code>python -m quill.tools.generate_signed_feed &lt;X&gt;</code>).</li>
+<li><strong>Verify the feed.</strong>
+<code>python -m quill.tools.verify_update_manifest</code> confirms the
+signature and the version stamp.</li>
+<li><strong>Tag and push.</strong>
+<code>git tag -s v&lt;X&gt; -m "QUILL &lt;X&gt;"</code> from the release
+branch, then <code>git push origin v&lt;X&gt;</code>.</li>
+</ol>
+<h2 id="post-tag-checklist">Post-tag checklist</h2>
+<ol start="10" type="1">
+<li><strong>GitHub Release.</strong> Create the release on GitHub from
+the tag, paste the release notes, and attach the signed installer
+artifacts.</li>
+<li><strong>Announce.</strong> Post in the community channel and update
+the website.</li>
+<li><strong>Archive old notes.</strong> Move the prior release notes
+into <code>docs/release notes/archived/</code>.</li>
+</ol>
+<h2 id="channels-publishing-and-promotion">Channels, publishing and
+promotion</h2>
+<p>Every QuillVille app with release channels (QUILL, QUILL Lite, Quill
+Radio, QUILL Cast, and QUILL Transcribe since 2026-10-24) is offered
+updates from one signed list per app,
+<code>docs/site/updates/v2/&lt;app&gt;.json</code> plus
+<code>&lt;app&gt;.json.sig</code>, served from the Pages site. A build
+is made and signed once; after that only the list changes. The design is
+<code>docs/release-channels-plan.md</code>.</p>
+<h3 id="the-feed-key-stays-on-your-computer">The feed key stays on your
+computer</h3>
+<p>The lists are signed with the feed key you already use for the v1
+feed (<code>~/.config/quill/quill-feed-priv.key</code>, or the file
+named by <code>QUILL_FEED_KEY_FILE</code>). No workflow signs a v2 list
+(the old v1 list is the one exception; see below). Every script that
+changes a list signs it as it writes, unless you pass
+<code>--no-sign</code>; then the <code>.sig</code> is removed, GATE-FEED
+(<code>tests/unit/docs/test_release_feeds.py</code>) fails, and the
+change cannot merge until you run
+<code>python scripts/feed_tool.py sign --app &lt;app&gt;</code>.</p>
+<h3 id="build-numbers">Build numbers</h3>
+<p>Every app’s version has a build number, so the same release number
+can ship more than once. If Quill Radio 3.2.0 goes out and a fix has to
+follow without a new number, the fix is 3.2.0 build 2, and Check for
+Updates offers it to everyone on build 1.</p>
+<ul>
+<li><strong>Where it lives.</strong> Next to each app’s version
+constant: <code>_BUILD</code> in <code>quill/apps/radio.py</code> (and
+Converter, Weather, Inkwell, Player, Studio, Beacon),
+<code>APP_BUILD</code> in <code>quill/core/lite/__init__.py</code> and
+<code>quill/apps/podcasts_menu.py</code>, <code>__build__</code> in
+<code>quill/__init__.py</code> (QUILL) and in
+<code>standalone/social/quill_social/__init__.py</code>. A new version
+starts at build 1.</li>
+<li><strong>How it is written.</strong> The canonical form is
+<code>3.2.0+2</code> (and <code>3.3.0-beta.2+5</code> for a
+pre-release). People see “3.2.0 (build 2)” in About, Update History,
+update notices and the Release Channel window. Release notes, changelog
+headings and file names keep saying <code>3.2.0</code>.</li>
+<li><strong>Tags.</strong> A build is tagged as a pre-release
+identifier, never with a plus: <code>quill-radio-v3.2.0-build.2</code>,
+<code>quill-lite-v2.0.0-build.1</code>, <code>v1.0.0-build.1</code>,
+<code>v1.1.0-beta.1.build.3</code>. Copies installed before build
+numbers read a <code>+</code> in a sibling’s tag as no version at all
+and in QUILL’s own tag as part of the patch number
+(<code>v1.0.0+2</code> was 1.0.2 to them). They read
+<code>-build.2</code> as a pre-release of 3.2.0, so a copy on an older
+release (3.1.1) still sees the rebuild as newer and takes the newest
+build. Tag the first build of a version <code>-build.1</code> too, so
+those copies never pick the first build over a later one. Tags made
+before build numbers stay valid; they count as build 0.</li>
+<li><strong>Order.</strong> The build only breaks ties: 3.2.0-rc.1 build
+40 &lt; 3.2.0 (no build) &lt; 3.2.0 build 1 &lt; build 2 &lt; 3.2.1. A
+commit after a plus (<code>+g1a2b3c4</code>, Dev builds) is still
+identity, not order. GATE-VERSORT
+(<code>tests/unit/core/test_release_versioning.py</code>) holds the
+table.</li>
+<li><strong>What installed copies do.</strong> A copy that already
+understands builds (this release onwards) is offered build 2 over build
+1. A copy from before build numbers that is on the same number (3.2.0)
+is not offered the rebuild of 3.2.0; it gets it with the next release. A
+copy on an older release is offered the newest build.</li>
+<li><strong>The installer.</strong> Each <code>.iss</code> takes
+<code>/dAppBuild=</code> and <code>/dAppFileVersion=</code> from
+<code>build_release.ps1</code>. Windows shows <code>X.Y.Z.B</code>
+(3.2.0.2) in the file’s Details tab, and the installer writes
+<code>version_build=3.2.0+2</code> beside <code>version=3.2.0</code> in
+<code>quill-app-version.ini</code>. It is a separate key so older
+runtimes, which read only <code>version</code>, are not confused, and it
+repeats the version so a stale key left by a newer install is
+ignored.</li>
+</ul>
+<p><strong>Shipping a rebuild:</strong></p>
+<ol type="1">
+<li>Fix the problem. Keep the version; set the build constant to the
+next build (<code>_BUILD = 2</code>).</li>
+<li>Add a line under the existing version’s section in the app’s
+changelog. There is no new section; the build is not a new release.</li>
+<li>Build: <code>.\standalone\radio\scripts\build_release.ps1</code>.
+Without <code>-Build</code>, the script asks
+<code>scripts/release_build_number.py</code> for the next build after
+the newest tag published for this version, and stops if the build
+constant disagrees or the build is already published. Pass
+<code>-Build 2</code> when the published releases cannot be read. A Dev
+build (<code>-DevVersion</code>) has no build number.</li>
+<li>Publish:
+<code>python scripts/publish_release.py --app radio --version 3.2.0 --channel beta --dist standalone/radio/dist</code>.
+Without <code>--build</code> it lists the next build
+(<code>3.2.0+2</code>) under the tag
+<code>quill-radio-v3.2.0-build.2</code>. For QUILL, tag
+<code>v1.0.0-build.2</code> and use <code>--existing</code>, which lists
+the newest build already on GitHub.</li>
+<li>Promote that exact build:
+<code>python scripts/promote_release.py --app radio --version 3.2.0+2 --to stable</code>.
+A version without a build is refused with the builds it could mean.</li>
+</ol>
+<p>GATE-SIBVER compares builds when both the source and the published
+tag carry one, and GATE-APPVER checks that each app’s build constant,
+its installers’ <code>AppBuild</code> and <code>AppFileVersion</code>,
+and its build script agree.</p>
+<h3 id="a-joint-release-of-several-apps-decided-2026-10-05">A joint
+release of several apps (decided 2026-10-05)</h3>
+<p>Every app build ships the shared runtime, and the runtime carries
+every app’s version. When several apps release together before any of
+them is published, each app’s own GATE-SIBVER check fails on the others,
+because it names only the app it builds. For that case, run the check
+once naming every app in the release:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>check_sibling_versions<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>releasing radio <span class="op">--</span>releasing quilllite <span class="op">--</span>releasing cast <span class="op">--</span>releasing converter</span></code></pre></div>
+<p>If it passes, build each app with
+<code>-SkipPublishedCheck -Build 1</code> (or the build being shipped).
+<code>-SkipPublishedCheck</code> also lets the build number go unchecked
+against GitHub, so check that by hand first:
+<code>python scripts/release_build_number.py --app radio --version 3.2.0 --build 1</code>
+for each app. Outside a joint release, <code>-SkipPublishedCheck</code>
+is for Dev builds only.</p>
+<p><code>build-quill-apps.ps1</code> runs that joint check for you (its
+“Sibling version check” step names every app it is building) and then
+builds each app with <code>-SkipPublishedCheck</code>. Every installer’s
+<code>build_release.ps1</code> runs the check for its own app when built
+on its own. The check refuses, with a sentence, an app it has no row for
+in <code>SITES</code> rather than skipping it: until 2026-10-15 the
+table lacked Beacon, Social and Audio Studio, so
+<code>build-quill-apps.ps1 all</code> stopped at “unknown app(s)” and
+checked nothing.
+<code>tests/unit/scripts/test_check_sibling_versions.py</code> now holds
+<code>SITES</code> against
+<code>release_build_number.BUILD_CONSTANTS</code>, the
+<code>build-quill-apps.ps1</code> catalogue and every
+<code>standalone/*/scripts/build_release.ps1</code>, so a new app fails
+there by name.</p>
+<h3
+id="code-signing-beta-and-dev-never-stable-always-decided-2026-10-04">Code
+signing: Beta and Dev never, Stable always (decided 2026-10-04)</h3>
+<p>Beta and Dev builds are not code-signed, and Stable always is. The
+version number decides:</p>
+<ul>
+<li>A <strong>Beta, Release Candidate, Alpha or Dev</strong> build
+(<code>3.3.0-beta.1</code>, <code>1.0.0-rc.1</code>,
+<code>3.3.1-dev.20261003.1</code>, anything built with
+<code>-DevVersion</code>) is never signed. <code>-Sign</code> and
+<code>QUILL_SIGN_REQUIRED=1</code> are ignored, and the build says so in
+one line: “Beta and Dev builds are not code-signed; signing
+skipped.”</li>
+<li>A <strong>final-numbered</strong> build (<code>3.3.0</code>) is a
+Stable candidate. Build it with <code>-Sign</code> (or
+<code>QUILL_SIGN=1</code>): it is signed when it is built, listed on
+Beta for its soak, and promoted to Stable as the same files.</li>
+</ul>
+<p>Why the candidate is signed at build time rather than at promotion:
+Stable takes the same files that were on Beta, and an installer carries
+its programs packed inside <code>Setup.exe</code>. Signing them at
+promotion would mean building a new installer, which is not what was
+tested on Beta; signing only the outer <code>Setup.exe</code> would put
+unsigned programs on Stable. A final-numbered build waiting on Beta is a
+release candidate of Stable, not a Beta build, so signing it keeps both
+promises.</p>
+<p><code>publish_release.py</code> refuses an unsigned final-numbered
+build (and a signed Beta or Dev one) before creating anything, and
+promotion check P5 refuses Stable for anything unsigned. If P5 fails,
+rebuild with <code>-Sign</code>; the rebuild gets the next build number,
+goes on Beta, and is promoted from there. Details:
+<code>docs/code-signing.md</code>, “Which builds are signed”.</p>
+<h3 id="publishing-to-beta">Publishing to Beta</h3>
+<p>For a step-by-step walk-through of building and publishing the QUILL
+Lite, Quill Radio and QUILL Cast betas, see <a
+href="beta-build-and-publish.md">Beta builds and publishing</a>. For the
+general release of QUILL Lite 2.0, Quill Radio 3.2, QUILL Cast 2.0 and
+QUILL Transcribe 1.0, from one-time setup to the website, see <a
+href="release-plan-lite-radio-cast-transcribe.md">the release
+plan</a>.</p>
+<p>A sibling app built on this computer:</p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="op">.</span>\standalone\radio\scripts\build_release<span class="op">.</span><span class="fu">ps1</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>publish_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>version <span class="dv">3.3</span><span class="op">.</span><span class="dv">0</span><span class="op">-</span>beta<span class="op">.</span><span class="dv">1</span> `</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>channel beta <span class="op">--</span>dist standalone<span class="op">/</span>radio<span class="op">/</span>dist <span class="op">--</span>notes-file notes<span class="op">.</span><span class="fu">md</span></span></code></pre></div>
+<p>This hashes the files locally, creates the GitHub release as a
+prerelease that is never “Latest”, uploads the files, lists the build on
+Beta, and signs the list. QUILL’s own release is still built by
+<code>windows-release.yml</code> from a tag; list it afterwards with
+<code>--existing</code>, which downloads and hashes the files here
+rather than trusting GitHub’s numbers:</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>publish_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app quill <span class="op">--</span>version <span class="dv">1.0</span><span class="op">.</span><span class="dv">0</span><span class="op">-</span>rc<span class="op">.</span><span class="dv">1</span> <span class="op">--</span>channel beta <span class="op">--</span>existing</span></code></pre></div>
+<p>QUILL 1.0.0 becomes Stable this way: tag <code>v1.0.0-rc.1</code>,
+list it on Beta, then build the final <code>v1.0.0</code> candidate,
+list it on Beta, and promote it. CI cannot sign, so the
+<code>v1.0.0</code> candidate is built on your computer with
+<code>QUILL_SIGN=1</code> and its signed installer and portable zip are
+uploaded over the CI files
+(<code>gh release upload v1.0.0 &lt;files&gt; --clobber</code>) before
+you list it; the release candidate stays unsigned.</p>
+<p><strong>The page budget.</strong> Installed Quill Radio 3.0.4 and
+QUILL Lite 1.1.2 read only the first 30 releases of
+<code>Community-Access/quill</code>. <code>publish_release.py</code>
+refuses to publish when any app’s newest Stable release would be more
+than 20 releases down, and when a newer Beta is published it deletes the
+older Beta release objects (the tags stay) and drops them from the list.
+Pass <code>--keep-superseded</code> to keep them. <code>--dry-run</code>
+shows everything without creating or writing anything.</p>
+<p>Commit <code>docs/site/updates/v2</code> through a pull request as
+usual.</p>
+<h3 id="promoting">Promoting</h3>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>promote_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>version <span class="dv">3.3</span><span class="op">.</span><span class="dv">0</span> <span class="op">--</span>to stable <span class="op">--</span>dry-run</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>promote_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>version <span class="dv">3.3</span><span class="op">.</span><span class="dv">0</span> <span class="op">--</span>to stable</span></code></pre></div>
+<p>Every check is printed as PASS, WARN or FAIL, and one FAIL stops it:
+the release exists; every file downloads again with the size and SHA-256
+in the list; the list’s signature is valid; Stable takes only a
+final-numbered build that was on Beta first; for Stable, every installer
+and every program in the portable zip carries an Authenticode signature
+(always – Stable is never unsigned); tag, version and file names agree;
+nothing the build carries is ahead of that app’s own channel; the
+changelog has the version; for Stable, a screen-reader sign-off sheet at
+<code>docs/qa/signoffs/&lt;app&gt;-&lt;version&gt;.md</code> with
+<code>Result: pass</code>, <code>Tester:</code>,
+<code>Screen readers:</code> and <code>Date:</code> lines; at least 7
+days on Beta (1 on Dev before Beta); and the documentation gates. A
+warning says when going back to the previous Stable would need a saved
+copy.</p>
+<p>A shorter soak needs a reason, and the reason is written into the
+build’s history in the list:
+<code>--skip-soak "fixes a crash on start in 3.2.0"</code>.</p>
+<p><strong>Stable release notes.</strong> A promotion to Stable rolls
+the notes up for you: every changelog section after the current Stable
+build, up to this one, merged into “What’s new since 3.2.0”. Lines
+marked <code>[beta-only]</code> are left out (with anything indented
+under them), so are each Beta’s “Known rough edges”, and “Before you
+update” comes first when a data format moved. <code>--dry-run</code>
+prints the result; the real run makes it the GitHub release body and the
+feed’s summary. <code>--notes-file</code> gives your own notes instead.
+To see or save them before promoting:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>rollup_release_notes<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>from <span class="dv">3.2</span><span class="op">.</span><span class="dv">0</span> <span class="op">--</span>to <span class="dv">3.3</span><span class="op">.</span><span class="dv">0</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>rollup_release_notes<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>to <span class="dv">3.3</span><span class="op">.</span><span class="dv">0</span> <span class="op">--</span>out notes<span class="op">.</span><span class="fu">md</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>rollup_release_notes<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>to <span class="dv">3.3</span><span class="op">.</span><span class="dv">0</span> <span class="op">--</span>summary</span></code></pre></div>
+<p>On success the GitHub release stops being a prerelease (only QUILL’s
+own Stable release becomes “Latest”), its title says when it was
+promoted, the list moves it to Stable with a fresh 90-day expiry, and a
+line goes into <code>docs/release/promotions.log</code>.</p>
+<p><strong>From GitHub instead.</strong> Actions &gt; promote-release
+runs the same script. The checks job always runs as a dry run and
+uploads its report. The Stable job runs in the GitHub Environment
+<strong>stable-promotion</strong>, so nothing reaches Stable until you
+press Approve. Because the workflow has no key, it promotes with
+<code>--no-sign</code> and opens a pull request on
+<code>promote/&lt;app&gt;-&lt;version&gt;-stable</code>; sign it locally
+and push before merging. A pull request opened with the workflow’s own
+token starts no checks, so CI first runs on it when you push the signing
+commit. The workflow passes every input to its scripts through
+<code>env:</code>, never pasted into a command, and runs only in
+<code>Community-Access/quill</code>.</p>
+<h3 id="dev-builds">Dev builds</h3>
+<p><code>dev-builds.yml</code> runs once a day at 06:17 UTC, and only
+builds when <code>main</code> has changed since the last Dev build
+(<code>scripts/dev_build_plan.py</code> decides; Run workflow with
+<strong>force</strong> overrides both rules). It builds every app
+unsigned, with a version like <code>3.3.1-dev.20261003.1</code>, and
+publishes them to
+<strong>Community-Access/quillville-dev-builds</strong>, never to the
+main repository.</p>
+<ul>
+<li>The first job stops at once, with an error naming the secret, when
+<code>DEV_BUILDS_TOKEN</code> is missing or cannot read the dev-builds
+repository, so a missing secret never costs four Windows builds.</li>
+<li>Every job builds from the one commit the first job chose, and that
+commit is the one written into the release notes, so “has
+<code>main</code> changed since the last Dev build?” compares against
+what was really built.</li>
+<li>Quill Radio’s Dev build skips its catalog seed
+(<code>-SkipCatalog</code>, which only Radio’s build script has) and
+browses live until its first refresh. QUILL Cast’s build reads
+<code>QUILL_PODCAST_INDEX_KEY</code> and
+<code>QUILL_PODCAST_INDEX_SECRET</code>; without them Cast builds with
+no Podcast Index search.</li>
+</ul>
+<p>Dev builds reach the Dev channel only when you list them, from your
+computer:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>publish_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>version <span class="dv">3.3</span><span class="op">.</span><span class="dv">1</span><span class="op">-</span>dev<span class="op">.</span><span class="dv">20261003.1</span> <span class="op">--</span>channel dev <span class="op">--</span>existing</span></code></pre></div>
+<p>A good Dev build can go to Beta as-is:
+<code>promote_release.py --to beta</code>.</p>
+<h3 id="withdrawing-a-build">Withdrawing a build</h3>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>revoke_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>version <span class="dv">3.4</span><span class="op">.</span><span class="dv">0</span><span class="op">-</span>beta<span class="op">.</span><span class="dv">1</span> `</span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>reason <span class="st">&quot;can lose favorites on first start&quot;</span> <span class="op">--</span>replacement <span class="dv">3.4</span><span class="op">.</span><span class="dv">0</span><span class="op">-</span>beta<span class="op">.</span><span class="dv">2</span> <span class="op">--</span>dry-run</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>revoke_release<span class="op">.</span><span class="fu">py</span> <span class="op">--</span>app radio <span class="op">--</span>version <span class="dv">3.4</span><span class="op">.</span><span class="dv">0</span><span class="op">-</span>beta<span class="op">.</span><span class="dv">1</span> `</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">--</span>reason <span class="st">&quot;can lose favorites on first start&quot;</span> <span class="op">--</span>replacement <span class="dv">3.4</span><span class="op">.</span><span class="dv">0</span><span class="op">-</span>beta<span class="op">.</span><span class="dv">2</span></span></code></pre></div>
+<p>The build is marked withdrawn in the list, so it is never offered
+again and is never a way back. Each channel that offered it falls back
+to the build before it, and the script says which. Its GitHub release
+title gains “(withdrawn)”. Nothing is deleted: people who have it can
+still move forward or back, and the files stay downloadable. The list is
+signed as it is written, or left unsigned with <code>--no-sign</code>
+for <code>python scripts/feed_tool.py sign --app radio</code> later.
+<code>feed_tool.py revoke</code> does exactly the same; this script is
+the one to use.</p>
+<h3 id="data-formats-gate-datafmt">Data formats (GATE-DATAFMT)</h3>
+<p>Going back to Stable is allowed only when the older build can read
+what the newer one saved, and that is decided from the version numbers
+in <code>quill/core/data_formats.py</code>. GATE-DATAFMT keeps them
+honest: it fingerprints what each format is saved from (dataclass fields
+and types, QUILL’s settings groups, schema stamps, and the serializer
+code for stores with no dataclass) against
+<code>tests/unit/core/fixtures/data_format_fingerprints.json</code>. It
+runs in <code>tests/unit/core/test_data_formats.py</code> and as the
+data-formats row of <code>platform_report</code>.</p>
+<p>When it fails, decide which it is:</p>
+<ul>
+<li><strong>An older build would misread or lose the data.</strong> Bump
+<code>current</code> (and <code>reads_up_to</code>) for that format in
+<code>data_formats.py</code>, then record it:
+<code>python -m quill.tools.data_format_audit --write</code>.</li>
+<li><strong>Older builds read it safely</strong> (an added field they
+ignore):
+<code>python -m quill.tools.data_format_audit --write --accept radio.favorites --note "adds a station note; older builds ignore it"</code>.
+A field whose type changed cannot be accepted this way; that is a
+bump.</li>
+</ul>
+<h3 id="rehearsing-the-whole-cycle">Rehearsing the whole cycle</h3>
+<p><code>tests/unit/scripts/test_channel_rehearsal_offline.py</code>
+runs in CI: publish on Dev, promote to Beta and Stable, publish the next
+Beta, withdraw it, and go back to Stable, with the real scripts, a fake
+<code>gh</code> and a throwaway key, the app reading the lists through
+<code>QUILL_UPDATE_FEED_BASE</code>. Before a first real promotion, run
+the same flow over HTTPS against a throwaway server:</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="va">$env</span><span class="op">:</span><span class="va">QUILL_CHANNEL_REHEARSAL</span> <span class="op">=</span> <span class="st">&quot;1&quot;</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="va">$env</span><span class="op">:</span><span class="va">QUILL_UPDATE_FEED_BASE</span> <span class="op">=</span> <span class="st">&quot;https://rehearsal.example/updates/v2/&quot;</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="va">$env</span><span class="op">:</span><span class="va">QUILL_REHEARSAL_SERVE_DIR</span> <span class="op">=</span> <span class="st">&quot;D:/rehearsal/updates/v2&quot;</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>pytest tests<span class="op">/</span>integration<span class="op">/</span>test_channel_rehearsal<span class="op">.</span><span class="fu">py</span> <span class="op">-</span>v</span></code></pre></div>
+<p>The server’s host must be trusted
+(<code>QUILL_UPDATE_TRUSTED_HOSTS</code> if it is not GitHub’s). Nothing
+touches the real lists, your key or GitHub.</p>
+<h3 id="feed-expiry-and-the-14-day-warning">Feed expiry and the 14-day
+warning</h3>
+<p>Each list expires 90 days after it was last written. A list past its
+date is treated as “couldn’t check” on every computer, so an expired
+list stops every update. Every publish or promotion refreshes it.
+Between releases, <code>publish_release.py</code>,
+<code>promote_release.py</code>, <code>feed_tool.py verify</code> and
+<code>platform_report</code> (the release-feeds row) warn once any list
+is within 14 days of expiring. To refresh one without a release:</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>python scripts<span class="op">/</span>feed_tool<span class="op">.</span><span class="fu">py</span> refresh <span class="op">--</span>app radio</span></code></pre></div>
+<h3 id="runtime-slots">Runtime slots</h3>
+<p>Beta and Dev apps run on their own copy of the shared runtime
+(<code>Runtime\3.14-beta</code>, <code>Runtime\3.14-dev</code>). Publish
+a Stable runtime with <code>build_runtime_installer.ps1 -Publish</code>
+and a Beta runtime with <code>-Publish -Channel beta</code>. Each goes
+to the tag named for its slot, <code>runtime-3.14</code> or
+<code>runtime-3.14-beta</code>, and each app’s launcher repairs a
+missing runtime from its own slot’s tag. There is no Dev runtime
+installer: Dev runtimes do not repair themselves.</p>
+<p><code>runtime-latest</code> and <code>runtime-beta</code> are frozen
+at the last Python 3.13 runtime (decided 2026-10-12) and the script
+refuses to publish to them. Launchers built for 3.13 have those tags
+compiled in. A 3.14 runtime published there would install into
+<code>Runtime\3.14</code> while those launchers keep looking in
+<code>Runtime\3.13</code>, so an old app that lost its runtime would
+never start again.</p>
+<p><strong>A slot its last app has left is removed.</strong> Every app
+installer, after registering the app on its slot, runs
+<code>runtime_cli reclaim-old-slots</code>. Since 2026-10-15 that
+removes not only an older Python’s slot but also a Beta or Dev slot of
+this Python that no app needs any more, so when the last Beta app goes
+back to Stable, <code>Runtime\3.14-beta</code> and its 335 MB go too. A
+slot stays while any app is registered on it, any installed app’s
+<code>quill-app-version.ini</code> names it, or a shortcut runs from it;
+the slot being installed into and the Stable slot are never touched.</p>
+<h3 id="what-has-been-run-for-real">What has been run for real</h3>
+<p>Release channels were built in October 2026 without anything being
+run but Python. These now run, on any Windows computer with the tools,
+and in PR CI:</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Test</th>
+<th>Needs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The native launcher, compiled from
+<code>quill/native/launcher</code> exactly as a release builds it,
+started beside an ini that names a Beta slot: only the Beta runtime
+starts. <code>runtime_resolve.c</code> asked every slot question,
+including that a missing Beta runtime never falls back to Stable’s</td>
+<td><code>tests/unit/native/test_launcher_compiled.py</code></td>
+<td>Visual Studio Build Tools (C++), CMake</td>
+</tr>
+<tr>
+<td><code>/CHANNEL=</code> in <code>installer/shared-runtime.iss</code>,
+compiled by Inno Setup and run with each channel and version; the slot
+it picks matches <code>runtime_slots.py</code></td>
+<td><code>tests/unit/structure/test_shared_runtime_channel_compiled.py</code></td>
+<td>Inno Setup 7</td>
+</tr>
+<tr>
+<td>The update helper’s portable swap, health check and undo, and the
+installed copy’s reinstall of the kept version, run against temp folders
+with stand-in apps and installers</td>
+<td><code>tests/unit/core/test_update_helper_runs.py</code></td>
+<td>Windows (the installer cases also need the C tools)</td>
+</tr>
+<tr>
+<td>The two workflows’ secrets, Environment, fork guard and that no
+input is pasted into a script</td>
+<td><code>tests/unit/structure/test_release_workflows.py</code>, plus
+actionlint in PR CI’s <code>workflow-lint</code></td>
+<td>nothing</td>
+</tr>
+</tbody>
+</table>
+<p>Without the tools those tests skip; they never fail for a missing
+compiler. The ones that start a built launcher or a compiled setup run
+only in CI, or on your computer when you ask with
+<code>QUILL_RUN_NATIVE_PROGRAMS=1</code>, so a plain <code>pytest</code>
+never starts a real program on your desktop.
+<code>scripts/build_native_launcher.py</code> now picks CMake’s
+generator for whichever Visual Studio is installed (2022 or 2026), so a
+GitHub image that moves to the next Visual Studio still builds the
+launcher.</p>
+<p>Running them found four faults, all fixed: a portable update put your
+<code>data</code> folder inside the new copy’s <code>data</code> folder
+(<code>data\data</code>), where the app never looks; the older in-place
+copy did worse, deleting what was in <code>data</code>, because every
+portable zip ships a <code>data</code> folder and robocopy’s mirror
+walked into it; the installer’s <code>/LOG="..."</code> lost its closing
+quote on the way through PowerShell; and a first update’s undo was never
+reported, because nothing knew the version being replaced.</p>
+<p><strong>Open, and yours to decide before the next portable
+release.</strong> The helper is written by the version being updated,
+not by the new one, so a portable copy already released runs the old
+in-place copy. Given a portable zip with a <code>data</code> folder in
+it, which every current zip has (it is what marks a fresh copy as
+portable), that copy deletes everything of the user’s in
+<code>data</code> except the files the zip also carries. It only matters
+for a released portable copy whose “Install and restart now” actually
+reaches the helper: before the launcher let the helper leave its job
+(2026-09-30), the helper was killed before it ran, which is why Quill
+Radio 3.0.4 and earlier update by hand. Check QUILL Lite 1.1.2 first,
+then any QUILL 0.9 portable. If one is affected, the zip it can be
+offered must not contain a <code>data</code> folder, which means marking
+a fresh portable copy some other way, or telling those users to update
+by hand. Copies from the next release on carry the fixed helper.
+<strong>Decided (Jeff, 2026-10-17): tell them to update by
+hand.</strong> The notice is drafted in
+<code>docs/release/portable-update-by-hand-notice.md</code> (for the
+website), and a short version is in QUILL Lite’s 2.0 release notes and
+QUILL’s 1.0 release notes. Nothing has been published or sent.</p>
+<h3 id="the-update-helper-swap-health-check-and-undo">The update helper:
+swap, health check and undo</h3>
+<p>What happens after “Install and restart now”
+(<code>quill/core/self_update.py</code>,
+<code>quill/core/updater/apply_script.py</code>):</p>
+<ul>
+<li><strong>Portable copy.</strong> The new copy is unpacked, then
+swapped in: the running folder becomes
+<code>&lt;folder&gt;.previous</code>, the new one takes its place, and
+your <code>data</code> folder replaces the new copy’s empty one. If any
+step fails (a file still open), every step already taken is undone and
+the copy is made in place instead, with both <code>data</code> folders
+left out.</li>
+<li><strong>Installed copy.</strong> The installer runs quietly with
+<code>/CHANNEL=</code> and <code>/LOG=</code>. It is not started
+elevated: every QuillVille installer is per-user, and Inno Setup asks
+for permission itself when the copy being updated was installed for all
+users. If the installer fails, the version you had is started again at
+once and the app says, once, that the update could not be
+installed.</li>
+<li><strong>Health check.</strong> The new version must say it started
+within two minutes (it writes <code>started-&lt;version&gt;.ok</code>
+once its window is up). If it does not, the helper stops whatever is
+still running from the app’s folder, and only from there, and goes back:
+the <code>.previous</code> folder is swapped back, or the kept installer
+of the version you had is run again. An undo that cannot finish puts
+everything back as it was and says so in
+<code>&lt;updates&gt;\apply-update.log</code>; it never claims to have
+gone back.</li>
+<li><strong>Afterwards.</strong> The version that starts reads
+<code>apply-result.json</code>, says once what happened, and records it
+in Help &gt; Update History.</li>
+</ul>
+<h3 id="one-time-setup-owner">One-time setup (owner)</h3>
+<p>Nothing below can be done from the repository, and none of it has
+been done yet. In order:</p>
+<ol type="1">
+<li>Create the repository
+<strong>Community-Access/quillville-dev-builds</strong> with a README,
+so it has a <code>main</code> branch; a Dev release’s tag is created
+there.</li>
+<li>Add the repository secret <strong>DEV_BUILDS_TOKEN</strong> to
+<code>Community-Access/quill</code>: a fine-grained token with Contents
+read and write on the dev-builds repository only.</li>
+<li>Add the repository secrets <strong>QUILL_PODCAST_INDEX_KEY</strong>
+and <strong>QUILL_PODCAST_INDEX_SECRET</strong> (QUILL Cast’s Dev builds
+read them; without them Cast builds with no Podcast Index search).</li>
+<li>Create the GitHub Environment <strong>stable-promotion</strong> in
+<code>Community-Access/quill</code> with yourself as the required
+reviewer.</li>
+<li>In Settings &gt; Actions &gt; General, allow GitHub Actions to
+create and approve pull requests, so promote-release can open the pull
+request you sign.</li>
+<li>Publish and sign the first v2 list for each app
+(<code>publish_release.py</code>, signing with your feed key on your own
+computer) before the first channel-aware release ships; until a list
+exists, apps keep using the GitHub path.</li>
+<li>Watch the first runs: run <strong>dev-builds</strong> once by hand
+with <strong>force</strong> and read each job; check the four releases
+in the dev-builds repository and that the next scheduled run says “main
+has not changed”; run <strong>promote-release</strong> with
+<strong>dry_run</strong> on before any real promotion; and update one
+portable copy and one installed copy by hand, reading
+<code>apply-update.log</code> in the app’s <code>updates</code>
+folder.</li>
+</ol>
+<h3 id="the-old-v1-list-and-its-ci-key-decided-2026-10-04">The old v1
+list and its CI key (decided 2026-10-04)</h3>
+<p>The old v1 update list (<code>.quill-update-feed-v1.json</code>) is
+still signed in CI by <code>windows-release.yml</code> with the
+<code>QUILL_FEED_SIGNING_KEY</code> secret, because copies from before
+release channels read it. Leave that alone for now. Once every app’s
+channel-aware release (QUILL 1.0.0, QUILL Lite 2.0.0, Quill Radio 3.2.0,
+QUILL Cast 2.0.0) has been out for one full release cycle, remove the
+secret from CI and stop signing the v1 list. Until then, do not touch
+it.</p>
+<h2 id="macos-signednotarized-dmg-runbook-start-to-finish">macOS
+signed/notarized DMG runbook (start to finish)</h2>
+<p>Use this when onboarding a maintainer or standing up macOS release
+signing for the first time. This is the canonical operational path from
+fresh Apple account to a shipped, trusted DMG.</p>
+<h3 id="1-apple-account-and-certificate-setup-one-time">1) Apple account
+and certificate setup (one-time)</h3>
+<ol type="1">
+<li>Join and activate Apple Developer Program membership.</li>
+<li>In Apple Developer, create a <strong>Developer ID
+Application</strong> certificate.</li>
+<li>On macOS, install the certificate in Keychain Access, then export it
+as a password-protected <code>.p12</code>.</li>
+<li>In App Store Connect, create an API key for notarization and
+download the <code>.p8</code> key file.</li>
+<li>Record these values in your release vault:
+<ul>
+<li>Team ID</li>
+<li>API Key ID</li>
+<li>API Issuer ID</li>
+<li><code>.p12</code> password</li>
+<li>Exact codesign identity string (example:
+<code>Developer ID Application: Team Name (TEAMID)</code>).</li>
+</ul></li>
+</ol>
+<h3 id="2-local-prerequisites">2) Local prerequisites</h3>
+<ol type="1">
+<li>Install GitHub CLI (<code>gh</code>) and authenticate with repo
+admin/maintainer scope.</li>
+<li>Ensure the target repo contains
+<code>.github/workflows/macos-release.yml</code>.</li>
+<li>From terminal:</li>
+</ol>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cd</span> S<span class="op">:</span>\quill</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>gh auth status</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>gh repo set-default Community-Access<span class="op">/</span>quill</span></code></pre></div>
+<h3 id="3-create-release-environment">3) Create release environment</h3>
+<ol type="1">
+<li>Create the protected GitHub Actions environment:</li>
+</ol>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>gh api <span class="op">--</span>method PUT repos<span class="op">/</span>Community-Access<span class="op">/</span>quill<span class="op">/</span>environments<span class="op">/</span>macos-release</span></code></pre></div>
+<ol start="2" type="1">
+<li>In GitHub UI, configure environment protections for
+<code>macos-release</code>:
+<ul>
+<li>Required reviewers for manual approval.</li>
+<li>Restrict deployment branches as needed.</li>
+</ul></li>
+</ol>
+<h3 id="4-upload-all-required-secrets">4) Upload all required
+secrets</h3>
+<ol type="1">
+<li>File secrets:</li>
+</ol>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="op">[</span>Convert<span class="op">]::</span>ToBase64String<span class="op">([</span>IO<span class="op">.</span><span class="fu">File</span><span class="op">]::</span>ReadAllBytes<span class="op">(</span><span class="st">&quot;C:\path\to\DeveloperID.p12&quot;</span><span class="op">))</span> <span class="op">|</span> gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release BUILD_CERTIFICATE_BASE64</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="op">[</span>Convert<span class="op">]::</span>ToBase64String<span class="op">([</span>IO<span class="op">.</span><span class="fu">File</span><span class="op">]::</span>ReadAllBytes<span class="op">(</span><span class="st">&quot;C:\path\to\AuthKey_ABC123XYZ.p8&quot;</span><span class="op">))</span> <span class="op">|</span> gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release APPLE_API_KEY_B64</span></code></pre></div>
+<ol start="2" type="1">
+<li>Prompted text secrets:</li>
+</ol>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release P12_PASSWORD</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release KEYCHAIN_PASSWORD</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release MACOS_CODESIGN_IDENTITY</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release APPLE_API_KEY_ID</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release APPLE_API_ISSUER</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>gh secret <span class="fu">set</span> <span class="op">-</span>e macos-release APPLE_TEAM_ID</span></code></pre></div>
+<ol start="3" type="1">
+<li>Verify:</li>
+</ol>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>gh secret list <span class="op">-</span>e macos-release</span></code></pre></div>
+<h3 id="5-dry-run-on-branch">5) Dry run on branch</h3>
+<ol type="1">
+<li>Trigger a manual build on your working branch:</li>
+</ol>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode powershell"><code class="sourceCode powershell"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>gh <span class="kw">workflow</span> run macos-release<span class="op">.</span><span class="fu">yml</span> <span class="op">--</span>ref <span class="op">&lt;</span>branch-name<span class="op">&gt;</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>gh run list <span class="op">--</span>workflow macos-release<span class="op">.</span><span class="fu">yml</span> <span class="op">--</span>limit <span class="dv">5</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>gh run watch</span></code></pre></div>
+<ol start="2" type="1">
+<li><p>Confirm artifacts exist:</p>
+<ul>
+<li><code>Quill.dmg</code></li>
+<li><code>Quill.app</code> (if workflow uploads app bundle)</li>
+</ul></li>
+<li><p>If the run fails, triage quickly:</p>
+<ul>
+<li>Certificate import errors: re-export <code>.p12</code>, recheck
+<code>P12_PASSWORD</code>.</li>
+<li>Identity mismatch: re-copy <code>MACOS_CODESIGN_IDENTITY</code> from
+Keychain.</li>
+<li>Notary auth errors: verify Team ID, Issuer ID, Key ID, and
+<code>.p8</code> source.</li>
+</ul></li>
+</ol>
+<h3 id="6-gate-beta-publication">6) Gate beta publication</h3>
+<ol type="1">
+<li>Do not publish external beta artifacts unless macOS workflow is
+green.</li>
+<li>Require the macOS signed/notarized workflow in PR/release policy for
+any beta that includes non-engineering testers.</li>
+</ol>
+<h3 id="7-release-execution">7) Release execution</h3>
+<ol type="1">
+<li>Complete normal release pre-tag checks from this file.</li>
+<li>Push tag (<code>v&lt;X&gt;</code>) to trigger release
+workflows.</li>
+<li>Verify GitHub release includes signed Windows artifacts and
+signed/notarized macOS DMG.</li>
+<li>Perform clean-machine install checks on macOS:
+<ul>
+<li>Download DMG from release artifacts.</li>
+<li>Install without bypass commands.</li>
+<li>Launch with no unidentified-developer warnings.</li>
+</ul></li>
+</ol>
+<h3 id="8-ongoing-operations">8) Ongoing operations</h3>
+<ol type="1">
+<li>Track certificate and API key expiry on calendar.</li>
+<li>Rotate credentials before expiry and validate with a branch dry
+run.</li>
+<li>Keep at least two maintainers with documented recovery access.</li>
+</ol>
+<p>Full runbook:
+<code>docs/release/quill-macos-signing-notarization-runbook.md</code></p>
+<p>Quick operator checklist:
+<code>docs/release/macos-signed-notarized-release-day-checklist.md</code></p>
+<p>Command-only script:
+<code>docs/release/macos-release-day-commands.ps1</code></p>
+</main>
+</body>
+</html>

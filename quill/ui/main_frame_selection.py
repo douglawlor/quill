@@ -3,11 +3,18 @@
 Extracted verbatim from ``main_frame.py`` into a cohesive mixin so the UI
 monolith shrinks without any behaviour change. ``MainFrame`` inherits
 ``SelectionMarksMixin`` and every method resolves identically through the MRO;
-the methods reference instance state (``self.editor``, ``self._mark_ring``,
-``self._selection_expand_stack``) and sibling commands via ``self`` exactly as
-before. Covers structural selection (line/paragraph/block, expand/shrink,
-scope-aware selection actions, directional select-to commands) and the
-temporary-jump mark ring (set/pop/exchange/list).
+the methods reference instance state (``self.editor``, ``self._mark_ring``)
+and sibling commands via ``self`` exactly as before. Covers structural
+selection (line/paragraph/block, expand/shrink, scope-aware selection actions,
+directional select-to commands) and the temporary-jump mark ring
+(set/pop/exchange/list).
+
+There was a ``_selection_expand_stack`` here until 2026-09-17 and there is not
+one now: it was never cleared, so Shrink popped a span from a selection you had
+long since moved away from (bad.md L3). Shrink computes from the text, which is
+what QUILL Lite has always done and is strictly better -- a history can only
+answer for selections you reached by *expanding*, and the text can answer for
+any of them.
 """
 
 from __future__ import annotations
@@ -21,11 +28,32 @@ from quill.core.selection import (
     line_span,
     paragraph_span,
     selection_scope,
+    spoken_scope,
+    word_span,
+)
+from quill.core.selection import (
+    shrink_selection as shrink_selection_span,
 )
 from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 
 class SelectionMarksMixin:
+    def select_word(self) -> None:
+        """Select the word the caret is in.
+
+        QUILL had select_line, select_paragraph and select_block and no
+        select_word, which left the innermost rung of its own expansion ladder
+        as the only one you could not ask for directly.
+        """
+        text = self.editor.GetValue()
+        cursor = self.editor.GetInsertionPoint()
+        start, end = word_span(text, cursor)
+        self.editor.SetFocus()
+        self.editor.SetSelection(start, end)
+        self._announce_selection_scope("word", text, start, end)
+
     def select_line(self) -> None:
         text = self.editor.GetValue()
         cursor = self.editor.GetInsertionPoint()
@@ -51,11 +79,30 @@ class SelectionMarksMixin:
         self._announce_selection_scope("block", text, start, end)
 
     def _announce_selection_scope(self, scope: str, text: str, start: int, end: int) -> None:
-        """Announce a structural selection with its scope and word count (SEL-1)."""
-        from quill.core.announcements import format_announcement
+        """Announce a structural selection, in the shape both editors use.
 
-        words = len(text[start:end].split())
-        self._set_status(format_announcement("Selected", scope, count=words, unit="word"))
+        The sentence is :func:`quill.core.selection.describe_selection` since
+        2026-09-17 (bad.md L14): QUILL said "Selected paragraph, 41 words" and
+        QUILL Lite said "Selected paragraph, 412 characters, 41 words", and F8
+        completion differed again. Neither was wrong, and having two was --
+        somebody who uses both had to know which product they were in before
+        they could parse the answer.
+
+        **Recorded for Reselect**, which is the other half of the same fix:
+        only F8 ever set ``_last_selection``, so Select Word, Line, Paragraph
+        and Block -- the four people actually reach for -- were the four
+        ``Ctrl+Shift+F8`` could not put back (bad.md L5).
+        """
+        from quill.core.selection import describe_selection
+
+        if end <= start:
+            # "Selected line, 0 words" on a blank line is a report that
+            # something happened when nothing did. QUILL Lite's wording says
+            # which thing was not there (bad.md L11).
+            self._set_status(f"No {scope} at the cursor")
+            return
+        self._last_selection = (start, end)
+        self._set_status(describe_selection(text, start, end, scope=scope))
 
     def expand_selection(self) -> None:
         """Grow the selection to the next structural unit, announcing scope (SEL-2)."""
@@ -68,32 +115,82 @@ class SelectionMarksMixin:
             self._set_status("Selection already spans the whole document")
             return
         new_start, new_end, scope = result
-        stack = getattr(self, "_selection_expand_stack", None)
-        if stack is None:
-            stack = []
-            self._selection_expand_stack = stack
-        stack.append((start, end))
         self.editor.SetFocus()
         self.editor.SetSelection(new_start, new_end)
         self._announce_selection_scope(scope, text, new_start, new_end)
 
     def shrink_selection(self) -> None:
-        """Shrink the selection to the previously expanded unit (SEL-2)."""
-        stack = getattr(self, "_selection_expand_stack", None)
-        if not stack:
-            self._set_status("No selection to shrink")
-            return
-        previous_start, previous_end = stack.pop()
-        text = self.editor.GetValue()
-        self.editor.SetFocus()
-        self.editor.SetSelection(previous_start, previous_end)
-        if previous_start == previous_end:
-            self._set_status("Shrank selection")
-            return
-        words = len(text[previous_start:previous_end].split())
-        from quill.core.announcements import format_announcement
+        """Step back inwards, **computed from the text every time** (bad.md L3).
 
-        self._set_status(format_announcement("Shrank", "selection", count=words, unit="word"))
+        There was an expansion stack, and it was never cleared. Expand around a
+        paragraph, arrow away, select something else entirely, press Shrink --
+        and it popped the span from the *earlier* selection and jumped you
+        there. The stack could also hold an empty pair, so Shrink would collapse
+        the selection and announce "Shrank selection" as though it had done
+        something. Reproduced 2026-09-17 by ``scripts/probe_rich_edits.py``:
+        stack held ``(0, 16)`` while the selection was ``(18, 39)``.
+
+        QUILL Lite has always computed it, and computing is strictly better
+        rather than merely simpler: a history can only answer for selections you
+        reached *by expanding*, so selecting a paragraph outright and asking to
+        shrink got a refusal a listener cannot tell from a broken command --
+        even though "the line the caret is on" is an obvious answer. There is
+        nothing an expansion history knows that the text does not.
+        """
+        from quill.core.selection import describe_selection
+
+        text = self.editor.GetValue()
+        start, end = self.editor.GetSelection()
+        smaller = shrink_selection_span(text, start, end)
+        if smaller is None:
+            self._set_status("Nothing smaller to select")
+            return
+        new_start, new_end, scope = smaller
+        self.editor.SetFocus()
+        self.editor.SetSelection(new_start, new_end)
+        self._last_selection = (new_start, new_end)
+        self._set_status(describe_selection(text, new_start, new_end, scope=scope))
+
+    # ------------------------------------------------------------------ #
+    # Clearing one, and reading one back
+    # ------------------------------------------------------------------ #
+
+    def unselect_all(self) -> None:
+        """Drop the selection, staying where you are.
+
+        Remembered first, so Reselect can put it back: clearing a selection is
+        exactly the action people want undone, and this was one of the commands
+        that never recorded one (bad.md L5).
+
+        Moved here from ``main_frame.py`` on 2026-09-17, with ``say_selected``
+        beside it. Both are selection verbs that happened to be written in the
+        host rather than in the mixin whose subject they are, and GATE-11 is
+        the right way to find that out: the L5 fix cost nine lines in a module
+        that may not grow, and the answer to that is never a bigger budget.
+        """
+        start, end = self.editor.GetSelection()
+        if end > start:
+            self._last_selection = (start, end)
+        caret = self.editor.GetInsertionPoint()
+        self.editor.SetSelection(caret, caret)
+        self._set_status("Selection cleared.")
+
+    def say_selected(self) -> None:
+        """Read the selection back on demand.
+
+        Without sight there is no glance that confirms the selection is the one
+        you meant, and the next keystroke may replace it.
+        """
+        from quill.platform.sr_announce import announce
+
+        start, end = self.editor.GetSelection()
+        if start == end:
+            self._set_status("Nothing selected.")
+            return
+        text = self.editor.GetRange(start, end)
+        preview = text[:60].replace("\n", " ")
+        self._set_status_quiet("Say selected: " + preview + ("..." if len(text) > 60 else ""))
+        announce(text)
 
     def _has_active_selection(self) -> bool:
         editor = getattr(self, "editor", None)
@@ -156,7 +253,14 @@ class SelectionMarksMixin:
         word_count = len(text[start:end].split())
         from quill.core.announcements import pluralize
 
-        title = f"Selection actions ({scope}, {pluralize(word_count, 'word')})"
+        # The scope only goes in the title when it names something a person
+        # can picture. "lines" and "span" name the classifier, not the
+        # document, and this title is announced on open -- so it read
+        # "Selection actions (lines, 180 words)" out loud.
+        named = spoken_scope(scope)
+        counted = pluralize(word_count, "word")
+        inside = f"{named}, {counted}" if named else counted
+        title = f"Selection actions ({inside})"
         with wx.SingleChoiceDialog(
             self.frame,
             "Choose an action for the selection:",
@@ -245,6 +349,7 @@ class SelectionMarksMixin:
                 style=wx.TE_MULTILINE | wx.TE_READONLY | wx.HSCROLL,
             )
             ctrl.SetName("Review buffer — read-only copy of the selected text")
+            set_spoken_name(ctrl, "Review buffer")
             ctrl.SetFocus()
             sizer.Add(ctrl, 1, wx.EXPAND | wx.ALL, 8)
             close_btn = wx.Button(dlg, wx.ID_CLOSE, "Close")
@@ -253,7 +358,7 @@ class SelectionMarksMixin:
             btn_row.Add(close_btn, 0)
             sizer.Add(btn_row, 0, wx.EXPAND | wx.ALL, 8)
             dlg.SetSizer(sizer)
-            dlg.SetSize((500, 400))
+            dlg.SetSize(dip_size(dlg, 500, 400))
             close_btn.Bind(wx.EVT_BUTTON, lambda _e: dlg.EndModal(wx.ID_CLOSE))
             apply_modal_ids(dlg, affirmative_id=wx.ID_CLOSE, escape_id=wx.ID_CLOSE)
             self._show_modal_dialog(dlg, "Review Buffer")
@@ -289,16 +394,34 @@ class SelectionMarksMixin:
         self._set_status("Selected to end of document")
 
     def set_mark(self) -> None:
+        """Drop a mark that can still be found after the document changes.
+
+        The text is passed so the ring can capture an anchor (bad.md P1.2): a
+        mark that remembers only an offset points at the wrong word after the
+        next Replace All, and says nothing about having moved -- which is the
+        failure a listener has no way to notice.
+        """
         position = self.editor.GetInsertionPoint()
-        self._mark_ring.set_mark(position)
+        self._mark_ring.set_mark(position, self.editor.GetValue())
         line, column = line_column_for_position(self.editor.GetValue(), position)
         self._set_status(f"Mark ring point set at line {line}, column {column} (temporary jump)")
 
     def pop_mark(self) -> None:
+        """Jump to the newest mark, clamped, and remember where you came from.
+
+        Clamped because a mark set before a big deletion can point past the end
+        of the document, and an insertion point past the end is a jump to
+        nowhere. Recorded on the location ring because a jump you cannot come
+        back from is one people stop using (bad.md P1.2).
+        """
         mark = self._mark_ring.pop_mark()
         if mark is None:
             self._set_status("No marks in ring. Marks are temporary jump points.")
             return
+        mark = max(0, min(mark, len(self.editor.GetValue())))
+        ring = getattr(self, "_location_ring", None)
+        if ring is not None:
+            ring.record(self.editor.GetInsertionPoint())
         self.editor.SetInsertionPoint(mark)
         self.editor.SetSelection(mark, mark)
         line, column = line_column_for_position(self.editor.GetValue(), mark)
@@ -307,30 +430,94 @@ class SelectionMarksMixin:
         )
 
     def exchange_point_and_mark(self) -> None:
+        """Swap the caret with the newest mark, **and select what is between**.
+
+        Two things at once, deliberately, which is QUILL Lite's behaviour and the
+        useful one: you end up at the other end of the span *and* the span is
+        selected, because wanting to be at the other end of something is
+        normally a prelude to doing something to it (bad.md L12).
+
+        It only moved before, so the span you had just defined was gone the
+        moment you arrived at its far end, and taking it meant pressing the key
+        again to get back and then Shift-arrowing the whole way.
+        """
+        from quill.core.selection import describe_selection
+
+        text = self.editor.GetValue()
         current = self.editor.GetInsertionPoint()
-        target = self._mark_ring.exchange_point_and_mark(current)
+        target = self._mark_ring.exchange_point_and_mark(current, text)
         if target is None:
             self._set_status("No marks in ring. Marks are temporary jump points.")
             return
+        target = min(target, len(text))
         self.editor.SetInsertionPoint(target)
+        start, end = sorted((current, target))
+        if end > start:
+            self.editor.SetSelection(start, end)
+            self._last_selection = (start, end)
+            self._set_status(describe_selection(text, start, end, prefix="Swapped with mark,"))
+            return
         self.editor.SetSelection(target, target)
-        line, column = line_column_for_position(self.editor.GetValue(), target)
-        self._set_status(f"Exchanged point and mark to line {line}, column {column}")
+        self._set_status("Cursor and mark are in the same place")
 
     def list_marks(self) -> None:
-        wx = self._wx
+        """The marks, as a list you can **go to one from** (bad.md L12).
+
+        It was a message box: a read-only wall of "3. Line 41, Column 7" that
+        you had to dismiss and then reach by some other means. A list of places
+        that cannot take you to one of them is a list that answers the easy half
+        of the question -- QUILL Lite's jumps, and has since it shipped.
+
+        Each row leads with the line and carries a snippet of it, because "Line
+        41" is not a place anybody recognises and the words on it are.
+        """
+        text = self.editor.GetValue()
+        self._mark_ring.reanchor(text)
+        self._mark_ring.clamped_to(len(text))
         marks = self._mark_ring.list_marks()
         if not marks:
             self._set_status("No marks in ring. Marks are temporary jump points.")
             return
-        lines: list[str] = []
-        text = self.editor.GetValue()
-        for index, position in enumerate(reversed(marks), start=1):
-            line, column = line_column_for_position(text, position)
-            lines.append(f"{index}. Line {line}, Column {column}")
-        self._show_message_box(
-            "\n".join(lines),
-            "Mark Ring (Temporary Jump Points)",
-            wx.ICON_INFORMATION | wx.OK,
+        rows: list[tuple[int, str]] = []
+        for position in reversed(marks):
+            line, _column = line_column_for_position(text, position)
+            start = text.rfind("\n", 0, position) + 1
+            end = text.find("\n", position)
+            snippet = text[start : end if end >= 0 else len(text)].strip()[:60]
+            rows.append((position, f"Line {line}: {snippet or '(blank line)'}"))
+        chosen = self._choose_mark_row(rows)
+        if not isinstance(chosen, int):
+            self._set_status(f"Listed {len(marks)} mark(s)")
+            return
+        self._record_location_before_jump()
+        self.editor.SetInsertionPoint(chosen)
+        self.editor.SetFocus()
+        line, column = line_column_for_position(text, chosen)
+        self._set_status(f"Line {line}, column {column}")
+
+    def _choose_mark_row(self, rows: list[tuple[int, str]]) -> int | None:
+        """Show the mark list and return the chosen offset, or ``None``.
+
+        A single-selection list with Enter on a row, which is the shape every
+        other chooser in the product uses -- and the reason this is a method
+        rather than four lines inline is that the dialog has to be substitutable
+        in a test that has no display.
+        """
+        wx = self._wx
+        dialog = wx.SingleChoiceDialog(
+            self.frame,
+            "Choose a mark and press Enter to go there. Marks are places you "
+            "passed through; bookmarks are places you meant to keep.",
+            "Marks",
+            [label for _position, label in rows],
         )
-        self._set_status(f"Listed {len(marks)} mark(s)")
+        try:
+            apply_modal_ids(dialog, affirmative_id=wx.ID_OK, escape_id=wx.ID_CANCEL)
+            if self._show_modal_dialog(dialog, "Marks") != wx.ID_OK:
+                return None
+            index = dialog.GetSelection()
+        finally:
+            dialog.Destroy()
+        if not (0 <= index < len(rows)):
+            return None
+        return rows[index][0]

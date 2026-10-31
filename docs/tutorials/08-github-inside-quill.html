@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Tutorial 8: GitHub inside QUILL</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="tutorial-8-github-inside-quill">Tutorial 8: GitHub inside
+QUILL</h1>
+<p><strong>Goal:</strong> learn what QUILL can do with GitHub and with
+Git on your own computer: browse and save files, work with issues and
+pull requests, manage a repository, and sort out a merge conflict,
+without opening a browser or a terminal.</p>
+<p>There are three parts, and you can use any of them on its own:</p>
+<ul>
+<li><strong>GitHub browsing and the Items viewer</strong>: read/write
+issues, PRs, branches, commits, releases, workflow runs. Needs a GitHub
+account for anything beyond public browsing.</li>
+<li><strong>Repository administration</strong>: create, fork, rename,
+and configure repositories from QUILL. Needs a signed-in account for
+everything.</li>
+<li><strong>Local Git</strong>: accessible merge-conflict resolution and
+interactive rebase. Needs no GitHub account at all; works on any local
+repository.</li>
+</ul>
+<h2 id="0-sign-in-once">0. Sign in (once)</h2>
+<p>The first time you touch any GitHub feature, QUILL shows a one-time
+consent dialog telling you it will connect to api.github.com. Accept it,
+then:</p>
+<ol type="1">
+<li><strong>File &gt; Open from Remote &gt; Manage GitHub
+Accounts…</strong></li>
+<li><strong>Add Token.</strong> On github.com: <strong>Settings &gt;
+Developer settings &gt; Personal access tokens &gt; Tokens (classic)
+&gt; Generate new token</strong>, select the <code>repo</code> scope,
+and copy it. You only see it once.</li>
+<li>Paste it into QUILL. It is kept safely in Windows Credential Manager
+or the macOS Keychain, never in a plain file.</li>
+</ol>
+<p>You can browse public repositories without a token, though GitHub
+limits how many requests you can make. Everything that <em>writes</em>
+to GitHub needs a token; if you try a write command without one, QUILL
+offers to sign you in right there instead of just refusing.</p>
+<h2 id="1-browse-open-and-save-a-file">1. Browse, open, and save a
+file</h2>
+<ol type="1">
+<li><strong>File &gt; Open from Remote &gt; GitHub
+Repository…</strong></li>
+<li>Type an <code>owner/repo</code> (try
+<code>octocat/Hello-World</code> if you don’t have one handy) and press
+Enter.</li>
+<li>Arrow through the file list: folders first, then files. Enter opens
+a folder or a file.</li>
+<li>Edit the file, then <strong>File &gt; Open from Remote &gt; Save to
+GitHub…</strong> and type a commit message. QUILL commits straight to
+the same repository, branch, and path.</li>
+</ol>
+<p>If you already have the URL, <strong>File &gt; Open from Remote &gt;
+GitHub File URL…</strong> skips the browsing. Paste a
+<code>github.com/owner/repo/blob/branch/path</code> link and QUILL
+fetches it directly.</p>
+<h2 id="2-the-items-viewer-issues-prs-branches-and-everything-else">2.
+The Items viewer: issues, PRs, branches, and everything else</h2>
+<p><strong>File &gt; Open from Remote &gt; GitHub Items…</strong> opens
+a list, with details underneath, of one repository’s issues, pull
+requests, branches, commits, tags, releases, workflows and workflow
+runs. Many of its ideas come from <a
+href="https://github.com/kellylford/GHManage">GHManage</a>, Kelly Ford’s
+free GitHub browser for screen reader users, and we are grateful for
+it.</p>
+<ol type="1">
+<li>Type <code>owner/repo</code>, an
+<code>https://github.com/owner/repo</code> URL, or a
+<code>git@github.com:owner/repo.git</code> remote, then press
+<strong>Load</strong>. QUILL understands all three. (If your current
+document lives inside a git checkout whose origin points at GitHub, the
+field is already filled in.)</li>
+<li>Pick a <strong>View</strong>. Start with Issues &amp; PRs.
+<strong>Show</strong>, <strong>State</strong>, and <strong>Sort</strong>
+filter that view further. <strong>Columns…</strong> picks which fields
+show as columns in the list. Uncheck the ones you do not need, and QUILL
+remembers your choice.</li>
+<li>Select a row; the details pane loads its full text, then its comment
+thread. <strong>Alt+N</strong> / <strong>Alt+P</strong> jump between
+comments, and QUILL tells you “Comment 2 of 5.”</li>
+<li>Press <strong>M</strong> to toggle <strong>List mode</strong>
+between Quick (compact) and Full (every cell spoken as
+<code>field: value</code>).</li>
+</ol>
+<p><strong>Search</strong> (Ctrl+F) takes full GitHub search syntax for
+the loaded repo: try <code>label:bug is:open</code>. <strong>Quick
+filter</strong> (Ctrl+Shift+F) is different. It narrows the list you
+already have as you type, without going online. Escape clears it.
+<strong>Pinned…</strong> keeps a short list of repos you jump back to
+often; <strong>Ctrl+D</strong> favorites the selected row from any repo,
+and <strong>Favorites…</strong> lists everything you’ve bookmarked
+across all of them.</p>
+<h3 id="running-a-workflow">Running a workflow</h3>
+<p>Switch to the <strong>Workflows</strong> view to see the repository’s
+workflow definitions (the <code>.yml</code> files themselves, not their
+run history). Select one and press <strong>Enter</strong> (or
+<strong>Actions… &gt; Run … on Branch…</strong>) to run it. QUILL asks
+for the branch, checks with you, and tells you whether GitHub started
+the run. You need to be signed in. If a workflow cannot be run by hand
+(<code>workflow_dispatch</code>), QUILL tells you so. The separate
+<strong>Workflow Runs</strong> view still shows run history and lets you
+re-run or inspect artifacts from a past run.</p>
+<h3 id="reading-a-pull-requests-actual-changes">Reading a pull request’s
+actual changes</h3>
+<p>Select a PR row and press <strong>Diff…</strong>. QUILL fetches both
+sides of every changed file and runs them through the same compare tool
+as <strong>Compare Documents</strong>. You move through the changes one
+at a time, hearing things like “Difference 2 of 5, text changed at line
+41”, instead of reading a raw patch.</p>
+<h3 id="comparing-two-branches">Comparing two branches</h3>
+<p>Switch to the <strong>Branches</strong> view, select one, and press
+<strong>Compare…</strong> (or <strong>Ctrl+Shift+B</strong>). This works
+without signing in, because it never changes anything on GitHub. Type
+the base branch, then the branch to compare against it (the selected row
+prefills the second prompt). QUILL tells you how far apart the two are
+and lists every commit between them. On the <strong>Changed
+Files</strong> tab, you can go through each file’s changes the same way
+as with <strong>Diff…</strong>. Enter on a branch drills into its
+<strong>Commits</strong>; <strong>Backspace</strong> in the Commits view
+steps back out to the branch list.</p>
+<h3 id="getting-a-tldr">Getting a TL;DR</h3>
+<p>Select a long issue or PR and press <strong>Summarize</strong>.
+QUILL’s AI sums up the whole discussion: what it is about, where it
+stands, and what is still open. It uses the AI you have already set up.
+If you have not set one up, it offers to help you do that.</p>
+<h2 id="3-writing-back-the-actions-and-batch-menus">3. Writing back: the
+Actions and Batch menus</h2>
+<p>Everything so far works read-only. Signed in, two more buttons
+appear.</p>
+<p><strong>Batch…</strong> applies close, reopen, or add-label to every
+checked row at once (hold Shift or Ctrl to check several). A
+confirmation names the exact action and the exact item numbers before
+anything changes.</p>
+<p><strong>Actions…</strong> is context-sensitive to what you’re looking
+at:</p>
+<ul>
+<li>In <strong>Issues &amp; PRs</strong>: <strong>New Issue…</strong> /
+<strong>New Pull Request…</strong> prompt for a title, body, and (for a
+PR) head/base branches. With a single unmerged PR selected,
+<strong>Merge Pull Request #N…</strong> also appears. Retype the PR
+number to confirm, because a merge is hard to undo.</li>
+<li>With a comment thread loaded: <strong>Reply to Thread…</strong>
+posts a new comment. Navigate to a specific comment with Alt+N/Alt+P
+first, and <strong>Edit This Comment…</strong> / <strong>Delete This
+Comment…</strong> also appear (GitHub only lets you edit or delete your
+own comments).</li>
+<li>In <strong>Branches</strong>: select one and <strong>Delete
+Branch…</strong> appears. Retype the branch name to confirm.</li>
+<li>In <strong>Workflow Runs</strong>: select one and <strong>Re-run
+Workflow</strong> appears.</li>
+</ul>
+<p>Try it: load a repo you maintain, select <strong>New Issue…</strong>,
+give it a title, and watch it appear in the list after you confirm.</p>
+<h2 id="4-repository-administration-tools--git-and-github--github">4.
+Repository administration (Tools &gt; Git and GitHub &gt; GitHub)</h2>
+<p>Everything above works on repositories that already exist.
+<strong>Tools &gt; GitHub</strong> creates and configures them.</p>
+<ol type="1">
+<li><strong>Create Repository…</strong>: name, description, private or
+public, and an optional organization. As soon as it is created, QUILL
+asks whether to set up a folder on your computer that stays in step with
+it. Say yes, pick a folder, and you are ready to go.</li>
+<li><strong>Fork Repository…</strong>: same local-sync offer
+afterward.</li>
+<li><strong>Rename Repository…</strong>, <strong>Change Repository
+Visibility…</strong>, <strong>Change Default Branch…</strong>,
+<strong>Delete Branch…</strong>: for renaming, changing visibility and
+deleting a branch, you type the name again to confirm; visibility
+changes warn extra loudly when you’re about to make something
+public.</li>
+<li><strong>Configure Branch Protection…</strong>: pick a branch, then
+either set required approving reviews and required status checks, or
+check “remove all protection instead” to clear existing rules.</li>
+<li><strong>Commit Multiple Files…</strong>: pick several local files
+with a file browser, choose a branch and a commit message, and QUILL
+commits all of them together. This is different from <strong>Save to
+GitHub</strong> (section 1), which only ever handles the one document
+you have open.</li>
+</ol>
+<p>All eight commands are in the Command Palette and ship default
+keyboard shortcuts through the QUILL Key (press your QUILL Key, then the
+listed letter): Create = Shift+K, Fork = Shift+F, Rename = Shift+E,
+Visibility = Shift+V, Default Branch = Shift+B, Branch Protection =
+Shift+L, Delete Branch = Shift+X, Commit Multiple Files = Shift+U.</p>
+<h3
+id="organizations-releases-workflows-notifications-security">Organizations,
+releases, workflows, notifications, security</h3>
+<p>There are five more commands in <strong>Tools &gt; Git and GitHub
+&gt; GitHub</strong>:</p>
+<ul>
+<li><strong>Browse Organization Repositories…</strong>: pick an
+organization you belong to, then one of its repositories, and QUILL
+opens it straight into the Items viewer.</li>
+<li><strong>Create Release…</strong>: a tag, optional title, and either
+your own notes or GitHub’s auto-generated notes from merged PRs since
+the last release.</li>
+<li><strong>Dispatch Workflow…</strong>: run a workflow on a branch or
+tag, the same as clicking “Run workflow” on github.com.</li>
+<li><strong>Notifications…</strong>: an inbox for every repository you
+have access to, not just the one you have loaded. Selecting one opens it
+and marks it read.</li>
+<li><strong>Security Alerts…</strong>: a repository’s open Dependabot
+alerts: severity, affected package, and a summary, so you know what
+needs attention without a browser.</li>
+</ul>
+<h2 id="5-local-git-resolving-conflicts-and-rebasing-out-loud">5. Local
+Git: resolving conflicts and rebasing, out loud</h2>
+<p>This part is different. <strong>Tools &gt; Git and GitHub &gt; Local
+Git</strong> needs no GitHub account and does not go online. It works on
+any Git repository on your computer. It is here because two everyday Git
+jobs, sorting out a merge conflict and reordering commits with an
+interactive rebase, are very hard with a screen reader in most other
+tools.</p>
+<p>Try this with a real (or throwaway test) repository:</p>
+<ol type="1">
+<li><strong>Uncommitted Changes…</strong>: lists everything you’ve
+changed since your last commit, staged and unstaged. Select a file to
+hear what changed in it (the same way Compare Documents reads changes);
+<strong>Stage</strong> / <strong>Unstage</strong> it, or <strong>Stage
+All</strong>.</li>
+<li><strong>Switch Branch…</strong>: pick a local branch from a list. If
+you have uncommitted changes, QUILL asks whether to switch anyway and
+bring them with you. It never throws them away.</li>
+<li><strong>Stash Changes…</strong> / <strong>Manage Stashes…</strong>:
+put work aside with a name, then list, apply, or drop it later.</li>
+<li><strong>Who Wrote This Line…</strong>: with your cursor on a line in
+an open file that’s part of a git repo, this speaks who last touched
+that line, when, and the commit’s summary.</li>
+<li><strong>Start Bisect…</strong>: give it a known-bad and a known-good
+commit, and QUILL checks out the midpoint and asks “Is this version good
+or bad?” Answer, and it narrows down to the exact commit that introduced
+the problem. <strong>End Bisect</strong> when you’re done.</li>
+</ol>
+<h3 id="resolving-a-merge-conflict-without-decoding-markers">Resolving a
+merge conflict without decoding markers</h3>
+<p>Create a real conflict (or find one) and run <strong>Resolve
+Conflicts…</strong>. Instead of
+<code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>/<code>=======</code>/<code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>
+markers, you get: “Conflict 1 of 3 in <code>file.py</code>: your version
+says X, their version says Y,” with <strong>your version</strong> /
+<strong>their version</strong> / <strong>both</strong> / <strong>edit
+manually</strong> as your choice. Work through every conflict in every
+affected file; QUILL writes the resolved content back and stages it. The
+same walker opens automatically if a rebase (next) or a <strong>Sync
+Folder with GitHub</strong> stops on a conflict, so you never have to
+switch to another tool halfway through.</p>
+<h3 id="interactive-rebase-as-a-real-dialog">Interactive rebase, as a
+real dialog</h3>
+<p><strong>Interactive Rebase…</strong> asks which commit to rebase
+onto, then shows every commit since then as a list, instead of a text
+file you have to edit by hand. Pick an action per row (pick, squash,
+reword, drop) from a dropdown, and reorder with <strong>Move Up</strong>
+/ <strong>Move Down</strong>. Press <strong>Start Rebase</strong>. If a
+step conflicts, the conflict walker above opens automatically; resolve
+it and the rebase continues on its own. <strong>Abort Rebase</strong>
+restores your branch exactly as it was if you change your mind.</p>
+<p>The ten Local Git commands do not have keyboard shortcuts to start
+with, because every letter after the QUILL Key is already in use. All
+ten are in the Command Palette and the <strong>Tools &gt; Git and GitHub
+&gt; Local Git</strong> menu, and you can assign your own shortcuts in
+<strong>Preferences &gt; Keyboard Shortcuts</strong>.</p>
+<h2 id="6-syncing-a-whole-folder">6. Syncing a whole folder</h2>
+<p>One more command: <strong>Tools &gt; Sync Folder with
+GitHub…</strong> keeps a whole folder in step with GitHub, such as a
+writing project or a notes folder. It works the same way as <strong>Sync
+Vault</strong> in <a href="05-start-a-vault.md">Start an Accessible
+Vault</a>, but on any folder you choose.</p>
+<h2 id="in-short">In short</h2>
+<p>Browse and save individual files without an account; sign in once for
+everything else. The Items viewer’s <strong>Batch…</strong> and
+<strong>Actions…</strong> menus cover everyday work on issues and pull
+requests. <strong>Tools &gt; Git and GitHub &gt; GitHub</strong> creates
+and manages repositories. <strong>Tools &gt; Git and GitHub &gt; Local
+Git</strong> covers the Git work on your own computer, like merge
+conflicts and interactive rebase.</p>
+</main>
+</body>
+</html>

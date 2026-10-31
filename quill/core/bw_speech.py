@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -121,36 +122,118 @@ def downloaded_model_ids() -> set[str]:
     return {spec.id for spec in list_models() if is_downloaded(spec)}
 
 
+def _windows_memory_status() -> tuple[int, int]:
+    """``(total, available)`` physical memory in bytes, from GlobalMemoryStatusEx."""
+    import ctypes
+
+    class _MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    stat = _MEMORYSTATUSEX()
+    stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))  # type: ignore[attr-defined]
+    return int(stat.ullTotalPhys), int(stat.ullAvailPhys)
+
+
+def available_ram_gb() -> float | None:
+    """Physical memory free right now, in GB, or ``None`` where it is not read.
+
+    Total memory says what a computer *has*; this says what dictation can have
+    *now*, beside Windows, the screen reader and whatever else is open -- on an
+    8 GB laptop that is often two or three (2026-10-22). Windows only; other
+    platforms answer ``None`` and the advice falls back to the total.
+    """
+    if not sys.platform.startswith("win"):
+        return None
+    try:
+        return float(_windows_memory_status()[1]) / (1024**3)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
 def total_ram_gb() -> float:
     if sys.platform.startswith("win"):
-        import ctypes
+        return float(_windows_memory_status()[0]) / (1024**3)
+    if sys.platform == "darwin":
+        # macOS: query total physical memory via sysctl. Falling through to the
+        # flat 8.0 default fed every Mac wrong Whisper model recommendations
+        # regardless of actual RAM.
+        from quill.stability.safe_subprocess import run_subprocess_safely
 
-        class _MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        stat = _MEMORYSTATUSEX()
-        stat.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
-        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat))
-        return float(stat.ullTotalPhys) / (1024**3)
+        try:
+            result = run_subprocess_safely(["sysctl", "-n", "hw.memsize"], timeout_seconds=5.0)
+            bytes_total = int(result.stdout.strip())
+            return float(bytes_total) / (1024**3)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+    # Unknown platform: fall back to a conservative 8.0 GB estimate rather than
+    # guessing, so model recommendations stay on the small side.
     return 8.0
 
 
+_gpu_probe_cache: bool | None = None
+
+
+def _resolve_nvidia_smi() -> str | None:
+    """Resolve ``nvidia-smi`` to an absolute path, never a CWD-relative one.
+
+    On Windows ``shutil.which`` searches the current directory, so a planted
+    ``nvidia-smi.exe`` in the working directory could be launched. Prefer the
+    real System32 binary; otherwise accept a PATH hit only when it is absolute
+    (``shutil.which`` returns a relative ``.\\nvidia-smi.exe`` for a CWD match,
+    which is rejected here).
+    """
+    if sys.platform.startswith("win"):
+        system_root = os.environ.get("SystemRoot") or os.environ.get("windir") or r"C:\Windows"
+        candidate = Path(system_root) / "System32" / "nvidia-smi.exe"
+        if candidate.exists():
+            return str(candidate)
+    found = shutil.which("nvidia-smi")
+    if found is None:
+        return None
+    return found if Path(found).is_absolute() else None
+
+
 def has_nvidia_gpu() -> bool:
-    cmd = shutil.which("nvidia-smi")
+    """Detect an NVIDIA GPU via ``nvidia-smi``.
+
+    #866/#870: this used to call bare ``subprocess.run`` with no timeout on
+    every Speech Hub open, which could hang the UI thread indefinitely if
+    ``nvidia-smi`` ever stalled (a stuck driver/service). It now goes through
+    the project's timeout-enforcing ``run_subprocess_safely`` and caches the
+    result for the process lifetime, since GPU presence can't change mid-session.
+    """
+    global _gpu_probe_cache
+    if _gpu_probe_cache is not None:
+        return _gpu_probe_cache
+    cmd = _resolve_nvidia_smi()
     if not cmd:
-        return False
-    result = subprocess.run([cmd, "-L"], check=False, capture_output=True, text=True)
-    return result.returncode == 0 and bool(result.stdout.strip())
+        _gpu_probe_cache = False
+        return _gpu_probe_cache
+    from quill.stability.safe_subprocess import run_subprocess_safely
+
+    try:
+        result = run_subprocess_safely([cmd, "-L"], timeout_seconds=5.0)
+    except (subprocess.TimeoutExpired, OSError):
+        _gpu_probe_cache = False
+        return _gpu_probe_cache
+    _gpu_probe_cache = result.returncode == 0 and bool(result.stdout.strip())
+    return _gpu_probe_cache
+
+
+def _reset_gpu_probe_cache_for_tests() -> None:
+    global _gpu_probe_cache
+    _gpu_probe_cache = None
 
 
 def recommended_model_id() -> str:

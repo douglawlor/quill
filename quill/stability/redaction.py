@@ -4,7 +4,7 @@ This module is the single point through which the crash-bundle builder
 (H-2) and the safe-subprocess logger (H-1) pass strings that might
 contain secrets, file paths, or other personally identifying
 information. Keeping the redaction rules in one place is the only
-way to make the bundle redaction contract (``SECURITY.md``) testable.
+way to make the bundle redaction contract (``docs/SECURITY.md``) testable.
 
 The module is intentionally dependency-free and platform-neutral so it
 can be imported from ``quill.core`` (wx-free) and from the early-startup
@@ -12,11 +12,12 @@ logging configuration in ``quill/__main__.py``.
 
 Implements: ROADMAP SEC-13 (broad diagnostics secret redaction,
 covering ``token``, ``password``, and ``NAME_KEY`` assignment
-patterns) and the redaction contract in ``SECURITY.md:81``.
+patterns) and the redaction contract in ``docs/SECURITY.md:81``.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 
@@ -30,7 +31,10 @@ _SECRET_NAME_RE = re.compile(
     r"(?:api[_-]?key|token|secret|password|passphrase|auth(?:orization)?|"
     r"access[_-]?key|client[_-]?secret|cookie|session|signature|hmac|"
     r"ssh[_-]?key|private[_-]?key|bearer)"
-    r"\s*[=:]\s*"
+    # optional closing quote after a JSON-style key, the separator, and an
+    # optional opening quote before the value: matches name=value,
+    # name: value, "name": "value", and name="value" alike.
+    r"[\"']?\s*[=:]\s*[\"']?"
     # value (stop at whitespace, quote, or end)
     r"[^\s\"'\\]+"
     r")"
@@ -56,8 +60,10 @@ _TOKEN_RE = re.compile(r"\b[A-Fa-f0-9_\-]{32,}\b")
 # Modern API key prefixes that contain non-hex characters and would escape
 # _TOKEN_RE: GitHub PATs (ghp_/gho_/github_pat_), OpenAI (sk-),
 # AWS access keys (AKIA), Slack (xoxb-/xoxp-), generic long alphanumeric keys.
+# 2026-10-16 (D-31): the cloud speech providers' key shapes -- Groq (gsk_),
+# ElevenLabs (sk_), AWS temporary keys (ASIA).
 _PREFIXED_KEY_RE = re.compile(
-    r"(?:ghp_|gho_|github_pat_|sk-|AKIA)[A-Za-z0-9_\-]{16,}"
+    r"(?:ghp_|gho_|github_pat_|sk-|sk_|gsk_|AKIA|ASIA)[A-Za-z0-9_\-]{16,}"
     r"|"
     r"xox[bp]-[A-Za-z0-9_\-]{20,}"
     r"|"
@@ -67,7 +73,75 @@ _PREFIXED_KEY_RE = re.compile(
 # Microsoft-style account tokens (TDI / refresh / eyJ… JWT).
 _JWT_RE = re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b")
 
+# URL userinfo (https://user:password@host/...) — private podcast feeds embed
+# credentials this way for playback engines that only take a URL string.
+_URL_USERINFO_RE = re.compile(r"(\bhttps?://)[^/\s@]+@")
+
+# Browser sign-in cookies (Quill Radio's "Use my YouTube sign-in"): Quill
+# never writes one anywhere, and these make sure a yt-dlp debug line or a
+# pasted cookies.txt row cannot carry one into a log or a crash bundle either.
+# Google's session cookie names, and the Netscape cookies.txt row shape
+# (domain, flag, path, secure, expiry, name, value -- tab separated).
+_COOKIE_NAME_RE = re.compile(
+    r"(?:\b(?:SAPISID|APISID|HSID|SSID|SID|SIDCC|LOGIN_INFO|PREF|VISITOR_INFO1_LIVE)"
+    r"|__Secure-[0-9A-Za-z_-]+)\s*[=:\t]\s*\S+"
+)
+_NETSCAPE_COOKIE_RE = re.compile(
+    r"^#?(?:HttpOnly_)?\.?[A-Za-z0-9.-]+\t(?:TRUE|FALSE)\t/[^\t]*\t(?:TRUE|FALSE)\t\d+\t"
+)
+
 _MAX_LINE_BYTES = 4096
+
+# Flag names (normalized: leading dashes stripped, lower-cased) whose
+# *following* argv element carries a secret value and must be redacted --
+# e.g. ``--password hunter2`` / ``--api-key sk-…``. Used by
+# :func:`format_args_for_log` for the split-argv case that the per-arg
+# token regexes cannot catch.
+_SECRET_VALUE_FLAGS = frozenset({
+    "password",
+    "passwd",
+    "pass",
+    "passphrase",
+    "token",
+    "api-key",
+    "api_key",
+    "apikey",
+    "key",
+    "secret",
+    "client-secret",
+    "client_secret",
+    "auth",
+    "authorization",
+    "bearer",
+    "access-key",
+    "access_key",
+    "cookie",
+    "cookies",
+    "cookiefile",
+})
+
+
+#: The literal values of secrets QUILL holds in memory right now -- a speech
+#: provider's key read from the credential store (D-31) -- scrubbed wherever
+#: they appear, whatever shape they have. Never written anywhere.
+_KNOWN_SECRETS: set[str] = set()
+_MIN_KNOWN_SECRET = 8
+
+
+def remember_secret(value: str) -> None:
+    """Scrub *value* from every redacted line from now on (this process only).
+    Values shorter than eight characters are ignored: too likely to be a word."""
+    text = str(value or "").strip()
+    if len(text) >= _MIN_KNOWN_SECRET:
+        _KNOWN_SECRETS.add(text)
+
+
+def redact_known_secrets(text: str) -> str:
+    """*text* with every remembered secret replaced by ``[SECRET]``."""
+    for secret in sorted(_KNOWN_SECRETS, key=len, reverse=True):
+        if secret in text:
+            text = text.replace(secret, "[SECRET]")
+    return text
 
 
 def redact_source_tokens(text: str) -> str:
@@ -80,7 +154,13 @@ def redact_source_tokens(text: str) -> str:
     text = _TOKEN_RE.sub("[TOKEN]", text)
     text = _JWT_RE.sub("[JWT]", text)
     text = _PREFIXED_KEY_RE.sub("[TOKEN]", text)
+    text = _URL_USERINFO_RE.sub(r"\1", text)
     return text
+
+
+def redact_url_userinfo(text: str) -> str:
+    """Strip ``user:password@`` userinfo from any URL in *text*."""
+    return _URL_USERINFO_RE.sub(r"\1", text)
 
 
 def redact_command_arg(arg: str) -> str:
@@ -95,6 +175,7 @@ def redact_command_arg(arg: str) -> str:
 
     if not arg:
         return arg
+    arg = redact_known_secrets(arg)
     original = arg
     if _SECRET_NAME_RE.search(arg):
         return "[REDACTED]"
@@ -103,6 +184,7 @@ def redact_command_arg(arg: str) -> str:
         arg = _TOKEN_RE.sub("[TOKEN]", arg)
         arg = _JWT_RE.sub("[JWT]", arg)
         arg = _PREFIXED_KEY_RE.sub("[TOKEN]", arg)
+    arg = _URL_USERINFO_RE.sub(r"\1", arg)
     arg = _WINDOWS_PATH_RE.sub("[PATH]", arg)
     arg = _POSIX_PATH_RE.sub("[PATH]", arg)
     arg = _MACOS_PATH_RE.sub("[PATH]", arg)
@@ -129,10 +211,46 @@ def format_args_for_log(args: Sequence[str]) -> str:
     # Use only the basename, never a full path, to avoid leaking the
     # install location.
     exe_base = exe.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    rest = [redact_command_arg(a) for a in args[1:]]
+    rest = list(args[1:])
+    # A secret is frequently passed as a value in the argv element that
+    # *follows* a flag (``--password hunter2``, ``--token …``, ``-w …``
+    # for the macOS ``security`` CLI). The flag itself carries the
+    # secret-shaped keyword but the value does not, so it slips past
+    # redact_command_arg's per-arg token regexes. Redact the element after
+    # any secret-shaped flag -- for every executable, not just ``security``
+    # -- before the generic per-arg pass so the value can never appear.
+    for i, a in enumerate(rest):
+        if i + 1 >= len(rest):
+            break
+        # Only an actual flag (leading dash) redacts the element after it --
+        # a bare value that merely equals a keyword must not shift redaction
+        # onto its neighbour.
+        if not a.startswith("-"):
+            continue
+        flag = a.lstrip("-").lower()
+        if a == "-w" or flag in _SECRET_VALUE_FLAGS:
+            rest[i + 1] = "[REDACTED]"
+    rest = [redact_command_arg(a) for a in rest]
     if not rest:
         return f"{exe_base} — 0 args"
     return f"{exe_base} {' '.join(rest)} — {len(rest)} args"
+
+
+def redact_user_name(text: str, name: str | None = None) -> str:
+    """Replace the signed-in user's name with ``<user>``, as a whole word only.
+
+    Paths are already cut at the user folder; this catches the name on its
+    own ("signed in as jeff"). Whole words only, so a user called "Al" does
+    not turn "Alt" into "<user>t". The rule and its test are from Kelly
+    Ford's Quick Describe, whose bug reports do the same.
+    """
+    if name is None:
+        name = os.environ.get("USERNAME") or os.environ.get("USER") or ""
+    name = name.strip()
+    if len(name) < 2:
+        return text
+    pattern = rf"(?<![\w]){re.escape(name)}(?![\w])"
+    return re.sub(pattern, "<user>", text, flags=re.IGNORECASE)
 
 
 def redact_text_for_bundle(
@@ -190,9 +308,13 @@ def _line_is_pure_secret(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
         return False
+    if any(secret in stripped for secret in _KNOWN_SECRETS):
+        return True
     if _SECRET_NAME_RE.search(stripped):
         return True
     if _JWT_RE.search(stripped):
+        return True
+    if _COOKIE_NAME_RE.search(stripped) or _NETSCAPE_COOKIE_RE.search(line):
         return True
     # A whole-line base64 token with a known-secret header.
     if stripped.startswith(("Bearer ", "Basic ", "Authorization:", "X-API-Key:")):
@@ -215,7 +337,7 @@ def redact_text_for_bundle_with_stats(
             stats.lines_dropped += 1
             stats.tokens_dropped += 1
             continue
-        redacted = redact_command_arg(line)
+        redacted = redact_user_name(redact_command_arg(line))
         if redacted != line:
             stats.tokens_dropped += 1
         if len(redacted) > line_cap:

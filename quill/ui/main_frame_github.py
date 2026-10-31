@@ -29,6 +29,7 @@ from quill.core.github.token_store import (
     save_github_token,
 )
 from quill.core.paths import app_data_dir
+from quill.core.platform_nouns import credential_store_name
 
 if TYPE_CHECKING:
     from quill.core.github.models import BrowseResult, RemoteFile
@@ -61,9 +62,9 @@ class GitHubRemoteMixin:
             return
         token = load_github_token()
         provider = GitHubRemoteProvider(token=token or None)
-        self._set_status("Connecting to GitHub...")
+        self._set_status_quiet("Connecting to GitHub...")
         self._announce("Connecting to GitHub")
-        threading.Thread(
+        threading.Thread(  # GATE-40-OK: one-shot read-only GET; safe to abandon on exit
             target=self._github_fetch_identity_for_browse,
             args=(provider,),
             daemon=True,
@@ -107,9 +108,9 @@ class GitHubRemoteMixin:
             sha="",
             html_url=url,
         )
-        self._set_status("Connecting to GitHub...")
+        self._set_status_quiet("Connecting to GitHub...")
         self._announce("Connecting to GitHub")
-        threading.Thread(
+        threading.Thread(  # GATE-40-OK: one-shot read-only GET; safe to abandon on exit
             target=self._github_fetch_identity_for_url,
             args=(provider, pseudo_result),
             daemon=True,
@@ -149,7 +150,7 @@ class GitHubRemoteMixin:
         # thread is guaranteed to release the underlying GitHub session
         # even if the user quits mid-save.
         provider = contextlib.closing(GitHubRemoteProvider(token=token or None))
-        self._set_status(f"Saving {Path(origin.path).name} to GitHub...")
+        self._set_status_quiet(f"Saving {Path(origin.path).name} to GitHub...")
         self._announce(f"Saving {Path(origin.path).name} to GitHub")
         threading.Thread(  # GATE-40-OK: short-lived save worker.
             target=self._save_back_worker,
@@ -162,7 +163,7 @@ class GitHubRemoteMixin:
         token = load_github_token()
         has_token = bool(token)
         if token:
-            threading.Thread(
+            threading.Thread(  # GATE-40-OK: one-shot read-only GET; abandon-safe
                 target=self._github_fetch_identity_for_manage,
                 args=(token, has_token),
                 daemon=True,
@@ -225,7 +226,6 @@ class GitHubRemoteMixin:
         if action == "remove":
             delete_github_token()
             self._set_status("GitHub account disconnected")
-            self._announce("GitHub account disconnected")
         elif action == "add":
             self._github_add_token()
 
@@ -261,10 +261,9 @@ class GitHubRemoteMixin:
         if result.token:
             if save_github_token(result.token):
                 self._set_status("GitHub token saved")
-                self._announce("GitHub token saved")
             else:
                 self._show_message_box(
-                    "Could not save the token. The Windows Credential Manager "
+                    f"Could not save the token. The {credential_store_name()} "
                     "may not be available.",
                     "GitHub Sign In",
                     self._wx.ICON_WARNING | self._wx.OK,
@@ -279,7 +278,7 @@ class GitHubRemoteMixin:
         result: BrowseResult,
         identity: object,
     ) -> None:
-        self._set_status(f"Downloading {Path(result.path).name} from GitHub...")
+        self._set_status_quiet(f"Downloading {Path(result.path).name} from GitHub...")
         self._announce(f"Downloading {Path(result.path).name} from GitHub")
         threading.Thread(  # GATE-40-OK: GitHub open worker; bounded by size.
             target=self._open_worker,
@@ -320,7 +319,7 @@ class GitHubRemoteMixin:
         try:
             text = remote_file.content.decode("utf-8")
         except UnicodeDecodeError as exc:
-            self._set_status(f"Refused to open non-UTF-8 file: {exc.reason}")
+            self._set_status_quiet(f"Refused to open non-UTF-8 file: {exc.reason}")
             self._announce(f"Could not open {Path(remote_file.path).name}: file is not UTF-8 text.")
             self._show_message_box(
                 f"{Path(remote_file.path).name} is not a UTF-8 text file.\n"
@@ -397,14 +396,12 @@ class GitHubRemoteMixin:
                 state.origins[str(path)] = replace(old, sha=new_sha)
         msg = f"Committed {Path(origin.path).name} to {origin.repository} ({origin.ref})"
         self._set_status(msg)
-        self._announce(msg)
 
     # ------------------------------------------------------------------
     # Shared error handler
 
     def _on_github_error(self, message: str, title: str = "GitHub") -> None:
         self._set_status(f"GitHub error: {message}")
-        self._announce(f"GitHub error: {message}")
         self._show_message_box(message, title, self._wx.ICON_ERROR | self._wx.OK)
 
     # ------------------------------------------------------------------
@@ -473,6 +470,11 @@ class GitHubRemoteMixin:
             wx.EVT_MENU,
             lambda _e: self.manage_github_accounts(),
             id=self._id_github_manage_accounts,
+        )
+        self.frame.Bind(
+            wx.EVT_MENU,
+            lambda _e: self.open_github_items_viewer(),
+            id=self._id_github_items,
         )
 
 

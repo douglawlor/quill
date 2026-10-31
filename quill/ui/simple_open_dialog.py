@@ -16,7 +16,7 @@ Keyboard:
 - Enter in the list (or double-click) -> activate: navigate into a directory
   or open the selected file.
 - Backspace in the list -> go up one directory.
-- Ctrl+H in the path or list -> toggle hidden files.
+- Ctrl+H in the path or list -> toggle hidden files (Cmd+Shift+. on macOS).
 - Escape -> cancel.
 
 The dialog returns a :class:`SimpleOpenResult` from :meth:`SimpleOpenDialog.show`
@@ -26,6 +26,7 @@ native dialog" from "user cancelled".
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,16 @@ from quill.ui.dialog_contract import (
     apply_modal_ids,
     show_modal_dialog,
 )
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
+
+
+def _toggle_hidden_key_pressed(event: wx.KeyEvent) -> bool:
+    """Hidden-files toggle: Ctrl+H on Windows, Cmd+Shift+. on macOS (Cmd+H = Hide) (#51)."""
+    if sys.platform == "darwin":
+        return event.CmdDown() and event.ShiftDown() and event.GetKeyCode() == ord(".")
+    return event.ControlDown() and event.GetKeyCode() in (ord("H"), ord("h"))
+
 
 # ---------------------------------------------------------------------------
 # Filter definitions
@@ -148,8 +159,8 @@ class SimpleOpenDialog:
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
         self.dialog.SetName("simple_open")
-        self.dialog.SetSize((720, 540))
-        self.dialog.SetMinSize((560, 400))
+        self.dialog.SetSize(dip_size(self.dialog, 720, 540))
+        self.dialog.SetMinSize(dip_size(self.dialog, 560, 400))
 
         root = wx.BoxSizer(wx.VERTICAL)
 
@@ -194,6 +205,7 @@ class SimpleOpenDialog:
         # --- File list ----------------------------------------------------
         self._list = wx.ListBox(self.dialog, style=wx.LB_SINGLE)
         self._list.SetName("Files")
+        set_spoken_name(self._list, "Files")
         root.Add(self._list, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
         # --- Status line --------------------------------------------------
@@ -275,7 +287,12 @@ class SimpleOpenDialog:
         self._set_status("")
 
     def _on_path_enter(self, _event: wx.Event) -> None:
-        text = self._path_ctrl.GetValue().strip()
+        from quill.core.path_input import clean_typed_path
+
+        # Accept what real users actually paste: Explorer's "Copy as path"
+        # quotes, %VAR% environment paths, file:// URLs, smart quotes, NBSPs.
+        # A blind user cannot see the stray quote that makes a path "wrong".
+        text = clean_typed_path(self._path_ctrl.GetValue())
         if not text:
             return
         candidate = Path(text).expanduser()
@@ -301,7 +318,7 @@ class SimpleOpenDialog:
         # keyboard map.
         if event.ControlDown() and event.GetKeyCode() in (ord("L"), ord("l")):
             return
-        if event.ControlDown() and event.GetKeyCode() in (ord("H"), ord("h")):
+        if _toggle_hidden_key_pressed(event):
             self._show_hidden = not self._show_hidden
             self._btn_hidden.SetValue(self._show_hidden)
             self._populate()
@@ -328,7 +345,7 @@ class SimpleOpenDialog:
         if key == wx.WXK_BACK:
             self._go_up()
             return
-        if event.ControlDown() and key in (ord("H"), ord("h")):
+        if _toggle_hidden_key_pressed(event):
             self._show_hidden = not self._show_hidden
             self._btn_hidden.SetValue(self._show_hidden)
             self._populate()
@@ -482,10 +499,10 @@ class SimpleOpenDialog:
 
     def _set_status(self, message: str, *, error: bool = False) -> None:
         self._status.SetLabel(message)
-        if error:
-            self._status.SetForegroundColour(wx.RED)
-        else:
-            self._status.SetForegroundColour(wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWTEXT))
+        # The words carry the error and the announcement speaks them, so the
+        # status keeps the system text colour. Pure red on the dialog face was
+        # 3.5:1, under the 4.5:1 text needs, and it ignored high contrast.
+        self._status.SetForegroundColour(wx.SystemSettings.GetColour(wx.SYS_COLOUR_WINDOWTEXT))
         self._status.Refresh()
         if message:
             self._announce(message)

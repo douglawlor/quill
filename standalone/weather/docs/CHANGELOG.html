@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Changelog</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="changelog">Changelog</h1>
+<p>All notable changes to Quill Weather are documented in this file.</p>
+<p>The format is based on <a
+href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and
+this project adheres to <a
+href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
+<h2 id="221---2026-10-08">[2.2.1] - 2026-10-08</h2>
+<p>Current build: <strong>2.2.1 (build 2)</strong>. Build 2 keeps
+everything in build 1 and adds the work marked “build 2” below, together
+with everything recorded since (the Command Palette and Product
+Requirements doors, What’s New, QUILL Transcribe on the QuillVille menu,
+and the user guide corrections).</p>
+<h3 id="since-build-2-2026-10-30-and-2026-10-31">Since build 2
+(2026-10-30 and 2026-10-31)</h3>
+<ul>
+<li><strong>Shared-runtime licensing.</strong> Installed editions use
+the QuillVille Runtime, which currently carries PyMuPDF 1.28.2 under
+AGPL-3.0 through the shared GLOW dependency; Weather does not itself
+expose GLOW. Release-specific source and legal review are required
+before the next public release. Portable contents must be checked
+separately. See Licences and Notices and the PyMuPDF distribution
+review.</li>
+<li><strong>Controls that had no label now have a spoken name</strong>
+(2026-10-30). JAWS, NVDA and Narrator used to announce them as a bare
+role, such as “edit” or “list”. The Weather Center’s status line now
+says “Weather source and freshness status”.</li>
+<li><strong>Sharp text at any display scaling</strong> (2026-10-31).
+Quill Weather now handles each monitor’s scaling itself instead of
+letting Windows stretch it, so text stays sharp at 125, 150 and 200
+percent and on monitors with different scaling, and windows and list
+columns keep their proportions. Setting the environment variable
+<code>QUILL_DPI_UNAWARE</code> to <code>1</code> turns this off, for
+diagnosing a display problem (#1702).</li>
+<li><strong>Pygments in the notices</strong> (2026-10-31). The shared
+runtime now bundles Pygments, which QUILL and QUILL Lite use to read
+code and web pages for spell check, so Quill Weather’s third-party
+notices list it.</li>
+</ul>
+<h3 id="places-and-conditions">Places and conditions</h3>
+<ul>
+<li>Current conditions, Quick Weather, and local time use the saved
+friendly name when one is set. (build 2)</li>
+</ul>
+<h3 id="help-tutorials-and-finding-a-command">Help, tutorials and
+finding a command</h3>
+<ul>
+<li><strong>Help &gt; What’s New</strong> (Ctrl+Shift+F1) opens this
+changelog in your browser, on the same key as every other QuillVille
+app.</li>
+<li><strong>Help &gt; Command Palette… (Ctrl+Shift+P).</strong> Since
+2.2.1 every Quill Weather command has had a name the Command Palette can
+find, but nothing in the app opened the palette, so the notes promised a
+door that was not there. It is now on the Help menu, on the same key as
+in Quill Radio and QUILL Cast. Type a few letters of what you want and
+press Enter: for example, press Ctrl+Shift+P, type <code>pause</code>,
+and the list narrows to <strong>Weather: Pause or Resume Alert
+Checks</strong>; Enter runs it. The palette lists only Quill Weather’s
+own commands, each with its key, and Escape closes it without doing
+anything.</li>
+<li><strong>Help &gt; Product Requirements… (Alt+Shift+F1).</strong> The
+user guide has always sent you to the Product Requirements for the
+roadmap – spoken weather, weather channels, choosing which places the
+watch covers – and the Help menu had no such item. It opens the document
+that ships in the <code>docs</code> folder beside the app, in your
+browser, with no internet connection needed. Alt+Shift+F1 is the same
+key Quill Radio and Quill Converter use for their own.</li>
+<li>Help exposes Activity and Repeat Last Result, with the same F9 and
+Shift+F9 keys as the other apps. (build 2)</li>
+<li><strong>Help &gt; Tutorials… (Ctrl+Alt+F1)</strong> – 11 guided
+tutorials, 60 steps, in three tracks: your first ten minutes, being
+warned, and making it yours. The middle track is the app’s whole reason
+for existing, so it is five lessons: start the watch, rehearse an alert,
+decide what gets through, keep the watch running, and NOAA Weather
+Radio.</li>
+<li><strong>A step names a command, not a key</strong>; <strong>Try
+it</strong> runs it; and <strong>Follow me</strong> watches the app once
+a second and moves you on when it can see you have done the step – your
+saved places growing, the watch starting, alert checks pausing. It
+watches state rather than keystrokes, so the menu, the key, the tray and
+the palette all count.</li>
+<li><strong>Quill Weather has command ids at all now.</strong> Every
+weather verb was a bound menu item and nothing else, so the Command
+Palette – which this app carries – could not reach a single one of them,
+and a tutorial step could not name one. The ids are registered with the
+keys the menu labels already advertise, so the menus are unchanged; they
+simply have names now.</li>
+</ul>
+<h3 id="sound">Sound</h3>
+<ul>
+<li><strong>Where Quill Weather’s own sounds play, and Alt+Shift+M to
+turn them off.</strong> <strong>Options &gt; App Sounds Play
+On…</strong> (Ctrl+Shift+S) offers System default, None (no sounds), or
+any sound card or headset by name; a weather alert is still spoken when
+its sound is off. After a change one sound plays on the new card, so you
+hear where it went. If that card is unplugged the sounds play on the
+system default until it is back, and Quill Weather says so once.
+<strong>Alt+Shift+M</strong> turns Quill Weather’s sounds off and back
+on where they were, and <strong>Options &gt; App Sounds</strong> shows a
+check mark while they are on. Each QUILL app keeps its own choice;
+“Share these choices with my other Quill apps” keeps them in step. Your
+screen reader is never moved. Asked for on QUILLVille by Rick Lewis.
+(build 2)</li>
+</ul>
+<h3 id="keys-the-tray-and-the-quillville-menu">Keys, the tray and the
+QuillVille menu</h3>
+<ul>
+<li><strong>No show and hide key until you choose one</strong>
+(2026-10-05). The app registered Ctrl+Alt+Shift+W system-wide, and other
+QuillVille apps use that key for menu commands, so while this app ran
+theirs never fired. It now has no key by default; <strong>File &gt; Show
+and Hide Key…</strong> (Ctrl+Alt+Shift+H) lets you type one, or leave it
+empty for none, and refuses a key any QuillVille app uses as a command
+or as its own show and hide key, in one sentence naming the app.
+Somebody who had the old key is moved to none and told once, at the next
+launch; a key somebody chose is kept
+(<code>quill/core/family_chords.py</code>,
+<code>quill/core/show_hide_keys.py</code>,
+<code>quill/ui/show_hide_key_picker.py</code>).</li>
+<li><strong>QUILL Transcribe on the QuillVille menu and the
+tray.</strong> QUILL Transcribe, which types what you say into any
+program, is released on 1 November 2026. The <strong>QuillVille</strong>
+menu (Alt+Q) now lists every released app with its letter and key: QUILL
+(Q, Ctrl+Alt+Shift+F7), Quill Radio (R, F8), Quill Converter (V, F9),
+Quill Inkwell (I, F10) and QUILL Transcribe (T, Ctrl+Alt+Shift+F11). The
+tray menu adds <strong>Open QUILL Transcribe</strong> after QUILL and
+Quill Radio. If it is not installed yet, Quill Weather offers to
+download it once it is published, and nothing is downloaded until you
+say yes. The user guide’s “Reaching the other apps” listed only QUILL
+and Quill Radio; it now lists them all, with an example.</li>
+<li>Tray preferences and Windows startup/background choices report
+failed changes and keep their menu checks accurate. (build 2)</li>
+</ul>
+<h3 id="the-user-guide">The user guide</h3>
+<ul>
+<li><strong>The user guide now teaches the right key for Start Weather
+Monitoring.</strong> It said Ctrl+Shift+M, which Quill Weather has never
+bound; the key is <strong>Ctrl+Alt+Shift+M</strong>, as the Weather menu
+shows.</li>
+<li><strong>The user guide no longer describes a Quillins menu.</strong>
+Quill Weather does not load Quillins yet and has no Quillins menu; the
+guide said it did. The section now says what is true today.</li>
+<li><strong>Radio-only commands in the guide are marked as Quill
+Radio’s.</strong> “Station &gt; Start Quill Radio with Windows” and
+“Browse Stations &gt; Weather / NOAA” are on Quill Radio’s menus, not
+Quill Weather’s, and the guide pointed at a Station menu chapter it does
+not have.</li>
+</ul>
+<h3 id="downloads-and-installing">Downloads and installing</h3>
+<ul>
+<li>Distribution uses the shared installer and portable zip; updates
+choose between those two editions. (build 2)</li>
+<li>The per-user installer records Weather’s version independently of
+the shared runtime. Portable Weather keeps its launcher offline and does
+not register host startup entries or background tasks. (build 2)</li>
+</ul>
+<h3 id="fixes-and-under-the-hood">Fixes and under the hood</h3>
+<ul>
+<li><strong>Quill Weather has its own icon.</strong> It used to ship a
+byte-identical copy of Quill Radio’s broadcast-wave icon, carried over
+when the app was scaffolded, so two different products wore one face in
+the taskbar, in Alt+Tab and in the tray. Quill Weather’s icon is now a
+sun behind a cloud on a sky-blue tile – the same rounded shape and amber
+accent as the rest of the QuillVille family, with its own silhouette and
+its own colour.</li>
+<li><strong>The book is generated from the lessons</strong>
+(<code>docs/tutorials.md</code>, GATE-TUTDOC).</li>
+</ul>
+<h2 id="220---2026-08-12">[2.2.0] - 2026-08-12</h2>
+<p>2.2.0 was never published, so everything that had accumulated under
+“Unreleased” is part of it rather than a release after it. The headline:
+the alert watch now covers <strong>every</strong> place you have saved
+rather than only your primary one, the app is delivered on the shared
+QuillVille Runtime with two much lighter downloads, and everything Quill
+Weather says now reaches a braille display as well as speech.</p>
+<h3 id="added">Added</h3>
+<ul>
+<li><strong>Weather Guardian now watches every place you have saved, not
+just one.</strong> Before this, the alert watch covered your primary
+location and nothing else, so a warning for your workplace, your
+daughter’s town, or the house you are travelling to went unheard. Now,
+with no extra setup, monitoring covers every location in your list –
+home, work, and family all at once. Each place is checked on the same
+schedule, and each new alert is spoken with its place named (“A Tornado
+Warning is in effect for Tucson, Arizona”), plays the alert sound, and
+drops its own tray notification, so you always know <em>where</em> as
+well as <em>what</em>. When monitoring starts, Quill Weather speaks a
+single warm summary across all of them instead of one line per place –
+for example, “3 places: Tucson, Boston, and Reno. All clear right now.”
+The status line, the Start/Stop announcements, and the main window all
+say either the one place’s name or “for 3 places”. Fine-grained
+per-location picking (watch these three, skip that one) is still to
+come; today it is all of them.</li>
+<li><strong>The user guide and release notes are finally reachable from
+inside the app.</strong> Quill Weather’s installer has always shipped
+both documents next to the program, and nothing in the app could open
+them – the Help menu offered only Check for Updates and About.
+<strong>Help &gt; User Guide</strong> and <strong>Help &gt; Release
+Notes</strong> now open them in your browser, so you can read them with
+the screen-reader navigation you already know, with no internet
+connection needed. (The same fix reaches the other QuillVille apps:
+running any of them from a source checkout used to find no documentation
+at all, because the app looked for it in a folder layout that stopped
+existing when the apps moved into one repository.)</li>
+<li><strong>A QuillVille menu – every app in the family is one menu
+away.</strong> Quill Weather carries a top-level
+<strong>QuillVille</strong> menu listing the other apps in the family
+(“Open QUILL”, “Open Quill Radio”), each opening in its own window. The
+same menu, in the same place, appears in every QuillVille app, so moving
+around the suite becomes muscle memory instead of a hunt. The system
+tray menu offers the same list.</li>
+<li><strong>If a companion app is not installed yet, Quill Weather
+offers to get it.</strong> Choosing “Open QUILL” or “Open Quill Radio”
+used to dead-end at “not installed”. Now Quill Weather asks warmly –
+“Quill Radio isn’t installed yet. It’s a free companion app that works
+hand in hand with this one. Would you like to download and install it
+now?” – and, if you say yes, downloads and verifies it in the
+background, then opens it. If the download cannot be reached, it offers
+the web release page instead. Nothing is downloaded without your
+yes.</li>
+<li><strong>Announcements now reach your braille display, not just your
+speech.</strong> Everything Quill Weather tells you – a new warning, the
+all-clear, “monitoring on for 3 places”, a setting you just changed – is
+written to a connected braille display as well as spoken. Previously the
+standalone apps sent announcements to speech only, so a braille reader
+with speech turned down received nothing at all. Two refinements keep
+the display readable rather than frantic: a <strong>burst of different
+messages settles into one write</strong> instead of flashing past faster
+than fingers can follow (the first message writes through immediately,
+so nothing feels delayed), and an <strong>error is held on the
+display</strong> rather than being wiped by the next routine message.
+Braille is written through your screen reader, so it works wherever NVDA
+or JAWS is driving the display; Narrator has no braille call here
+because it brailles the notification Quill Weather already posts.</li>
+<li><strong>One announcement service behind every message.</strong> All
+of Quill Weather’s spoken messages now travel through the same shared
+announcement plumbing QUILL uses, so a message reaches speech, braille,
+the status line, and the accessibility test capture together instead of
+speech alone. A failure on one channel – a display unplugged
+mid-sentence, a screen reader that went away – takes down only that
+channel; you still hear the message. The related preferences (whether to
+braille announcements at all, the braille style, how long an identical
+repeat is suppressed, whether errors stick, and whether apps play sound
+cues) live in QUILL’s Preferences and are shared: set them once in QUILL
+and Quill Weather follows, because the apps share one settings store on
+the same machine.</li>
+<li><strong>The QuillVille Runtime – install Python once, and every
+Quill app starts instantly.</strong> Every QuillVille app (QUILL, Quill
+Radio, Quill Weather, and QUILL Audio Studio) now shares one Python
+runtime, the QuillVille Runtime, installed once per user and reused by
+all of them. Install it a single time and every app you add afterward
+launches immediately. The runtime is reference-counted: it is removed
+only when the last app that needs it is uninstalled. Alongside the
+existing full portable and full installer builds, two new lightweight
+editions arrive that ride the shared runtime:
+<ul>
+<li><strong>Companion edition</strong>
+(<code>Quill-Weather-Companion-&lt;version&gt;.zip</code>, about 2 MB) –
+feather-light: just the app and its docs. The first time you launch it,
+if the QuillVille Runtime is not already installed, it offers to
+download and install it (about 230 MB, once) with a fully accessible
+progress bar; after that, this app and every other QuillVille app start
+instantly.</li>
+<li><strong>Thin installer</strong> (the <code>-Lite</code> setup) – a
+tiny installer that downloads the shared runtime only if it is not
+already present, then installs the app.</li>
+<li>The <strong>full portable</strong> edition
+(<code>Quill-Weather-Portable-&lt;version&gt;.zip</code>, about 82 MB)
+is fully self-contained: it runs from a USB stick with no installation
+and no internet, bundling a genuine, unmodified copy of Python. Weather
+is a small app, so this build is already compact. The <strong>full
+installer</strong>
+(<code>Quill-Weather-Setup-Shared-&lt;version&gt;.exe</code>) installs
+the shared runtime, if it is not already present, plus the app.</li>
+</ul></li>
+<li><strong>Accessible runtime downloads.</strong> Whenever the
+QuillVille Runtime is downloaded – by an installer or by an app’s own
+first launch – it shows a fully accessible progress bar that works with
+NVDA, JAWS, and Narrator, announcing progress as a percentage.</li>
+<li><strong>Fewer antivirus false positives.</strong> The app’s launcher
+is now a genuine, tiny native program, and the bundled Python is the
+official unmodified build. Earlier versions used a renamed and modified
+copy of Python’s <code>pythonw.exe</code> as the launcher, which some
+antivirus tools flagged as a false positive. That pattern is completely
+gone, so the Quill apps are far less likely to be flagged.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>Quill Weather’s download is less than half the size it
+was.</strong> The portable ZIP dropped from about 176 MB to 79 MB, and
+the installer from about 123 MB to 52 MB. The build was quietly carrying
+libraries Quill Weather never runs – a translation build tool, a PDF
+stack, data-science and video libraries – pulled in by a broad packaging
+rule rather than by anything the app does. They are gone. Nothing was
+removed from the app itself.</li>
+<li><strong>Updates now come from one shared release feed, with each app
+taking only its own.</strong> Quill Weather’s <strong>Help &gt; Check
+for Updates…</strong> looks at the single Quill release feed but reads
+only the Quill Weather downloads from it, so a Quill Radio release is
+never mistaken for a Quill Weather one. Each app in the family still
+updates entirely on its own schedule – this only changes where the
+update is looked up, not who decides when you update.</li>
+<li><strong>Reaching the other apps moved from the File menu to the
+QuillVille menu.</strong> “Open QUILL” and “Open Quill Radio” are no
+longer File-menu items; they live in the new top-level
+<strong>QuillVille</strong> menu (and in the tray menu, as before). The
+File menu now holds just <strong>Minimize to Tray</strong> and
+<strong>Exit</strong>.</li>
+</ul>
+<h3 id="also-in-220-standing-on-its-own">Also in 2.2.0: standing on its
+own</h3>
+<p>The work below was written up on 2026-07-23 as its own release before
+2.2.0 was held back. It never shipped separately, so it is part of this
+release too: the QUILL weather feature set as a self-contained,
+screen-reader-first Windows app. Quill Weather began inside Quill
+Radio’s Weather menu; 2.2.0 is the moment it stands on its own, with its
+own process, tray icon, installer, and update feed. It carries the same
+version number as Quill Radio because the two run the exact same weather
+code, but they release independently.</p>
+<ul>
+<li>Standalone Quill Weather app: a small home window (monitoring status
+plus Open Weather Center, Toggle Monitoring, and Add Location buttons),
+a menu bar, a system tray, and single-instance behavior (IPC slot
+<code>weather</code>) so it runs alongside QUILL, Quill Radio, and QUILL
+Audio Studio.</li>
+<li>Weather Monitoring (Weather Guardian): watches your location’s
+official National Weather Service watches, warnings, and advisories and
+speaks each new one the instant it is issued, interrupting speech for
+the most serious events (tornado, flash flood) and announcing the
+all-clear. Keeps watching while minimized to the tray, resumes on
+launch, and drops a tray notification for each new alert; it checks as
+often as once a minute while a warning is live and eases off when the
+sky clears.</li>
+<li>Alerts even when nothing is running: closing the window keeps the
+watch going in the tray; Options &gt; Start Quill Weather with Windows
+begins the watch at sign-in with no window; and Options &gt; Check for
+alerts in the background registers a Windows scheduled task that checks
+on your interval and raises a toast even with no Quill Weather process
+running.</li>
+<li>The Weather Center (Weather Now, Ctrl+Shift+W): active alerts with
+full official instructions, a warm current-conditions paragraph, an
+hour-by-hour forecast, the National Weather Service period forecast, and
+an extended daily outlook of up to 16 days – all arrow-navigable,
+copyable text written for speech. Includes moon phase and illumination
+(computed locally), and a two-clock time summary that grounds a far-off
+forecast in local time here and there plus when the reading was
+taken.</li>
+<li>Quick Weather (Ctrl+Shift+Q): a one-line spoken summary of your
+primary location without opening a window. Active Alerts (Weather menu)
+opens the Weather Center with focus already on the alerts list.</li>
+<li>A configurable alert sounder: silence it, choose your own
+<code>.wav</code> (with Play and Use Default), and set how many times it
+repeats (1 to 10). Test Alert rehearses the whole experience – words,
+sound, tray toast, and alert window – clearly marked as a test, sending
+nothing over the internet.</li>
+<li>Global show/hide hotkey Ctrl+Alt+Shift+W: a system-wide chord that
+hides the window to the tray (monitoring keeps running) or restores and
+focuses it, from any app, speaking “hidden to the tray” or “shown”.
+Unique to Quill Weather within the family (QUILL uses Ctrl+Alt+Shift+Q,
+Quill Radio uses Ctrl+Alt+Shift+R); Windows-only and best-effort.</li>
+<li>Feature customization (Options &gt; Customize Features…): switch
+whole areas – Alert Monitoring, NOAA Weather Radio – on or off, removing
+their menus.</li>
+<li>Sibling interoperability: QuillVille &gt; Open Quill Radio and
+QuillVille &gt; Open QUILL (also in the tray) launch a sibling in its
+own window; on one machine all apps share a data store, so a location
+saved in one is there in the others.</li>
+<li>Your local NOAA Weather Radio: finds the transmitter covering your
+saved location and, with Quill Radio installed for playback, plays it;
+the full directory (1,035 transmitters) ships inside the app for offline
+lookup.</li>
+<li>Independent distribution and updates: its own installer, portable
+build, and update feed. Help &gt; Check for Updates knows whether you
+run the installer or the portable build and downloads the matching
+one.</li>
+</ul>
+</main>
+</body>
+</html>

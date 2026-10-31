@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+import re
 import zipfile
 from pathlib import Path
 
 from quill.core.epub import load_epub_book, render_epub_book
+
+
+def _math_equations(text: str) -> list[str]:
+    """The spoken renderings inside each ``[Math Equation: ...]`` marker.
+
+    Assertions use this rather than exact phrasing: the words depend on which
+    math-speech backend is installed (MathCAT gives "1 half", the template
+    fallback gives "the fraction 1 over 2"), so tests check that a non-empty
+    equation was produced and wrapped, not how any one engine reads it.
+    """
+    return re.findall(r"\[Math Equation: ([^\]]+)\]", text)
 
 
 def test_load_epub_book_reads_ncx_order(tmp_path: Path) -> None:
@@ -48,3 +60,129 @@ def test_load_epub_book_collects_multiple_headings(tmp_path: Path) -> None:
     book = load_epub_book(target)
     assert [heading.title for heading in book.chapters[0].headings] == ["Intro", "Deep Dive"]
     assert [heading.level for heading in book.chapters[0].headings] == [1, 2]
+
+
+def test_true_headings_render_inline_for_single_key_navigation(tmp_path: Path) -> None:
+    # Real headings must appear in the rendered body (as Markdown ``#`` lines)
+    # so single-key H navigation can walk them -- previously the body was
+    # flattened and the headings vanished from the text.
+    target = tmp_path / "inline.epub"
+    chapter = "<html><body><h1>Intro</h1><p>Hello</p><h2>Deep Dive</h2><p>More</p></body></html>"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    report = render_epub_book(book)
+    assert "### Intro" in report  # h1 nested two levels under the ## chapter
+    assert "#### Deep Dive" in report
+    assert book.chapters[0].headings_inferred is False
+
+
+def test_headings_inferred_from_class_when_no_true_tags(tmp_path: Path) -> None:
+    # A hand-made chapter with no <h1>-<h6> tags: infer headings from class
+    # names so navigation and the chapter outline still work.
+    target = tmp_path / "inferred.epub"
+    chapter = (
+        "<html><body>"
+        '<p class="chapterTitle">The Beginning</p>'
+        "<p>Once upon a time.</p>"
+        '<p class="subhead">A Turn</p>'
+        "<p>Then things happened.</p>"
+        "</body></html>"
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    chapter_out = book.chapters[0]
+    assert chapter_out.headings_inferred is True
+    assert [h.title for h in chapter_out.headings] == ["The Beginning", "A Turn"]
+    assert "The Beginning" in chapter_out.body
+    report = render_epub_book(book)
+    assert "### The Beginning" in report
+
+
+def test_headings_inferred_from_standalone_bold_line(tmp_path: Path) -> None:
+    target = tmp_path / "bold.epub"
+    chapter = (
+        "<html><body>"
+        "<p><b>A Bold Title</b></p>"
+        "<p>An ordinary paragraph of body text that is not a heading.</p>"
+        "</body></html>"
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    assert [h.title for h in book.chapters[0].headings] == ["A Bold Title"]
+    assert book.chapters[0].headings_inferred is True
+
+
+def test_long_bold_run_is_not_treated_as_a_heading(tmp_path: Path) -> None:
+    target = tmp_path / "emphasis.epub"
+    long_bold = (
+        "<p><b>This is a very long bold sentence that is clearly emphasis "
+        "inside a paragraph and not a short standalone title line</b></p>"
+    )
+    chapter = f"<html><body>{long_bold}<p>Body.</p></body></html>"
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    assert book.chapters[0].headings == ()
+    assert book.chapters[0].headings_inferred is False
+
+
+def test_epub_math_parsing_extracts_mathml(tmp_path: Path) -> None:
+    target = tmp_path / "math_mathml.epub"
+    chapter = (
+        "<html><body>"
+        '<p>MathML: <math xmlns="http://www.w3.org/1998/Math/MathML">'
+        "<mfrac><mn>1</mn><mn>2</mn></mfrac></math> inside text.</p>"
+        "</body></html>"
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    text = book.chapters[0].text
+    equations = _math_equations(text)
+    assert len(equations) == 1
+    assert equations[0].strip()  # a non-empty rendering, whatever backend produced it
+    assert "inside text." in text  # surrounding prose is preserved
+
+
+def test_epub_math_parsing_extracts_latex_classes(tmp_path: Path) -> None:
+    target = tmp_path / "math_latex_class.epub"
+    chapter = (
+        '<html><body><p>LaTeX span: <span class="math">x^2 + y^2 = z^2</span>.</p></body></html>'
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    equations = _math_equations(book.chapters[0].text)
+    assert len(equations) == 1
+    assert equations[0].strip()
+
+
+def test_epub_math_parsing_extracts_latex_delimiters(tmp_path: Path) -> None:
+    target = tmp_path / "math_latex_delimiters.epub"
+    chapter = (
+        "<html><body><p>Inline: \\( a^2 + b^2 = c^2 \\) and block: $$ x = y $$.</p></body></html>"
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    # Both the inline \( \) and the block $$ $$ equation become spoken markers.
+    equations = _math_equations(book.chapters[0].text)
+    assert len(equations) == 2
+    assert all(equation.strip() for equation in equations)
+
+
+def test_epub_math_parsing_handles_entities(tmp_path: Path) -> None:
+    target = tmp_path / "math_entities.epub"
+    chapter = (
+        '<html><body><p>Comparison: <math xmlns="http://www.w3.org/1998/Math/MathML">'
+        "<mi>x</mi><mo>&lt;</mo><mi>y</mi></math>.</p></body></html>"
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr("chapters/one.xhtml", chapter)
+    book = load_epub_book(target)
+    equations = _math_equations(book.chapters[0].text)
+    assert len(equations) == 1
+    assert "less than" in equations[0] or "<" in equations[0]

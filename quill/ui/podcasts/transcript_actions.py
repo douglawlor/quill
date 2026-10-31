@@ -1,0 +1,283 @@
+"""Everything the Podcast Manager does with a transcript.
+
+Moved out of ``manager_phase4`` when **Read Transcript...** arrived: that module
+was exactly at its GATE-11 ceiling, and the four transcript commands were already
+a self-contained group with one shared fetch. Plain functions taking the manager
+as ``host``, like the other extracted UI helpers.
+
+The three commands, and why there are three rather than one:
+
+* **Read Transcript...** opens the shared reader
+  (:mod:`quill.ui.transcript_reader`) with **timed cues**, so it can follow the
+  audio, take you to the moment a line was spoken, and say where a search hit
+  falls. This is the one that was missing.
+* **Open Transcript in Editor** hands the flat text to QUILL as a document. Kept
+  exactly as it was -- it is a different thing to want, and the reader offers it
+  as a button rather than replacing it.
+* **Save Transcript As** writes it to a file. Also unchanged here; the reader has
+  its own Save that keeps the timings.
+
+One fetch path serves all three (:func:`fetch_then`), on the task manager and
+never on the UI thread, with the feed's own authentication where the feed needs
+it and a Safe Mode refusal. A fetched transcript is cached on the way past, so
+Search Everywhere finds it later with no second request.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def _transcript_detail(host: Any) -> str:
+    """How much scaffolding an exported transcript keeps, per this install.
+
+    From QUILL Cast's own history, which carries the same field under the same
+    name as Quill Radio's -- so a transcript saved from either app comes out
+    the same shape. "" reads as the shipped default.
+    """
+    for owner in (host, getattr(host, "_host", None)):
+        detail = getattr(getattr(owner, "_podcast_history", None), "transcript_detail", "")
+        if detail:
+            return str(detail)
+    return ""
+
+
+def read_transcript(host: Any, show: Any, episode: Any) -> None:
+    """Open the episode's transcript in the shared reader.
+
+    Cues rather than text, because the whole point of the reader is the timings.
+    The player is handed over as two callables, so the reader never learns what a
+    podcast controller is.
+    """
+    from quill.core.podcasts import feed_auth
+    from quill.core.podcasts import transcripts as transcripts_module
+
+    if not getattr(episode, "transcript_url", ""):
+        # Said plainly rather than offered and then refused. Publishing a
+        # transcript is optional, and an episode without one is ordinary.
+        host._announce(
+            f"{episode.title} has no published transcript. "
+            "You can transcribe the downloaded audio in QUILL instead."
+        )
+        return
+    if host._task_manager is None:
+        host._announce("Transcript fetching is unavailable right now.")
+        return
+
+    host._announce("Fetching transcript...")
+    auth_header = feed_auth.auth_header_for_url(show, episode.transcript_url)
+
+    def _work(**_kwargs: object) -> list:
+        cues = transcripts_module.fetch_transcript_cues(
+            episode.transcript_url,
+            episode.transcript_type,
+            safe_mode=host._safe_mode,
+            auth_header=auth_header,
+        )
+        if cues:
+            # Cache the text form on the way past, so Search Everywhere finds
+            # this episode later without a second request.
+            transcripts_module.save_cached_transcript(
+                show.id, episode.guid, transcripts_module.cues_to_text(cues)
+            )
+        return cues
+
+    def _ok(_op: str, cues: object) -> None:
+        host._wx.CallAfter(_open_reader, host, show, episode, cues)
+
+    def _failed(_op: str, error: object) -> None:
+        from quill.ui.podcasts.failure_report import report_failure
+
+        report_failure(host, f"Transcript failed: {error}")
+
+    host._task_manager.submit("podcast-transcript-cues", _work, on_success=_ok, on_failure=_failed)
+
+
+def _open_reader(host: Any, show: Any, episode: Any, cues: object) -> None:
+    from quill.ui.podcasts.transcript_window import open_transcript_window
+
+    rows = list(cues) if isinstance(cues, list) else []
+    if not rows:
+        host._announce(
+            f"{episode.title}'s transcript could not be read. "
+            "It may be in a form Quill does not understand yet."
+        )
+        return
+    controller = getattr(host, "_controller", None)
+    playing = _is_playing(controller, episode)
+    # A peer (qc.md Phase 4): one Transcript window, raised with this episode.
+    open_transcript_window(
+        host,
+        host.dialog,
+        title=episode.title,
+        cues=rows,
+        # Jumping is offered only while *this* episode is the one playing.
+        # Seeking a different episode to a line in this transcript would be
+        # worse than not offering it -- and it is why Find says "Enter plays
+        # from here" only when there is something to play.
+        position_ms=controller.position_ms if (controller is not None and playing) else None,
+        seek_to_ms=(lambda ms: bool(controller.seek_to(ms))) if playing else None,
+        announce=host._announce,
+        show_modal_dialog=getattr(host, "_show_modal_dialog", None),
+        on_send_to_quill=getattr(host, "_on_send_show_notes", None),
+        show_title=str(getattr(show, "title", "") or ""),
+        source_url=str(getattr(episode, "audio_url", "") or ""),
+        transcript_detail=_transcript_detail(host),
+    )
+
+
+def _is_playing(controller: Any, episode: Any) -> bool:
+    """Whether *episode* is the one currently playing."""
+    if controller is None:
+        return False
+    state = getattr(controller, "state", None)
+    return bool(state is not None and getattr(state, "episode_guid", "") == episode.guid)
+
+
+# -- the two commands that moved here unchanged ---------------------------------
+
+
+def save_transcript(host: Any, show: Any, episode: Any) -> None:
+    """Write the episode's transcript to a file the listener chooses."""
+    wx = host._wx
+    with wx.FileDialog(  # dialog_button_contract: exempt
+        host.dialog,
+        "Save Transcript As",
+        defaultFile=f"{episode.title}.txt",
+        wildcard="Text files (*.txt)|*.txt|All files (*.*)|*.*",
+        style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT,
+    ) as dialog:
+        if dialog.ShowModal() != wx.ID_OK:
+            return
+        target = dialog.GetPath()
+    fetch_then(host, show, episode, lambda text: _write(host, target, text))
+
+
+def _write(host: Any, target: str, text: str) -> None:
+    from pathlib import Path
+
+    try:
+        Path(target).write_text(text, encoding="utf-8", newline="\n")
+    except OSError as error:
+        host._announce(f"Could not save the transcript: {error}")
+        return
+    host._announce(f"Transcript saved to {Path(target).name}")
+
+
+def open_in_editor(host: Any, show: Any, episode: Any) -> None:
+    """Hand the transcript to QUILL as a document."""
+    send = host._on_send_show_notes
+    if send is None:
+        host._announce("Opening in the editor is not available here.")
+        return
+    fetch_then(host, show, episode, send)
+
+
+def fetch_then(host: Any, show: Any, episode: Any, consume: object) -> None:
+    """Fetch the transcript as text, off the UI thread, then hand it to *consume*."""
+    from quill.core.podcasts import feed_auth
+    from quill.core.podcasts import transcripts as transcripts_module
+
+    if host._task_manager is None:
+        host._announce("Transcript fetching is unavailable right now.")
+        return
+    host._announce("Fetching transcript...")
+    auth_header = feed_auth.auth_header_for_url(show, episode.transcript_url)
+
+    def _do_fetch(**_kwargs: object) -> str:
+        text = transcripts_module.fetch_and_parse_transcript(
+            episode.transcript_url,
+            episode.transcript_type,
+            safe_mode=host._safe_mode,
+            auth_header=auth_header,
+        )
+        if text:
+            # Cache so Search Everywhere can search it with no re-fetch.
+            transcripts_module.save_cached_transcript(show.id, episode.guid, text)
+        return text
+
+    def _on_success(_op: str, text: str) -> None:
+        host._wx.CallAfter(consume, text)
+
+    def _on_failure(_op: str, error: object) -> None:
+        from quill.ui.podcasts.failure_report import report_failure
+
+        report_failure(host, f"Transcript failed: {error}")
+
+    host._task_manager.submit(
+        "podcast-transcript", _do_fetch, on_success=_on_success, on_failure=_on_failure
+    )
+
+
+def view_show_notes(host: Any, episode: Any) -> None:
+    """Open one episode's show notes.
+
+    Here rather than in the manager dialog (GATE-11, and it belongs): this
+    module already owns "open a reading surface for this episode", and the show
+    notes viewer is the other half of the transcript reader -- same episode,
+    same two verbs on it (save it, list its links).
+    """
+    from quill.ui.podcasts.peer_window import open_peer
+    from quill.ui.podcasts.show_notes_dialog import ShowNotesWindow
+
+    controller = getattr(host, "_controller", None)
+
+    def seek(ms: int) -> None:
+        # A timestamp seeks the episode only while it is the one playing; the
+        # Manager's list may be about any episode, and starting one from a
+        # window about reading would be a surprise.
+        state = getattr(controller, "state", None)
+        if state is not None and state.episode_guid == episode.guid:
+            controller.seek(int(ms))
+            from quill.core.media.timecode import format_spoken
+
+            host._announce(f"At {format_spoken(int(ms))}.")
+            return
+        host._announce("Play this episode first; its timestamps seek while it is playing.")
+
+    # A peer (qc.md Phase 4): one Show Notes window, raised with whichever
+    # episode was asked about.
+    content: dict[str, Any] = {
+        "episode_title": episode.title,
+        "description_html": episode.description,
+        "on_send_to_editor": getattr(host, "_on_send_show_notes", None),
+        "on_seek": seek if controller is not None else None,
+    }
+    existing = getattr(host, "_show_notes_window", None)
+    if existing is not None and existing.frame:
+        existing.load(**content)
+    open_peer(
+        host,
+        "_show_notes_window",
+        lambda owner: ShowNotesWindow(owner.dialog, announce_cb=owner._announce, **content),
+    )
+
+
+def open_chapters(host: Any, show: Any, episode: Any) -> None:
+    """Fetch this episode's chapters off-thread, then show the list.
+
+    Here for the same reason as :func:`view_show_notes` (GATE-11, and it
+    belongs): chapters, transcript and show notes are the three reading
+    surfaces an episode has, and the fetch-then-open shape is identical for
+    all three.
+    """
+    from quill.core.podcasts.chapter_sources import build_episode_chapters
+
+    if show is None or episode is None or host._task_manager is None:
+        return
+
+    def _do_fetch(**_kwargs: object):
+        return build_episode_chapters(episode, show, safe_mode=host._safe_mode)
+
+    def _on_success(_op: str, result: object) -> None:
+        host._open_chapters_dialog(show, episode, result)
+
+    def _on_failure(_op: str, error: Exception) -> None:
+        from quill.ui.podcasts.failure_report import report_failure
+
+        report_failure(host, f"Could not load chapters: {error}")
+
+    host._announce("Loading chapters...")
+    host._task_manager.submit(
+        "podcast-chapters-dialog", _do_fetch, on_success=_on_success, on_failure=_on_failure
+    )

@@ -1,0 +1,1265 @@
+"""Quill Radio -- Internet Radio as a standalone app.
+
+Reuses ``RadioMixin`` (the exact same class ``MainFrame`` uses) unchanged:
+this module only supplies the menu bar, the tray icon, and the entry point.
+See docs/planning/apps.md for why this works without touching the mixin.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+import wx
+
+from quill.apps import radio_now_playing as now_playing_readout
+from quill.apps.radio_favorites_tree import RadioFavoritesTreeMixin
+from quill.apps.radio_menu_bar import RadioMenuBarMixin
+from quill.core import http_client
+from quill.core.app_features import AppArea, load_app_features
+from quill.core.family_chords import SHOW_HIDE_DEFAULTS
+from quill.core.net import configure_ssl_trust
+from quill.core.radio import reading_services
+from quill.core.radio.radio_browser import RadioBrowserError
+from quill.core.sound_events import SoundEvent
+from quill.ui.app_quillins import QuillinsAppMixin
+from quill.ui.app_shell import AppShellFrame
+from quill.ui.app_support import ListeningAppSupportMixin
+from quill.ui.dialog_contract import set_accessible_name
+from quill.ui.dpi import dip_size
+from quill.ui.keymap_editor import KeymapEditorMixin
+from quill.ui.main_frame_hotkeys import GlobalHotkeysMixin
+from quill.ui.main_frame_media_sleep_timer import MediaSleepTimerMixin
+from quill.ui.main_frame_radio import RadioMixin
+from quill.ui.main_frame_unlock_codes import UnlockCodesMixin
+from quill.ui.main_frame_weather import WeatherMixin
+from quill.ui.radio.volume_keys import volume_chord_handled
+from quill.ui.slider_keys import bind_up_means_more
+from quill.ui.spoken_name import set_spoken_name
+
+_TITLE = "Quill Radio"
+from quill.core.app_version import describe_version, installed_version  # noqa: E402
+
+_VERSION = "3.2.0"
+_BUILD = 5  # this version's build (docs/release/RELEASE.md, "Build numbers")
+_REPO = "Community-Access/quill"
+#: Two downloads since 3.0.0 (installer, portable zip): Check for Updates asks "portable,
+#: or not" and nothing else, as QUILL Lite does (AppShell.check_for_app_updates says why).
+_MATCH_EDITION = False
+#: Shared components this app requires, for the component-refcount registry
+#: (ffmpeg for recording; mpv/libmpv is the playback engine).
+REQUIRED_COMPONENTS: tuple[str, ...] = ("ffmpeg", "mpv")
+http_client.set_product_identity(_TITLE, _VERSION)  # radio User-Agent identity (#6)
+
+#: RadioHistory.close_action's Preferences combo box (see also
+#: RadioCloseConfirmDialog, which writes this same field via "Don't ask me
+#: again").
+_CLOSE_ACTION_LABELS = ("Ask every time", "Exit", "Minimize to Tray")
+_CLOSE_ACTION_VALUES = ("ask", "exit", "minimize")
+
+#: The What's Playing (Ctrl+T) announcement template and its accessible help,
+#: shown as a text field in Preferences (#1068). Blank restores the default.
+_DEFAULT_NOW_PLAYING_TEMPLATE = "{title}[ by {artist}]"
+_NOW_PLAYING_HELP = (
+    "How What's Playing (Ctrl+T) reads a track. Use {title} and {artist}; "
+    "put optional wording in [square brackets] to hide it when that field is "
+    "empty (the default {title}[ by {artist}] drops the ' by' when there is no "
+    "artist). {raw} is the stream's exact original text. Leave blank to restore "
+    "the default."
+)
+
+#: The Preferences "Radio output device" dropdown (#1076): "" (System
+#: default) plays to the default device; a device name routes the radio
+#: there. Quill Radio's own sounds follow it unless "App sounds play on"
+#: says otherwise; the screen reader is never moved.
+_OUTPUT_DEVICE_HELP = (
+    "The sound card radio playback comes out of. System default keeps "
+    "everything as it is today; choosing a device sends the radio there. "
+    "Quill Radio's own sounds go with it unless you choose otherwise under "
+    "App sounds play on. Your screen reader stays where Windows puts it."
+)
+
+#: RadioHistory.playback_engine's Preferences combo box. Automatic = mpv
+#: when installed (device routing, pause/rewind live, Volume Boost, more
+#: station formats), else Windows Media; the explicit entries are the
+#: escape hatch / insist options.
+_ENGINE_LABELS = ("Automatic (recommended)", "Windows Media (classic)", "mpv")
+_ENGINE_VALUES = ("auto", "wx", "mpv")
+_FAVORITES_SORT_LABELS = (
+    "Ascending (A to Z)",
+    "Descending (Z to A)",
+    "Unsorted (manual order)",
+)
+_FAVORITES_SORT_VALUES = ("az", "za", "manual")
+#: View > Text Size choices: (menu label, font scale). Normal is the wx default.
+_TEXT_SIZE_SCALES = (
+    ("&Normal\tCtrl+Alt+1", 1.0),
+    ("&Large\tCtrl+Alt+2", 1.25),
+    ("La&rger\tCtrl+Alt+3", 1.5),
+)
+_ENGINE_HELP = (
+    "Which audio engine plays the radio. Automatic uses mpv when it is "
+    "installed -- that is what enables the output device choice, pausing "
+    "and rewinding live radio, Volume Boost, and stations in more formats "
+    "-- and Windows Media otherwise. Windows Media (classic) is exactly "
+    "the pre-1.1 behavior."
+)
+
+#: Station > Update Radio Reading Services... Safe Mode refusal (mirrors
+#: WeatherMixin's _SAFE_MODE_WEATHER wording for Update NOAA Weather Radio
+#: Directory).
+_SAFE_MODE_RRS = (
+    "Radio Reading Services is a network service and is turned off in Safe Mode. "
+    "Restart without Safe Mode to use it."
+)
+
+
+def reading_services_refresh_summary(*, safe_mode: bool = False) -> str:
+    """Live-refresh the Radio Reading Services directory and summarize the
+    result as a plain string (pure, no wx) -- so the text
+    ``RadioAppFrame.update_reading_services_directory`` announces is
+    unit-testable without wx. Mirrors ``main_frame_weather``'s
+    ``update_noaa_radio_directory``: a Safe Mode refusal or RadioBrowser
+    error comes back as a clear failure string instead of raising.
+    """
+    try:
+        reading_services.refresh_reading_services(safe_mode=safe_mode)
+    except RadioBrowserError as exc:
+        return f"Could not update Radio Reading Services. {exc}"
+    # Report the total the user will actually see -- the curated bundled list
+    # plus anything the live refresh discovered -- not just the live count.
+    total = len(reading_services.list_reading_services(safe_mode=safe_mode))
+    return f"Radio Reading Services updated: {total} services."
+
+
+#: The switchable areas of Quill Radio (View > Customize Features...). Turning
+#: one off omits its whole menu on the next launch. Core areas -- Station,
+#: Playback, View, Help -- are always present and not listed here.
+RADIO_AREAS: tuple[AppArea, ...] = (
+    AppArea(
+        "recording",
+        "Recording",
+        "The Record menu: record now, record a station, scheduled recordings, "
+        "and the recordings library.",
+    ),
+    # No Weather area anymore (2026-08-17): weather stands alone in the Quill
+    # Weather app, reachable from the QuillVille menu. The NOAA Weather Radio
+    # *streams* stay -- they are radio, under Browse Stations > Weather / NOAA.
+)
+
+
+class RadioAppFrame(
+    # AppShellFrame is listed first so its toggle_window_to_tray / _send_to_tray
+    # (which the apps have) win over GlobalHotkeysMixin's send_to_tray-based copy.
+    AppShellFrame,
+    RadioMixin,
+    MediaSleepTimerMixin,
+    UnlockCodesMixin,
+    WeatherMixin,
+    GlobalHotkeysMixin,
+    KeymapEditorMixin,
+    QuillinsAppMixin,
+    ListeningAppSupportMixin,
+    RadioMenuBarMixin,
+    RadioFavoritesTreeMixin,
+):
+    def __init__(self, *, safe_mode: bool = False) -> None:
+        self._init_app_shell(
+            _TITLE, safe_mode=safe_mode, size=dip_size(None, 460, 360), app_id="radio"
+        )
+        self._init_app_support()  # the shared slots: undo, problems, quiet, setup
+        # This app IS the radio: the editor's release gate on ``core.radio``
+        # (#1340) must not apply here, or the recording scheduler, wake task,
+        # missed-recording reports, and every radio palette command silently
+        # die in a public build. Safety locks still apply on top.
+        self.features.grant_product_features({"core.radio"})
+        # Radio's own menu accelerators (Ctrl+B for Browse, and the rest):
+        # every menu item shows the key that reaches it.
+        self._apply_app_keymap("radio")
+        from quill.core.paths import app_data_dir
+
+        self._app_features = load_app_features(app_data_dir(), "radio")
+        self._init_radio()
+        from quill.ui import app_sounds
+
+        app_sounds.apply(self)  # again, now the radio's own card is known
+        from quill.ui.dialog_contract import set_transition_announcement_policy
+
+        set_transition_announcement_policy(lambda: self._radio_history.announce_dialog_transitions)
+        # F1 context help with Radio's authored purpose catalogue. The app
+        # shell already activated the shared engine (provider + dialog-contract
+        # hook + main-frame F1); this re-activation swaps in Radio's
+        # window-purpose resolver so the authored paragraphs lead every answer.
+        from quill.ui.radio import context_help
+
+        context_help.activate()
+        self._init_media_sleep_timer()
+        from quill.ui.window_menu import WindowManager
+
+        # Shared &Window menu + Ctrl+Tab / Ctrl+Shift+Tab / Ctrl+1..9 traversal
+        # across the main window and the modeless radio surfaces. RadioMixin's
+        # open_* methods pass this to each surface, which becomes a modeless
+        # frame in the standalone app; embedded QUILL passes no manager, so the
+        # same surfaces stay modal there.
+        self._windows = WindowManager(wx)
+        # Quillins for Quill Radio (app id "radio"): load contributions before
+        # the menu bar is built so contributed items appear in the &Quillins menu.
+        self._init_app_quillins("radio")
+        self._build_menu_bar()
+        self._build_main_panel()
+        self._register_radio_commands()
+        self._register_media_sleep_timer_commands()
+        self._register_unlock_code_commands()
+        from quill.ui.radio import problem_retries
+
+        self._register_app_support_commands(problem_retries)
+        # Bookmarks and the ACB Media schedule (radio_launch_tasks).
+        from quill.apps import radio_launch_tasks
+
+        radio_launch_tasks.register_surfaces(self)
+
+        self._ensure_tray_icon(self._build_radio_tray_menu, tooltip=_TITLE)
+        self._register_media_keys({
+            "play_pause": self._on_play_stop_button,
+            "stop": self.radio_stop,
+        })
+        # Show/hide Radio to the tray: Ctrl+Alt+Shift+R (core/family_chords.py).
+        self._register_tray_hotkey(SHOW_HIDE_DEFAULTS["radio"])
+        # Per-command system-wide hotkeys (Help > Global Hotkeys...). Register
+        # the show/hide command the default table binds so its Ctrl+Alt+Shift+Q
+        # actually dispatches; the transport commands (radio.play_pause/stop/...)
+        # are already registered above. We do NOT call
+        # _register_global_hotkey_commands -- that also adds the sticky-note /
+        # editor commands the apps don't want. Then bind the message hook and
+        # register whatever the user has configured.
+        self.commands.try_register(
+            "view.toggle_window_to_tray",
+            "Show/Hide Quill Radio to the Tray",
+            self.toggle_window_to_tray,
+            self._binding_for("view.toggle_window_to_tray"),
+            feature_id="core.app",
+        )
+        self.frame.Bind(wx.EVT_HOTKEY, self._on_global_hotkey)
+        self._reload_global_hotkeys()
+        self._refresh_statusbar()
+        self.frame.Bind(wx.EVT_CLOSE, self._on_radio_app_close)
+        # Alt+F4-to-tray (opt-in preference): intercepted at the char hook,
+        # before Windows turns it into a close, so the window tucks away with
+        # playback running. The titlebar X and Exit keep close_action.
+        self.frame.Bind(wx.EVT_CHAR_HOOK, self._on_radio_char_hook)
+        self._maybe_resume_last_station()
+        # Watch for a second launch asking us to come forward (#1152): a
+        # re-launched Quill Radio enqueues a "show" request and exits; this
+        # timer drains it and un-hides/raises this window, even from the tray.
+        self._start_ipc_poll()
+        # Deferred (CallAfter), not inline: this touches the network, and a
+        # launch is not the place to do that before the window is even up.
+        wx.CallAfter(self._maybe_check_updates_on_startup)
+        # No Weather Guardian resume here anymore: the Weather menu left Quill
+        # Radio (2026-08-17), so background alert monitoring belongs to the
+        # Quill Weather app that owns its on/off switch.
+        # Everything that happens once the window is up -- the data-folder
+        # notice, media health, the startup window, the first-run flow, and
+        # arming the subscribed-feed check. See apps/radio_launch_tasks.py for
+        # why each is deferred and why they are in that order.
+        from quill.apps import radio_launch_tasks
+
+        self._podcast_refresh_monitor = radio_launch_tasks.schedule(self, wx, safe_mode=safe_mode)
+        # Missed-recording reporting + startup reconcile/resume live in
+        # RadioMixin._init_radio now (R2/11.6 + R3), so both hosts get them once.
+
+    # -- main panel -------------------------------------------------------------
+    #
+    # A bare frame with only a menu bar leaves keyboard focus with nowhere to
+    # land: Tab does nothing and a screen reader reads an empty client area.
+    # The main panel gives the app a real, named, tabbable surface -- the
+    # favorites list is the heart of the app and takes focus on launch.
+
+    def _build_main_panel(self) -> None:
+        panel = wx.Panel(self.frame, style=wx.TAB_TRAVERSAL)
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        # Read-only rather than static: a wx.StaticText cannot take focus, so the
+        # one line carrying the station, the track and what the player is doing
+        # could not be arrowed through, reviewed word by word, or copied. The
+        # only ways to read it slowly were F6 into the status bar or Ctrl+T for
+        # the full window, and neither should be required to read the line
+        # already sitting at the top. No TE_PROCESS_TAB: Tab must move focus
+        # onward and never be captured here.
+        self._now_playing_text = wx.TextCtrl(
+            panel,
+            value="Radio: stopped",
+            style=wx.TE_READONLY | wx.TE_MULTILINE | wx.TE_NO_VSCROLL | wx.BORDER_SIMPLE,
+            size=dip_size(panel, -1, 54),
+        )
+        set_accessible_name(self._now_playing_text, "Now playing")
+        set_spoken_name(self._now_playing_text, "Now playing")
+        self._now_playing_text.SetHelpText(
+            "What is playing. Ctrl+Shift+W says where you are in it; Ctrl+T opens the full details."
+        )
+        self._pending_now_playing: str | None = None
+        self._now_playing_text.Bind(
+            wx.EVT_KILL_FOCUS, lambda e: now_playing_readout.on_blur(self, e)
+        )
+        root.Add(self._now_playing_text, 0, wx.EXPAND | wx.ALL, 8)
+
+        # The swappable middle (main_view): the favorites tree by default, or
+        # Browse / Search / Recordings / the Player, whichever the listener
+        # chose. The frame around it -- menu bar, now-playing line, Mute and
+        # Volume, status bar -- is the same whichever view is showing, which is
+        # the point: the surface you live in gets the menu bar instead of
+        # sitting underneath a second window that has one.
+        from quill.ui.radio.main_view_host import MainViewHost
+
+        self._main_view_host = MainViewHost(self, wx)
+        favorites_page = wx.Panel(panel, style=wx.TAB_TRAVERSAL)
+        book = self._main_view_host.build(panel, favorites_page)
+        favorites_sizer = wx.BoxSizer(wx.VERTICAL)
+        favorites_label = wx.StaticText(favorites_page, label="&Favorite stations:")
+        favorites_sizer.Add(favorites_label, 0, wx.LEFT | wx.RIGHT, 8)
+        # The same nested folder tree the Favorites Manager shows -- the
+        # structure you build is right on the main page, not behind a dialog.
+        self._favorites_tree = wx.TreeCtrl(
+            favorites_page, style=wx.TR_HAS_BUTTONS | wx.TR_LINES_AT_ROOT | wx.TR_HIDE_ROOT
+        )
+        # Keep the spoken name short -- a screen reader reads it on every focus,
+        # and the old tutorial-style name ("...; Enter plays, Delete removes, F2
+        # renames, Shift+F10 opens all actions") was read aloud constantly. The
+        # role ("tree view") already conveys what it is; the key hints move to
+        # help text, discoverable but not spoken on entry.
+        set_accessible_name(self._favorites_tree, "Favorite stations")
+        self._favorites_tree.SetHelpText(
+            "Enter plays, Delete removes, F2 renames, Shift+F10 opens all actions."
+        )
+        # Low-vision legibility (#3): pin the tree to the theme-resolved system
+        # colours so it is never near-invisible on a mismatched default.
+        from quill.ui.radio.favorites_manager_dialog import apply_readable_tree_colours
+
+        apply_readable_tree_colours(self._favorites_tree)
+        favorites_sizer.Add(self._favorites_tree, 1, wx.EXPAND | wx.ALL, 8)
+        favorites_page.SetSizer(favorites_sizer)
+        root.Add(book, 1, wx.EXPAND)
+        self._favorites_tree.Bind(wx.EVT_TREE_ITEM_ACTIVATED, self._on_favorites_activated)
+        self._favorites_tree.Bind(wx.EVT_TREE_ITEM_MENU, self._on_favorites_context_menu)
+        self._favorites_tree.Bind(wx.EVT_KEY_DOWN, self._on_favorites_key)
+
+        buttons = wx.BoxSizer(wx.HORIZONTAL)
+        # A favorites list you play from, not a player: the rest of the player
+        # left this row on 2026-08-21, Stop came back first in 3.0.3, and since
+        # 2026-10-01 it is the one transport face: Play <station> / Stop / Resume.
+        from quill.ui.radio.main_transport_button import add_transport_button
+
+        add_transport_button(self, panel, buttons, wx)
+        # A volume control right in the Tab order, so the volume can be adjusted
+        # by arrowing a focused slider while listening -- not only via Ctrl+Up/
+        # Down or the status bar (#1214). Kept in step with the real volume by
+        # _refresh_statusbar (which also reflects Ctrl+Up/Down and per-station
+        # memory), so the two paths never disagree.
+        buttons.Add(
+            # O, not U: the transport button before it needs U for Res&ume,
+            # and the menu bar owns every other letter of the word (2026-10-01).
+            wx.StaticText(panel, label="V&olume:"),
+            0,
+            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+            4,
+        )
+        start_volume = 100
+        controller = getattr(self, "_radio_controller", None)
+        if controller is not None:
+            start_volume = controller.state.volume_percent
+        # Mute sits with Volume and matches browse_tree_dialog exactly -- the
+        # same control, the same label, the same key. The main window was the
+        # one surface in the app without it, so the same listener met two
+        # different answers to "how do I mute this?".
+        self._mute_btn = wx.ToggleButton(panel, label="&Mute")
+        set_accessible_name(self._mute_btn, "Mute (Ctrl+M)")
+        self._mute_btn.SetHelpText(
+            "Silences the radio without stopping it; press again to unmute. "
+            "It follows Ctrl+M and every other mute in the app."
+        )
+        self._mute_btn.SetValue(bool(getattr(controller, "state", None) and controller.state.muted))
+        self._mute_btn.Bind(wx.EVT_TOGGLEBUTTON, lambda _e: self.radio_mute_toggle())
+        buttons.Add(self._mute_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 6)
+        self._volume_slider = wx.Slider(
+            panel, value=start_volume, minValue=0, maxValue=100, style=wx.SL_HORIZONTAL
+        )
+        set_accessible_name(self._volume_slider, "Volume, percent")
+        self._volume_slider.SetHelpText(
+            "The radio's volume. Up and Right make it louder, Down and Left "
+            "quieter; Page Up and Page Down move it in bigger steps -- and it "
+            "stays in step with Ctrl+Up and Ctrl+Down and each station's "
+            "remembered level."
+        )
+        self._volume_slider.Bind(wx.EVT_SLIDER, self._on_volume_slider)
+        # A Windows trackbar answers Up with quieter (reported 2026-09-28);
+        # Up is louder here, as in the Windows volume mixer.
+        bind_up_means_more(self._volume_slider)
+        buttons.Add(self._volume_slider, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 6)
+        root.Add(buttons, 0, wx.EXPAND | wx.ALL, 8)
+
+        # The arrow-navigable status bar lives along the bottom (F6 to reach it,
+        # View > Show Status Bar to hide it). Its cells and behaviour live in
+        # RadioStatusBar; the panel keeps radio.py's own footprint small.
+        from quill.ui.radio.status_bar import RadioStatusBar
+
+        self._status_bar = RadioStatusBar(self)
+        status_panel = self._status_bar.build(panel)
+        root.Add(status_panel, 0, wx.EXPAND | wx.ALL, 2)
+        self._status_bar.set_visible(self._radio_history.show_status_bar)
+
+        panel.SetSizer(root)
+        self._main_panel = panel
+        self._reload_favorites_tree()
+        self._status_bar.refresh()
+        self._apply_text_size()
+        # The chosen view, without announcing it: at launch it is not news, and
+        # the launch flow already has things to say. Built here rather than
+        # deferred so the window is never briefly the wrong shape.
+        self._main_view_host.show(self._radio_history.main_view, announce=False, focus=False)
+        self._main_view_host.focus_current()
+
+    def open_notification_target(self, target: str) -> None:
+        """Enter on a notification: go to the podcast it was about.
+
+        The notification centre calls this when there is something to open.
+        Browse Stations, cursor on the show -- see ui/notification_open.
+        """
+        from quill.ui import notification_open
+
+        notification_open.open_in_radio(self, target)
+
+    def _focus_initial_control(self) -> None:
+        """Land keyboard focus on the favorites tree after the window is shown so
+        the menu bar is reachable straight away (#1193): a pre-show SetFocus does
+        not stick, which left the window opening with no control focused -- the
+        first Alt then opened the window's system menu instead of the app menu."""
+        host = getattr(self, "_main_view_host", None)
+        if host is not None:
+            host.focus_current()
+            return
+        tree = getattr(self, "_favorites_tree", None)
+        if tree is not None:
+            try:
+                tree.SetFocus()
+            except Exception:  # noqa: BLE001 - initial focus is best-effort
+                pass
+
+    # -- favorites tree ---------------------------------------------------------
+
+    def import_stations_from_playlist(self) -> None:
+        """Station > Import Stations from Playlist...: read an M3U, PLS, XSPF
+        or ASX file, pick (or create) a target folder at any depth, handle any
+        duplicates against the current favorites, and add the rest."""
+        from pathlib import Path
+
+        from quill.core.radio import playlist_import as pi
+        from quill.ui.radio.import_stations_dialog import prompt_import_target
+
+        wx = self._wx
+        with wx.FileDialog(
+            self.frame,
+            "Choose a playlist to import",
+            wildcard=pi.IMPORT_WILDCARD,
+            style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
+        ) as file_dialog:
+            if file_dialog.ShowModal() != wx.ID_OK:
+                return
+            source = Path(file_dialog.GetPath())
+        try:
+            stations = pi.read_playlist_file(source)
+        except (OSError, pi.PlaylistFormatError) as exc:
+            self._announce(f"Could not read the playlist ({exc}).")
+            return
+        if not stations:
+            self._show_message_box(
+                "No radio stations were found in that playlist.",
+                "Import Stations",
+                wx.OK | wx.ICON_INFORMATION,
+            )
+            return
+        folder = prompt_import_target(
+            self.frame, self._radio_favorites.folder_names(), len(stations)
+        )
+        if folder is None:
+            return
+        existing = {favorite.key for favorite in self._radio_favorites.favorites}
+        new, duplicates = pi.split_new_and_duplicates(stations, existing)
+        to_import = stations
+        if duplicates:
+            labels = [
+                f"Skip the {len(duplicates)} already in your favorites -- "
+                f"import the {len(new)} new one(s)",
+                f"Import everything, including the {len(duplicates)} duplicate(s)",
+            ]
+            with wx.SingleChoiceDialog(
+                self.frame,
+                f"{len(duplicates)} of the {len(stations)} stations are already in "
+                "your favorites. How should I handle them?",
+                "Import Stations -- Duplicates Found",
+                labels,
+            ) as dup_dialog:
+                if dup_dialog.ShowModal() != wx.ID_OK:
+                    return
+                to_import = stations if dup_dialog.GetSelection() == 1 else new
+        if not to_import:
+            self._announce("Nothing to import -- every station was already a favorite.")
+            return
+        for station in to_import:
+            self._radio_favorites.add(station, folder=folder)
+        self._save_radio_favorites()
+        self._reload_favorites_tree()
+        where = f'the "{folder}" folder' if folder else "your favorites"
+        plural = "station" if len(to_import) == 1 else "stations"
+        self._announce(f"Imported {len(to_import)} {plural} into {where}.")
+
+    # -- Radio Reading Services -------------------------------------------------
+
+    def update_reading_services_directory(self) -> None:
+        """Station > Update Radio Reading Services...: force a live pull of
+        the Radio Reading Services directory off-thread, then announce the
+        refreshed count. Mirrors Weather > Update NOAA Weather Radio
+        Directory (``main_frame_weather.WeatherMixin.update_noaa_radio_directory``)."""
+        if self._safe_mode:
+            self._show_message_box(
+                _SAFE_MODE_RRS, "Radio Reading Services", wx.ICON_INFORMATION | wx.OK
+            )
+            return
+        self._announce("Updating Radio Reading Services...")
+
+        def _work(**_kwargs: object) -> str:
+            return reading_services_refresh_summary(safe_mode=self._safe_mode)
+
+        def _done(_op: str, result: object) -> None:
+            self._wx.CallAfter(self._announce, str(result))
+
+        self._task_manager.submit(
+            "radio-reading-services-update", _work, on_success=_done, on_failure=None
+        )
+
+    def _on_tree_move_to_folder(self) -> None:
+        from quill.ui.radio import favorite_actions
+
+        favorite = self._selected_favorite()
+        if favorite is None:
+            return
+        if favorite_actions.move_favorite_to_folder(
+            self.frame, self._radio_favorites, favorite, announce=self._announce
+        ):
+            self._save_radio_favorites()
+            self._reload_favorites_tree(keep_key=favorite.key)
+
+    def _on_play_stop_button(self) -> None:
+        """Ctrl+P and Playback > Play/Stop: whatever the transport button says."""
+        from quill.ui.radio import main_transport_button
+
+        main_transport_button.press(self)
+
+    def _refresh_play_stop_button(self) -> None:
+        # The button's letters (L, T, E) are chosen against the menu bar's: a
+        # button mnemonic on a frame competes with the bar's (#1208), and the
+        # bar wins. GATE-15 reads every label the button can show.
+        from quill.apps import radio_transport_menu
+        from quill.ui.radio import main_transport_button
+
+        main_transport_button.refresh(self)
+
+        radio_transport_menu.refresh_labels(self)
+        self._refresh_favorite_toggle()
+
+    def _refresh_record_button(self) -> None:
+        """Keep the capture button honest about what it would capture.
+
+        The decision lives in quill/apps/radio_capture_button.py (GATE-11);
+        this is the one line that applies it.
+        """
+        from quill.apps.radio_capture_button import refresh
+
+        refresh(self)
+
+    def _on_capture_button(self) -> None:
+        """Do whatever the capture button currently says it will do."""
+        from quill.apps.radio_capture_button import act
+
+        act(self)
+
+    def _refresh_favorite_toggle(self) -> None:
+        """Keep every door onto "save this station" saying the same thing."""
+        from quill.apps import radio_favorite_toggle
+
+        radio_favorite_toggle.refresh(self)
+
+    def _on_favorite_toggle(self) -> None:
+        station = self._radio_controller.state.station
+        if station is None:
+            self._announce("Nothing is playing to favorite.")
+            return
+        key = station.station_uuid or station.stream_url
+        if self._radio_favorites.contains(station):
+            self._radio_favorites.remove(key)
+            self._announce(f"Removed {station.display_name} from favorites.")
+        else:
+            self._radio_favorites.add(station)
+            self._announce(
+                f"Added {station.display_name} to favorites.",
+                sound=SoundEvent.RADIO_FAVORITE_ADDED,
+            )
+        self._save_radio_favorites()
+        self._reload_favorites_tree()
+        self._refresh_favorite_toggle()
+
+    def _favorite_is_playing(self, favorite: object) -> bool:
+        """Whether this favourite is the thing the player currently holds."""
+        station = getattr(self._radio_controller.state, "station", None)
+        if station is None or favorite is None:
+            return False
+        return str(getattr(station, "stream_url", "")) == str(
+            getattr(getattr(favorite, "station", None), "stream_url", "")
+        )
+
+    def _toggle_current_playback(self) -> None:
+        """Pause or resume what is playing, and say which it did."""
+        from quill.ui.radio.playback_state import RadioPlayerState
+
+        self._radio_controller.toggle_play_pause()
+        state = getattr(self._radio_controller.state, "state", None)
+        self._announce("Paused." if state is RadioPlayerState.PAUSED else "Resumed.")
+
+    def _play_selected_favorite(self) -> None:
+        favorite = self._selected_favorite()
+        if favorite is None:
+            self._announce("No station selected. Add favorites from Browse Stations.")
+            return
+        if self._favorite_is_playing(favorite):
+            # Already the thing playing: pause or resume it rather than loading
+            # it again. Reloading a podcast episode throws away where you were
+            # in it, which is the opposite of what pressing play on the row you
+            # are already listening to means (reported 2026-08-18).
+            self._toggle_current_playback()
+            return
+        self._radio_controller.play_station(favorite.station)
+        self._announce(f"Playing {favorite.display_label}.")
+
+    # -- menu bar -------------------------------------------------------------
+
+    def open_radio_tutorials(self, slug: str = "") -> None:
+        """Help > Tutorials...: the guided lessons. See ``apps/radio_help_docs``."""
+        from quill.apps import radio_help_docs
+
+        radio_help_docs.open_tutorials(self, slug)
+
+    def _open_radio_doc(self, stem: str) -> None:
+        """Help's documents, in the browser. See ``apps/radio_help_docs``."""
+        from quill.apps import radio_help_docs
+
+        radio_help_docs.open_doc(self, stem)
+
+    def _radio_no_ffmpeg_message(self) -> str:
+        return (
+            "Recording needs FFmpeg, which normally ships inside Quill Radio. "
+            "It looks like it's missing -- choose Help > Repair FFmpeg... to "
+            "download the official build, then try again."
+        )
+
+    def _on_station_menu_open(self, event: object) -> None:
+        """Rebuild Recently Played just before the Station menu opens, so it
+        reflects everything played since launch (the menu bar itself is built
+        once at startup). Mirrors the Window menu's just-in-time refresh. Always
+        skips so other EVT_MENU_OPEN handlers (the Window menu's) still run."""
+        get_menu = getattr(event, "GetMenu", None)
+        menu = get_menu() if callable(get_menu) else None
+        if menu is getattr(self, "_station_menu", None):
+            self._rebuild_recent_submenu()
+        skip = getattr(event, "Skip", None)
+        if callable(skip):
+            skip()
+
+    def _open_download_queue(self) -> None:
+        """View > Downloads... See ``ui/radio/download_menu.py``."""
+        from quill.ui.radio import download_menu
+
+        download_menu.open_queue(self)
+
+    def _send_to_tray(self) -> None:
+        """Hide to the tray, saying what happens to any downloads still going.
+
+        Said either way: a queue that silently keeps running is exactly as
+        surprising as one that silently stops, and which happens is a
+        preference somebody set once and will not remember.
+        """
+        from quill.ui.radio import download_menu
+
+        # The whole app tucks away, not just the main window: the modeless
+        # surfaces are parentless peers now, and a "tray" that leaves Browse
+        # standing on the taskbar is not the tray.
+        windows = getattr(self, "_windows", None)
+        if windows is not None:
+            windows.hide_all()
+        self.frame.Hide()
+        self._announce(download_menu.tray_message(self))
+
+    # -- single instance (#1152) ------------------------------------------------
+
+    def _start_ipc_poll(self) -> None:
+        """Poll the radio IPC queue for a foreground request from a 2nd launch."""
+        timer = wx.Timer(self.frame)
+        self.frame.Bind(wx.EVT_TIMER, self._on_ipc_timer, timer)
+        timer.Start(800)
+        self._ipc_timer = timer
+
+    def _on_ipc_timer(self, _event: object) -> None:
+        from quill.ui.radio.opened_files_ui import drain_requests
+
+        drain_requests(self, _IPC_SLOT)  # a second launch's files, or "come forward"
+
+    def _foreground_window(self) -> None:
+        """Bring the window forward, un-hiding it from the tray and de-iconizing."""
+        frame = self.frame
+        if not frame.IsShown():
+            frame.Show(True)
+        if frame.IsIconized():
+            frame.Iconize(False)
+        frame.Raise()
+        frame.RequestUserAttention()
+
+    def _toggle_show_station_details(self) -> None:
+        """Flip Show Station Details and persist it. The Browse and Search Stations
+        surfaces read it when they open, so the change takes effect next time you
+        open one."""
+        history = self._radio_history
+        history.show_station_details = not history.show_station_details
+        self._save_radio_history()
+        self._announce(
+            "Station details will be shown."
+            if history.show_station_details
+            else "Station details will be hidden."
+        )
+
+    def _toggle_show_status_bar(self) -> None:
+        """Flip Show Status Bar, persist it, and show/hide the bar right away."""
+        history = self._radio_history
+        history.show_status_bar = not history.show_status_bar
+        self._save_radio_history()
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is not None:
+            menu_bar.Check(int(self._status_bar_item_id), history.show_status_bar)
+        status_bar = getattr(self, "_status_bar", None)
+        if status_bar is not None:
+            status_bar.set_visible(history.show_status_bar)
+            if history.show_status_bar:
+                status_bar.refresh()
+        self._announce("Status bar shown." if history.show_status_bar else "Status bar hidden.")
+
+    def _set_favorites_sort(self, value: str) -> None:
+        """View > Sort Favorites: change the favorites sort order and reload the
+        tree. Same setting Preferences carries; announced so the change is heard."""
+        history = self._radio_history
+        if history.favorites_sort == value:
+            return
+        history.favorites_sort = value
+        self._save_radio_history()
+        self._reload_favorites_tree()
+        labels = dict(zip(_FAVORITES_SORT_VALUES, _FAVORITES_SORT_LABELS, strict=True))
+        self._announce(f"Sorted favorites: {labels[value]}.")
+
+    def _set_text_size(self, scale: float) -> None:
+        """View > Text Size: persist the font scale and apply it right away."""
+        history = self._radio_history
+        if abs(history.ui_font_scale - scale) < 0.01:
+            return
+        history.ui_font_scale = scale
+        self._save_radio_history()
+        self._apply_text_size()
+        names = {1.0: "Normal", 1.25: "Large", 1.5: "Larger"}
+        self._announce(f"Text size: {names.get(scale, 'Normal')}.")
+
+    def _apply_text_size(self) -> None:
+        """Scale the main window's fonts (tree, buttons, now-playing line, status
+        bar) to the saved ui_font_scale. A no-op at 1.0 beyond restoring the base
+        font, so toggling back to Normal returns to the system default."""
+        scale = float(getattr(self._radio_history, "ui_font_scale", 1.0) or 1.0)
+        panel = getattr(self, "_main_panel", None)
+        if panel is None:
+            return
+        base = self._wx.SystemSettings.GetFont(self._wx.SYS_DEFAULT_GUI_FONT)
+        font = base.Scaled(scale) if scale != 1.0 else base
+        for name in (
+            "_now_playing_text",
+            "_favorites_tree",
+            "_transport_btn",
+            "_favorite_toggle_btn",
+            "_record_btn",
+        ):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.SetFont(font)
+        status_bar = getattr(self, "_status_bar", None)
+        if status_bar is not None:
+            status_bar.set_font(font)
+        panel.Layout()
+
+    def _focus_status_bar(self) -> None:
+        """F6: move focus into the status bar, or back out of it if already there.
+
+        Does nothing (beyond a nudge) when the bar is hidden -- there is nowhere
+        to land, so the key is a no-op the way an empty region would be."""
+        status_bar = getattr(self, "_status_bar", None)
+        if status_bar is None or not status_bar.is_shown():
+            return
+        if status_bar.has_focus():
+            self._focus_initial_control()
+            self._announce("Returned to favorite stations.")
+            return
+        status_bar.refresh()
+        status_bar.focus_bar(return_focus=getattr(self, "_favorites_tree", None))
+
+    def _toggle_resume_on_launch(self) -> None:
+        history = self._radio_history
+        history.resume_on_launch = not history.resume_on_launch
+        self._save_radio_history()
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is not None:
+            menu_bar.Check(int(self._resume_menu_item_id), history.resume_on_launch)
+        self._announce(
+            "Quill Radio will pick up where you left off at launch."
+            if history.resume_on_launch
+            else "Resume on launch turned off."
+        )
+
+    def _toggle_launch_at_startup(self) -> None:
+        """Station > Start Quill Radio with Windows: add or remove the per-user
+        autostart entry, then reflect what actually took (a locked-down registry
+        may refuse silently)."""
+        from quill.platform.windows import radio_startup
+
+        if not radio_startup.is_windows():
+            self._announce("Starting with Windows is only available on Windows.")
+            return
+        if radio_startup.running_portable():
+            self._announce(radio_startup.PORTABLE_REFUSAL)
+            return
+        requested = not radio_startup.is_launch_at_startup_enabled()
+        radio_startup.set_launch_at_startup(requested)
+        actual = radio_startup.is_launch_at_startup_enabled()
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is not None:
+            menu_bar.Check(int(self._startup_menu_item_id), actual)
+        if requested != actual:
+            self._announce("Windows did not allow the startup setting to change.")
+        else:
+            self._announce(
+                "Quill Radio will start with Windows."
+                if actual
+                else "Quill Radio will not start with Windows."
+            )
+
+    # -- switchable feature areas ----------------------------------------------
+
+    def _app_area_enabled(self, area_id: str) -> bool:
+        features = getattr(self, "_app_features", None)
+        return True if features is None else features.is_enabled(area_id)
+
+    def _open_app_features(self) -> None:
+        """View > Customize Features...: turn whole areas of Quill Radio on or
+        off. Menu changes take effect at the next launch."""
+        from quill.core.app_features import save_app_features
+        from quill.core.paths import app_data_dir
+        from quill.ui.app_features_dialog import AppFeaturesDialog
+
+        dlg = AppFeaturesDialog(
+            self.frame,
+            app_title=_TITLE,
+            areas=RADIO_AREAS,
+            settings=self._app_features,
+            announce_cb=self._announce,
+        )
+        if dlg.show():
+            save_app_features(app_data_dir(), self._app_features)
+            self._announce(
+                "Feature settings saved. Menu changes take effect the next time "
+                "you open Quill Radio."
+            )
+
+    def _on_radio_char_hook(self, event: wx.KeyEvent) -> None:
+        """Alt+F4 -> system tray when the preference is on (still playing);
+        every other key -- and Alt+F4 with the preference off -- flows
+        through untouched."""
+        if (
+            event.GetKeyCode() == wx.WXK_F4
+            and event.AltDown()
+            and getattr(self._radio_history, "alt_f4_to_tray", False)
+        ):
+            self._send_to_tray()
+            return
+        # Alt+Shift+Up / Alt+Shift+Down reorder the selected favorite (manual
+        # order), Teams-style. Caught here in the frame's char hook rather than
+        # the tree's EVT_KEY_DOWN because Windows routes Alt+arrow to the menu
+        # system before a focused TreeCtrl ever sees it. Only acts when the
+        # favorites tree actually has focus.
+        code = event.GetKeyCode()
+        # F6 jumps focus into the status bar (and a second F6 hands it back),
+        # the same region key the QUILL editor uses.
+        if code == wx.WXK_F6 and not event.AltDown() and not event.ControlDown():
+            self._focus_status_bar()
+            return
+        if (
+            event.AltDown()
+            and event.ShiftDown()
+            and not event.ControlDown()
+            and code in (wx.WXK_UP, wx.WXK_DOWN)
+            and wx.Window.FindFocus() is getattr(self, "_favorites_tree", None)
+        ):
+            self._move_selected_favorite(-1 if code == wx.WXK_UP else 1)
+            return
+        # Ctrl+Shift+E: New Folder, as an app-wide hotkey (#1211). The Station
+        # menu carries the same accelerator, but a focused favorites TreeCtrl can
+        # swallow the chord before the menu accelerator fires, so handle it here
+        # too -- the same reason the reorder chord above is caught in the hook.
+        if event.ControlDown() and event.ShiftDown() and not event.AltDown() and code == ord("E"):
+            self._on_new_folder()
+            return
+        # Ctrl+Up / Ctrl+Down adjust volume from anywhere (#1263). The Playback
+        # menu carries the same accelerator, but a bare Ctrl+arrow menu
+        # accelerator is unreliable on Win32 and a focused control (the favorites
+        # tree, a button) can swallow the chord before it fires. The frame char
+        # hook runs before the focused control, so this makes the volume keys
+        # work regardless of focus -- except inside a text field, where Ctrl+arrow
+        # must stay available for editing.
+        if volume_chord_handled(self, event, code, skip_text_fields=True):
+            return
+        event.Skip()
+
+    def _radio_show_context_help(self) -> None:
+        """Help > What Is This? (F1): this window's purpose, then the focused
+        control's -- the same two-part answer QUILL's editor gives."""
+        from quill.ui.radio import context_help
+
+        context_help.show_help(self.frame)
+
+    def _radio_go_to_player(self, *, embed_in: object | None = None) -> object | None:
+        """Playback > Go to Player. Runs the same dispatcher every other window
+        runs, so the main window cannot answer this key differently from the
+        browse tree or the managers -- unless the player *is* the main window's
+        view, in which case going to it means going to it."""
+        from quill.core.radio import transport_commands
+        from quill.ui.radio import player_panel, transport_keys
+
+        if embed_in is not None:
+            return player_panel.embed(self, embed_in)
+        if self._main_view_is("player"):
+            return None
+        transport_keys.perform(self, transport_commands.GO_TO_PLAYER)
+        return None
+
+    def _on_volume_boost_menu(self) -> None:
+        """The Playback menu's Volume Boost check item: toggle, then pin the
+        checkmark to the persisted truth."""
+        self.radio_toggle_volume_boost()
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is not None:
+            menu_bar.Check(int(self._volume_boost_item_id), self._radio_history.volume_boost)
+
+    def _open_preferences(self) -> None:
+        """Station > Preferences. See :mod:`quill.apps.radio_preferences`."""
+        from quill.apps.radio_preferences import open_preferences
+
+        open_preferences(self)
+
+    def _reset_all_sound_enhancements(self) -> None:
+        """Preferences > Reset All Stations' Sound Enhancements...: clear
+        every favorite's override in one pass, the bulk counterpart to the
+        Sound Enhancements dialog's own per-station Reset to Default."""
+        overridden = [
+            favorite
+            for favorite in self._radio_favorites.favorites
+            if favorite.has_sound_enhancement_override
+        ]
+        if not overridden:
+            self._announce("No stations have their own Sound Enhancements to reset.")
+            return
+        count = len(overridden)
+        plural = "" if count == 1 else "s"
+        answer = self._show_message_box(
+            f"{count} station{plural} have their own Sound Enhancements. "
+            "Reset all of them to the shared default?",
+            "Reset All Stations' Sound Enhancements",
+            wx.ICON_QUESTION | wx.YES_NO | wx.NO_DEFAULT,
+        )
+        if answer != wx.YES:
+            return
+        history = self._radio_history
+        playing_station = self._radio_controller.state.station
+        playing_key = (
+            (playing_station.station_uuid or playing_station.stream_url)
+            if playing_station is not None
+            else None
+        )
+        reset_playing = False
+        for favorite in overridden:
+            self._radio_favorites.clear_enhancement_override(favorite.key)
+            if favorite.key == playing_key:
+                reset_playing = True
+        self._save_radio_favorites()
+        if reset_playing:
+            self._radio_controller.set_enhancement(
+                bass_db=history.eq_bass_db,
+                mid_db=history.eq_mid_db,
+                treble_db=history.eq_treble_db,
+                compressor_enabled=history.compressor_enabled,
+            )
+            # Every setting is per-stream now, so the playing station's channel,
+            # night mode, and OptiLab also revert to the shared default live.
+            self._radio_controller.set_sound_options(
+                channel_mode=history.channel_mode,
+                night_mode_enabled=history.night_mode_enabled,
+                optilab_enabled=history.optilab_enabled,
+                optilab_mode=history.optilab_mode,
+                optilab_input_db=history.optilab_input_db,
+                optilab_auto_adapt=history.optilab_auto_adapt,
+                optilab_exact_live=history.optilab_exact_live,
+            )
+        self._announce(f"Reset {count} station{plural} to the shared default.")
+
+    def _maybe_resume_last_station(self) -> None:
+        """Radio as an appliance: launch, and your station is already on."""
+        from quill.core.radio.opened_files import parse_argv
+
+        if not self._radio_history.resume_on_launch or parse_argv(sys.argv[1:]).paths:
+            return  # files Quill Radio was opened with play instead
+        station = self._radio_history.last_station
+        if station is not None:
+            self._radio_controller.play_station(station)
+
+    def _maybe_check_updates_on_startup(self) -> None:
+        """Silent, throttled update check -- quiet unless a genuine update
+        exists. Preferences (Ctrl+,) turns this off."""
+        from datetime import UTC, datetime
+
+        history = self._radio_history
+        if not history.check_updates_on_startup:
+            return
+        if not self._app_update_check_due(history.last_update_check):
+            return
+        # Keep this launch throttled in memory; an update-check timestamp does
+        # not need to outlive a launch that found nothing new.
+        history.last_update_check = datetime.now(UTC).isoformat()
+        self.check_for_app_updates(
+            repo_slug=_REPO,
+            current_version=installed_version(_VERSION, build=_BUILD),
+            app_key="radio",
+            silent_no_update=True,
+            match_edition=_MATCH_EDITION,
+        )
+
+    def _show_about(self) -> None:
+        from quill.ui.about_notices import show_app_about
+
+        show_app_about(
+            self,
+            f"{_TITLE} {describe_version(_VERSION, build=_BUILD)}\n"
+            "Accessible internet radio, podcasts, and audio from Quill.\n\n"
+            f"https://github.com/{_REPO}\n\n"
+            "Credits and thanks:\n"
+            "- Broadcast polish adapted from OptiLab Core by dgl1984 "
+            "(https://github.com/dgl1984/optilab, Apache-2.0 with the Commons Clause).\n"
+            "- Podcast data from the Podcast Index (podcastindex-org.github.io)."
+            "\n\nSupport: support@community-access.org",
+            app="radio",
+            app_name=_TITLE,
+        )
+
+    # -- status ---------------------------------------------------------------
+
+    def _on_volume_slider(self, _event: object) -> None:
+        """Arrowing the focused Volume slider sets the radio volume (#1214).
+
+        No explicit announcement here: the slider has keyboard focus while it is
+        being arrowed, so the screen reader already speaks the new value on each
+        press. Adding our own _announce on top made every keystroke double-speak
+        (the native "55" plus "Radio volume 55") -- verbose. Let the focused
+        slider carry the percentage; we only keep the live state in sync.
+        """
+        controller = getattr(self, "_radio_controller", None)
+        if controller is None:
+            return
+        percent = self._volume_slider.GetValue()
+        controller.set_volume(percent)
+        status_bar = getattr(self, "_status_bar", None)
+        if status_bar is not None:
+            status_bar.refresh()
+
+    def _sync_volume_slider(self) -> None:
+        """Reflect the true volume on the slider without firing its event.
+
+        SetValue does not emit EVT_SLIDER, so this stays a one-way sync (no loop)
+        and keeps the slider honest after Ctrl+Up/Down or per-station volume
+        memory changes the level elsewhere.
+        """
+        slider = getattr(self, "_volume_slider", None)
+        controller = getattr(self, "_radio_controller", None)
+        if slider is None or controller is None:
+            return
+        current = controller.state.volume_percent
+        if slider.GetValue() != current:
+            slider.SetValue(current)
+        # Same one-way rule for Mute: Ctrl+M and the Audio menu mute too, so a
+        # toggle that only ever sends and never receives ends up showing the
+        # opposite of the truth.
+        mute_btn = getattr(self, "_mute_btn", None)
+        if mute_btn is not None:
+            muted = bool(getattr(controller.state, "muted", False))
+            if mute_btn.GetValue() != muted:
+                mute_btn.SetValue(muted)
+
+    def _refresh_statusbar(self) -> None:
+        text = self._radio_status_text() or "Radio: stopped"
+        self._set_status(text)
+        self._sync_volume_slider()
+        menu_bar = self.frame.GetMenuBar()
+        if menu_bar is not None:
+            menu_bar.SetLabel(int(self._now_playing_item_id), text)
+        now_playing_readout.refresh(self)
+        status_bar = getattr(self, "_status_bar", None)
+        if status_bar is not None:
+            status_bar.refresh()
+        self._refresh_play_stop_button()
+        self._refresh_record_button()
+        from quill.apps import radio_chapter_buttons
+
+        radio_chapter_buttons.refresh(self)
+        # Both re-read here (no-op closed): PLAYING arrives on a background thread.
+        from quill.ui.radio import calendar_dialog, player_panel
+
+        player_panel.refresh_open(self)
+        calendar_dialog.refresh_open(self)
+
+    def _save_radio_favorites(self) -> None:
+        # Every favorites mutation -- the toggle button, tree actions, the
+        # Favorites Manager -- funnels through this save; refreshing here
+        # keeps the main-page tree true without rebuilding it on every
+        # unrelated status change.
+        super()._save_radio_favorites()
+        if getattr(self, "_favorites_tree", None) is not None:
+            self._reload_favorites_tree()
+
+    # -- lifecycle --------------------------------------------------------------
+
+    def _on_radio_app_close(self, event: wx.CloseEvent) -> None:
+        # Thin wrapper over the shared close flow (AppShellFrame.handle_app_close),
+        # which never ShowModals from inside EVT_CLOSE -- it vetoes and defers the
+        # confirm dialog so Alt+F4 works while a recording runs. Only a recording
+        # is protected: a live stream is not work that can be lost, and gating
+        # Alt+F4 on it meant the most common close -- while listening -- had to
+        # go through a dialog. Alt+F4 while playing now just closes the app
+        # (2026-08-23, reported: "I still can not alt+f4 out of the app when
+        # things are playing"). Playback stops in shutdown like any media app.
+        recording_active = bool(getattr(self._radio_recorder, "is_recording", False))
+        self.handle_app_close(
+            event,
+            close_action=self._radio_history.close_action,
+            protected=recording_active,
+            confirm=self._radio_close_confirm,
+            shutdown=self._radio_shutdown,
+        )
+
+    def _radio_close_confirm(self) -> str | None:
+        """Show Quill Radio's Exit / Minimize to Tray / Cancel dialog and return
+        the choice ("exit"/"minimize"/None), persisting "Don't ask me again" to
+        close_action. Run deferred by the shared close flow, never from inside
+        EVT_CLOSE (see AppShellFrame.handle_app_close)."""
+        from quill.ui.radio.close_confirm_dialog import RadioCloseConfirmDialog
+
+        recording_active = bool(getattr(self._radio_recorder, "is_recording", False))
+        result = RadioCloseConfirmDialog(
+            self.frame, recording_active=recording_active, announce_cb=self._announce
+        ).show()
+        if result is None:
+            return None  # Cancel: stay open, nothing to remember.
+        action, dont_ask_again = result
+        if dont_ask_again:
+            self._radio_history.close_action = action
+            self._save_radio_history()
+        return action
+
+    def _radio_shutdown(self) -> None:
+        """Teardown just before the Radio window closes. Stamp when the app was
+        last running so the next launch can report scheduled recordings missed
+        while it was closed (#4; shared with embedded QUILL via RadioMixin,
+        R2/11.6), stop the periodic timers and clear the active-recording marker
+        (R3, so a clean close is not mistaken for a crash), then shut the
+        controller, recorder, scheduler, task manager, media keys, and tray down
+        (all non-blocking)."""
+        from quill.apps.radio_shutdown import run_radio_shutdown
+
+        # Every step guarded and classed (qc.md F-06): a failed final write is
+        # kept for the next launch, which says so once. Close always completes.
+        run_radio_shutdown(self)
+
+
+#: Single-instance slot for Quill Radio's IPC lock/queue -- distinct from
+#: QUILL's own ("") and Quill Cast's, so the three sibling apps that share one
+#: data dir each guard themselves without blocking each other (#1152).
+_IPC_SLOT = "radio"
+
+
+def main() -> int:
+    configure_ssl_trust()  # one certificate check, before any network use
+    from quill.core.data_location import apply_pending_at_launch
+
+    # A queued Data Folder move/import applies before any data file is read
+    # (as in quill.__main__.main: whichever family app launches next applies it).
+    apply_pending_at_launch()
+    from quill.core.paths import propagate_portable_environment
+
+    propagate_portable_environment()  # a direct pythonw launch is still portable
+    from quill.stability.safe_mode import should_enable_safe_mode
+
+    safe_mode = should_enable_safe_mode(sys.argv[1:], os.environ)
+    from quill.core.ipc import release_primary_instance, try_claim_primary_instance
+    from quill.core.radio.opened_files import hand_over
+
+    # Single instance (#1152): if a Quill Radio is already running, even in the
+    # tray, hand it this launch's files (Open with, a double-click) -- or, with
+    # none, ask it to come forward -- and exit. Cheap, before any UI or logging
+    # setup, so a re-launch is near-instant.
+    if not try_claim_primary_instance(slot=_IPC_SLOT):
+        hand_over(sys.argv[1:], slot=_IPC_SLOT)
+        return 0
+
+    from quill.core import components
+
+    components.register_running_app("radio", REQUIRED_COMPONENTS)
+
+    # A new portable copy offers an earlier copy's favorites before anything
+    # reads the data folder. Then file logging, so startup records land in
+    # quill.log (quill-radio #5), in the log-location preference or <data>/logs.
+    from quill.platform.windows.dpi_awareness import enable_dpi_awareness
+
+    enable_dpi_awareness()  # before the first window, or Windows stretches it (#1702)
+    app = wx.App()
+    from quill.ui.radio.portable_migration_ui import offer_earlier_favorites
+
+    offer_earlier_favorites()
+    from pathlib import Path
+
+    from quill.core.paths import app_data_dir
+    from quill.core.radio import history as radio_history
+    from quill.stability.logging_config import configure_logging
+
+    history = radio_history.load_history(app_data_dir())
+    log_dir = Path(history.log_dir) if history.log_dir else app_data_dir() / "logs"
+    log_listener = configure_logging(log_dir)
+    frame = RadioAppFrame(safe_mode=safe_mode)
+    frame._log_listener = log_listener
+    frame.frame.Show()
+    frame.frame.Raise()
+    wx.CallAfter(frame._focus_initial_control)  # #1193: menu bar reachable on launch
+    try:
+        app.MainLoop()
+    finally:
+        release_primary_instance(slot=_IPC_SLOT)
+        log_listener.stop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

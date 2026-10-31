@@ -3,50 +3,17 @@ from __future__ import annotations
 import html
 import random
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
+# parse_first_date is imported (not just used) so callers may keep importing it
+# from format_ops alongside the sort helpers; the parser itself lives in date_parse.
+from quill.core.date_parse import parse_first_date
 from quill.core.links import infer_markup_kind
 
-
-@dataclass(frozen=True, slots=True)
-class MarkdownListContinuation:
-    text: str
-    caret: int
-    exited_list: bool
-
-
-_MARKDOWN_LIST_PATTERN = re.compile(
-    r"^(?P<indent>[ \t]*)(?:(?P<number>\d+)(?P<num_sep>[.)])|(?P<bullet>[-+*]))"
-    r"(?P<spacing>[ \t]+)(?:(?P<task>\[[ xX]\])(?P<task_spacing>[ \t]+))?(?P<body>.*)$"
-)
-
-
-def continue_markdown_list(text: str, caret: int) -> MarkdownListContinuation | None:
-    if caret < 0 or caret > len(text):
-        return None
-    line_start, line_end = _line_bounds(text, caret, caret)
-    line_text = text[line_start:line_end].rstrip("\r\n")
-    match = _MARKDOWN_LIST_PATTERN.match(line_text)
-    if match is None:
-        return None
-
-    marker_end = _marker_end_offset(match)
-    line_offset = caret - line_start
-    if line_offset < marker_end:
-        return None
-
-    before_body = line_text[marker_end:line_offset]
-    after_body = line_text[line_offset:]
-    if not before_body.strip() and not after_body.strip():
-        indent = match.group("indent")
-        updated = text[:line_start] + indent + text[line_end:]
-        return MarkdownListContinuation(updated, line_start + len(indent), exited_list=True)
-
-    continuation_marker = _continuation_marker(match)
-    inserted = "\n" + continuation_marker
-    updated = text[:caret] + inserted + text[caret:]
-    return MarkdownListContinuation(updated, caret + len(inserted), exited_list=False)
+# Enter in a list moved to quill.core.list_continuation when QUILL Lite gained
+# it (GATE-11); re-exported so every existing import keeps working.
+from quill.core.list_continuation import MarkdownListContinuation as MarkdownListContinuation
+from quill.core.list_continuation import continue_markdown_list as continue_markdown_list
 
 
 def indent_lines(
@@ -93,6 +60,33 @@ def outdent_lines(
         return merged, caret, caret
 
     return merged, line_start, line_start + len(updated)
+
+
+def describe_indent_depth(text: str, caret: int) -> str:
+    """Describe the leading indentation of the line containing *caret*.
+
+    Returns e.g. ``"4 spaces"``, ``"8 spaces"``, ``"1 tab"``, ``"2 tabs"``,
+    ``"1 tab, 3 spaces"`` (mixed), or ``"No indentation"``. Tabs/spaces aware so a
+    screen reader can speak the new depth after Tab / Shift+Tab instead of a terse
+    "Indented lines".
+    """
+    caret = max(0, min(caret, len(text)))
+    line_start = text.rfind("\n", 0, caret) + 1
+    line_end = text.find("\n", line_start)
+    if line_end == -1:
+        line_end = len(text)
+    line = text[line_start:line_end]
+    leading = line[: len(line) - len(line.lstrip(" \t"))]
+    if not leading:
+        return "No indentation"
+    tabs = leading.count("\t")
+    spaces = leading.count(" ")
+    parts: list[str] = []
+    if tabs:
+        parts.append(f"{tabs} tab" if tabs == 1 else f"{tabs} tabs")
+    if spaces:
+        parts.append(f"{spaces} space" if spaces == 1 else f"{spaces} spaces")
+    return ", ".join(parts)
 
 
 def sort_lines(
@@ -326,6 +320,28 @@ def trim_blank_lines(text: str) -> str:
     return "\n".join(parts)
 
 
+def remove_blank_lines(text: str) -> str:
+    """Remove **every** blank line, not just the ones at the two ends.
+
+    Distinct from :func:`trim_blank_lines`, which only takes the leading and
+    trailing ones, and added because QUILL Lite offered a command called *Remove
+    Blank Lines* that was wired to the trimming one. On a document with blank
+    lines through the middle -- which is every document -- it removed nothing and
+    then announced that it had removed a line, which is worse than doing nothing:
+    a listener cannot see that the text is unchanged and has no reason to doubt
+    the sentence.
+
+    Whitespace-only lines count as blank. A line of three spaces is blank to
+    everyone reading the document and to every tool that consumes it, and leaving
+    it behind would make the command's answer depend on something invisible.
+
+    A terminal newline is preserved, so removing blank lines from a file that
+    ended in one does not silently join its last line to whatever is pasted next.
+    """
+    lines, terminal_newline = _split_body_lines(text)
+    return _join_body_lines([line for line in lines if line.strip()], terminal_newline)
+
+
 def quote_lines(text: str, prefix: str = "> ") -> str:
     """Prefix every non-empty line with prefix (default: email block-quote style)."""
     lines, terminal_newline = _split_body_lines(text)
@@ -391,6 +407,29 @@ def sort_lines_numeric(text: str, descending: bool = False) -> str:
     return _join_body_lines(sorted_lines, terminal_newline)
 
 
+def sort_lines_by_date(text: str, descending: bool = False, *, day_first: bool = False) -> str:
+    """Sort lines by the first date found in each line.
+
+    Recognizes the common date styles (see :func:`parse_first_date`) and infers
+    d/m/y vs m/d/y for ambiguous numeric dates from ``day_first``. Lines with no
+    recognizable date sort after all dated lines, preserving their original order
+    (mirroring :func:`sort_lines_numeric`'s "unparseable sinks to the bottom").
+    """
+    lines, terminal_newline = _split_body_lines(text)
+    dated: list[tuple[tuple[int, int, int], str]] = []
+    undated: list[str] = []
+    for line in lines:
+        body, _ = _split_line_ending(line)
+        parsed = parse_first_date(body, day_first=day_first)
+        if parsed is not None:
+            dated.append((parsed, line))
+        else:
+            undated.append(line)
+    dated.sort(key=lambda pair: pair[0], reverse=descending)
+    sorted_lines = [line for _, line in dated] + undated
+    return _join_body_lines(sorted_lines, terminal_newline)
+
+
 def sort_lines_by_length(text: str, descending: bool = False) -> str:
     """Sort lines by their length, excluding line-ending characters."""
     lines, terminal_newline = _split_body_lines(text)
@@ -433,28 +472,6 @@ def _line_bounds(text: str, start: int, end: int) -> tuple[int, int]:
     else:
         line_end += 1
     return line_start, line_end
-
-
-def _marker_end_offset(match: re.Match[str]) -> int:
-    marker = match.group(0)
-    body = match.group("body")
-    return len(marker) - len(body)
-
-
-def _continuation_marker(match: re.Match[str]) -> str:
-    indent = match.group("indent")
-    bullet = match.group("bullet")
-    number = match.group("number")
-    num_sep = match.group("num_sep") or "."
-    spacing = match.group("spacing") or " "
-    task = match.group("task")
-    task_spacing = match.group("task_spacing") or " "
-    if task is not None:
-        return f"{indent}{bullet or '-'} [ ]{task_spacing}"
-    if bullet is not None:
-        return f"{indent}{bullet}{spacing}"
-    next_number = int(number or "1") + 1
-    return f"{indent}{next_number}{num_sep}{spacing}"
 
 
 def _split_lines_keepends(text: str) -> list[str]:

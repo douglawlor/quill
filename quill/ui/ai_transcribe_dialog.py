@@ -6,7 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from quill.core.ai.transcription import SUPPORTED_AUDIO_EXTENSIONS, SUPPORTED_LANGUAGES
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, set_accessible_name
+from quill.ui.dpi import dip_size
 
 
 class AITranscribeDialog:
@@ -26,7 +27,7 @@ class AITranscribeDialog:
         self,
         parent: object,
         show_modal_dialog: Callable,
-        on_transcribe: Callable[[Path, str | None, bool, int], None],
+        on_transcribe: Callable[[Path, str | None, bool, bool, int], None],
     ) -> None:
         import wx
 
@@ -39,10 +40,12 @@ class AITranscribeDialog:
             title="Transcribe Audio File",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(640, 440))
+        self.dialog.SetSize(dip_size(self.dialog, 640, 440))
         self._build_ui()
 
     def _build_ui(self) -> None:
+        from quill.ui.spoken_name import set_spoken_name
+
         wx = self._wx
         root = wx.BoxSizer(wx.VERTICAL)
 
@@ -51,6 +54,7 @@ class AITranscribeDialog:
         file_sizer = wx.StaticBoxSizer(file_box, wx.HORIZONTAL)
         self._file_path_ctrl = wx.TextCtrl(self.dialog)
         self._file_path_ctrl.SetName("Audio file path")
+        set_spoken_name(self._file_path_ctrl, "Audio file path")
         browse_btn = wx.Button(self.dialog, label="&Browse...")
         file_sizer.Add(self._file_path_ctrl, 1, wx.EXPAND | wx.RIGHT, 6)
         file_sizer.Add(browse_btn, 0)
@@ -88,7 +92,7 @@ class AITranscribeDialog:
         speaker_row = wx.BoxSizer(wx.HORIZONTAL)
         speaker_label = wx.StaticText(self.dialog, label="Maximum speakers:")
         self._max_speakers = wx.SpinCtrl(self.dialog, min=2, max=20, initial=6)
-        self._max_speakers.SetName("Maximum speakers")
+        set_accessible_name(self._max_speakers, "Maximum speakers")
         self._max_speakers.Enable(False)
         speaker_row.Add(speaker_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
         speaker_row.Add(self._max_speakers, 0)
@@ -181,9 +185,10 @@ class AITranscribeDialog:
         lang_name = self._lang_choice.GetString(lang_idx)
         lang_code = SUPPORTED_LANGUAGES.get(lang_name, "")
         diarize = self._diarize_cb.GetValue()
+        translate = self._translate_cb.GetValue()
         max_speakers = int(self._max_speakers.GetValue()) if diarize else 0
         self.dialog.EndModal(wx.ID_OK)
-        self._on_transcribe(path, lang_code or None, diarize, max_speakers)
+        self._on_transcribe(path, lang_code or None, translate, diarize, max_speakers)
 
     def show(self) -> bool:
         """Show modal. Returns True if user clicked Transcribe."""
@@ -218,7 +223,7 @@ class AITranscriptionResultDialog:
             title=f"Transcript - {file_name}",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(760, 560))
+        self.dialog.SetSize(dip_size(self.dialog, 760, 560))
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -300,6 +305,7 @@ class AIProgressDialog:
         message: str,
         on_cancel: Callable[[], None] | None = None,
         status_fn: Callable[[str], None] | None = None,
+        announce_fn: Callable[[str], None] | None = None,
     ) -> None:
         import wx
 
@@ -309,20 +315,35 @@ class AIProgressDialog:
         # the dialog while the download keeps running, with progress mirrored to
         # the status bar.
         self._status_fn = status_fn
+        # Opt-in spoken milestones: when a long install passes its screen-reader
+        # announcer, the dialog speaks a periodic "<title> 50 percent" so the
+        # wait is not silent between the start and completion announcements.
+        self._announce_fn = announce_fn
+        self._milestone: object | None = None
+        if announce_fn is not None:
+            from quill.ui.spoken_progress import MilestoneSpeaker
+
+            self._milestone = MilestoneSpeaker(label=title)
         self._title = title
         self._minimized = False
+        # Set only once switch_to_ok() has run -- the caller's reopen-the-hub
+        # follow-up. Dismissing the completed dialog via the window's own close
+        # box, Alt+F4, or Escape doesn't fire the relabeled button's click event,
+        # so _on_dialog_close below is the fallback that still runs it (#kokoro-focus).
+        self._completion_on_ok: Callable[[], None] | None = None
 
         self.dialog = wx.Dialog(
             parent,
             title=title,
             style=wx.DEFAULT_DIALOG_STYLE,
         )
-        self.dialog.SetSize(wx.Size(480, 180))
+        self.dialog.SetSize(dip_size(self.dialog, 480, 180))
         root = wx.BoxSizer(wx.VERTICAL)
         self._label = wx.StaticText(self.dialog, label=message)
         self._label.Wrap(440)
         root.Add(self._label, 0, wx.ALL, 12)
         self._gauge = wx.Gauge(self.dialog, style=wx.GA_HORIZONTAL | wx.GA_SMOOTH)
+        set_accessible_name(self._gauge, str(message))
         self._gauge.Pulse()
         root.Add(self._gauge, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 12)
         self._cancel_btn: object = None
@@ -345,6 +366,24 @@ class AIProgressDialog:
         from quill.ui.dialog_contract import apply_modal_ids
 
         apply_modal_ids(self.dialog, escape_id=wx.ID_CANCEL)
+        self.dialog.Bind(wx.EVT_CLOSE, self._on_dialog_close)
+
+    def _on_dialog_close(self, event: object) -> None:
+        """Destroy the dialog, running the completion follow-up if one is due.
+
+        Handles the window's own close box, Alt+F4, and (on some platforms)
+        Escape -- none of which fire the relabeled OK button's click event, so
+        without this the caller's on_ok (e.g. reopening the Download Optional
+        Components hub) was silently skipped.
+        """
+        on_ok = self._completion_on_ok
+        self._completion_on_ok = None
+        try:
+            self.dialog.Destroy()
+        except Exception:  # noqa: BLE001
+            pass
+        if on_ok is not None:
+            on_ok()
 
     def _minimize(self) -> None:
         """Hide the dialog and continue showing progress in the status bar."""
@@ -375,10 +414,28 @@ class AIProgressDialog:
                 self._gauge.SetValue(max(0, min(100, int(percent))))
 
         self._wx.CallAfter(_apply)
+        # Progress as audio (audio identity): a short rising blip at every
+        # 5-percent step. A sound never interrupts what the screen reader is
+        # saying the way a spoken percentage does; the spoken 25/50/75
+        # milestones below stay as the coarse narration.
+        if percent >= 0:
+            from quill.core.sound_events import progress_sound_event
+            from quill.ui.sound_manager import post_sound
+
+            step_event = progress_sound_event(int(percent))
+            if step_event and step_event != getattr(self, "_last_progress_step", ""):
+                self._last_progress_step = step_event
+                post_sound(step_event)
         # When minimized, the dialog is hidden, so mirror progress to the status bar.
         if self._minimized and self._status_fn is not None and message is not None:
             pct = f" ({max(0, min(100, int(percent)))}%)" if percent >= 0 else ""
             self._wx.CallAfter(self._status_fn, f"{self._title}: {message}{pct}")
+        # Speak a periodic milestone (25/50/75%) so a long install is not silent
+        # for a screen-reader user between its start and completion announcements.
+        if self._milestone is not None and self._announce_fn is not None:
+            phrase = self._milestone.phrase_for(int(percent))  # type: ignore[attr-defined]
+            if phrase:
+                self._wx.CallAfter(self._announce_fn, phrase)
 
     def switch_to_ok(
         self,
@@ -403,12 +460,15 @@ class AIProgressDialog:
             self.close()
             return
 
+        self._completion_on_ok = on_ok
+
         def _apply() -> None:
             self._label.SetLabel(message)
             self._label.Wrap(440)
             self._gauge.SetValue(100)
 
             def _on_click(_e: object) -> None:
+                self._completion_on_ok = None
                 try:
                     self.dialog.Destroy()
                 except Exception:  # noqa: BLE001

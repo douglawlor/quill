@@ -12,6 +12,7 @@ from collections.abc import Callable
 import wx
 
 from quill.core.copy_tray import CopyTray
+from quill.ui.dpi import dip_size
 
 
 def _slot_row_text(n: int, slot_text: str, slot_label: str, pinned: bool = False) -> str:
@@ -46,14 +47,14 @@ class CopyTrayDialog:
             title="Copy Tray",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(640, 400))
+        self.dialog.SetMinSize(dip_size(self.dialog, 640, 400))
 
         root = wx.BoxSizer(wx.VERTICAL)
         body = wx.BoxSizer(wx.HORIZONTAL)
 
         # -- Left: slot list --
         left = wx.BoxSizer(wx.VERTICAL)
-        left.Add(wx.StaticText(self.dialog, label="&Slots"), 0, wx.BOTTOM, 2)
+        left.Add(wx.StaticText(self.dialog, label="Sl&ots"), 0, wx.BOTTOM, 2)
         self._listbox = wx.ListBox(self.dialog, style=wx.LB_SINGLE)
         self._listbox.SetName("Copy tray slots")
         self._rebuild_list(keep=False)
@@ -68,7 +69,7 @@ class CopyTrayDialog:
 
         lbl_row = wx.BoxSizer(wx.HORIZONTAL)
         lbl_row.Add(
-            wx.StaticText(self.dialog, label="&Label:"),
+            wx.StaticText(self.dialog, label="L&abel:"),
             0,
             wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
             4,
@@ -97,7 +98,7 @@ class CopyTrayDialog:
         self._btn_save = wx.Button(self.dialog, wx.ID_ANY, label="&Save Changes")
         self._btn_clear = wx.Button(self.dialog, wx.ID_ANY, label="Clea&r Slot")
         self._btn_pin = wx.Button(self.dialog, wx.ID_ANY, label="P&in")
-        btn_close = wx.Button(self.dialog, wx.ID_CANCEL, label="C&lose")
+        btn_close = wx.Button(self.dialog, wx.ID_CANCEL, label="Close")
 
         for btn in (
             self._btn_paste,
@@ -161,8 +162,20 @@ class CopyTrayDialog:
         return max(1, idx + 1)
 
     def _set_status(self, msg: str) -> None:
+        """The label, and say it. For an OUTCOME -- something the app just did."""
         self._status_label.SetLabel(msg)
         self._announce(msg)
+
+    def _set_status_quiet(self, msg: str) -> None:
+        """The label only, for something the screen reader already said.
+
+        GATE-13's rule: the reader announces selection changes in a list, so
+        announcing the slot again on every arrow press meant moving through
+        twelve slots produced twenty-four sentences, each one half redundant
+        (bad.md C8). The label still changes, which is what a listener can go
+        back and read.
+        """
+        self._status_label.SetLabel(msg)
 
     def _load_slot(self, n: int) -> None:
         self._guard = True
@@ -171,7 +184,9 @@ class CopyTrayDialog:
         self._content_ctrl.SetValue(slot.text)
         pin_part = " [pinned]" if slot.pinned else ""
         label_part = f" ({slot.label})" if slot.label else ""
-        self._set_status(f"Slot {n}{label_part}{pin_part} loaded")
+        # Quiet: this fires on every list move, and the reader has just read
+        # the row (GATE-13, bad.md C8).
+        self._set_status_quiet(f"Slot {n}{label_part}{pin_part} loaded")
         self._guard = False
 
     def _flush_edits(self) -> None:
@@ -209,13 +224,17 @@ class CopyTrayDialog:
         self._btn_pin.SetLabel("Un&pin" if slot.pinned else "P&in")
 
     def _clipboard_text(self) -> str:
-        text = ""
-        if wx.TheClipboard.Open():
-            data = wx.TextDataObject()
-            if wx.TheClipboard.GetData(data):
-                text = data.GetText()
-            wx.TheClipboard.Close()
-        return text
+        """What is on the clipboard, without ever raising a dialog about it.
+
+        Called from the slot-selection handler, so it runs on every arrow press
+        -- and the retry helper's last attempt surfaces wx's own error dialog by
+        default. A locked clipboard would put a modal on screen for moving down
+        a list, which for a listener is the application simply stopping
+        (bad.md C8). An empty string just disables the Paste button.
+        """
+        from quill.ui.clipboard_retry import read_clipboard_text
+
+        return read_clipboard_text(wx, surface_errors=False)
 
     # -- event handlers --
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from quill.core.features import feature_for_command
+from quill.core.read_only_guards import DocumentReadOnlyError
 
 CommandHandler = Callable[[], None]
 
@@ -18,9 +20,43 @@ class Command:
 
 
 class CommandRegistry:
+    """A registry confined to its creating thread (the UI thread in apps).
+
+    Workers prepare extension metadata without accessing this object. Marshal
+    registration, palette/menu reads, and dispatch back to the owning thread.
+    List results contain immutable Command values and can be passed to workers.
+    """
+
+    #: Upper bound on a single armed repeat count, so a typo (or a runaway
+    #: macro) can never spin the editor for an unbounded number of iterations.
+    MAX_REPEAT = 1000
+
     def __init__(self) -> None:
+        self._owner_thread = threading.current_thread()
         self._commands: dict[str, Command] = {}
         self._on_run: Callable[[str], None] | None = None
+        self._pending_repeat = 1
+        self._non_repeatable: set[str] = set()
+        #: Optional gate consulted before every run. Given the command id, it
+        #: returns True to allow execution or False to block it (having already
+        #: surfaced why). This is the single dispatch chokepoint that makes the
+        #: remote feature kill switch apply uniformly to keybindings and the
+        #: command palette, which both route through :meth:`run`.
+        self._run_gate: Callable[[str], bool] | None = None
+        #: Optional probe answering "why can this command not run right now?"
+        #: with a user-facing sentence, or "" when it can. Unlike the run gate
+        #: (which blocks at dispatch and speaks), the probe is side-effect-free
+        #: so surfaces like the palette can *display and speak the reason*
+        #: before the user ever tries to run the command.
+        self._availability_probe: Callable[[str], str] | None = None
+        #: Optional answer to a command the Read-Only Guard stopped part-way
+        #: (``DocumentReadOnlyError``), so every entry point -- keys, palette,
+        #: hotkeys, voice -- says one sentence instead of raising (2026-10-16).
+        self._on_read_only: Callable[[], None] | None = None
+
+    def _require_owner_thread(self) -> None:
+        if threading.current_thread() is not self._owner_thread:
+            raise RuntimeError("CommandRegistry must be accessed on its creating thread")
 
     def register(
         self,
@@ -30,6 +66,7 @@ class CommandRegistry:
         keybinding: str | None = None,
         feature_id: str | None = None,
     ) -> None:
+        self._require_owner_thread()
         if command_id in self._commands:
             raise ValueError(f"Duplicate command: {command_id}")
         self._commands[command_id] = Command(
@@ -54,6 +91,7 @@ class CommandRegistry:
         extension on startup) can use this to detect collisions without
         having to catch ValueError.
         """
+        self._require_owner_thread()
         if command_id in self._commands:
             return False
         self.register(
@@ -78,6 +116,7 @@ class CommandRegistry:
         Use sparingly: callers replacing built-in commands are responsible
         for the resulting keyboard-binding and feature-catalog visibility.
         """
+        self._require_owner_thread()
         self._commands[command_id] = Command(
             id=command_id,
             title=title,
@@ -86,33 +125,123 @@ class CommandRegistry:
             feature_id=feature_id or feature_for_command(command_id),
         )
 
+    def set_title(self, command_id: str, title: str) -> bool:
+        """Retitle an existing command in place. False when it is not registered.
+
+        For a toggle whose *current state* belongs in its own name. The Command
+        Palette lists ``Command.title`` verbatim, so a toggle registered once as
+        "Announce Track Titles On/Off" reads identically whether it is on or off
+        -- the palette offers no checkmark and, unlike a menu, nothing else
+        carries the state (#1383). Retitling on each toggle is what lets the
+        palette say which way the switch is currently set, before it is thrown.
+
+        Keeps the handler, keybinding and feature id: this renames a command, it
+        never redefines one.
+        """
+        import dataclasses
+
+        self._require_owner_thread()
+        existing = self._commands.get(command_id)
+        if existing is None:
+            return False
+        self._commands[command_id] = dataclasses.replace(existing, title=title)
+        return True
+
+    def arm_repeat(self, count: int) -> None:
+        """Arm the *next* :meth:`run` to execute its command ``count`` times.
+
+        Mirrors the WordPerfect Editor "Repeat" feature: set a count, then the
+        next command repeats. The count is clamped to ``[1, MAX_REPEAT]`` and is
+        consumed by the next eligible :meth:`run` (commands marked
+        non-repeatable, such as the arming command itself, reset it to 1).
+        """
+        self._require_owner_thread()
+        self._pending_repeat = max(1, min(int(count), self.MAX_REPEAT))
+
+    @property
+    def pending_repeat(self) -> int:
+        self._require_owner_thread()
+        return self._pending_repeat
+
+    def register_non_repeatable(self, command_id: str) -> None:
+        """Mark *command_id* so an armed repeat count never multiplies it."""
+        self._require_owner_thread()
+        self._non_repeatable.add(command_id)
+
+    def set_run_gate(self, gate: Callable[[str], bool] | None) -> None:
+        """Install (or clear) the dispatch gate consulted by :meth:`run`."""
+        self._require_owner_thread()
+        self._run_gate = gate
+
+    def set_read_only_refusal(self, answer: Callable[[], None] | None) -> None:
+        """Install (or clear) what a command refused by the Read-Only Guard does."""
+        self._require_owner_thread()
+        self._on_read_only = answer
+
+    def set_availability_probe(self, probe: Callable[[str], str] | None) -> None:
+        """Install (or clear) the side-effect-free unavailability-reason probe."""
+        self._require_owner_thread()
+        self._availability_probe = probe
+
+    def unavailable_reason(self, command_id: str) -> str:
+        """Why *command_id* cannot run right now, as a user-facing sentence.
+
+        Returns "" when the command is runnable, unknown, or no probe is
+        installed. Probe failures are suppressed. Like every registry method,
+        this must be called on the creating thread.
+        """
+        self._require_owner_thread()
+        if self._availability_probe is None or command_id not in self._commands:
+            return ""
+        try:
+            return str(self._availability_probe(command_id) or "")
+        except Exception:  # noqa: BLE001 - a probe failure means "no reason known"
+            return ""
+
     def run(self, command_id: str) -> None:
+        self._require_owner_thread()
         command = self._commands.get(command_id)
         if command is None:
             raise KeyError(f"Unknown command: {command_id}")
-        if self._on_run is not None:
-            self._on_run(command_id)
-        command.handler()
+        # Dispatch gate (kill switch): blocked commands never reach their
+        # handler, no matter the entry point. The gate itself surfaces why.
+        if self._run_gate is not None and not self._run_gate(command_id):
+            self._pending_repeat = 1
+            return
+        count = self._pending_repeat
+        self._pending_repeat = 1
+        if command_id in self._non_repeatable:
+            count = 1
+        for _ in range(count):
+            if self._on_run is not None:
+                self._on_run(command_id)
+            try:
+                command.handler()
+            except DocumentReadOnlyError:
+                if self._on_read_only is None:
+                    raise
+                self._on_read_only()
+                return
 
     def get(self, command_id: str) -> Command | None:
+        self._require_owner_thread()
         return self._commands.get(command_id)
 
     def set_run_listener(self, listener: Callable[[str], None] | None) -> None:
+        self._require_owner_thread()
         self._on_run = listener
 
-    def list(
-        self, feature_manager: object | None = None, include_quiet: bool = True
-    ) -> list[Command]:
+    def list(self, feature_manager: object | None = None) -> list[Command]:
+        self._require_owner_thread()
         commands = list(self._commands.values())
         if feature_manager is not None:
             is_visible = getattr(feature_manager, "is_visible", None)
             if callable(is_visible):
                 commands = [command for command in commands if is_visible(command.feature_id)]
-            elif include_quiet:
-                pass
         return sorted(commands, key=lambda item: item.title.lower())
 
     def keybinding_for(self, command_id: str) -> str | None:
+        self._require_owner_thread()
         command = self._commands.get(command_id)
         if command is None:
             return None

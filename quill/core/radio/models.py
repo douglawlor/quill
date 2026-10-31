@@ -1,0 +1,256 @@
+"""The ``RadioStation`` record shared by the RadioBrowser client, the
+favorites store, and every UI surface (station browser, status bar, tray).
+
+wx-free, strict-typed.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from urllib.parse import urlsplit
+
+from quill.core.display_text import clean_display_text
+
+
+def _coerce_int(value: object, default: int = 0) -> int:
+    """Best-effort ``int(value)`` for a loosely-typed JSON/dict field."""
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value)) if value.strip() else default
+        except ValueError:
+            return default
+    return default
+
+
+def is_somafm_url(value: object) -> bool:
+    """Whether *value* names a SomaFM-owned host."""
+    try:
+        host = (urlsplit(str(value or "")).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    return host == "somafm.com" or host.endswith(".somafm.com")
+
+
+def is_retired_somafm_station(
+    *, stream_url: object = "", homepage: object = "", source: object = ""
+) -> bool:
+    """Whether a station belongs to the retired SomaFM integration."""
+    return (
+        str(source or "").strip().casefold() == "somafm"
+        or is_somafm_url(stream_url)
+        or is_somafm_url(homepage)
+    )
+
+
+@dataclass(slots=True)
+class RadioStation:
+    """One station, as returned by RadioBrowser (or reconstructed from a
+    saved favorite). ``stream_url`` is the resolved/best-guess playable URL;
+    ``station_uuid`` is RadioBrowser's stable id, used for click-through vote
+    counting and to de-duplicate favorites."""
+
+    name: str
+    stream_url: str
+    station_uuid: str = ""
+    homepage: str = ""
+    favicon: str = ""
+    country: str = ""
+    language: str = ""
+    tags: tuple[str, ...] = ()
+    codec: str = ""
+    bitrate_kbps: int = 0
+    votes: int = 0
+    #: Which directory this station came from ("iHeart", "TuneIn",
+    #: "ACB Media", "Website"), for the unified Find Stations source badge/filter.
+    #: Empty means a Radio Browser result (it filters/labels under "Radio Browser")
+    #: -- also the value for stations loaded before this field existed (back-compat).
+    source: str = ""
+    #: Other sources that also carried this exact station and were merged away
+    #: as duplicates (see ``directory_search.merge_and_rank``). A search-only,
+    #: transient field: it lets the Source filter still show a station under a
+    #: directory it appeared in even when a different directory won the de-dup
+    #: (e.g. a station another directory also lists). Not persisted, and
+    #: excluded from equality so it never changes a station's identity.
+    alt_sources: tuple[str, ...] = field(default=(), compare=False)
+    #: True when this is a **finished recording** rather than a live stream: an
+    #: audiobook chapter, an Archive item, a podcast episode. It is the one fact
+    #: the transport cannot work out for itself at load time, and everything
+    #: follows from it -- seeking, speed, position, chapters, and resuming where
+    #: you stopped. Until Quill Radio 3.0 only a resolved YouTube video was ever
+    #: treated as bounded, so a four-hour LibriVox chapter behaved like a live
+    #: broadcast: no seek bar, no position, and no memory of where you were.
+    is_recording: bool = False
+    #: The publisher's own description of this recording -- a podcast episode's
+    #: show notes, a book's synopsis -- already converted to plain text. The
+    #: details panel had nothing to show for an episode but its address, which
+    #: is the one fact a listener deciding whether to play it does not need
+    #: (reported 2026-08-18). Transient and excluded from equality, exactly
+    #: like ``alt_sources``: it describes a row, it does not identify one.
+    notes: str = field(default="", compare=False)
+    #: The same description as the publisher sent it, HTML and all, so View
+    #: Show Notes can open it in the Notes reader with its links still links
+    #: (QUILLVille list, 2026-10-11). Empty for anything that is not a podcast
+    #: episode. Transient and excluded from equality, like ``notes``.
+    notes_html: str = field(default="", compare=False)
+    #: Radio Browser's own checker's verdict on this stream: True when it
+    #: played, False when it did not, ``None`` when nobody published a check
+    #: (every other directory, and any station saved before this field existed).
+    #:
+    #: The directory has always sent this on every search and Quill Radio threw
+    #: it away, so a results list made the same silent promise for every row and
+    #: the only way to find the dead ones was to press Enter on each in turn.
+    #: Transient and excluded from equality exactly like ``alt_sources`` and
+    #: ``notes``: it describes how a row is doing, it does not identify it --
+    #: and a station whose check flips must not thereby become a different
+    #: station to the favorites de-duplicator.
+    #: See ``quill.core.radio.station_confidence`` for what is done with it.
+    last_check_ok: bool | None = field(default=None, compare=False)
+    #: Live concurrent listeners, as reported by a directory that actually
+    #: measures them -- SHOUTcast's ``Listeners``, Radio Paradise's
+    #: ``current_listeners``. **Not** ``votes``: a station with four thousand
+    #: votes and no listeners is well-liked and off the air, and reading one as
+    #: the other is how a browse list fills up with parked mounts. ``0`` means
+    #: "not reported" rather than "nobody" -- most directories publish nothing
+    #: here, so an absent count must never be spoken as an empty room.
+    #:
+    #: Transient and excluded from equality exactly like ``last_check_ok`` and
+    #: ``notes``: it describes how a station is doing, not which station it is,
+    #: and an audience that changes between two refreshes must not thereby make
+    #: it a different station to the favorites de-duplicator.
+    listeners: int = field(default=0, compare=False)
+    #: True when this row came back from a search **narrowed to the place the
+    #: listener named** -- Radio Browser's ``state``/``country`` filter, rather
+    #: than a name match. It is the only evidence that
+    #: "WCSN 105.7 FM Orange Beach" is the station somebody called
+    #: "Sunny 105.7 Gulf Shores Alabama": the name shares not one word with the
+    #: query, and the frequency is unique only inside Alabama. Search-only and
+    #: transient, excluded from equality exactly like ``alt_sources``: it
+    #: records how a row was found, not which station it is.
+    place_confirmed: bool = field(default=False, compare=False)
+    #: Why a search found this row when its name may not say so -- "carries the
+    #: Detroit Tigers", "your tag: Red Wings" (see
+    #: :mod:`quill.core.radio.station_lookup`). Shown in the row and the details
+    #: panel; search-only and transient, excluded from equality like the rest.
+    match_reason: str = field(default="", compare=False)
+
+    def __post_init__(self) -> None:
+        # Every source -- Radio Browser, LibriVox, the Internet Archive, a feed
+        # -- hands publisher text through here, so one cleaning covers them
+        # all: "Don&#8217;t" must read as a word (QUILLVille list, 2026-10-11).
+        self.name = clean_display_text(self.name)
+        self.notes = clean_display_text(self.notes)
+
+    @property
+    def display_name(self) -> str:
+        """The accessible list/row label: name plus country if known."""
+        if self.country:
+            return f"{self.name} ({self.country})"
+        return self.name
+
+    @property
+    def details_text(self) -> str:
+        """A read-only, multi-line summary for the station-details panel.
+
+        Written to be *read down*, by a screen reader, in the order somebody
+        actually wants it: what this is, who it is from, what it is about, and
+        only then the machine facts. A podcast episode used to arrive here as
+        its title, the word "Homepage" followed by an RSS address, and a stream
+        address -- three lines, none of which answer "what is this episode?".
+        """
+        lines = [self.name]
+        if self.match_reason:
+            lines.append(f"Found because it {self.match_reason}")
+        if self.source:
+            lines.append(f"From: {self.source}")
+        if self.country or self.language:
+            where = ", ".join(part for part in (self.country, self.language) if part)
+            lines.append(f"Location/language: {where}")
+        if self.tags:
+            lines.append(f"Tags: {', '.join(self.tags)}")
+        if self.codec or self.bitrate_kbps:
+            codec_bit = " ".join(
+                part
+                for part in (self.codec, f"{self.bitrate_kbps} kbps" if self.bitrate_kbps else "")
+                if part
+            )
+            lines.append(f"Format: {codec_bit}")
+        if self.votes:
+            lines.append(f"Community votes: {self.votes}")
+        if self.listeners:
+            # Live listeners sit next to votes and are deliberately worded
+            # differently: votes are historical popularity, this is how many
+            # people are hearing it right now. Only shown when a directory
+            # actually reported it -- "0 listeners" would be a claim about the
+            # station rather than about what the directory said.
+            lines.append(f"Live listeners: {self.listeners:,}")
+        if self.homepage:
+            # A recording's "homepage" is the feed or collection it came out
+            # of, and calling that a homepage is how this panel ended up
+            # announcing an RSS address as though it were a website.
+            lines.append(f"{'Feed' if self.is_recording else 'Homepage'}: {self.homepage}")
+        lines.append(f"{'Audio' if self.is_recording else 'Stream URL'}: {self.stream_url}")
+        if self.notes:
+            # Last, and behind a blank line: show notes run to paragraphs, and
+            # somebody who wants the address should not have to arrow through
+            # an episode summary to reach it.
+            lines.extend(["", "Notes:", self.notes])
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "name": self.name,
+            "stream_url": self.stream_url,
+            "station_uuid": self.station_uuid,
+            "homepage": self.homepage,
+            "favicon": self.favicon,
+            "country": self.country,
+            "language": self.language,
+            "tags": list(self.tags),
+            "codec": self.codec,
+            "bitrate_kbps": self.bitrate_kbps,
+            "votes": self.votes,
+            "is_recording": self.is_recording,
+        }
+        if self.source:
+            # Written only when set, so a Radio Browser station's record is
+            # byte-for-byte what it always was. A saved place needs it: without
+            # its source a place came back from disk not knowing what it was.
+            data["source"] = self.source
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> RadioStation | None:
+        name = str(data.get("name", "")).strip()
+        stream_url = str(data.get("stream_url", "")).strip()
+        homepage = str(data.get("homepage", ""))
+        source = str(data.get("source", "") or "")
+        # A saved browse *place* (``favorites.place_station``) has no stream on
+        # purpose; its identity is the ``browse:`` node id. Refusing an empty
+        # stream URL here is what made every saved place vanish on restart.
+        is_saved_place = str(data.get("station_uuid", "")).startswith("browse:")
+        if not name or (not stream_url and not is_saved_place):
+            return None
+        tags = data.get("tags")
+        bitrate = _coerce_int(data.get("bitrate_kbps"))
+        votes = _coerce_int(data.get("votes"))
+        return cls(
+            name=name,
+            stream_url=stream_url,
+            station_uuid=str(data.get("station_uuid", "")),
+            homepage=homepage,
+            favicon=str(data.get("favicon", "")),
+            country=str(data.get("country", "")),
+            language=str(data.get("language", "")),
+            tags=tuple(str(t) for t in tags) if isinstance(tags, list) else (),
+            codec=str(data.get("codec", "")),
+            bitrate_kbps=bitrate,
+            votes=votes,
+            # Absent in favorites saved before 3.0, which is correct: everything
+            # saved before then was a live station.
+            is_recording=bool(data.get("is_recording", False)),
+            source=source,
+        )

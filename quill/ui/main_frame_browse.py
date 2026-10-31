@@ -25,18 +25,48 @@ from quill.core.links import infer_markup_kind
 from quill.core.markdown_sections import parse_heading_blocks
 from quill.core.marks import line_column_for_position
 from quill.core.selection import line_span
+from quill.ui.main_frame_browse_pages import BrowsePagesMixin
 
 
-class BrowseModeMixin:
-    """Browse-mode element navigation, mixed into :class:`MainFrame`."""
+class BrowseModeMixin(BrowsePagesMixin):
+    """Browse-mode element navigation, mixed into :class:`MainFrame`.
+
+    Misspellings, pages and the page said on crossing are in
+    :mod:`quill.ui.main_frame_browse_pages`."""
+
+    def _browse_text(self) -> str:
+        """The text browse navigation works over, read as cheaply as is safe.
+
+        Every browse keypress used to copy the whole buffer out of the control
+        and compare it with the cached copy. On an eight-megabyte book that is
+        about 46 ms a key -- the whole of the navigation cost -- and none of it
+        is needed while the Read-Only Guard is on, because nothing can change
+        the text. So a guarded document checks once that its own string is the
+        control's text and from then on answers with that string, which the
+        cache recognises by identity (measured 0.04 ms;
+        ``docs/design/2026-10-16-editor-completion-measurements.md``). The
+        check is forgotten whenever the guard is toggled or re-applied.
+        """
+        document = getattr(self, "document", None)
+        guarded = bool(getattr(document, "source_metadata", {}).get("read_only_guard"))
+        own = getattr(document, "text", None)
+        if guarded and isinstance(own, str):
+            if getattr(self, "_guarded_browse_text", None) is own:
+                return own
+            current = self.editor.GetValue()
+            if current == own:
+                self._guarded_browse_text = own
+                return own
+            return current
+        return self.editor.GetValue()
 
     def _browse_navigation_context(self) -> dict[str, object]:
-        text = self.editor.GetValue()
+        text = self._browse_text()
         markup_kind = infer_markup_kind(self.document.path)
         cache = self._browse_navigation_cache
         if (
             cache is not None
-            and cache.get("text") == text
+            and (cache.get("text") is text or cache.get("text") == text)
             and cache.get("markup_kind") == markup_kind
         ):
             return cache
@@ -140,7 +170,10 @@ class BrowseModeMixin:
             from quill.core.spellcheck import list_misspellings
 
             context["misspellings"] = [
-                m.start for m in list_misspellings(text, self._spell_dictionary())
+                m.start
+                for m in list_misspellings(
+                    text, self._spell_dictionary(), filename=getattr(self.document, "path", None)
+                )
             ]
         except Exception:  # noqa: BLE001 - a spell-check hiccup must never break Quick Nav
             context["misspellings"] = []
@@ -160,10 +193,11 @@ class BrowseModeMixin:
             sound_kind="move",
         )
 
-    def _schedule_browse_prewarm(self, *, force: bool = False) -> None:
+    def _schedule_browse_prewarm(self, *, force: bool = False, text: str | None = None) -> None:
         if not bool(getattr(self.settings, "browse_mode_preload_cache", True)):
             return
-        text = self.editor.GetValue()
+        if text is None:  # #1346: reuse the typing path's single buffer read.
+            text = self.editor.GetValue()
         if not force and len(text) < self._browse_prewarm_large_document_threshold:
             return
         self._browse_prewarm_request_force = self._browse_prewarm_request_force or force
@@ -186,7 +220,7 @@ class BrowseModeMixin:
         try:
             if not bool(getattr(self.settings, "browse_mode_preload_cache", True)):
                 return
-            text = self.editor.GetValue()
+            text = self._browse_text()
             if not force and len(text) < self._browse_prewarm_large_document_threshold:
                 return
             markup_kind = infer_markup_kind(self.document.path)
@@ -195,8 +229,7 @@ class BrowseModeMixin:
                 for name, position in self._bookmarks.items()
                 if isinstance(position, int)
             }
-            self._browse_cache_build_generation += 1
-            generation = self._browse_cache_build_generation
+            generation = self._browse_cache_generation.advance()
 
             old_cancel = getattr(self, "_browse_cache_cancel_event", None)
             if old_cancel is not None:
@@ -232,9 +265,10 @@ class BrowseModeMixin:
         markup_kind_snapshot: str,
         cache: dict[str, object],
     ) -> None:
-        if generation != self._browse_cache_build_generation:
+        if not self._browse_cache_generation.is_current(generation):
             return
-        if self.editor.GetValue() != text_snapshot:
+        current = self._browse_text()
+        if current is not text_snapshot and current != text_snapshot:
             return
         if infer_markup_kind(self.document.path) != markup_kind_snapshot:
             return

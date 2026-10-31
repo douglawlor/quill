@@ -11,13 +11,21 @@ from quill.core.read_aloud import (
     list_dectalk_voices,
     list_espeak_english_voices,
     list_kokoro_voices,
+    list_macos_voices,
     list_piper_voices,
     list_voices,
+    macos_say_available,
     sentence_spans,
     synthesize_to_file_with_dectalk,
     synthesize_to_file_with_sapi5,
     synthesize_with_espeak,
+    synthesize_with_macos,
     synthesize_with_piper,
+)
+from quill.core.voice_catalog import (
+    KOKORO_VOICE_GRADES,
+    KOKORO_VOICES,
+    piper_voice_download_urls,
 )
 
 
@@ -28,6 +36,13 @@ def _record_sapi5_synth(monkeypatch) -> list[tuple[str, str]]:
     controller calls ``synthesize_to_file_with_sapi5`` per sentence and then
     plays the file. Recording the synth call and disabling winsound lets tests
     assert what would be spoken without producing sound.
+
+    ``ReadAloudController.start()`` defaults to ``engine_name="sapi5"`` and
+    gates on the real ``sapi5_available()`` (comtypes/SAPI.SpVoice) before ever
+    reaching the synth call patched above -- genuinely unavailable on macOS/
+    Linux. These tests exercise the controller's own sentence-splitting/
+    threading/punctuation logic, not real SAPI5, so the availability check is
+    patched too.
     """
     spoken: list[tuple[str, str]] = []
 
@@ -36,6 +51,7 @@ def _record_sapi5_synth(monkeypatch) -> list[tuple[str, str]]:
         Path(output_path).write_bytes(b"")
 
     monkeypatch.setattr(read_aloud_module, "synthesize_to_file_with_sapi5", fake_synth)
+    monkeypatch.setattr(read_aloud_module, "sapi5_available", lambda: True)
     monkeypatch.setattr(read_aloud_module, "_winsound", None)
     return spoken
 
@@ -79,6 +95,21 @@ def test_read_aloud_controller_applies_punctuation_level(monkeypatch) -> None:
     text = " ".join(t for t, _ in spoken)
     assert "dollar" in text.split()
     assert "dot" in text.split()
+
+
+def test_read_aloud_controller_strips_markdown_before_synthesis(monkeypatch) -> None:
+    """Live Read Aloud must not hand raw markdown syntax to a synthesis engine
+    (fix.md #4) -- espeak-ng-based engines like Piper badly mis-tokenize
+    literal '#'/'**'/'[text](url)' characters, sounding garbled or like the
+    wrong language."""
+    spoken = _record_sapi5_synth(monkeypatch)
+
+    controller = ReadAloudController()
+    controller.start("Read [this](https://example.com) **now**.", 0, "voice-1")
+    assert controller._thread is not None
+    controller._thread.join(timeout=2)
+
+    assert [text for text, _voice in spoken] == ["Read this now."]
 
 
 def test_inter_sentence_pause_zero_returns_immediately() -> None:
@@ -246,6 +277,74 @@ def test_synthesize_with_piper_raises_for_failure(monkeypatch, tmp_path: Path) -
 
 
 # ---------------------------------------------------------------------------
+# ElevenLabs cloud read-aloud voice
+# ---------------------------------------------------------------------------
+
+
+def test_elevenlabs_read_aloud_blocked_in_safe_mode(monkeypatch) -> None:
+    monkeypatch.setenv("QUILL_SAFE_MODE", "1")
+    controller = ReadAloudController()
+    try:
+        controller.start("Hello.", 0, "v1", engine_name="elevenlabs", elevenlabs_api_key="key")
+    except ReadAloudUnavailableError as exc:
+        assert "Safe Mode" in str(exc)
+    else:
+        raise AssertionError("Expected Safe Mode to block ElevenLabs read-aloud")
+
+
+def test_elevenlabs_read_aloud_requires_a_key(monkeypatch) -> None:
+    monkeypatch.delenv("QUILL_SAFE_MODE", raising=False)
+    controller = ReadAloudController()
+    try:
+        controller.start("Hello.", 0, "v1", engine_name="elevenlabs", elevenlabs_api_key="  ")
+    except ReadAloudUnavailableError as exc:
+        assert "Connect ElevenLabs" in str(exc)
+    else:
+        raise AssertionError("Expected a missing key to be rejected")
+
+
+def test_elevenlabs_read_aloud_requires_the_sdk(monkeypatch) -> None:
+    monkeypatch.delenv("QUILL_SAFE_MODE", raising=False)
+    from quill.core.ai import elevenlabs_tts
+
+    monkeypatch.setattr(elevenlabs_tts, "available", lambda: False)
+    controller = ReadAloudController()
+    try:
+        controller.start("Hello.", 0, "v1", engine_name="elevenlabs", elevenlabs_api_key="key")
+    except ReadAloudUnavailableError as exc:
+        assert "optional SDK" in str(exc) or "pip install" in str(exc)
+    else:
+        raise AssertionError("Expected the missing SDK to be reported")
+
+
+def test_list_elevenlabs_voices_empty_without_key() -> None:
+    assert read_aloud_module.list_elevenlabs_voices("") == []
+    assert read_aloud_module.list_elevenlabs_voices("   ") == []
+
+
+def test_list_elevenlabs_voices_maps_account_voices(monkeypatch) -> None:
+    from quill.core.ai import elevenlabs_tts
+
+    monkeypatch.setattr(elevenlabs_tts, "available", lambda: True)
+    monkeypatch.setattr(
+        elevenlabs_tts, "list_voices", lambda key: [("v1", "Rachel"), ("v2", "Adam")]
+    )
+    voices = read_aloud_module.list_elevenlabs_voices("key")
+    assert [(v.id, v.name) for v in voices] == [("v1", "Rachel"), ("v2", "Adam")]
+
+
+def test_list_elevenlabs_voices_swallows_errors(monkeypatch) -> None:
+    from quill.core.ai import elevenlabs_tts
+
+    def boom(_key: str) -> list:
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(elevenlabs_tts, "available", lambda: True)
+    monkeypatch.setattr(elevenlabs_tts, "list_voices", boom)
+    assert read_aloud_module.list_elevenlabs_voices("key") == []  # never raises into the UI
+
+
+# ---------------------------------------------------------------------------
 # eSpeak-NG helpers
 # ---------------------------------------------------------------------------
 
@@ -253,14 +352,25 @@ def test_synthesize_with_piper_raises_for_failure(monkeypatch, tmp_path: Path) -
 def test_list_espeak_english_voices_covers_key_variants() -> None:
     voices = list_espeak_english_voices()
     ids = [v.id for v in voices]
-    # 8 bundled lang definition files (lang/gmw/en*)
+    # 8 English lang definition files (lang/gmw/en*)
     assert "en-gb" in ids
     assert "en-us" in ids
     assert "en-gb-scotland" in ids
     assert "en-029" in ids
     assert len(ids) == 8
-    # eSpeak is English-only in Quill — no non-English variants expected
     assert all(id_.startswith("en") for id_ in ids)
+
+
+def test_list_espeak_voices_adds_world_languages() -> None:
+    voices = read_aloud_module.list_espeak_voices()
+    ids = [v.id for v in voices]
+    # English variants stay first and intact...
+    assert ids[:8] == [v.id for v in list_espeak_english_voices()]
+    # ...and the world languages follow (#813 follow-on: Italian read-aloud).
+    for lang in ("it", "es", "fr-fr", "hi", "pt-br"):
+        assert lang in ids, f"missing eSpeak world language {lang}"
+    italian = next(v for v in voices if v.id == "it")
+    assert italian.accent == "Italian"
 
 
 def test_discover_espeak_executable_explicit_path(tmp_path: Path) -> None:
@@ -298,6 +408,60 @@ def test_synthesize_with_espeak_calls_process(monkeypatch, tmp_path: Path) -> No
     assert str(exe) in cmd
     assert "-v" in cmd and "en-us" in cmd
     assert "-w" in cmd and str(output) in cmd
+
+
+def test_synthesize_with_espeak_pipes_long_text_via_stdin(monkeypatch, tmp_path: Path) -> None:
+    """#64/#77: a long utterance as a trailing argv element can overflow the OS
+    command-line length (Windows ~32,767), so long input is piped via --stdin
+    instead of appended as an argv element."""
+    exe = tmp_path / "espeak-ng.exe"
+    exe.write_text("binary", encoding="utf-8")
+    output = tmp_path / "speech.wav"
+    long_text = "word " * 4000  # ~20k chars, well over the 8000 threshold
+
+    class Completed:
+        returncode = 0
+
+    called: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        called["kwargs"] = kwargs
+        return Completed()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
+    synthesize_with_espeak(long_text, output, executable_path=exe, voice="en", rate=175)
+    cmd = called["command"]
+    kwargs = called["kwargs"]
+    assert "--stdin" in cmd
+    # the long text must NOT be passed as an argv element
+    assert long_text not in cmd
+    # it is piped via stdin instead
+    assert kwargs.get("input") == long_text.encode("utf-8")
+
+
+def test_synthesize_with_espeak_short_text_stays_in_argv(monkeypatch, tmp_path: Path) -> None:
+    exe = tmp_path / "espeak-ng.exe"
+    exe.write_text("binary", encoding="utf-8")
+    output = tmp_path / "speech.wav"
+
+    class Completed:
+        returncode = 0
+
+    called: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        called["kwargs"] = kwargs
+        return Completed()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
+    synthesize_with_espeak("Hello world", output, executable_path=exe, voice="en", rate=175)
+    cmd = called["command"]
+    kwargs = called["kwargs"]
+    assert "--stdin" not in cmd
+    assert "Hello world" in cmd
+    assert kwargs.get("input") is None
 
 
 def test_synthesize_with_espeak_raises_on_failure(monkeypatch, tmp_path: Path) -> None:
@@ -358,9 +522,176 @@ def test_synthesize_with_kokoro_raises_when_package_missing(monkeypatch, tmp_pat
     try:
         synthesize_with_kokoro("Hello", tmp_path / "out.wav")
     except ReadAloudUnavailableError as exc:
-        assert "kokoro" in str(exc).lower()
+        message = str(exc)
+        # Names the actual fix first (#2 beta-2 fix pass), not just the
+        # alternative pip+torch path.
+        assert "Help > Download Optional Components" in message
     else:
         raise AssertionError("Expected ReadAloudUnavailableError")
+
+
+def test_kokoro_engine_ready_requires_package_not_just_models(monkeypatch) -> None:
+    """kokoro_onnx_ready() alone only checks model files on disk; a UI wired to
+    it alone can claim Kokoro is ready when the pip package was never
+    installed (or its install failed) -- the actual bug behind #2."""
+    from quill.core.speech import engine_install
+
+    monkeypatch.setattr(read_aloud_module, "kokoro_onnx_ready", lambda *a, **k: True)
+    monkeypatch.setattr(engine_install, "is_kokoro_onnx_available", lambda: False)
+    assert read_aloud_module.kokoro_engine_ready() is False
+
+    monkeypatch.setattr(engine_install, "is_kokoro_onnx_available", lambda: True)
+    assert read_aloud_module.kokoro_engine_ready() is True
+
+    monkeypatch.setattr(read_aloud_module, "kokoro_onnx_ready", lambda *a, **k: False)
+    assert read_aloud_module.kokoro_engine_ready() is False
+
+
+_CANONICAL_KOKORO_IDS: set[str] = {
+    # American female (11)
+    "af_heart",
+    "af_alloy",
+    "af_aoede",
+    "af_bella",
+    "af_jessica",
+    "af_kore",
+    "af_nicole",
+    "af_nova",
+    "af_river",
+    "af_sarah",
+    "af_sky",
+    # American male (9)
+    "am_adam",
+    "am_echo",
+    "am_eric",
+    "am_fenrir",
+    "am_liam",
+    "am_michael",
+    "am_onyx",
+    "am_puck",
+    "am_santa",
+    # British female (4)
+    "bf_alice",
+    "bf_emma",
+    "bf_isabella",
+    "bf_lily",
+    # British male (4)
+    "bm_daniel",
+    "bm_fable",
+    "bm_george",
+    "bm_lewis",
+    # Spanish (3)
+    "ef_dora",
+    "em_alex",
+    "em_santa",
+    # French (1)
+    "ff_siwis",
+    # Hindi (4)
+    "hf_alpha",
+    "hf_beta",
+    "hm_omega",
+    "hm_psi",
+    # Italian (2)
+    "if_sara",
+    "im_nicola",
+    # Brazilian Portuguese (3)
+    "pf_dora",
+    "pm_alex",
+    "pm_santa",
+}
+
+
+def test_kokoro_voices_canonical_41() -> None:
+    ids = {vid for vid, _ in KOKORO_VOICES}
+    assert ids == _CANONICAL_KOKORO_IDS, (
+        f"missing={_CANONICAL_KOKORO_IDS - ids}, unexpected={ids - _CANONICAL_KOKORO_IDS}"
+    )
+
+
+def test_kokoro_voices_af_jessica_present() -> None:
+    ids = {vid for vid, _ in KOKORO_VOICES}
+    assert "af_jessica" in ids, "af_jessica is an official Kokoro voice and must not be omitted"
+
+
+def test_kokoro_voices_am_santa_not_zeus() -> None:
+    ids = {vid for vid, _ in KOKORO_VOICES}
+    assert "am_santa" in ids, "canonical American male voice is am_santa"
+    assert "am_zeus" not in ids, "am_zeus is not a canonical Kokoro voice"
+
+
+def test_kokoro_voice_grades_cover_all_voices() -> None:
+    ids = {vid for vid, _ in KOKORO_VOICES}
+    assert ids == set(KOKORO_VOICE_GRADES.keys()), (
+        "KOKORO_VOICE_GRADES must cover every voice in KOKORO_VOICES"
+    )
+
+
+def test_list_kokoro_voices_includes_italian_with_accent() -> None:
+    voices = list_kokoro_voices()
+    by_id = {v.id: v for v in voices}
+    assert "if_sara" in by_id and "im_nicola" in by_id, "Italian Kokoro voices must be listed"
+    assert by_id["if_sara"].accent == "Italian"
+    assert by_id["im_nicola"].accent == "Italian"
+
+
+def test_kokoro_lang_for_voice_maps_languages() -> None:
+    lang_for = read_aloud_module.kokoro_lang_for_voice
+    assert lang_for("af_heart") == "en-us"
+    assert lang_for("bm_fable") == "en-gb"
+    assert lang_for("if_sara") == "it"
+    assert lang_for("ef_dora") == "es"
+    assert lang_for("ff_siwis") == "fr-fr"
+    assert lang_for("hf_alpha") == "hi"
+    assert lang_for("pm_alex") == "pt-br"
+    # Unknown prefixes fall back to en-us rather than raising.
+    assert lang_for("xx_unknown") == "en-us"
+    assert lang_for("") == "en-us"
+
+
+def test_synthesize_with_kokoro_torch_fallback_uses_voice_lang_code(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The kokoro+torch fallback must derive KPipeline's lang_code from the
+    voice prefix, so a non-English voice never regresses to English "a"."""
+    import sys
+    import types
+
+    import pytest
+
+    # The fake pipeline yields numpy audio and the writer uses soundfile; both
+    # are optional deps absent on the lean CI runner.
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("soundfile")
+
+    # Force the ONNX fast-path off so the torch fallback runs.
+    monkeypatch.setattr(read_aloud_module, "kokoro_onnx_ready", lambda *a, **k: False)
+    captured: list[str] = []
+
+    class FakeKPipeline:
+        def __init__(self, lang_code: str) -> None:
+            captured.append(lang_code)
+
+        def __call__(self, text, voice, speed):
+            yield None, None, np.zeros(240, dtype="float32")
+
+    monkeypatch.setitem(sys.modules, "kokoro", types.SimpleNamespace(KPipeline=FakeKPipeline))
+    read_aloud_module.synthesize_with_kokoro("Ciao a tutti", tmp_path / "it.wav", voice="if_sara")
+    read_aloud_module.synthesize_with_kokoro("Hello there", tmp_path / "en.wav", voice="af_heart")
+    read_aloud_module.synthesize_with_kokoro("Fallback", tmp_path / "xx.wav", voice="xx_odd")
+    assert captured == ["i", "a", "a"]
+    assert (tmp_path / "it.wav").exists()
+
+
+def test_kokoro_voice_grade_af_jessica_is_d() -> None:
+    assert KOKORO_VOICE_GRADES["af_jessica"] == "D", (
+        "af_jessica has official grade D — grade must be stored as metadata, never used to filter"
+    )
+
+
+def test_list_kokoro_voices_af_jessica_survives_all_filters() -> None:
+    voices = list_kokoro_voices()
+    ids = [v.id for v in voices]
+    assert "af_jessica" in ids, "af_jessica must appear in list_kokoro_voices() unconditionally"
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +776,47 @@ def test_list_piper_voices_finds_onnx_files(tmp_path: Path) -> None:
 def test_list_piper_voices_empty_when_no_dir() -> None:
     assert list_piper_voices("") == []
     assert list_piper_voices("/nonexistent/path") == []
+
+
+def test_piper_catalog_includes_italian_voices(tmp_path: Path) -> None:
+    voices = read_aloud_module.list_piper_catalog_voices(tmp_path)
+    by_id = {v.id: v for v in voices}
+    assert "it_IT-paola-medium" in by_id, "Italian Piper voice missing from catalog"
+    assert "it_IT-riccardo-x_low" in by_id
+    assert by_id["it_IT-paola-medium"].accent == "Italian"
+    assert by_id["it_IT-paola-medium"].installed is False
+
+
+def test_resolve_piper_model_path_matches_catalog_installed_check(tmp_path: Path) -> None:
+    """The path Test/Preview synthesizes from must be the same file
+    list_piper_catalog_voices() checked to decide the voice was installed --
+    a bare voice id is not a path (regression guard for "Piper model file was
+    not found" when previewing a voice the catalog already reports as
+    downloaded)."""
+    (tmp_path / "en_GB-alan-medium.onnx").write_text("model", encoding="utf-8")
+    resolved = read_aloud_module.resolve_piper_model_path("en_GB-alan-medium", tmp_path)
+    assert resolved == tmp_path / "en_GB-alan-medium.onnx"
+    assert resolved.exists()
+
+
+def test_piper_voice_download_urls_for_any_language() -> None:
+    urls = piper_voice_download_urls("it_IT-paola-medium")
+    assert urls is not None
+    onnx_url, json_url = urls
+    assert onnx_url == (
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+        "/it/it_IT/paola/medium/it_IT-paola-medium.onnx"
+    )
+    assert json_url.endswith("/it_IT-paola-medium.onnx.json")
+    # English ids keep the exact URL shape the downloader always used.
+    urls_en = piper_voice_download_urls("en_US-amy-low")
+    assert urls_en is not None
+    assert urls_en[0] == (
+        "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+        "/en/en_US/amy/low/en_US-amy-low.onnx"
+    )
+    # Malformed ids return None so the UI can show a clear error.
+    assert piper_voice_download_urls("not-a-voice") is None
 
 
 # ---------------------------------------------------------------------------
@@ -678,3 +1050,466 @@ def test_read_aloud_controller_emits_ssml_on_capable_engine():
     ]
     out = controller._apply_pronunciation("Learn SQL.")
     assert out.startswith("<speak>") and '<sub alias="sequel">SQL</sub>' in out
+
+
+def test_kokoro_onnx_failure_is_logged_before_torch_fallback(monkeypatch, tmp_path, caplog) -> None:
+    """A downloaded Kokoro that fails at onnx synthesis (e.g. onnxruntime cannot
+    load its native DLL) used to fall through to a generic "needs a component"
+    error with the real cause silently swallowed -- the exact shape of the "I
+    downloaded it, it says it worked, but voices still error" report. The true
+    error must now be logged so Help > Save Diagnostics captures it.
+    """
+    import pytest
+
+    monkeypatch.setattr(read_aloud_module, "kokoro_engine_ready", lambda *a, **k: True)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("onnxruntime DLL load failed")
+
+    monkeypatch.setattr(read_aloud_module, "_get_cached_kokoro_onnx", _boom)
+
+    with caplog.at_level("ERROR", logger="quill.core.read_aloud"):
+        with pytest.raises(ReadAloudUnavailableError):
+            read_aloud_module.synthesize_with_kokoro(
+                "Hello from QUILL.", tmp_path / "out.wav", voice="af_heart"
+            )
+
+    assert any("Kokoro onnx synthesis failed" in r.getMessage() for r in caplog.records)
+
+
+def test_kokoro_onnx_recovers_by_subchunking_when_a_passage_overruns(monkeypatch, tmp_path):
+    """A dense passage that overruns the onnx model's ~510-token window must be
+    re-synthesized in smaller boundary-safe pieces and completed -- so a portable
+    build (no 2 GB torch) finishes on its own instead of erroring the document.
+    """
+    import pytest
+
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("soundfile")
+
+    monkeypatch.setattr(read_aloud_module, "kokoro_engine_ready", lambda *a, **k: True)
+
+    calls: list[str] = []
+
+    class _FakeKokoro:
+        def create(self, text, voice, speed, lang):
+            calls.append(text)
+            # The first call is the whole passage: reject it as the real model
+            # would when the phoneme-token window is exceeded. Every smaller
+            # sub-chunk succeeds.
+            if len(calls) == 1:
+                raise RuntimeError("Token window exceeded")
+            return (np.zeros(240, dtype="float32"), 24000)
+
+    monkeypatch.setattr(
+        read_aloud_module, "_get_cached_kokoro_onnx", lambda *_a, **_k: _FakeKokoro()
+    )
+
+    passage = " ".join(
+        f"This is sentence number {n} in a fairly long passage of prose." for n in range(12)
+    )
+    assert len(passage) > read_aloud_module._KOKORO_ONNX_RETRY_CHARS
+
+    out = tmp_path / "recovered.wav"
+    read_aloud_module.synthesize_with_kokoro(passage, out, voice="af_heart")
+
+    assert out.exists()
+    assert len(calls) > 1  # the whole-passage call plus one call per sub-chunk
+
+
+def test_kokoro_installed_but_failing_reports_root_cause_not_download(monkeypatch, tmp_path):
+    """When the onnx model is installed but a passage cannot be synthesized (and
+    the torch fallback is absent), the error must name the real cause and a report
+    path -- never the misleading "download a component you already have" message.
+    """
+    import builtins
+
+    import pytest
+
+    from quill.core.read_aloud import KokoroSynthesisError
+
+    monkeypatch.setattr(read_aloud_module, "kokoro_engine_ready", lambda *a, **k: True)
+
+    def _boom(*_a, **_k):
+        raise RuntimeError("onnxruntime DLL load failed")
+
+    # Patch the onnx synthesis helper itself so the failure is the root cause the
+    # message must surface -- independent of whether numpy/soundfile (the [kokoro]
+    # extra, absent on the lean CI runner) import inside the real helper.
+    monkeypatch.setattr(read_aloud_module, "_synthesize_with_kokoro_onnx", _boom)
+
+    real_import = builtins.__import__
+
+    def _block(name, *args, **kwargs):
+        if name == "kokoro":
+            raise ImportError("no torch kokoro in the portable build")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _block)
+
+    with pytest.raises(KokoroSynthesisError) as excinfo:
+        read_aloud_module.synthesize_with_kokoro(
+            "Hello there.", tmp_path / "out.wav", voice="af_heart"
+        )
+
+    message = str(excinfo.value)
+    assert excinfo.value.code == "QUILL-READALOUD-KOKORO-SYNTH"
+    assert "onnxruntime DLL load failed" in message  # the real root cause
+    assert "Download Optional Components" not in message  # not the misleading hint
+    assert "QUILL-READALOUD-KOKORO-SYNTH" in message  # a code the user can report
+
+
+def test_worker_python_prefers_embedded_python_over_launcher(tmp_path, monkeypatch) -> None:
+    """In a bundled build sys.executable is quill.exe (the launcher); the DECtalk
+    worker must run through the embedded pythonw.exe beside it, or QUILL opens the
+    worker .py as a document instead of running it."""
+    import sys as _sys
+
+    from quill.core import read_aloud
+
+    launcher = tmp_path / "quill.exe"
+    launcher.write_bytes(b"MZ")
+    pyw = tmp_path / "pythonw.exe"
+    pyw.write_bytes(b"MZ")
+    monkeypatch.setattr(_sys, "executable", str(launcher))
+    assert read_aloud._worker_python_executable() == str(pyw)
+
+
+def test_worker_python_uses_sys_executable_when_it_is_python(tmp_path, monkeypatch) -> None:
+    import sys as _sys
+
+    from quill.core import read_aloud
+
+    py = tmp_path / "python.exe"
+    py.write_bytes(b"MZ")
+    monkeypatch.setattr(_sys, "executable", str(py))
+    assert read_aloud._worker_python_executable() == str(py)
+
+
+# ---------------------------------------------------------------------------
+# #28: live WAV playback must work on macOS (afplay), not just Windows
+# (winsound). Before the cross-platform _LiveWavPlayer, the playback path gated
+# on `if _winsound is not None` and silently dropped every synthesized WAV on
+# macOS -- Piper/Kokoro/ElevenLabs Read Aloud was mute.
+# ---------------------------------------------------------------------------
+
+
+def test_detect_live_wav_backend_prefers_winsound(monkeypatch) -> None:
+    monkeypatch.setattr(read_aloud_module, "_winsound", object())  # non-None sentinel
+    assert read_aloud_module._detect_live_wav_backend() == "winsound"
+
+
+def test_detect_live_wav_backend_falls_back_to_afplay_on_macos(monkeypatch) -> None:
+    import sys as _sys
+
+    monkeypatch.setattr(read_aloud_module, "_winsound", None)
+    monkeypatch.setattr(_sys, "platform", "darwin")
+    monkeypatch.setattr(read_aloud_module.shutil, "which", lambda name: "/usr/bin/afplay")
+    assert read_aloud_module._detect_live_wav_backend() == "afplay"
+
+
+def test_detect_live_wav_backend_empty_when_nothing_available(monkeypatch) -> None:
+    import sys as _sys
+
+    monkeypatch.setattr(read_aloud_module, "_winsound", None)
+    monkeypatch.setattr(_sys, "platform", "linux")
+    assert read_aloud_module._detect_live_wav_backend() == ""
+
+
+def test_live_wav_player_afplay_invokes_subprocess(monkeypatch, tmp_path) -> None:
+    """On the afplay backend, play() runs `afplay <path>` and blocks until it
+    exits; stop() terminates a running process."""
+
+    started: list[list[str]] = []
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self._terminated = False
+
+        def wait(self) -> int:
+            return 0
+
+        def terminate(self) -> None:
+            self._terminated = True
+
+    proc = _FakeProc()
+
+    def fake_popen(cmd, *args, **kwargs):  # noqa: ANN001
+        started.append(cmd)
+        return proc
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "Popen", fake_popen)
+
+    player = read_aloud_module._LiveWavPlayer(backend="afplay")
+    wav = tmp_path / "sentence.wav"
+    wav.write_bytes(b"fake-wav")
+
+    player.play(wav)
+    assert started == [["afplay", str(wav)]]
+
+    # stop() on an idle player (proc already cleared after wait) is a no-op.
+    player.stop()
+
+
+def test_live_wav_player_stop_terminates_running_afplay(monkeypatch, tmp_path) -> None:
+    import threading
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self.terminated = False
+            self._wait_ready = threading.Event()
+            self._wait_release = threading.Event()
+
+        def wait(self) -> int:
+            self._wait_ready.set()
+            self._wait_release.wait(timeout=5)
+            return 0
+
+        def terminate(self) -> None:
+            self.terminated = True
+            self._wait_release.set()
+
+    proc = _FakeProc()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "Popen", lambda *a, **k: proc)
+
+    player = read_aloud_module._LiveWavPlayer(backend="afplay")
+    wav = tmp_path / "s.wav"
+    wav.write_bytes(b"x")
+
+    play_done = threading.Event()
+
+    def _play() -> None:
+        player.play(wav)
+        play_done.set()
+
+    t = threading.Thread(target=_play, daemon=True)
+    t.start()
+    # Wait until the player's wait() is blocking on the running proc, then stop()
+    # must terminate it (and unblock wait()).
+    proc._wait_ready.wait(timeout=2)
+    player.stop()
+    t.join(timeout=2)
+    assert proc.terminated
+
+
+def test_live_wav_player_no_backend_is_silent_noop(tmp_path) -> None:
+    player = read_aloud_module._LiveWavPlayer(backend="")
+    assert player.available is False
+    player.play(tmp_path / "none.wav")  # must not raise
+    player.stop()
+
+
+def test_espeak_pause_mid_sentence_keeps_cursor_at_start(monkeypatch, tmp_path) -> None:
+    """#65/#78: pausing mid-sentence must not advance the cursor to span.end --
+    otherwise the partially-spoken sentence is skipped on resume."""
+    from quill.core.sentence_split import SentenceSpan
+
+    controller = ReadAloudController()
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self._polls = 0
+
+        def poll(self) -> int | None:
+            self._polls += 1
+            if self._polls >= 2:
+                # Simulate the user pausing after speech has started.
+                controller._pause_event.set()
+            return None  # "still running" until terminated
+
+        def terminate(self) -> None: ...
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    fake_proc = _FakeProc()
+    monkeypatch.setattr(read_aloud_module.subprocess, "Popen", lambda *a, **k: fake_proc)
+
+    controller._run_espeak_live(
+        [SentenceSpan(start=0, end=12)],
+        "Hello world.",
+        executable=tmp_path / "espeak-ng",
+        voice="en",
+        rate=175,
+        on_progress=None,
+    )
+    # Paused mid-sentence -> cursor stays at the sentence start, not span.end.
+    assert controller._cursor == 0
+
+
+def test_espeak_completed_sentence_advances_cursor(monkeypatch, tmp_path) -> None:
+    """A sentence that finishes normally still advances the cursor to span.end."""
+    from quill.core.sentence_split import SentenceSpan
+
+    controller = ReadAloudController()
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self._polls = 0
+
+        def poll(self) -> int | None:
+            self._polls += 1
+            if self._polls >= 3:
+                return 0  # process exited cleanly
+            return None
+
+        def terminate(self) -> None: ...
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+    fake_proc = _FakeProc()
+    monkeypatch.setattr(read_aloud_module.subprocess, "Popen", lambda *a, **k: fake_proc)
+
+    controller._run_espeak_live(
+        [SentenceSpan(start=0, end=12)],
+        "Hello world.",
+        executable=tmp_path / "espeak-ng",
+        voice="en",
+        rate=175,
+        on_progress=None,
+    )
+    assert controller._cursor == 12
+
+
+# ---------------------------------------------------------------------------
+# macOS ``say`` engine (#21/#75). Off-darwin (this dev box), the availability
+# and catalog functions must be inert and synthesis must raise rather than shell
+# out. On-darwin behavior is exercised by forcing ``sys.platform``/``shutil.which``
+# and stubbing ``subprocess.run``.
+# ---------------------------------------------------------------------------
+
+
+def _force_macos(monkeypatch) -> None:
+    """Pretend we are on macOS with the ``say`` CLI on PATH."""
+    monkeypatch.setattr(read_aloud_module.sys, "platform", "darwin")
+    monkeypatch.setattr(read_aloud_module.shutil, "which", lambda name: "/usr/bin/say")
+
+
+class _SayCompleted:
+    returncode = 0
+    stderr = b""
+    stdout = b""
+
+
+def test_macos_say_available_inert_off_darwin() -> None:
+    # This dev box is Windows; the guard must not claim ``say`` is present.
+    if read_aloud_module.sys.platform == "darwin":
+        return  # no-op on a real Mac runner
+    assert macos_say_available() is False
+
+
+def test_list_macos_voices_inert_off_darwin() -> None:
+    if read_aloud_module.sys.platform == "darwin":
+        return
+    assert list_macos_voices() == []
+
+
+def test_synthesize_with_macos_raises_off_darwin(tmp_path: Path) -> None:
+    if read_aloud_module.sys.platform == "darwin":
+        return
+    try:
+        synthesize_with_macos("Hi", tmp_path / "out.wav", voice="Alex")
+    except ReadAloudUnavailableError:
+        return
+    raise AssertionError("expected ReadAloudUnavailableError off-darwin")
+
+
+def test_synthesize_with_macos_empty_text_raises(monkeypatch, tmp_path: Path) -> None:
+    _force_macos(monkeypatch)
+    try:
+        synthesize_with_macos("   ", tmp_path / "out.wav")
+    except ReadAloudUnavailableError:
+        return
+    raise AssertionError("expected ReadAloudUnavailableError for empty text")
+
+
+def test_synthesize_with_macos_calls_say(monkeypatch, tmp_path: Path) -> None:
+    _force_macos(monkeypatch)
+    output = tmp_path / "speech.wav"
+    called: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        called["kwargs"] = kwargs
+        return _SayCompleted()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
+    synthesize_with_macos("Hello world", output, voice="Alex", rate=200)
+    cmd = called["command"]
+    assert cmd[0] == "say"
+    assert "-r" in cmd and "200" in cmd
+    assert "-v" in cmd and "Alex" in cmd
+    assert "-o" in cmd and str(output) in cmd
+    assert "Hello world" in cmd  # short text stays in argv
+
+
+def test_synthesize_with_macos_clamps_rate(monkeypatch, tmp_path: Path) -> None:
+    _force_macos(monkeypatch)
+    called: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        return _SayCompleted()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
+    synthesize_with_macos("Hi", tmp_path / "out.wav", rate=9999)
+    cmd = called["command"]
+    rate = int(cmd[cmd.index("-r") + 1])
+    assert rate == 450
+
+
+def test_synthesize_with_macos_pipes_long_text_via_file(monkeypatch, tmp_path: Path) -> None:
+    _force_macos(monkeypatch)
+    output = tmp_path / "speech.wav"
+    long_text = "word " * 4000  # ~20k chars, over the 8000 threshold
+    called: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        called["command"] = command
+        return _SayCompleted()
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", fake_run)
+    synthesize_with_macos(long_text, output, voice="Alex")
+    cmd = called["command"]
+    assert "-f" in cmd
+    # the long text must NOT be passed as an argv element
+    assert long_text not in cmd
+    # the temp file path follows -f
+    file_arg = cmd[cmd.index("-f") + 1]
+    assert not Path(file_arg).exists()  # cleaned up after run
+
+
+def test_synthesize_with_macos_raises_on_failure(monkeypatch, tmp_path: Path) -> None:
+    _force_macos(monkeypatch)
+
+    class _Bad:
+        returncode = 1
+        stderr = b"voice not found"
+        stdout = b""
+
+    monkeypatch.setattr(read_aloud_module.subprocess, "run", lambda *_a, **_kw: _Bad())
+    try:
+        synthesize_with_macos("Hi", tmp_path / "out.wav", voice="Nope")
+    except ReadAloudUnavailableError as exc:
+        assert "voice not found" in str(exc)
+        return
+    raise AssertionError("expected ReadAloudUnavailableError on say failure")
+
+
+def test_make_synthesizer_macos_raises_off_darwin() -> None:
+    from quill.core.speech.document_speech import (
+        DocumentSpeechError,
+        SynthesisSpec,
+        make_synthesizer,
+    )
+
+    if read_aloud_module.sys.platform == "darwin":
+        return
+    spec = SynthesisSpec(engine="macos", voice="Alex", rate=175)
+    try:
+        make_synthesizer(spec)
+    except DocumentSpeechError:
+        return
+    raise AssertionError("expected DocumentSpeechError off-darwin")

@@ -13,13 +13,17 @@ import wave
 from pathlib import Path
 from typing import Any
 
+from quill.core.error_codes import CodedError
+
 SAMPLE_RATE = 16_000
 CHANNELS = 1
 _SAMPLE_WIDTH = 2  # int16
 
 
-class CaptureUnavailableError(RuntimeError):
+class CaptureUnavailableError(CodedError):
     """Raised when microphone capture support is not installed."""
+
+    code = "QUILL-SPEECH-CAPTURE-UNAVAILABLE"
 
 
 def capture_available() -> bool:
@@ -81,6 +85,25 @@ class MicRecorder:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    def captured_frames(self) -> bytes:
+        """A snapshot of the PCM-16 frames captured so far.
+
+        Non-destructive: the recorder keeps accumulating. For repeated polling
+        prefer :meth:`frames_since`, which does not re-join the whole recording
+        on every call.
+        """
+        return b"".join(self._chunks)
+
+    def frames_since(self, chunk_index: int) -> tuple[bytes, int]:
+        """New PCM-16 bytes appended since ``chunk_index``, plus the next index.
+
+        Voice conversation mode polls this to watch microphone energy: each
+        poll joins only the newly arrived chunks (O(new)), where re-joining the
+        whole recording per poll grew O(n^2) over a long turn (#795 review).
+        """
+        chunks = self._chunks[chunk_index:]
+        return b"".join(chunks), chunk_index + len(chunks)
 
     def pause(self) -> None:
         """Stop adding microphone samples without closing the stream.

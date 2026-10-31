@@ -9,6 +9,43 @@ from quill.core.storage import read_json, write_json_atomic
 _VALID_MODES = {"appdata", "portable", "custom"}
 
 
+#: Every launcher basename a portable QuillVille bundle can have at its root.
+#:
+#: This list *is* portable mode. A bundle is only recognised as portable when
+#: one of these sits beside a ``data/`` folder, so an app whose name is missing
+#: here does not merely lose a feature -- it silently writes the user's
+#: settings, recovery files and history into ``%APPDATA%`` on the host machine,
+#: which is the one thing somebody running from a USB stick is relying on it not
+#: to do. It fails quietly and it fails on somebody else's computer.
+#:
+#: Five names were missing until 2026-09-09 -- QUILL Lite, Inkwell, Beacon,
+#: Social and Cast's registry spelling -- so five products' portable builds did
+#: exactly that. The list was hand-maintained in two places and the tests named
+#: four products explicitly, so adding a sixth app was always going to repeat
+#: it. ``tests/unit/core/test_storage_mode.py`` now cross-checks this against
+#: ``scripts/build_native_launcher.py::PRODUCTS``, which is the authority for
+#: what each build actually writes, so a new app fails the build instead.
+#:
+#: Both spellings of Cast are kept: Windows filenames are case-insensitive, so
+#: the older ``QUILLCast.exe`` never broke, but an exact match should not depend
+#: on that.
+PORTABLE_LAUNCHER_EXES: tuple[str, ...] = (
+    "quill.exe",
+    "QuillRadio.exe",
+    "QuillWeather.exe",
+    "QuillAudioStudio.exe",
+    "QuillCast.exe",
+    "QUILLCast.exe",
+    "QuillConverter.exe",
+    "QuillLite.exe",
+    "QuillInkwell.exe",
+    "QuillTranscribe.exe",
+    "QuillBeacon.exe",
+    "QuillSocial.exe",
+    "QuillMediaPlayer.exe",
+)
+
+
 def _has_portable_evidence(anchor: Path) -> bool:
     """Return True when *anchor* looks like a portable QUILL bundle.
 
@@ -26,7 +63,7 @@ def _has_portable_evidence(anchor: Path) -> bool:
     """
     if not anchor.is_dir():
         return False
-    has_exe = (anchor / "quill.exe").is_file()
+    has_exe = any((anchor / name).is_file() for name in PORTABLE_LAUNCHER_EXES)
     has_data = (anchor / "data").is_dir()
     if has_exe and has_data:
         return True
@@ -93,18 +130,25 @@ def storage_mode_path() -> Path | None:
 def storage_mode_paths() -> tuple[Path, ...]:
     """Where ``storage-mode.json`` itself is read from / written to.
 
-    Always includes the appdata fallback, even when not running portable,
-    so non-portable users can still save an explicit "appdata" or "custom"
-    choice (#615) without a portable bundle being present.
+    Outside a portable bundle it is the appdata file, so non-portable users
+    can still save an explicit "appdata" or "custom" choice (#615).
+
+    Inside a verified bundle it is the bundle's own file and *only* that one.
+    Until 2026-09-25 the host's ``%APPDATA%\\Quill\\storage-mode.json`` was
+    read as well -- first, whenever the bundle's marker was missing or not
+    writable -- so a stick carried to any computer where somebody had once
+    saved an explicit data location put everything it wrote onto that
+    computer's hard drive: a write-protected stick, a read-only attribute, or a
+    deleted marker was enough. A portable copy's answer lives in the bundle; a
+    missing or unreadable marker there means "never chosen", which in a bundle
+    means portable (see ``paths.app_data_dir``). Saving on a read-only bundle
+    now fails with the ``PermissionError`` every caller already reports,
+    instead of quietly writing a choice to the host that would then be ignored.
     """
-    fallback_path = _fallback_storage_mode_path()
     root = portable_root_dir()
     if root is None:
-        return (fallback_path,)
-    portable_path = root / "storage-mode.json"
-    if _portable_path_is_writable(portable_path):
-        return (portable_path, fallback_path)
-    return (fallback_path, portable_path)
+        return (_fallback_storage_mode_path(),)
+    return (root / "storage-mode.json",)
 
 
 def _fallback_storage_mode_path() -> Path:
@@ -112,13 +156,6 @@ def _fallback_storage_mode_path() -> Path:
     if appdata:
         return Path(appdata).expanduser().resolve() / "Quill" / "storage-mode.json"
     return Path.home() / ".quill" / "storage-mode.json"
-
-
-def _portable_path_is_writable(path: Path) -> bool:
-    candidate = path if path.exists() else path.parent
-    while not candidate.exists() and candidate != candidate.parent:
-        candidate = candidate.parent
-    return os.access(candidate, os.W_OK)
 
 
 def _read_storage_mode_document() -> dict | None:

@@ -153,9 +153,28 @@ def test_power_tools_manifest_is_consumed_and_conflict_free() -> None:
     # abbreviation)
     # 0.7.0: -3 for the removed Pandoc Conversion Center placeholder and its
     # commands (the unfinished open_advanced_pandoc_placeholder menu prune).
+    # 0.8.1: +3 for the classic-editor parity trio (edit.repeat_command,
+    # edit.restore_deletion, power.describe_character).
+    # 0.9.0: +2 Clip Library commands (#895), +2 Send/Copy as Email (#900),
+    # +2 AutoOutline commands (#894), +2 image alt-text commands (#899).
+    # post-0.9.0: +1 Sort Lines by Date (power.sort_lines_by_date).
+    # post-0.9.0: +1 Paste Markdown as HTML (power.paste_markdown_as_html).
+    # 1.0.0 (2026-09-10): +1 Remove Every Blank Line
+    # (power.remove_blank_lines), the companion to Trim Blank Lines at the Ends
+    # and a separate command rather than a fix to it -- QUILL Lite needed the
+    # shared format_ops helper and the house rule puts the capability in the
+    # shared package with a way for QUILL to reach it in the same change.
     registry = build_first_party_registry(POWER_TOOLS_COMMANDS)
-    assert len(POWER_TOOLS_COMMANDS) == 67
-    assert len(registry.commands) == 67
+    # 84 since 2026-09-17: +1 Character Details (power.describe_character_detail),
+    # the studying half of Describe Character, which QUILL Lite has had since it
+    # shipped and QUILL had only the window of (bad.md P1.13); and +1 Copy to
+    # Tray Slot (edit.copy_to_tray_slot), the chooser that says what each slot
+    # would overwrite, which QUILL had no equivalent of at all (P2.1).
+    # 83 since 2026-09-18: power.keep_unique_lines retired into
+    # edit.remove_duplicate_lines -- one core function, two command ids, two
+    # chords and two sentences for the same verb (bad.md 7.1, P2.5).
+    assert len(POWER_TOOLS_COMMANDS) == 83
+    assert len(registry.commands) == 83
     assert registry.conflicts == ()
     for menu in registry.menus:
         assert menu.parent in FIRST_PARTY_MENU_PARENTS

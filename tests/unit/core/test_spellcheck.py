@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
-from quill.core import spellcheck
+from quill.core import spell_languages, spellcheck
 from quill.core.spellcheck import (
     add_word_to_scope,
     list_misspellings,
@@ -14,6 +16,7 @@ from quill.core.spellcheck import (
     previous_misspelling,
     suggest_words,
 )
+from quill.core.spellcheck_live import live_alert_suppressed
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +58,27 @@ def test_add_word_to_scope_updates_combined_dictionary(
     add_word_to_scope("projword", "project", doc, tmp_path)
     combined = load_combined_dictionary(doc, tmp_path)
     assert {"qwertyword", "docword", "projword"}.issubset(combined)
+
+
+def test_hand_edited_dictionary_is_recovered_not_wiped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A taught dictionary is an asset the user may edit by hand (magic2).
+
+    Someone who opens personal.json and saves it as a plain word list --
+    or breaks the JSON while editing -- must not silently lose every
+    taught word. The loader recovers it as one-word-per-line."""
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    path = tmp_path / "dictionaries" / "personal.json"
+    path.parent.mkdir(parents=True)
+    # A hand-authored plain list, not JSON at all.
+    path.write_text("qwertyword\nzzgreat\n", encoding="utf-8")
+    words = spellcheck.load_scope_dictionary("personal", None, None)
+    assert words == {"qwertyword", "zzgreat"}
+    # JSON broken mid-edit: a trailing comma. Words still recovered.
+    path.write_text('[\n  "qwertyword",\n  "zzgreat",\n]\n', encoding="utf-8")
+    words = spellcheck.load_scope_dictionary("personal", None, None)
+    assert words == {"qwertyword", "zzgreat"}
 
 
 def test_suggest_words_returns_close_matches() -> None:
@@ -196,3 +220,178 @@ def test_length_buckets_cache_reset_clears() -> None:
     spellcheck._length_buckets(wordlist)
     spellcheck.reset_caches()
     assert spellcheck._LENGTH_BUCKETS_BY_WORDLIST_ID == {}
+
+
+def test_installable_languages_excludes_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # No downloaded dicts: en_US installed, es_ES/fr_FR offered as downloads.
+    # The provider is stubbed as well as the download folder: installed
+    # languages now come from both, so the developer's own machine (whose
+    # enchant already resolves es_ES and fr_FR) would otherwise decide the
+    # result of this test.
+    monkeypatch.setattr(spell_languages, "managed_hunspell_dir", lambda: tmp_path / "hunspell")
+
+    class _Broker:
+        def list_languages(self) -> list[str]:
+            return ["en_US"]
+
+    monkeypatch.setitem(sys.modules, "enchant", types.SimpleNamespace(Broker=_Broker))
+    assert spellcheck.installed_languages() == ["en_US"]
+    assert set(spellcheck.installable_languages()) == {"es_ES", "fr_FR"}
+    # Once es_ES is present on disk it counts as installed and drops from the offer.
+    hs = tmp_path / "hunspell"
+    hs.mkdir(parents=True)
+    (hs / "es_ES.dic").write_text("1\nhola\n", encoding="utf-8")
+    assert "es_ES" in spellcheck.installed_languages()
+    assert "es_ES" not in spellcheck.installable_languages()
+
+
+def test_install_language_routes_through_release_assets(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    hs = tmp_path / "hunspell"
+    # Both modules: install_language resolves the name from spellcheck's
+    # globals, installed_languages from spell_languages'.
+    monkeypatch.setattr(spellcheck, "managed_hunspell_dir", lambda: hs)
+    monkeypatch.setattr(spell_languages, "managed_hunspell_dir", lambda: hs)
+    calls: dict[str, object] = {}
+
+    def _fake_fetch(component, target, **kwargs):  # type: ignore[no-untyped-def]
+        calls["component"] = component
+        calls["target"] = target
+        Path(target).mkdir(parents=True, exist_ok=True)
+        (Path(target) / "fr_FR.dic").write_text("1\nbonjour\n", encoding="utf-8")
+        return target
+
+    from quill.core import release_assets
+
+    monkeypatch.setattr(release_assets, "fetch_component", _fake_fetch)
+    spellcheck.install_language("fr_FR")
+    assert calls["component"] == "spell-fr_FR"
+    assert calls["target"] == hs
+    assert "fr_FR" in spellcheck.installed_languages()
+
+
+def test_set_active_language_updates_and_resets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(spellcheck, "_ACTIVE_LANGUAGE", "en_US", raising=False)
+    spellcheck.set_active_language("fr_FR")
+    assert spellcheck.active_language() == "fr_FR"
+    # Blank resets to the default and re-drops caches without error.
+    spellcheck.set_active_language("")
+    assert spellcheck.active_language() == "en_US"
+
+
+def test_language_display_name_falls_back_to_tag() -> None:
+    assert spellcheck.language_display_name("es_ES") == "Spanish (Spain)"
+    assert spellcheck.language_display_name("xx_XX") == "xx_XX"
+
+
+# -- live_alert_suppressed: spell-check-as-you-type false-positive filter ------
+
+
+def test_live_alert_suppressed_inside_url() -> None:
+    text = "See https://exmaple.com/pgae for details"
+    start = text.index("pgae")
+    assert live_alert_suppressed(text, start, start + 4) is True
+
+
+def test_live_alert_suppressed_inside_email() -> None:
+    text = "Mail jeff@exmaple.com today"
+    start = text.index("exmaple")
+    assert live_alert_suppressed(text, start, start + 7) is True
+
+
+def test_live_alert_suppressed_inside_inline_code_span() -> None:
+    text = "Run `mispeledcmd` to start"
+    start = text.index("mispeledcmd")
+    assert live_alert_suppressed(text, start, start + 11) is True
+
+
+def test_live_alert_suppressed_inside_fenced_code_block() -> None:
+    text = "Intro line\n```\nmispeled_token = 1\n```\nAfter"
+    start = text.index("mispeled_token")
+    assert live_alert_suppressed(text, start, start + 14) is True
+
+
+def test_live_alert_not_suppressed_after_closed_fence() -> None:
+    text = "```\ncode\n```\nThis word is mispeled here"
+    start = text.index("mispeled")
+    assert live_alert_suppressed(text, start, start + 8) is False
+
+
+def test_live_alert_not_suppressed_for_ordinary_prose() -> None:
+    text = "This word is mispeled in plain prose"
+    start = text.index("mispeled")
+    assert live_alert_suppressed(text, start, start + 8) is False
+
+
+def test_live_alert_not_suppressed_for_word_next_to_url() -> None:
+    # The word after the URL on the same line must still alert.
+    text = "See https://example.com then procede"
+    start = text.index("procede")
+    assert live_alert_suppressed(text, start, start + 7) is False
+
+
+def test_installed_languages_includes_what_the_provider_ships(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The pyenchant wheel's own dictionaries must be offerable.
+
+    They ship with every QuillVille app and they work, but the language chooser
+    listed only en_US because this looked exclusively at the download folder --
+    so a British user could not select the British English dictionary already
+    on their disk.
+    """
+    monkeypatch.setattr(spell_languages, "managed_hunspell_dir", lambda: tmp_path / "hunspell")
+
+    class _Broker:
+        def list_languages(self) -> list[str]:
+            return ["en_GB", "en_ZA", "en_US"]
+
+    monkeypatch.setitem(sys.modules, "enchant", types.SimpleNamespace(Broker=_Broker))
+    assert spellcheck.installed_languages() == ["en_GB", "en_US", "en_ZA"]
+
+
+def test_installed_languages_survives_a_broken_provider(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A broker that raises must not take the language chooser down with it."""
+    monkeypatch.setattr(spell_languages, "managed_hunspell_dir", lambda: tmp_path / "hunspell")
+
+    def _explode() -> None:
+        raise RuntimeError("no libenchant here")
+
+    monkeypatch.setitem(sys.modules, "enchant", types.SimpleNamespace(Broker=_explode))
+    assert spellcheck.installed_languages() == ["en_US"]
+
+
+def test_language_display_names_are_speakable() -> None:
+    """A screen reader reads this list aloud; "en_ZA" is not an answer."""
+    assert spellcheck.language_display_name("en_ZA") == "English (South Africa)"
+    assert spellcheck.language_display_name("en_GB") == "English (United Kingdom)"
+    assert "extended word list" in spellcheck.language_display_name("en_AU-large")
+    # An unknown tag still degrades to something rather than raising.
+    assert spellcheck.language_display_name("de_DE") == "de_DE"
+
+
+def test_add_word_to_scope_says_when_there_was_nowhere_to_write(tmp_path: Path) -> None:
+    """bad.md S3. The document and project dictionaries are files *beside* the
+    document, so an unsaved buffer has neither. This used to return None and the
+    caller announced `Added "word" to this document only` anyway -- the word
+    stayed underlined and the only way to find out was to try again and hear the
+    same sentence twice."""
+    assert add_word_to_scope("qwertyword", "document", None, None) is False
+    assert add_word_to_scope("qwertyword", "project", None, None) is False
+
+
+def test_add_word_to_scope_reports_the_write_it_did(tmp_path: Path) -> None:
+    doc = tmp_path / "note.md"
+    doc.write_text("x", encoding="utf-8")
+    assert add_word_to_scope("qwertyword", "document", doc, tmp_path) is True
+
+
+def test_an_empty_word_is_not_a_word(tmp_path: Path) -> None:
+    doc = tmp_path / "note.md"
+    doc.write_text("x", encoding="utf-8")
+    assert add_word_to_scope("   ", "document", doc, tmp_path) is False

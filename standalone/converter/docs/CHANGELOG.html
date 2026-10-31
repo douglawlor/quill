@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Quill Converter Changelog</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-converter-changelog">Quill Converter Changelog</h1>
+<p>All notable changes to Quill Converter are recorded here, newest
+first. The release notes (<code>release-notes-1.0.md</code>) tell the
+same story as a narrative; this file is the itemized list.</p>
+<p>Quill Converter runs the same conversion code as QUILL from the
+shared <code>quill</code> package – the app in
+<code>quill/apps/converter.py</code>, <code>converter_menu.py</code>,
+<code>converter_actions.py</code>, <code>converter_chapters.py</code>
+and <code>converter_advanced.py</code>, its windows in
+<code>quill/ui/converter_dialogs.py</code>, and the engine under
+<code>quill/core/audio/</code> – so a fix to the engine lands in QUILL’s
+Audio Studio at the same time. The <code>standalone/converter</code>
+folder carries only the launcher, installer, icon and these
+documents.</p>
+<h2 id="planned-not-released">Planned, not released</h2>
+<ul>
+<li>Studio’s consolidated plan proposes an accessible
+project-to-Converter round trip with capability checks, batch outcomes
+and optional transcription through the shared speech stack. The plan
+does not add transcription to the standalone Converter or promise
+support for every file.</li>
+</ul>
+<h2 id="100--2026-09-28">1.0.0 – 2026-09-28</h2>
+<p>The first public release. The app was first built in July 2026 as an
+audio converter; that build was never published as an installer, and
+everything it had is included here.</p>
+<h3 id="since-build-2-2026-10-27-to-2026-10-31">Since build 2
+(2026-10-27 to 2026-10-31)</h3>
+<ul>
+<li><strong>Shared-runtime licensing.</strong> Installed editions use
+the QuillVille Runtime, which currently carries PyMuPDF 1.28.2 under
+AGPL-3.0 through the shared GLOW dependency; Converter does not itself
+expose GLOW. Release-specific source and legal review are required
+before the next public release. Portable contents must be checked
+separately. See Licences and Notices and the PyMuPDF distribution
+review.</li>
+<li><strong>Sharp text at any display scaling</strong> (2026-10-31).
+Quill Converter now handles each monitor’s scaling itself instead of
+letting Windows stretch it, so text stays sharp at 125, 150 and 200
+percent and on monitors with different scaling, and windows and list
+columns keep their proportions. Setting the environment variable
+<code>QUILL_DPI_UNAWARE</code> to <code>1</code> turns this off, for
+diagnosing a display problem (#1702). User guide: “Text looks blurry, or
+a window is the wrong size”.</li>
+<li><strong>Pygments in the notices</strong> (2026-10-31). The shared
+runtime now bundles Pygments, which QUILL and QUILL Lite use to read
+code and web pages for spell check, so Quill Converter’s third-party
+notices list it.</li>
+</ul>
+<h3 id="new-in-build-2">New in build 2</h3>
+<p>Build 2 keeps everything in build 1 and adds the following.</p>
+<h4 id="sending-sound-to-auphonic">Sending sound to Auphonic</h4>
+<ul>
+<li><strong>Process with Auphonic</strong> (2026-10-15). If you have an
+Auphonic account, Convert &gt; Process with Auphonic… (Ctrl+Shift+A)
+sends the queue’s sound files to it for post-production and saves the
+results back under your output folder, without Auphonic’s website. Send
+them as separate productions, one after another, or as one multitrack
+production with a track per file in queue order. Check your account and
+load your presets without uploading anything, then keep the preset’s
+processing or choose Quick cleanup (leveling, loudness and filtering,
+with background-noise reduction only if you turn it on), and keep the
+preset’s outputs or choose MP3, AAC, Opus, FLAC or WAV. One confirmation
+lists every file that will be sent and every one that will not, and why,
+before anything is uploaded; Cancel sends nothing. Progress, Stop
+(Ctrl+Enter) and the report (Ctrl+R) work as they do for a conversion, a
+failed file does not stop the rest, only sound files are downloaded, and
+nothing is ever overwritten. A production Auphonic has started is
+remembered on this computer, so Stop, a lost connection or closing the
+app never loses it: Convert &gt; Auphonic Work Waiting… (Ctrl+Alt+A)
+fetches it later. The API token is the one the Audio Studio uses, kept
+in Windows Credential Manager. Nothing contacts Auphonic until you ask,
+and Safe Mode turns this off. Converting itself is still entirely on
+your computer.</li>
+</ul>
+<h4 id="files-and-drives">Files and drives</h4>
+<ul>
+<li><strong>File Properties tells you about the drive</strong>
+(2026-10-17). File Properties (Alt+Enter) now ends with the drive the
+highlighted file is on: its letter or network share, its label, its kind
+(local disk, removable drive, network drive, CD or DVD drive) and file
+system, then its capacity, used space with the percentage, and free
+space. Sizes use File Explorer’s units with the exact bytes beside them,
+so you can check there is room before a long conversion. A drive that
+has been removed, a network share that cannot be reached, or one Windows
+will not let you read is one plain line, and the rest of the file’s
+details still show. Nothing on the drive is changed. User guide:
+“Managing the queue”, under File Properties.</li>
+</ul>
+<h4 id="sound">Sound</h4>
+<ul>
+<li><strong>Where Quill Converter’s own sounds play, and Alt+Shift+M to
+turn them off.</strong> <strong>File &gt; Preferences &gt; App Sounds
+Play On…</strong> offers System default, None (no sounds), or any sound
+card or headset by name. After a change one sound plays on the new card,
+so you hear where it went. If that card is unplugged the sounds play on
+the system default until it is back, and Quill Converter says so once.
+<strong>Alt+Shift+M</strong> turns Quill Converter’s sounds off and back
+on where they were, and <strong>File &gt; App Sounds</strong> shows a
+check mark while they are on. Each QUILL app keeps its own choice;
+“Share these choices with my other Quill apps” keeps them in step. Your
+screen reader is never moved. Asked for on QUILLVille by Rick
+Lewis.</li>
+</ul>
+<h4 id="help-and-the-quillville-menu">Help and the QuillVille menu</h4>
+<ul>
+<li><strong>Help &gt; What’s New</strong> (Ctrl+Shift+F1) opens this
+changelog in your browser, the door every QuillVille app has on the same
+key. It was called Changelog, on the same key, until 2026-10-25; only
+the name changed.</li>
+<li><strong>QUILL Transcribe on the QuillVille menu</strong>
+(2026-10-16). QUILL Transcribe, which types what you say into any
+program, is released on 1 November 2026, and the
+<strong>QuillVille</strong> menu (Alt+U) lists it last: Alt+U, then T,
+or Ctrl+Alt+Shift+F11. QUILL, Quill Radio, Quill Weather and Quill
+Inkwell keep Ctrl+Alt+Shift+F7 to F10, so no key you know has moved. If
+it is not installed, Quill Converter offers to download it once it is
+published, and nothing is downloaded until you say yes. User guide:
+“Keyboard reference”, under “Anywhere”.</li>
+<li><strong>The user guide says where transcription lives</strong>
+(2026-10-17). Quill Converter has no speech engine and does not
+transcribe. The guide’s “Anywhere” section now says so, and points to
+QUILL Transcribe (Alt+U, then T) and QUILL for turning a recording into
+text.</li>
+</ul>
+<h4 id="under-the-hood">Under the hood</h4>
+<ul>
+<li><p><strong>FFmpeg’s licence, checked on every build.</strong>
+FFmpeg’s licence (the GNU General Public License, version 3) and the
+note on where to get its source were already in the
+<code>tools\ffmpeg</code> folder beside FFmpeg. The build and the
+installer now stop if either is ever missing, so a release cannot ship
+FFmpeg without them.</p></li>
+<li><p><strong>Every release build checks its version against what is
+published</strong> (2026-10-15). The shared QuillVille runtime carries
+every app’s version number, so a build of one app could make another
+report a version nobody can download yet, and Check for Updates would
+then never offer the real one. Quill Converter’s release builds now run
+the same check Quill Radio, QUILL Lite, QUILL Cast and Quill Weather
+already did, and a build of every app at once checks them all again
+instead of stopping at an app it did not know.</p></li>
+</ul>
+<h3 id="found-before-release-2026-10-05">Found before release
+(2026-10-05)</h3>
+<ul>
+<li><strong>No show and hide key until you choose one.</strong> The app
+registered Ctrl+Alt+Shift+C system-wide, and other QuillVille apps use
+that key for menu commands, so while this app ran theirs never fired. It
+now has no key by default; <strong>File &gt; Show and Hide Key…</strong>
+(Ctrl+Alt+Shift+H) lets you type one, or leave it empty for none, and
+refuses a key any QuillVille app uses as a command or as its own show
+and hide key, in one sentence naming the app. Somebody who had the old
+key from a test copy is moved to none and told once; a key somebody
+chose is kept (<code>quill/core/family_chords.py</code>,
+<code>quill/core/show_hide_keys.py</code>,
+<code>quill/ui/show_hide_key_picker.py</code>).</li>
+<li><strong>Find a Setting or Command</strong> (Help menu,
+Ctrl+Alt+Shift+S) searches every menu at once and runs the row you
+choose (<code>quill/ui/menu_palette.py</code>).</li>
+<li><strong>Build numbers.</strong> About says 1.0.0 (build 1); the
+installer stamps Windows file version 1.0.0.1, and a fix shipped without
+a new version number is the next build, which Check for Updates offers
+(<code>_BUILD</code> in <code>quill/apps/converter.py</code>,
+<code>docs/release/RELEASE.md</code>, “Build numbers”).</li>
+<li><strong>About and Check for Updates name the Converter you
+installed.</strong> The installer now writes
+<code>quill-app-version.ini</code> (<code>version</code> and
+<code>version_build</code>) beside the launcher, as Quill Radio, QUILL
+Lite and QUILL Cast do, and the portable copy carries the same file.
+Without it, an installed Converter reported the version of the code in
+the shared runtime, which another QuillVille installer may have
+updated.</li>
+<li><strong>Web requests name Quill Converter.</strong> Any request made
+through the shared HTTP client now says Quill Converter 1.0.0 rather
+than QUILL (<code>quill/core/http_client.py</code>).</li>
+<li><strong>A portable copy starts from a folder with a space in its
+name</strong>, and a file opened from such a folder reaches the app
+whole: the native launcher now quotes every argument
+(<code>quill/native/launcher/cmdline.c</code>, shared by every
+QuillVille app).</li>
+<li><strong>Stable builds are always code-signed</strong>, and a Beta or
+Dev build never is; <code>build_release.ps1</code> asks
+<code>Resolve-QuillSigning</code> like every family build.</li>
+<li><strong>No AI.</strong> Quill Converter has no AI features, and a
+test keeps its menus and Find a Setting or Command free of them
+(<code>tests/unit/apps/test_converter_window.py</code>).</li>
+<li><strong>The user guide is in chapters</strong>, each opening with
+what it covers and closing with what you learned and where to go next,
+with an introduction for reading it with a screen reader and a new topic
+on your version and updates.</li>
+</ul>
+<h3 id="found-before-release-2026-10-01">Found before release
+(2026-10-01)</h3>
+<ul>
+<li><strong>Closing stops the background check.</strong> The timer that
+watches for files sent from another window kept running with nothing to
+stop it; it now stops as the window closes, so it can never fire into a
+window that is gone (<code>quill/apps/converter_actions.py</code>; found
+by the new timer-ownership gate,
+<code>tests/unit/ui/test_timer_ownership.py</code>).</li>
+</ul>
+<h3 id="10-in-brief">1.0 in brief</h3>
+<ul>
+<li><strong>Two downloads.</strong>
+<code>Quill-Converter-Setup-Shared-1.0.0.exe</code> (the installer, Inno
+Setup 7, installs the shared QuillVille runtime if it is absent) and
+<code>Quill-Converter-Portable-1.0.0.zip</code> (unpack anywhere;
+settings stay in its own <code>data</code> folder).</li>
+<li><strong>Nothing downloads on first use.</strong> FFmpeg and ffprobe,
+libmpv, yt-dlp, mutagen and, when built, the OptiLab Core adapter are
+inside both downloads.</li>
+<li><strong>Sound and video.</strong> 25 sound formats and 9 video
+formats out, 82 file types in.</li>
+<li><strong>Effects you can hear first.</strong> Named effect recipes,
+Custom Effects, and a fifteen-second Preview beside Hear Original.</li>
+<li><strong>Chapters through every conversion.</strong> Keep them, write
+your own beside the file, find them at pauses or every few minutes, or
+remove them; they land inside every format that holds them, and in a
+<code>.cue</code> sheet beside the rest. The Chapter Workbench edits
+them at the playhead.</li>
+<li><strong>Join and split.</strong> Join into One File with a chapter
+per source; Split by Chapters, cutting wherever the Chapter marks choice
+says.</li>
+<li><strong>Advanced Options in the main window</strong>, shown and
+hidden from the View menu.</li>
+<li><strong>Right-click to convert</strong> from File Explorer, many
+files at once.</li>
+</ul>
+<h3 id="formats">Formats</h3>
+<ul>
+<li>34 output formats: 25 sound (MP3, M4A, M4B, Opus, Ogg Vorbis, FLAC,
+WAV, AAC, AIFF, Apple Lossless, WMA, CAF, AC-3, E-AC-3, MP2, WavPack,
+TTA, MKA, WebM audio, M4R, Speex, AMR narrowband, AMR wideband, AU,
+Wave64) and 9 video (MP4 H.264, MP4 H.265/HEVC, MKV, WebM VP9, MOV, AVI
+Xvid, WMV, MPEG-2, Ogg Theora).</li>
+<li>Every format is labeled with what it is for, for example “M4B
+audiobook – remembers your place in book players”.</li>
+<li>Reads 82 file types: 52 sound (everyday, lossless and archival, film
+and broadcast, phone and telephony, older and specialist, and tracker
+music) and 30 video.</li>
+<li>The format list is still filtered to what the bundled FFmpeg can
+actually write, so a batch never fails for a missing encoder.</li>
+<li>Format constraints are handled instead of failing: a format that
+only accepts certain sample rates (AC-3, E-AC-3, MP2, Opus, WebM audio,
+Speex, AMR) gets the nearest one it accepts; AMR is forced to mono;
+lossless formats ignore a bit rate.</li>
+<li>The format catalogue moved to
+<code>quill/core/audio/formats.py</code>, one table per question.</li>
+</ul>
+<h3 id="video">Video</h3>
+<ul>
+<li>Converting a video to a sound format keeps its sound; to a video
+format keeps it a video.</li>
+<li>Video presets named for the result: Same quality (recommended),
+Phones and the web up to 1080p, Smaller file up to 720p, Smallest file
+up to 480p, and Change the container only (fastest, copies the streams;
+effects cannot apply, and you are told so).</li>
+<li>MP4, MKV, MOV and WebM keep every audio track, such as a
+described-audio track or a second language. MKV keeps subtitle
+tracks.</li>
+<li>A sound file queued for a video format is skipped, and the summary
+says why.</li>
+<li>Video files are encoded one at a time, since each encoder already
+uses every core.</li>
+<li>The sound format and the video format each remember their own last
+preset.</li>
+</ul>
+<h3 id="effects-and-preview">Effects and preview</h3>
+<ul>
+<li>A new Effects choice on the main window with named recipes: No
+effects, Clean up speech, Podcast ready, Audiobook ACX ready, Clearer
+voice for listening, Louder dialogue for films and TV, Night listening,
+Music streaming loudness, Broadcast standard EBU R128, Remove electrical
+hum, Reduce background noise, Remove long silences, Bass boost, and
+Custom.</li>
+<li>Custom Effects (Ctrl+E): every switch on one page – rumble, hum,
+noise, remove long silences, de-ess, voice clarity, bass, treble,
+dialogue boost, compress, speech leveling, night mode leveler, peak
+limiter – plus a loudness target (-16 podcast, -20 ACX, -14 music, -23
+EBU R128), gain, playback speed, fade in and out, and keep from / keep
+until. It opens seeded with the current recipe.</li>
+<li>New processing in the shared catalogue: hum removal, noise
+reduction, de-essing, voice clarity, bass and treble boost, dialogue
+boost, speech leveling, and music and broadcast loudness targets.</li>
+<li>Effects apply to the sound of video conversions too.</li>
+<li>Preview (Ctrl+P) plays fifteen seconds of the highlighted or first
+file exactly as it will sound after conversion – encoded in the chosen
+format with the chosen effects, then decoded. Preview Original
+(Ctrl+Shift+P, the Hear Original button) plays the same fifteen seconds
+untouched. Both start a quarter of the way in, at most 30 seconds, and
+pressing again stops.</li>
+</ul>
+<h3 id="chapters">Chapters</h3>
+<ul>
+<li>A new Chapter marks choice on the main window (Alt+K) says where the
+converted files’ chapters come from: Keep each file’s own chapters (the
+default); Use the chapter list beside each file; Find chapters at the
+pauses (a pause of two seconds or more, chapters at least 20 seconds
+long); A chapter every 5, 10, 15, 30 or 60 minutes (Part 1, Part 2…; a
+last piece under a minute joins the one before); or Remove all chapters.
+It is remembered.</li>
+<li>Chapter lists you write yourself, for any format: beside the source,
+with the same name, <code>name.chapters.txt</code> (lines such as
+<code>0:00 Welcome</code>, <code>1:30 Questions</code>,
+<code>1:02:05 Summary</code>), <code>name.cue</code>,
+<code>name.chapters.json</code> (Podcasting 2.0),
+<code>name.labels.txt</code> (Audacity labels), or <code>name.txt</code>
+when it parses as a chapter list (a transcript is ignored). A file with
+no list keeps its own chapters.</li>
+<li>Where chapters land: FFmpeg writes them inside MP3 (ID3 CHAP and
+CTOC), M4B, M4A, Apple Lossless, M4R, MP4, MOV, MKV, MKA, WebM, WebM
+audio, Opus and WMA/WMV. Ogg Vorbis, FLAC, Speex and Ogg video get
+CHAPTER001 / CHAPTER001NAME comments, written with mutagen. Every other
+format (WAV, AIFF, WavPack, AC-3, the AAC stream, MP2 and the rest) gets
+a <code>.cue</code> sheet with the same name beside the converted
+file.</li>
+<li>Keep from / Keep until trim the chapters to the kept part and shift
+them to start at zero.</li>
+<li>Chapter Workbench (Queue &gt; Chapter Workbench…, Ctrl+H, or the
+Chapter Workbench button) opens the highlighted MP3, M4B or M4A in the
+Audio Studio’s Chapter Workbench: a player, rename, split at the
+playhead, set a start to the playhead, merge, find chapters at silences,
+import and export chapter lists (Audacity labels, CUE, timestamps,
+Podcasting 2.0 JSON, CSV), the five Book details fields plus All tags…
+(the Tag Editor), Save (MP3 in place, tags only; an M4B or M4A in place
+when only tags changed, as a new file, lossless, when chapters did) and
+split into files. Other formats are told the chapter-list route, or to
+convert to M4B or MP3 first.</li>
+<li>libmpv, the mpv playback engine, is bundled in the installer and the
+portable zip as the Workbench’s player, for exact seeking.</li>
+<li>Preview and Preview Original ignore chapters.</li>
+</ul>
+<h3 id="join-and-split">Join and split</h3>
+<ul>
+<li>Join into One File (Ctrl+J): the whole queue, in order, into one
+sound file, with one chapter per source, named from its title tag or a
+tidied file name (“01 - Intro” becomes “Intro”). The chapters go inside
+every format that holds them – now including MP3 – and into Ogg/FLAC
+comments or a <code>.cue</code> sheet for the rest. Files of different
+sample rates and channel counts join cleanly.</li>
+<li>Split by Chapters (Ctrl+Shift+S): one file per chapter, into a
+folder named after the source inside the output folder, named “01 -
+Chapter title” and tagged with the title and track number. It follows
+the Chapter marks choice: “A chapter every 30 minutes” cuts a long
+recording into 30-minute files, “Find chapters at the pauses” cuts at
+the pauses, and a chapter list beside the file cuts exactly where it
+says.</li>
+</ul>
+<h3 id="queue-and-reports">Queue and reports</h3>
+<ul>
+<li><strong>Edit Tags (Queue &gt; Edit Tags…, Ctrl+T).</strong> The
+Audio Studio’s Tag Editor, shared into Quill Converter: every tag of an
+MP3, M4A, M4B or MP4 over five pages, and the cover art, written into
+the file without touching the sound or the chapters. Other formats are
+refused in words rather than risk damage.</li>
+<li>Paste files copied in File Explorer with Ctrl+V (a text box still
+pastes text), and drag and drop onto the queue.</li>
+<li>Reorder with Alt+Up and Alt+Down; Remove from Queue (Ctrl+Delete);
+Clear Queue (Ctrl+Shift+Delete).</li>
+<li>File Properties (Alt+Enter): length, size, container, bit rate,
+tags, each video, audio and subtitle track, cover art, and chapters,
+read by ffprobe.</li>
+<li>Convert (Ctrl+Enter or the Convert button) becomes Stop while
+running. Stop is immediate: the file being encoded is stopped too and
+its unfinished output removed (FFmpeg writes to a temp file that only a
+finished encode moves into place). Before this, a stop only took effect
+between files, and in a batch of sound files it never took effect at
+all, because every file had already been handed to a worker. The report
+lists stopped files as skipped. A Join stops part way through a file
+too, reports progress inside each file, and writes the joined file in a
+temp folder that is moved into place only when it is finished, so a
+stopped Join saves nothing.</li>
+<li>H.264 and H.265 video are encoded on the graphics chip when it has a
+video encoder (NVIDIA NVENC, Intel Quick Sync, AMD AMF), typically
+several times faster: measured 2026-09-28, 1080p H.265 went from 0.6x to
+5x real time on an AMD laptop, at the same file size. Each encoder is
+tried once per session on a test picture; a real encode that fails is
+retried on the processor, and the card is not used again that session.
+No setting.</li>
+<li>Split by Chapters with Chapter marks set to Remove all chapters uses
+each file’s own chapters, and says so, rather than doing it
+silently.</li>
+<li>FFmpeg’s licence (GPLv3) and source offer now ship beside ffmpeg.exe
+in both downloads, and mutagen’s licence in the shared runtime; both
+were missing, in every QuillVille app that carries them.</li>
+<li>Progress is counted inside each file from FFmpeg’s own progress
+report, not only by files finished, so a one-file batch of a long
+audiobook or film is no longer silent until it ends. It is announced at
+25, 50 and 75 percent; the status bar and tray tooltip update about once
+a second with the percentage and, once it can be estimated, the time
+left (“Converting Book.m4b: 42 percent, about 3 minutes left”;
+“Converted 3 of 10, 47 percent overall”).</li>
+<li>A progress bar (“Progress:”, named “Conversion progress”) sits under
+the action buttons and fills with the same count. It is not in the Tab
+order; the status bar says the same in words.</li>
+<li>Convert from URL puts the downloaded file into the main window’s
+queue, ready for Ctrl+Enter with the choices already on the window. With
+no Output folder set, its converted copy goes to Downloads\Converted
+rather than into the temporary folder the download sits in.</li>
+<li>Convert from URL takes playlists and YouTube channels as well as
+single videos (quill/core/audio/url_collections.py,
+quill/apps/converter_url.py). The link is read first without downloading
+anything; a playlist or channel opens Download a Playlist or Channel:
+only this video or the whole playlist, how many (a channel is newest
+first and defaults to 25), which channel section (Videos, Shorts, Live
+streams – only those that exist), published within a week, month or
+year, and Skip videos already downloaded from here (a per-link record of
+what was fetched). Files are numbered in order (a channel’s by date),
+tagged with the playlist or channel as album and a track number, and
+join the queue; failures are listed in the report, long runs pause
+between videos, and Stop is immediate. Output defaults to
+Downloads\Converted&lt;playlist&gt;.</li>
+<li>deno, yt-dlp’s JavaScript runtime for YouTube, is bundled in both
+downloads; without it YouTube links could fail.</li>
+<li>Conversion Report (Ctrl+R) lists every file with the settings used,
+a plain-language reason for each failure, and any note on a converted
+file (where its chapters went, captions left out), with a Copy All
+button.</li>
+<li>Failures are explained in plain words – no track of the needed kind,
+file not found, damaged file, access refused, drive full, tracks that
+cannot be copied into the container, settings the encoder refused, copy
+protection, an unreadable codec, no sound track – followed by FFmpeg’s
+own last line.</li>
+<li>Open Output Folder (Ctrl+Shift+F) and Open Output Folder When Done
+(Ctrl+Shift+W, a check item).</li>
+<li>Cover art is carried into the converted copy where FFmpeg drops it:
+MP3, M4A, M4B, M4R, FLAC, Ogg, Opus and Speex.</li>
+<li>Format, presets, effects, custom effects, keep from and keep until,
+the Chapter marks choice, the Advanced Options and the output folder are
+remembered between runs, in <code>converter.json</code> in the data
+folder.</li>
+<li>View &gt; Advanced Options (Ctrl+Alt+V), a check item, shows or
+hides an Advanced section in the main window and moves focus to its
+first control; whether it is shown is remembered. It holds Bit rate
+(size and quality), Sample rate, Channels, Bit depth, If a file already
+exists (number the new one, skip or replace), Broadcast polish (OptiLab
+Core: Podcast Leveler, Stream Polish, Smooth Limiter; disabled when the
+build lacks it) and “Look in subfolders too” (on by default). Each
+starts on its neutral choice. This replaces the Advanced button and the
+Advanced Options command that opened the Audio Studio’s Convert Audio
+dialog, a second window with its own queue and its own Convert
+button.</li>
+<li>Menus are now File, Queue, View, Convert, QuillVille, Help and
+Window, and every item shows its key.</li>
+</ul>
+<h3 id="help-menu-and-support">Help menu and support</h3>
+<ul>
+<li>The Help menu matches Quill Radio’s and QUILL Lite’s: Help for This
+Window (F1), User Guide (Ctrl+F1), Release Notes (Shift+F1), What’s New,
+the changelog (Ctrl+Shift+F1; called Changelog until build 2), Product
+Requirements (Alt+Shift+F1), Keyboard Shortcuts (Ctrl+Alt+K), Get Help
+from Support (Ctrl+Alt+F2), Get FFmpeg (Ctrl+Alt+F), Check for Updates
+(Ctrl+Alt+U) and About (Alt+F1).</li>
+<li>Keyboard Shortcuts is a read-only list of every key in the app.</li>
+<li>Get Help from Support writes to <a
+href="mailto:support@community-access.org">support@community-access.org</a>
+through your own mail program. There is no GitHub token and no GitHub
+path.</li>
+<li>F1 help for the new windows: Custom Effects, File Properties,
+Conversion Report, Keyboard Shortcuts and the Tag Editor.</li>
+</ul>
+<h3 id="installer-and-portable">Installer and portable</h3>
+<ul>
+<li>The installer’s choices – a desktop icon (off by default), the File
+Explorer entry (on) and launching when done (off) – are real Windows
+checkboxes that announce checked and not checked, like every family
+installer since 2026-09-26.</li>
+<li>The installer (Inno Setup 7) installs the shared QuillVille runtime
+if it is absent, then the app, with Start Menu entries and the
+documents.</li>
+<li>The File Explorer checkbox, checked by default, adds “Convert with
+Quill Converter” to the File Explorer right-click menu for every audio
+and video type the app reads, per user, removed on uninstall.
+<code>.ts</code> is left off because it is commonly a TypeScript
+file.</li>
+<li>Selecting many files in Explorer and choosing the entry queues them
+all in one window: a second launch hands its files to the running
+one.</li>
+<li>The portable zip keeps settings in its own <code>data</code> folder
+next to the app.</li>
+<li>FFmpeg and ffprobe, libmpv, yt-dlp, mutagen and, when built, the
+OptiLab Core adapter are bundled in both; nothing downloads on first
+use.</li>
+<li>Check for Updates offers the matching download, installer or
+portable.</li>
+<li><strong>When Quill Converter cannot start, it says so.</strong>
+<code>QuillConverter.exe</code> starts the app’s Python engine; the
+launcher keeps a launch log of everything the engine reports
+(<code>data\logs\launch.log</code> beside a portable copy;
+<code>%APPDATA%\Quill\logs\QuillConverter-launch.log</code> for an
+installed one) and, when the engine exits with an error, opens one plain
+message a screen reader reads on its own: “Quill Converter did not
+start”, the reason in words, where the log is, and the support address.
+A missing DLL, a damaged or 32-bit file and “access denied” each get
+their own words. Opening <code>QuillConverter.exe</code> from inside the
+zip, before extracting it, is recognised and explained. Shared with
+every QuillVille app
+(<code>quill/native/launcher/launch_report.c</code>, 2026-09-28, first
+in Quill Radio 3.0.4); the user guide’s Troubleshooting opens with
+it.</li>
+<li>Quill Converter is listed on the QuillVille menu of the other apps,
+and QUILL’s own “Convert with Quill” Explorer entry is available in
+public builds.</li>
+<li>The tile icon is drawn by the family generator,
+<code>scripts/build_app_icons.py</code>, which replaced Converter’s own
+private generator.</li>
+</ul>
+<h3 id="fixes">Fixes</h3>
+<ul>
+<li>AIFF and AU output are written big-endian, as those formats require;
+AIFF output failed before.</li>
+<li>WAV, Wave64 and CAF at 32-bit are real 32-bit floating point.</li>
+<li>A preset or Advanced setting a format cannot accept no longer fails
+the file half way through a batch.</li>
+<li>Several files chosen at once in File Explorer all arrive in one
+queue, and a second launch brings the running window forward instead of
+doing nothing.</li>
+<li>Loudness effects no longer hand FFmpeg’s internal 192 kHz on to the
+output: WMA refused it, and FLAC stored it. A loudness target now writes
+48 kHz unless you choose a rate.</li>
+<li>A video with no sound track, converted to a sound format, fails with
+the reason in words; before, FFmpeg quietly put the video itself inside
+the .m4a.</li>
+<li>MP2 (on its own, or inside an MPEG-2 video) is written at an MPEG-1
+rate, so a 22 kHz source no longer fails at the default 192 kbps.</li>
+<li>A film whose captions cannot go into MKV (DivX bitmaps, broadcast
+teletext) converts without them and says so, instead of failing. A Flash
+video whose sound declares an unnamed channel layout converts.</li>
+<li>File Properties shows the title and artist of Ogg, Opus and Speex
+files, which keep their tags on the sound track rather than the
+file.</li>
+<li>Check for Updates offers Quill Converter’s own downloads. With no
+asset prefix it would have fallen back to the newest release of any
+family app.</li>
+</ul>
+<h3 id="from-the-july-build">From the July build</h3>
+<p>Carried into 1.0.0 unchanged in spirit:</p>
+<ul>
+<li>A tray-resident, single-instance window with focus on the queue at
+launch, and Ctrl+Alt+Shift+C to show or hide it from anywhere.</li>
+<li>Folder scanning with the source folder layout mirrored in the
+output, and a conflict policy that never overwrites unless asked.</li>
+<li>Ten one-click sound presets: Just convert, MP3 320, 192 and 128,
+Podcast, Audiobook (M4B), Voice memo, Web voice (Opus), Archival (FLAC)
+and Hearing-aid mono.</li>
+<li>Exact bit rate, sample rate, channels and bit depth, each starting
+on “leave the preset alone” – now in the main window’s Advanced section
+rather than a separate dialog.</li>
+<li>Convert from URL, now with yt-dlp bundled rather than installed on
+demand. Unavailable in Safe Mode.</li>
+<li>The headless <code>quill convert</code> command over the same
+engine.</li>
+</ul>
+</main>
+</body>
+</html>

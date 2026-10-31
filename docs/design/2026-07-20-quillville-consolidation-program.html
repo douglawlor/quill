@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QuillVille consolidation program — one repo, many
+products</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid #1a1a1a;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1
+id="quillville-consolidation-program--one-repo-many-products">QuillVille
+consolidation program — one repo, many products</h1>
+<p>Date: 2026-07-20. Supersedes the scope of
+<code>2026-07-20-radio-cast-consolidation-plan.md</code> (still valid
+for the update-safety rules) by widening it to the whole family: Radio,
+Cast, Audio Studio, Beacon, Social, and the macOS radio port (QRM).
+Goal: the <code>quill</code> repo is the single source of truth and can
+build and ship every standalone product, with no code duplicated across
+repos and no shipped user’s updater ever broken.</p>
+<h2 id="the-family-and-why-the-products-differ">The family, and why the
+products differ</h2>
+<p>There are two fundamentally different kinds of product, and they take
+very different amounts of work to consolidate:</p>
+<p><strong>A. Thin wrappers — code already in
+<code>quill</code>.</strong> The app <em>is</em> a
+<code>quill.apps.*</code> entry point; the product repo only ever held
+packaging. Consolidating = move the packaging into
+<code>quill/standalone/&lt;product&gt;/</code> and reduce the product
+repo to a release host. Cheap and low-risk.</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>App entry</th>
+<th>Repo</th>
+<th>Shipped</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Quill Radio</td>
+<td><code>quill.apps.radio</code></td>
+<td>quill-radio</td>
+<td>2.0.2–2.1.2</td>
+<td>tooling in <code>standalone/radio/</code> ✓; repo → release host
+(pending strip)</td>
+</tr>
+<tr>
+<td>QUILL Cast</td>
+<td><code>quill.apps.podcasts</code></td>
+<td>quill-cast</td>
+<td>1.0.0</td>
+<td>tooling in <code>standalone/cast/</code> ✓; repo
+<strong>archived</strong> ✓</td>
+</tr>
+<tr>
+<td>Audio Studio</td>
+<td><code>quill.apps.studio</code></td>
+<td>(never pushed)</td>
+<td>no</td>
+<td>code folded in ✓; standalone tooling <strong>to
+recreate</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>B. Separate apps — code NOT yet in
+<code>quill</code>.</strong> These have their own multi-file packages
+and must be <strong>reverse-vendored</strong> into the
+<code>quill</code> package first (the same effort as the Audio Studio
+migration: rewrite imports to <code>quill.*</code>, pass the GATE suite
+— size budgets, persistence/egress audits, banned patterns, mypy, tests
+— then add a <code>standalone/&lt;product&gt;/</code> shell). Real work
+per app.</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>Package</th>
+<th>Repo</th>
+<th>~Py files</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Beacon</td>
+<td><code>quill_beacon</code> (+ <code>quillsync</code>, browser
+<code>extensions/</code>)</td>
+<td>beacon</td>
+<td>~38</td>
+<td>Ships browser extensions (chromium/firefox) — extra surface beyond a
+normal app.</td>
+</tr>
+<tr>
+<td>Social</td>
+<td><code>quill_social</code></td>
+<td>quill-social</td>
+<td>~113</td>
+<td>Largest of the three; its own <code>tests/</code>.</td>
+</tr>
+<tr>
+<td>QRM (macOS radio)</td>
+<td><code>quill_radio_mac</code></td>
+<td>(qrm)</td>
+<td>~46</td>
+<td>macOS packaging (py2app), not PyInstoaller/Inno. Radio feature code
+is already in <code>quill</code>; this is a Mac <em>packaging</em>
+port.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="what-is-done-this-pass">What is done (this pass)</h2>
+<ul>
+<li><code>standalone/</code> created in quill; Radio and Cast packaging
+shells moved in (<code>launcher</code>, spec,
+<code>build_release.ps1</code>, Inno <code>.iss</code>, docs, assets).
+The quill repo can now build those standalone products directly. Ruff
+excludes <code>standalone/</code> as distribution tooling; pytest stays
+scoped to <code>tests/</code>.</li>
+<li>Open wrapper-repo issues moved to quill (#1187/#1188/#1189).</li>
+<li><strong>quill-cast archived</strong> (reversible; keeps its v1.0.0
+release + updater API alive so the existing Cast user does not 404). Its
+packaging is preserved in <code>standalone/cast/</code>. The stale local
+<code>S:\quill-cast</code> clone can be deleted by hand (sandbox blocks
+removing <code>S:\</code> roots).</li>
+</ul>
+<h2 id="sequenced-plan-smallest-risk-first">Sequenced plan (smallest
+risk first)</h2>
+<h3 id="phase-1--finish-the-thin-wrappers-low-risk">Phase 1 — finish the
+thin wrappers (low risk)</h3>
+<ol type="1">
+<li><strong>Strip quill-radio to a release host.</strong> Its packaging
+now lives in <code>standalone/radio/</code>. Reduce the quill-radio repo
+to a README that points to quill; keep the repo (it is the live updater
+target for 2.x users and hosts the release downloads). Publish future
+Radio releases to it from
+<code>standalone/radio/scripts/build_release.ps1</code> via
+<code>gh release create --repo Community-Access/quill-radio</code>.
+<strong>Do not delete or rename it</strong> (see update-safety rules
+below).</li>
+<li><strong>Recreate Audio Studio standalone tooling</strong> in
+<code>standalone/audio-studio/</code> from the radio template
+(<code>quill.apps.studio</code>, its icon + product docs from
+<code>docs/audio-studio/</code>). AS never shipped, so there is no repo
+and no updater constraint — it is pure build tooling.</li>
+</ol>
+<h3
+id="phase-2--reverse-vendor-the-separate-apps-one-at-a-time-verified">Phase
+2 — reverse-vendor the separate apps (one at a time, verified)</h3>
+<p>Do these <strong>individually</strong>, each on its own branch, each
+fully GATE-green with tests before the next — exactly how Audio Studio
+was done. Do <strong>not</strong> batch them; a half-migrated app that
+fails the persistence/egress audits or mypy would block the whole repo.
+3. <strong>Beacon</strong> first (smallest, ~38 files). Extra step:
+decide where the browser <code>extensions/</code> live (they are not
+Python — likely <code>quill/data/beacon-ext/</code> or a top-level
+<code>extensions/</code>, force-included like other package data). 4.
+<strong>Social</strong> (~113 files, its own tests). Largest; expect
+real GATE work (size budgets, new persistence/egress sites). 5. Each
+gets a <code>standalone/&lt;product&gt;/</code> shell after its code is
+in <code>quill</code>.</p>
+<h3 id="phase-3--macos-radio-port-qrm">Phase 3 — macOS radio port
+(QRM)</h3>
+<ol start="6" type="1">
+<li>Fold <code>quill_radio_mac</code> packaging into the repo under a
+macOS path (e.g. <code>standalone/radio/macos/</code> using py2app,
+sibling to the Windows shell). The radio <em>feature</em> code is
+already shared via <code>quill.apps.radio</code>; QRM is only the Mac
+packaging. Keep it beside the Windows Radio tooling so both ship the
+same app.</li>
+</ol>
+<h2
+id="update-safety-rules-unchanged-apply-to-every-shipped-repo">Update-safety
+rules (unchanged, apply to every shipped repo)</h2>
+<p>Every shipped product’s updater polls its own repo
+(<code>quill/apps/&lt;app&gt;.py: _REPO</code>). Therefore:</p>
+<ul>
+<li><strong>Never delete or rename a shipped product’s GitHub
+repo.</strong> Its <code>/releases</code> API is live infrastructure. To
+retire one, follow the migration in
+<code>2026-07-20-radio-cast-consolidation-plan.md</code> (repoint
+<code>_REPO</code>, ship a transitional release from the old repo, wait
+for adoption) and then <strong>archive, not delete</strong>.</li>
+<li>Archiving is the safe “remove”: read-only, reversible, releases stay
+served. That is what was done to quill-cast.</li>
+<li>Audio Studio and any never-shipped product are exempt (no users, no
+updater).</li>
+</ul>
+<h2 id="status-2026-07-21">Status (2026-07-21)</h2>
+<ul>
+<li><strong>Radio, Cast, Beacon, Audio Studio</strong> each have a full
+<code>standalone/&lt;product&gt;/</code> build shell (launcher,
+PyInstaller spec, Inno <code>.iss</code> supporting per-user OR
+per-machine, <code>build_release.ps1</code> producing an installer
+<code>.exe</code> + a portable <code>.zip</code>, docs). Beacon is
+reverse-vendored into <code>quill/apps/beacon</code>; Radio / Cast /
+Studio <em>are</em> <code>quill.apps.*</code> entry points.</li>
+<li><strong>QUILL Social and the macOS Radio port (QRM)</strong> are
+captured verbatim into <code>standalone/social/</code> and
+<code>standalone/radio-mac/</code> with <code>MIGRATION.md</code> notes;
+the external <code>s:\quill-social</code> and <code>s:\qrm</code> repos
+are removed (content lives in quill + git history). Social’s build shell
+and the QRM→shared-Radio merge are the remaining follow-ups.</li>
+<li>The shared runtime is <strong>Hugging-Face-free by default</strong>:
+whisper.cpp, Faster Whisper, and all Piper voices are mirrored,
+SHA-verified, on QUILL’s own <code>assets-v1</code> release;
+<code>huggingface_hub</code> is no longer a base dependency (only the
+gated pyannote diarization extra pulls it).</li>
+</ul>
+<h2 id="benefits-of-this-approach-distribution-and-beyond">Benefits of
+this approach (distribution and beyond)</h2>
+<p>Why one repo of shared code with thin per-product shells beats
+separate per-product codebases:</p>
+<p><strong>Distribution.</strong></p>
+<ul>
+<li>One <code>onedir</code> build per product feeds <em>both</em>
+deliverables — zip it for the portable, point Inno Setup at it for the
+installer — and each <code>.iss</code> carries per-user
+<strong>and</strong> per-machine install in one script
+(<code>PrivilegesRequired=lowest</code>
+<ul>
+<li>dialog override). One build recipe, two install types, every
+product.</li>
+</ul></li>
+<li>Everything is bundled (no install- or first-run downloads); the
+heavy speech engines are fetched on demand through the shared,
+<strong>SHA-256-verified</strong> <code>assets-v1</code> component
+system, so base builds stay small and no product depends on a
+third-party host (Hugging Face) staying up.</li>
+<li>Every product inherits the same verified self-update path (Quill’s
+signed release feed + the decompression-safety fix), so “Install and
+restart” behaves identically everywhere.</li>
+</ul>
+<p><strong>Maintenance and correctness.</strong></p>
+<ul>
+<li>Single source of truth: a fix or feature written once in the
+<code>quill</code> package reaches <em>every</em> product at once — no
+vendoring, no re-pinning, no drift. The design rule holds: “if it
+breaks, it breaks everywhere,” so a defect surfaces once across the
+whole family instead of hiding in a stale copy.</li>
+<li>One gate suite guards all shared code — ruff, strict mypy on
+<code>core</code>/<code>io</code>, module-size budgets, the
+dialog-surface inventory, the accessible-name audit, the network-egress
+audit, and the banned-pattern check — so quality is uniform, not
+per-repo.</li>
+<li>Apps declare <code>REQUIRED_COMPONENTS</code> and a refcount
+registry shares downloaded components (ffmpeg, mpv) across co-installed
+products, so a listener with Radio <em>and</em> Studio downloads ffmpeg
+once.</li>
+</ul>
+<p><strong>Accessibility.</strong> One accessibility contract
+(<code>dialog_contract</code>, accessible-name inference,
+region-entry/-exit announcements, the transition-cue policy) is enforced
+across every surface of every product, so the screen-reader experience
+is consistent — a fix to focus or naming lands everywhere.</p>
+<p><strong>Footprint and the user.</strong> A shared
+<code>%APPDATA%\Quill</code> data store means favorites, settings,
+voices, and recordings are shared across QUILL, Radio, Cast, and Studio;
+the total on-disk footprint is one codebase plus small shells; and users
+get every product’s fixes automatically.</p>
+<p><strong>Velocity.</strong> Contributors work in one repo with one
+test suite and one CI; a new product is a thin <code>standalone/</code>
+shell over the existing package, not a fork to keep in sync.</p>
+<h2 id="recommendation">Recommendation</h2>
+<p>Phase 1 is safe and finishes the easy consolidation — do it next
+(strip quill-radio to a release-host README; recreate the AS shell).
+Treat Phase 2 (Beacon, Social) as separate, verified migrations on their
+own branches, and Phase 3 (QRM/macOS) after. Resist doing all
+reverse-vendors at once — one GATE-green app at a time keeps
+<code>main</code> shippable throughout.</p>
+</main>
+</body>
+</html>

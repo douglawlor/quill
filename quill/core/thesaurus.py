@@ -21,6 +21,7 @@ If the data file is missing, all lookups return an empty result and
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,12 +32,50 @@ _INDEX: dict[str, list[Meaning]] | None = None
 _LOAD_ERROR: str | None = None
 
 
+#: The four annotations MyThes puts after a sense member, and nothing else --
+#: verified against the whole shipped data file, where these are the *only*
+#: parentheticals that appear at all. An unmarked member is a plain synonym.
+#:
+#: The marker is not decoration. It is the difference between a word that can
+#: replace the headword and a word that means the opposite, and dropping it (as
+#: this module did until 2026-08-26) puts 13,060 antonyms across 9,667
+#: headwords into the synonym list -- "heavy" offered for "light", "decrease"
+#: for "increase". Nothing announces that, and a writer who takes one has
+#: inverted their own sentence.
+_RELATION_MARKERS = {
+    "similar term": "similar",
+    "generic term": "broader",
+    "antonym": "antonym",
+    "related term": "related",
+}
+_RELATION_SUFFIXES = tuple(
+    (f" ({marker})", relation) for marker, relation in _RELATION_MARKERS.items()
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Meaning:
-    """One sense of a word, with its part of speech and synonyms."""
+    """One sense of a word, with its part of speech and its members by relation.
+
+    ``synonyms`` holds what can actually stand in for the headword: the
+    unmarked members plus MyThes' "similar term" and "related term". The other
+    two relations are real and useful but are *not* substitutes, so they are
+    kept apart rather than merged into one list a caller presents as equals.
+
+    Related terms belong with the synonyms, and the evidence for that is
+    "happy": its primary sense's unmarked members are *blessed, blissful,
+    bright, golden, halcyon* -- while *cheerful, glad, joyful, elated* are all
+    marked "(related term)". Filing those elsewhere would delete the useful
+    answer for the word.
+    """
 
     part_of_speech: str  # e.g. "noun", "verb", "adj", "adv"
     synonyms: tuple[str, ...]
+    #: Opposites. Never offer these as synonyms.
+    antonyms: tuple[str, ...] = ()
+    #: Hypernyms -- broader categories the headword belongs to ("city" for
+    #: "The Hague"). Informative, but substituting one loses the meaning.
+    broader: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,16 +85,109 @@ class ThesaurusEntry:
 
     @property
     def all_synonyms(self) -> tuple[str, ...]:
+        """Every synonym across every sense, deduplicated, in file order.
+
+        Substitutes only -- antonyms and broader terms are reached through
+        :attr:`all_antonyms` and :attr:`all_broader`. A caller wanting
+        "everything about this word" wants the senses, not a longer flat list.
+        """
+        return self._flatten(lambda meaning: meaning.synonyms)
+
+    @property
+    def all_antonyms(self) -> tuple[str, ...]:
+        """Every antonym across every sense, deduplicated, in file order."""
+        return self._flatten(lambda meaning: meaning.antonyms)
+
+    @property
+    def all_broader(self) -> tuple[str, ...]:
+        """Every broader (generic) term across every sense."""
+        return self._flatten(lambda meaning: meaning.broader)
+
+    def _flatten(self, pick: Callable[[Meaning], tuple[str, ...]]) -> tuple[str, ...]:
         seen: set[str] = set()
         ordered: list[str] = []
         for meaning in self.meanings:
-            for syn in meaning.synonyms:
-                key = syn.lower()
+            for term in pick(meaning):
+                key = term.lower()
                 if key in seen:
                     continue
                 seen.add(key)
-                ordered.append(syn)
+                ordered.append(term)
         return tuple(ordered)
+
+
+#: MyThes writes four, and only four, parts of speech. Spelled out because
+#: these are read aloud: "adjective" is a word, "adj" is a noise.
+_POS_NAMES = {"adj": "adjective", "adv": "adverb", "noun": "noun", "verb": "verb"}
+
+#: How many terms a sense shows in its own row before saying "N more". Long
+#: enough to tell senses apart, short enough that arrowing 45 of them is not
+#: wading: a row has to stay near three seconds at a normal speech rate, and
+#: "big" has a sense with 87 members.
+_PREVIEW_TERMS = 4
+
+
+@dataclass(frozen=True, slots=True)
+class SenseRow:
+    """One sense, ready for a two-pane picker.
+
+    ``label`` is the row in the sense list. ``rows`` are the ``(label, term)``
+    pairs for the synonym pane when this sense is chosen -- two different
+    strings on purpose, because the labels carry a prefix and replacing "light"
+    with "opposite: heavy" would be a funny bug in a serious place.
+    """
+
+    label: str
+    part_of_speech: str
+    rows: tuple[tuple[str, str], ...]
+
+
+def sense_rows(entry: ThesaurusEntry) -> tuple[SenseRow, ...]:
+    """Group *entry* by sense for a picker. Pure, and wx-free so it can be tested.
+
+    A flat list is what this replaced, and it was the wrong shape: "light" has
+    46 senses and 168 members, and presenting them as one list mixes weight,
+    colour and illumination with no boundary between them.
+
+    Three rules, each earned:
+
+    * **A sense with nothing but antonyms is dropped.** 1,191 senses corpus-wide
+      are antonym-only; one of them is why "light" used to offer "heavy" as its
+      own sense. Every remaining row can be acted on.
+    * **The part of speech leads the row**, spelled out. Not a bracketed suffix:
+      a native list box does first-character type-ahead, so with the part of
+      speech first, ``n`` jumps to the noun senses and ``v`` to the verbs. A
+      free filter, no control and no code.
+    * **The preview falls back to broader terms** when a sense has no
+      substitutes of its own, and says so. Those senses are real -- dropping
+      them loses "in a new light" -- but a hypernym is not a synonym and the row
+      must not imply it is.
+
+    Position ("3 of 45") is deliberately absent: screen readers announce list
+    position themselves, and putting it in the row text says it twice.
+    """
+    senses: list[SenseRow] = []
+    for meaning in entry.meanings:
+        if not meaning.synonyms and not meaning.broader:
+            continue  # antonym-only: nothing here can be acted on
+        pos = _POS_NAMES.get(meaning.part_of_speech, meaning.part_of_speech or "other")
+        preview_from = meaning.synonyms or meaning.broader
+        qualifier = "" if meaning.synonyms else " (broader)"
+        shown = list(preview_from[:_PREVIEW_TERMS])
+        remaining = len(preview_from) - len(shown)
+        if remaining > 0:
+            shown.append(f"{remaining} more")
+        rows: list[tuple[str, str]] = [(term, term) for term in meaning.synonyms]
+        rows.extend((f"broader: {term}", term) for term in meaning.broader)
+        rows.extend((f"opposite: {term}", term) for term in meaning.antonyms)
+        senses.append(
+            SenseRow(
+                label=f"{pos}{qualifier}: {', '.join(shown)}",
+                part_of_speech=pos,
+                rows=tuple(rows),
+            )
+        )
+    return tuple(senses)
 
 
 def is_available() -> bool:
@@ -128,9 +260,30 @@ def _parse_mythes(text: str) -> dict[str, list[Meaning]]:
             # Strip surrounding parens if present: "(noun)" -> "noun".
             if raw_pos.startswith("(") and raw_pos.endswith(")"):
                 raw_pos = raw_pos[1:-1].strip()
-            synonyms = tuple(_clean_synonym(syn) for syn in parts[1:] if _clean_synonym(syn))
-            if synonyms:
-                meanings.append(Meaning(part_of_speech=raw_pos or "", synonyms=synonyms))
+            synonyms: list[str] = []
+            antonyms: list[str] = []
+            broader: list[str] = []
+            for member in parts[1:]:
+                term, relation = _split_relation(member)
+                if not term:
+                    continue
+                # "similar" and "related" can stand in for the headword;
+                # "broader" and "antonym" cannot. See Meaning's docstring.
+                if relation == "antonym":
+                    antonyms.append(term)
+                elif relation == "broader":
+                    broader.append(term)
+                else:
+                    synonyms.append(term)
+            if synonyms or antonyms or broader:
+                meanings.append(
+                    Meaning(
+                        part_of_speech=raw_pos or "",
+                        synonyms=tuple(synonyms),
+                        antonyms=tuple(antonyms),
+                        broader=tuple(broader),
+                    )
+                )
         if word and meanings:
             # A headword may appear more than once across senses; merge.
             existing = index.get(word)
@@ -141,22 +294,40 @@ def _parse_mythes(text: str) -> dict[str, list[Meaning]]:
     return index
 
 
-def _clean_synonym(raw: str) -> str:
-    """Trim MyThes annotations like '(generic term)' and '(antonym)'.
+def _split_relation(raw: str) -> tuple[str, str]:
+    """Split a MyThes sense member into ``(term, relation)``.
 
-    MyThes synonyms can include parenthetical hints after the term itself,
-    e.g. ``"capital (generic term)"``. We keep the leading term and drop
-    the trailing annotation so the suggestion list reads cleanly.
+    ``"capital (generic term)"`` becomes ``("capital", "broader")``;
+    ``"heavy (antonym)"`` becomes ``("heavy", "antonym")``; an unmarked member
+    becomes ``(term, "")``, meaning a plain synonym.
+
+    This replaces an earlier ``_clean_synonym`` which dropped the annotation
+    entirely "so the suggestion list reads cleanly". It did read cleanly, and
+    it was wrong: the annotation is the only thing distinguishing a substitute
+    from its opposite, and discarding it offered "heavy" as a synonym for
+    "light".
+
+    An unrecognised parenthetical is left as part of the term rather than
+    guessed at. None exists in the shipped data -- the four markers in
+    :data:`_RELATION_MARKERS` are the complete vocabulary -- so this is a guard
+    against a future data file rather than a live case, and the safe failure is
+    a slightly odd term rather than a silently miscategorised one.
     """
     text = raw.strip()
     if not text:
-        return ""
-    if "(" in text:
-        head, _, _ = text.partition("(")
-        head = head.strip()
-        if head:
-            return head
-    return text
+        return text, ""
+    for suffix, relation in _RELATION_SUFFIXES:
+        if text.endswith(suffix):
+            term = text[: -len(suffix)].strip()
+            return (term, relation) if term else ("", "")
+    if text.endswith(")"):
+        head, separator, marker = text.rpartition("(")
+        if separator:
+            marker_relation = _RELATION_MARKERS.get(marker[:-1].strip().lower())
+            if marker_relation is not None:
+                term = head.strip()
+                return (term, marker_relation) if term else ("", "")
+    return text, ""
 
 
 def preload() -> None:

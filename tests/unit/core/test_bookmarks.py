@@ -110,3 +110,89 @@ def test_bookmark_vault_clear_empties_and_persists(tmp_path: Path) -> None:
     assert vault.bookmarks == {}
     loaded = BookmarkVault.load(target)
     assert loaded.bookmarks == {}
+
+
+# --- DocumentMemory: per-document persistence + last position (persistent bookmarks) ---
+from pathlib import Path as _Path  # noqa: E402
+
+from quill.core.bookmarks import DocumentMemory  # noqa: E402
+
+
+def test_document_memory_persists_bookmarks_and_last_position(tmp_path: _Path) -> None:
+    store = tmp_path / "document_memory.json"
+    mem = DocumentMemory(path=store)
+    key = DocumentMemory.key_for(tmp_path / "Report.md")
+    mem.set_bookmarks(key, {"intro": 10, "end": 200})
+    mem.set_last_position(key, 123)
+    reloaded = DocumentMemory.load(store)
+    assert reloaded.bookmarks_for(key) == {"intro": 10, "end": 200}
+    assert reloaded.last_position(key) == 123
+
+
+def test_document_memory_is_per_document(tmp_path: _Path) -> None:
+    mem = DocumentMemory(path=tmp_path / "dm.json")
+    a = DocumentMemory.key_for(tmp_path / "a.md")
+    b = DocumentMemory.key_for(tmp_path / "b.md")
+    mem.set_bookmarks(a, {"x": 1})
+    mem.set_last_position(b, 50)
+    assert mem.bookmarks_for(a) == {"x": 1}
+    assert mem.bookmarks_for(b) == {}  # a's bookmarks never leak into b
+    assert mem.last_position(a) is None
+    assert mem.last_position(b) == 50
+
+
+def test_document_memory_untitled_is_never_persisted(tmp_path: _Path) -> None:
+    mem = DocumentMemory(path=tmp_path / "dm.json")
+    assert DocumentMemory.key_for(None) is None
+    assert DocumentMemory.key_for("") is None
+    mem.set_bookmarks(None, {"x": 1})  # no-op, no crash
+    mem.set_last_position(None, 5)
+    assert mem.bookmarks_for(None) == {}
+    assert mem.last_position(None) is None
+    assert not store_exists(tmp_path / "dm.json")
+
+
+def store_exists(p: _Path) -> bool:
+    return p.exists()
+
+
+def test_document_memory_load_is_forgiving(tmp_path: _Path) -> None:
+    bad = tmp_path / "dm.json"
+    bad.write_text("{ this is not json", encoding="utf-8")
+    mem = DocumentMemory.load(bad)  # must not raise
+    assert mem.documents == {}
+
+
+def test_document_memory_keys_are_path_normalized(tmp_path: _Path) -> None:
+    k1 = DocumentMemory.key_for(tmp_path / "Doc.md")
+    k2 = DocumentMemory.key_for(str(tmp_path / "Doc.md"))
+    assert k1 == k2 and k1 is not None
+
+
+def test_document_memory_round_trips_bookmark_anchors(tmp_path):
+    from quill.core.bookmark_anchor import BookmarkAnchor
+    from quill.core.bookmarks import DocumentMemory
+
+    mem_path = tmp_path / "document_memory.json"
+    mem = DocumentMemory(path=mem_path)
+    key = DocumentMemory.key_for(tmp_path / "doc.md")
+    anchors = {"intro": BookmarkAnchor(offset=10, before="Chapter ", after="One text", line=0)}
+    mem.set_anchors(key, anchors)
+
+    reloaded = DocumentMemory.load(mem_path)
+    got = reloaded.anchors_for(key)
+    assert got == anchors
+
+
+def test_document_memory_without_anchors_is_backward_compatible(tmp_path):
+    # An older file with only int bookmarks loads fine and reports no anchors.
+    import json
+
+    from quill.core.bookmarks import DocumentMemory
+
+    mem_path = tmp_path / "document_memory.json"
+    key = DocumentMemory.key_for(tmp_path / "doc.md")
+    mem_path.write_text(json.dumps({key: {"bookmarks": {"intro": 5}}}), encoding="utf-8")
+    mem = DocumentMemory.load(mem_path)
+    assert mem.bookmarks_for(key) == {"intro": 5}
+    assert mem.anchors_for(key) == {}

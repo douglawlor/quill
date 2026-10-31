@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -7,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from quill.core.speech import models
-from quill.core.speech.provider import SpeechError, TranscriptionRequest
+from quill.core.speech.provider import SpeechError, SpeechModelInfo, TranscriptionRequest
 from quill.core.speech.providers import whispercpp
 
 _SAMPLE_JSON = json.dumps({
@@ -58,6 +59,26 @@ def test_build_whisper_command_includes_flags(tmp_path: Path) -> None:
     assert "-tr" in args
 
 
+def test_build_whisper_command_passes_initial_prompt(tmp_path: Path) -> None:
+    request = TranscriptionRequest(
+        source_path=tmp_path / "a.wav",
+        model_id="small",
+        initial_prompt="Vocabulary: QUILL, wxPython.",
+    )
+    args = whispercpp.build_whisper_command(
+        "whisper-cli", tmp_path / "ggml-small.bin", tmp_path / "a.wav", tmp_path / "out", request
+    )
+    assert args[args.index("--prompt") + 1] == "Vocabulary: QUILL, wxPython."
+
+
+def test_build_whisper_command_omits_prompt_when_empty(tmp_path: Path) -> None:
+    request = TranscriptionRequest(source_path=tmp_path / "a.wav", model_id="small")
+    args = whispercpp.build_whisper_command(
+        "whisper-cli", tmp_path / "ggml-small.bin", tmp_path / "a.wav", tmp_path / "out", request
+    )
+    assert "--prompt" not in args
+
+
 def test_resolve_executable_honors_allowed_configured(tmp_path: Path) -> None:
     exe = tmp_path / "whisper-cli"
     exe.write_text("", encoding="utf-8")
@@ -68,6 +89,47 @@ def test_resolve_executable_rejects_disallowed_basename(tmp_path: Path) -> None:
     evil = tmp_path / "rm-rf"
     evil.write_text("", encoding="utf-8")
     assert whispercpp.resolve_whisper_executable(str(evil)) is None
+
+
+def test_resolve_executable_rejects_openai_whisper_cli(tmp_path: Path) -> None:
+    # Issue #931: the bare ``whisper.exe`` is the openai-whisper PyPI package
+    # CLI, not whisper.cpp. Accepting it made QUILL feed whisper.cpp flags
+    # (-m/-f/-oj/-of) to a program that speaks --model/--output_format, so its
+    # argparse exited with code 2 ("Transcription failed (code 2)"). It must be
+    # rejected on the configured path, in bundled dirs, and on PATH.
+    fake = tmp_path / "whisper.exe"
+    fake.write_text("", encoding="utf-8")
+    assert whispercpp.resolve_whisper_executable(str(fake)) is None
+    bare = tmp_path / "whisper"
+    bare.write_text("", encoding="utf-8")
+    assert whispercpp.resolve_whisper_executable(str(bare)) is None
+
+
+def test_resolve_executable_does_not_pick_openai_whisper_in_engine_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A bare ``whisper.exe`` sitting in the QUILL-managed engine dir must not be
+    # mistaken for whisper.cpp (issue #931). Only whisper-cli / main qualify.
+    monkeypatch.setattr(whispercpp.shutil, "which", lambda _name: None)
+    monkeypatch.delenv("QUILL_APP_ROOT", raising=False)
+    engine_dir = tmp_path / "speech-engine"
+    engine_dir.mkdir(parents=True)
+    (engine_dir / "whisper.exe").write_text("", encoding="utf-8")
+    assert whispercpp.resolve_whisper_executable() is None
+
+
+def test_resolve_executable_does_not_pick_openai_whisper_on_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # If only the openai-whisper ``whisper``/``whisper.exe`` is on PATH, QUILL
+    # reports "not installed" rather than running the wrong CLI (issue #931).
+    monkeypatch.setattr(
+        whispercpp.shutil,
+        "which",
+        lambda name: str(tmp_path / "whisper.exe") if name in ("whisper", "whisper.exe") else None,
+    )
+    monkeypatch.delenv("QUILL_APP_ROOT", raising=False)
+    assert whispercpp.resolve_whisper_executable() is None
 
 
 def test_resolve_executable_finds_bundled_under_app_root(
@@ -132,6 +194,189 @@ def test_download_records_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert installed.id == "small"
     assert installed.path.exists()
     assert provider.list_installed_models()[0].id == "small"
+
+
+def _sample_model_info(sha256: str) -> SpeechModelInfo:
+    return SpeechModelInfo(
+        id="small",
+        display_name="Small",
+        language_mode="multilingual",
+        approximate_size_mb=465,
+        accuracy_tier="medium",
+        speed_tier="medium",
+        recommended_use="test",
+        download_url="ggerganov/whisper.cpp",
+        hf_filename="ggml-small.bin",
+        revision="5359861c739e955e79d9a303bcbc70fb988958b1",
+        sha256=hashlib.sha256(b"hello model bytes").hexdigest(),
+    )
+
+
+def test_transcribe_uses_bundled_model_when_no_downloaded_copy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The Offline Edition bundles the default model under QUILL_APP_ROOT;
+    transcription must find and use it with no download step at all."""
+    bundled = tmp_path / "app" / "speech-models-bundled" / "whispercpp" / "ggml-tiny.bin"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"bundled model")
+    monkeypatch.setenv("QUILL_APP_ROOT", str(tmp_path / "app"))
+    assert whispercpp._model_path("tiny") == bundled
+
+
+def test_downloaded_copy_takes_priority_over_bundled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A user's own downloaded model (e.g. a fresher one) wins over the
+    bundled copy shipped with the app -- same precedence as Kokoro's models."""
+    bundled = tmp_path / "app" / "speech-models-bundled" / "whispercpp" / "ggml-tiny.bin"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"bundled model")
+    monkeypatch.setenv("QUILL_APP_ROOT", str(tmp_path / "app"))
+    downloaded = whispercpp._downloaded_model_path("tiny")
+    downloaded.parent.mkdir(parents=True)
+    downloaded.write_bytes(b"downloaded model")
+    assert whispercpp._model_path("tiny") == downloaded
+
+
+def test_bundled_whisper_model_path_none_without_app_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("QUILL_APP_ROOT", raising=False)
+    assert whispercpp._bundled_whisper_model_path("tiny") is None
+
+
+def test_bundled_whisper_model_path_none_when_file_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("QUILL_APP_ROOT", str(tmp_path / "app"))
+    assert whispercpp._bundled_whisper_model_path("tiny") is None
+
+
+def test_remove_model_never_deletes_bundled_copy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Remove must only ever touch the user-downloaded copy -- the bundled
+    model shipped with the Offline Edition installer is never writable/
+    removable, matching how Kokoro's Remove works."""
+    bundled = tmp_path / "app" / "speech-models-bundled" / "whispercpp" / "ggml-tiny.bin"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"bundled model")
+    monkeypatch.setenv("QUILL_APP_ROOT", str(tmp_path / "app"))
+    provider = whispercpp.WhisperCppProvider()
+    provider.remove_model("tiny")
+    assert bundled.is_file()  # untouched
+
+
+def test_list_installed_models_synthesizes_bundled_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A bundled model (no download-time JSON record) still shows as
+    installed in Manage Speech Models, same as a real download would."""
+    bundled = tmp_path / "app" / "speech-models-bundled" / "whispercpp" / "ggml-tiny.bin"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"bundled model")
+    monkeypatch.setenv("QUILL_APP_ROOT", str(tmp_path / "app"))
+    provider = whispercpp.WhisperCppProvider()
+    installed = provider.list_installed_models()
+    assert any(m.id == "tiny" and m.path == bundled for m in installed)
+
+
+def test_list_installed_models_prefers_recorded_over_bundled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A real, recorded download for a model id is never shadowed by a
+    synthesized bundled entry for that same id."""
+    monkeypatch.delenv("QUILL_SAFE_MODE", raising=False)
+
+    def _fake_download(info, target, progress):
+        Path(target).write_bytes(b"FAKEMODEL")
+
+    monkeypatch.setattr(whispercpp, "_download_to_file", _fake_download)
+    bundled = tmp_path / "app" / "speech-models-bundled" / "whispercpp" / "ggml-tiny.bin"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"bundled model")
+    monkeypatch.setenv("QUILL_APP_ROOT", str(tmp_path / "app"))
+    provider = whispercpp.WhisperCppProvider()
+    provider.download_model("tiny")
+    installed = [m for m in provider.list_installed_models() if m.id == "tiny"]
+    assert len(installed) == 1
+    assert installed[0].installed_at  # the real, recorded entry, not the synthesized one
+
+
+def test_download_to_file_uses_the_assets_v1_mirror(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from quill.core.speech import model_mirrors
+
+    payload = b"hello model bytes"
+    used = {"mirror": False}
+
+    def _fetch(_asset, dest, **_kwargs):
+        used["mirror"] = True
+        Path(dest).write_bytes(payload)
+        return Path(dest)
+
+    monkeypatch.setattr(model_mirrors, "fetch_mirror_file", _fetch)
+    info = _sample_model_info("0" * 64)  # id "small" -> mirrored on assets-v1
+    target = tmp_path / "ggml-small.bin"
+
+    whispercpp._download_to_file(info, target, None)
+
+    assert used["mirror"] is True
+    assert target.read_bytes() == payload
+
+
+def test_download_to_file_mirror_failure_raises_coded_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from quill.core.release_assets import ReleaseAssetError
+    from quill.core.speech import model_mirrors
+
+    def _boom(_asset, _dest, **_kwargs):
+        raise ReleaseAssetError("network down")
+
+    monkeypatch.setattr(model_mirrors, "fetch_mirror_file", _boom)
+    info = _sample_model_info("0" * 64)
+
+    with pytest.raises(SpeechError, match=r"\[QUILL-SPEECH-WHISPER-DL-NET\]"):
+        whispercpp._download_to_file(info, tmp_path / "ggml-small.bin", None)
+
+
+def test_download_to_file_unmirrored_model_gives_manual_message(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # No Hugging Face fallback: an unmirrored model (only large-v3) points the
+    # user at a manual install rather than making a network call.
+    from quill.core.speech import model_mirrors
+
+    monkeypatch.setattr(model_mirrors, "mirror_for", lambda _p, _m: None)
+    info = _sample_model_info("0" * 64)
+
+    with pytest.raises(SpeechError, match=r"\[QUILL-SPEECH-WHISPER-DL-404\]") as excinfo:
+        whispercpp._download_to_file(info, tmp_path / "ggml-large-v3.bin", None)
+    assert "too large" in str(excinfo.value)
+
+
+def test_progress_tqdm_survives_no_console_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """QUILL's bundled quill.exe is a windowed pythonw.exe with no console, so
+    sys.stderr is None there. tqdm's own bar rendering defaults to writing to
+    sys.stderr; calling update() must not crash with "'NoneType' object has no
+    attribute 'write'" (regression guard for the whisper.cpp download failure
+    with that exact message on a real bundled build)."""
+    pytest.importorskip("tqdm")
+    monkeypatch.setattr("sys.stderr", None)
+    calls: list[tuple[float, str]] = []
+    info = _sample_model_info("0" * 64)
+    tqdm_cls = whispercpp._make_progress_tqdm(info, lambda f, m: calls.append((f, m)))
+    assert tqdm_cls is not None
+    bar = tqdm_cls(total=100, disable=False)
+    try:
+        bar.update(10)
+        expected_fraction = 0.02 + 0.95 * min(10 / (465 * 1024 * 1024), 1.0)
+        assert calls == [(pytest.approx(expected_fraction), "Downloading Small...")]
+    finally:
+        bar.close()
 
 
 def test_transcribe_requires_installed_model(
@@ -249,6 +494,8 @@ def test_whisper_cpp_catalog_is_pinned_to_a_revision_with_hashes() -> None:
     for model in catalog.WHISPER_CPP_MODELS:
         assert model.download_url and "/resolve/main/" not in model.download_url, model.id
         assert model.sha256 and len(model.sha256) == 64, model.id
+        assert model.hf_filename, model.id
+        assert model.revision and model.revision != "main", model.id
     # The tinydiarize model lives in its own repo, not ggerganov/whisper.cpp.
     tdrz = catalog.model_by_id("small.en-tdrz")
     assert tdrz is not None and "tinydiarize-whisper.cpp" in (tdrz.download_url or "")

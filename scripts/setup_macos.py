@@ -11,6 +11,23 @@ Produces dist/Quill.app.
 import sys
 from pathlib import Path
 
+# py2app bundles whatever interpreter runs this build, so the build Python *is*
+# the app's Python. QUILL's source uses PEP 695 generics (e.g. ``def name[T]``
+# in quill/core/storage.py and versioned_store.py) that only parse on 3.12+, and
+# pyproject requires >=3.14. Building below 3.13 produced a bundle that raised a
+# SyntaxError on the first QUILL import and hung on py2app's error screen (#755).
+# Abort loudly here so a too-old interpreter can never ship that bundle again.
+# noqa rationale: UP036 assumes the running Python is >= the project's 3.14
+# target, but this guards the *build* interpreter.
+if sys.version_info < (3, 14):  # noqa: UP036
+    raise SystemExit(
+        "QUILL's macOS app must be built with Python 3.14 or newer "
+        f"(py2app bundles the interpreter it runs under; this is "
+        f"{sys.version_info.major}.{sys.version_info.minor}). QUILL's source uses "
+        "PEP 695 generics a pre-3.12 bundle cannot parse, so the app would crash on "
+        "launch (#755). Re-run with Python 3.14+."
+    )
+
 # This build script lives in scripts/ (build tooling, deliberately outside the
 # bundled `quill` package), yet it imports the first-party `quill` package and
 # points py2app at the in-package macOS entry point. Running it as
@@ -29,6 +46,7 @@ import py2app.build_app as _py2app_build_app
 from setuptools import setup
 
 from quill import __version__
+from quill.build_info import get_short_version
 
 _orig_py2app_finalize = _py2app_build_app.py2app.finalize_options
 
@@ -55,14 +73,67 @@ OPTIONS = {
     # ``.dylibs`` (libjpeg, libfreetype, libwebp, ...); inside the zip those
     # dylibs cannot be code-signed, which fails notarization. Keeping PIL
     # unzipped puts them in ``PIL/.dylibs/`` where the inside-out signing pass
-    # in build_macos.sh reaches them.
+    # in build_macos.sh reaches them. protobuf ships the native
+    # ``google/_upb/_message.abi3.so`` for the same reason, but ``google`` is a
+    # PEP 420 namespace package (no ``__init__.py``) that py2app's package
+    # finder cannot resolve, so it cannot be listed here. build_macos.sh instead
+    # lifts any native binary out of python311.zip before signing.
     "packages": ["quill", "PIL"],
-    "includes": ["wx"],
+    # nacl (PyNaCl) is imported lazily/function-locally by quill.tools.signing
+    # (and under TYPE_CHECKING only), so py2app's import tracer can miss it --
+    # list it explicitly so the macOS build bundles Quillin signature
+    # verification (see pyproject [ui] / requirements.txt). nacl ships a
+    # native libsodium binding (cffi); if notarization fails on its .so,
+    # build_macos.sh's native-binary-out-of-zip lift (the protobuf path)
+    # should cover it -- verify on a real build.
+    # PyObjC (objc + AppKit/Foundation) is imported lazily too -- inside
+    # _AppKitBridge.__init__ (quill/ui/nstextview_rtf_surface.py, the macOS
+    # rich text bridge), _pin_macos_editor_accessibility_role (the #616
+    # VoiceOver role pin), and the macOS clipboard-collector change counter --
+    # so the tracer misses all of it. List it explicitly so rich RTF/Word
+    # editing works out of the box on the Mac with nothing for the user to
+    # install (and so the VoiceOver role pin actually ships; a missed AppKit
+    # made it a silent no-op in the .app). The pyobjc wheel is installed by
+    # macos-release.yml via the [macos] extra.
+    # PyGithub (top-level module `github`) is imported function-locally by
+    # quill.core.github.github_provider, guarded by require_pygithub(). The
+    # File > Open > GitHub Repository... menu item is always shown, so without
+    # bundling PyGithub the shipped .app raises GitHubDependencyError ("pip
+    # install quill[github]") -- useless advice inside a packaged app. List it
+    # explicitly and install the [github] extra in macos-release.yml so the
+    # feature actually works in the DMG.
+    # Document readers, all imported function-locally so the tracer misses them
+    # (#1279): `docx` (python-docx, a base dependency) is how Word files are read
+    # -- without it a Word document opens through the bare raw-XML floor, which is
+    # exactly the "why is my document one flat block of text" report that started
+    # this. pdfplumber/pdfminer/pypdf are the PDF text readers (quill/io/pdf.py has
+    # none without them) and openpyxl reads .xlsx sheets; the `office-text` extra
+    # installed by macos-release.yml puts them in the build environment. Each
+    # carries native code (lxml, pypdfium2) but needs no `packages` entry:
+    # build_macos.sh lifts any zipped package with a .so/.dylib out of the zip
+    # before signing.
+    "includes": [
+        "wx",
+        "nacl",
+        "github",
+        "objc",
+        "AppKit",
+        "Foundation",
+        "docx",
+        "pdfplumber",
+        "pdfminer",
+        "pypdf",
+        "openpyxl",
+    ],
+    # No bug-report credential ships (2026-09-26: feedback is email-only). The
+    # old build-time GitHub token module and its client must never be traced in;
+    # build_macos.sh also refuses a stale token file in the tree and in the .app.
+    "excludes": ["quill._feedback_token", "feedback_hub"],
     "plist": {
         "CFBundleName": APP_DISPLAY_NAME,
         "CFBundleDisplayName": APP_DISPLAY_NAME,
         "CFBundleIdentifier": BUNDLE_IDENTIFIER,
-        "CFBundleShortVersionString": __version__,
+        "CFBundleShortVersionString": get_short_version(),
         "CFBundleVersion": __version__,
         "LSMinimumSystemVersion": "12.0",
         "NSHighResolutionCapable": True,

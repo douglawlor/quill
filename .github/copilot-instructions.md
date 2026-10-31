@@ -2,34 +2,49 @@
 
 ## Repository state
 
-This repository contains the implementation source tree together with the product requirements document under `docs/QUILL-PRD.md` and `docs/QUILL-PRD.html`.
+This repository contains the implementation source tree together with the product requirements document under `docs/Product Requirement Documents and Specifications/QUILL-PRD.md` and `docs/QUILL-PRD.html`.
 
 When generating code or task plans, treat the PRD as the source of truth for intended architecture and conventions.
+For the detailed day-to-day command and invariant reference, read
+[`CLAUDE.md`](../../CLAUDE.md); keep this file as the concise, always-on guide.
 
 ## Build, test, and lint commands
 
-There are no runnable project commands in this repo yet. The PRD defines the expected toolchain and CI commands for the future codebase:
+The project has a runnable test suite and CI gates. Use focused tests while
+developing, then run the narrowest applicable quality checks:
 
 ```powershell
 # Environment setup
-uv python install 3.12
+uv python install 3.14
 uv sync --all-extras
 pre-commit install
 
-# Lint + type-check (planned CI)
+# Fast test paths
+pytest -m smoke -q
+pytest tests\unit\path\to\test_file.py::test_name -q
+pytest -q -n 8 --dist loadgroup
+
+# Lint + strict type-check
 ruff check .
-ruff format .
+ruff format --check .
 mypy quill\core quill\io
 
-# Tests (planned CI)
-pytest tests\unit -n auto
-pytest tests\integration
-pytest tests\a11y
-pytest tests\perf
-
-# Single test pattern (pytest)
-pytest tests\unit\path\to\test_file.py::test_name
+# Optional suites
+RUN_PERF=1 pytest -m perf -q
+$env:QUILL_UIA_TESTS = "1"; pytest -m uia -q
 ```
+
+`tests/conftest.py` forces `quill.core.paths._DEV_BUILD = True` and puts the
+pytest temp root under the user home directory. This is what makes per-test
+`QUILL_DATA_DIR` overrides safe; preserve it and use `tmp_path` for isolated
+persistence tests. The parallel command above serializes `tests/unit/ui` on
+one worker because wx, clipboard, hotkey, and screen-reader resources are
+process-global.
+
+`quill/core` and `quill/io` are strict and wx-free. Keep `mypy` scoped to those
+layers; `quill/ui` is gradually typed. Before changing the UI dependency, note
+that `wxPython` is exactly pinned in `pyproject.toml` because screen-reader
+acceptance covers that tested build, not every upstream wx release.
 
 ## High-level architecture (from PRD)
 
@@ -42,7 +57,10 @@ Quill is designed as a screen-reader-first Windows desktop app in Python + wxPyt
 - `quill/ai/*`: provider adapters and safety/consent gating for networked actions.
 - `quill/plugins/*`: plugin API + manifest validation (v1.0 loader skeleton).
 - `quill/tools/*`: internal CLIs (a11y audit, docs generators, diagnostics helpers).
-- `tests/{unit,integration,a11y,perf,fixtures}`: split test strategy reflected in CI.
+- `quill/stability/*`: cross-cutting runtime safety such as crash reporting,
+  safe subprocesses, redaction, and background task management.
+- `tests/{unit,stability,integration,a11y,perf}`: split test strategy reflected
+  in CI.
 
 Concurrency model in the PRD:
 
@@ -138,7 +156,7 @@ rules in addition to everything above.
 ### Out of scope for 1.0 (do NOT work on these)
 
 - axe-core / vnu (Nu Html Checker) HTML/CSS/SVG validation.
-- BITS Whisperer.
+- QUILL Whisperer.
 - The GLOW watch-action binding (WATCH-8) and the axe-core / Accessibility
   Agents workstream (AX-A..F).
 
@@ -164,7 +182,7 @@ sequenced after Tier 4) now that the shared `quill-glow-core` engine is green.
 
 ## Keep dialogs.md current
 
-`dialogs.md` in the repo root is the master manual regression checklist for every
+`docs/qa/dialogs.md` is the master manual regression checklist for every
 user-facing dialog in QUILL, each mapped to the keyboard command or menu path
 that opens it. It must stay a faithful, complete map of the shipped dialogs.
 
@@ -178,8 +196,8 @@ that opens it. It must stay a faithful, complete map of the shipped dialogs.
   the literal binding from `quill/core/keymap.py`). Nested dialogs go in the
   nested section noting their parent; startup-only dialogs go in the startup
   section noting their trigger.
-- Do not tick checkboxes in `dialogs.md` from code changes. The checkboxes record
-  the outcome of a manual regression pass and are ticked by a human tester.
+- Do not check checkboxes in `dialogs.md` from code changes. The checkboxes record
+  the outcome of a manual regression pass and are checked by a human tester.
 - The checklist is the manual companion to the A11Y-4 machine-enforced dialog
   contract guard; keep both in mind when touching dialog construction.
 

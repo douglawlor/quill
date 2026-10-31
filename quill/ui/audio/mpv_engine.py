@@ -1,0 +1,414 @@
+"""libmpv playback backend for the Audio Studio player (optional, on demand).
+
+The player's default backend is ``wx.media`` (WMP — zero new dependencies).
+This module adds the ChapterForge-grade alternative the ``AudioEngine``
+protocol was shaped for: **libmpv**, which brings gapless playback, exact
+seeking, and wide format coverage — chapter navigation that feels instant on
+8-hour books.
+
+libmpv is *not* bundled. :func:`find_libmpv` looks for ``libmpv-2.dll`` in,
+in order: the ``QUILL_LIBMPV`` environment override (a file or a folder),
+the mpv engine pack folder (``<app data>/engine-packs/mpv`` — where the
+on-demand assets-v1 download lands, see :mod:`quill.core.mpv_install`), and
+next to the running executable. No DLL found simply means the player stays on the
+wx.media backend; nothing else changes.
+
+The binding is a deliberately small ctypes wrapper over the libmpv client
+API — create, initialize, command, get/set property, destroy — with all
+calls on the UI thread and a ``wx.Timer`` polling ``duration`` /
+``eof-reached``, so no mpv event thread ever touches wx.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import logging
+import os
+import sys
+from collections.abc import Callable
+from pathlib import Path
+
+import wx
+
+_log = logging.getLogger(__name__)
+
+_DLL_NAMES = ("libmpv-2.dll", "mpv-2.dll", "libmpv.dll")
+_POLL_MS = 200
+
+# libmpv client API constants (client.h).
+_MPV_FORMAT_STRING = 1
+_MPV_FORMAT_FLAG = 3
+_MPV_FORMAT_DOUBLE = 5
+
+
+def mpv_pack_dir() -> Path:
+    """Where the on-demand mpv component installs (assets-v1 flow).
+
+    Defers to :func:`quill.core.mpv_install.managed_mpv_dir` so the downloader
+    and the resolver cannot disagree about the folder. They agreed by
+    coincidence while both spelled it out; a downloader writing where the
+    resolver does not look would report success and change nothing.
+    """
+    from quill.core.mpv_install import managed_mpv_dir
+
+    return managed_mpv_dir()
+
+
+def find_libmpv() -> Path | None:
+    """The libmpv DLL to use, or None (= stay on the wx.media backend)."""
+    override = os.environ.get("QUILL_LIBMPV", "").strip()
+    candidates: list[Path] = []
+    if override:
+        path = Path(override)
+        candidates += [path] if path.suffix else [path / name for name in _DLL_NAMES]
+    # Offline Edition bundles libmpv under {app}/tools/mpv so the player finds
+    # it on an air-gapped machine without the on-demand download.
+    app_root = os.environ.get("QUILL_APP_ROOT", "").strip()
+    if app_root:
+        candidates += [Path(app_root) / "tools" / "mpv" / name for name in _DLL_NAMES]
+    # The runtime's own folder. A Quill Radio started straight through
+    # QuillVilleRuntime.exe -- a taskbar pin Windows made from the running
+    # process -- has no launcher to export QUILL_APP_ROOT, and missed the
+    # libmpv bundled beside the runtime (2026-09-27).
+    exe_dir = Path(sys.executable).parent
+    candidates += [exe_dir / "tools" / "mpv" / name for name in _DLL_NAMES]
+    try:
+        pack = mpv_pack_dir()
+        candidates += [pack / name for name in _DLL_NAMES]
+    except Exception:  # noqa: BLE001 - no app data dir in odd harnesses
+        pass
+    candidates += [exe_dir / name for name in _DLL_NAMES]
+    # Running from a source checkout: the repo's own build staging
+    # (build/deps/mpv), which is where scripts/ put libmpv for the
+    # installers. Without this a developer running `python -m quill.apps.radio`
+    # from the tree had no mpv at all -- Preferences offered only Automatic
+    # and Windows Media, and no output-device routing -- while the DLL sat
+    # in the checkout the whole time (reported 2026-09-29). Never in a
+    # frozen build: a shipped app must not read a build directory. Asked
+    # through quill.core.source_tools, so the test suite can say "nothing
+    # staged" in one place (2026-10-17).
+    from quill.core import source_tools
+
+    staged = source_tools.staged_tool_dir("mpv")
+    if staged is not None:
+        candidates += [staged / name for name in _DLL_NAMES]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+class _MpvClient:
+    """Minimal ctypes binding: exactly what the engine protocol needs."""
+
+    def __init__(self, dll_path: Path) -> None:
+        lib = ctypes.CDLL(str(dll_path))
+        lib.mpv_create.restype = ctypes.c_void_p
+        lib.mpv_create.argtypes = []
+        lib.mpv_initialize.restype = ctypes.c_int
+        lib.mpv_initialize.argtypes = [ctypes.c_void_p]
+        lib.mpv_terminate_destroy.restype = None
+        lib.mpv_terminate_destroy.argtypes = [ctypes.c_void_p]
+        lib.mpv_command.restype = ctypes.c_int
+        lib.mpv_command.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_char_p)]
+        lib.mpv_set_option_string.restype = ctypes.c_int
+        lib.mpv_set_option_string.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+        ]
+        lib.mpv_set_property_string.restype = ctypes.c_int
+        lib.mpv_set_property_string.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_char_p,
+        ]
+        lib.mpv_get_property.restype = ctypes.c_int
+        lib.mpv_get_property.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+        ]
+        lib.mpv_free.restype = None
+        lib.mpv_free.argtypes = [ctypes.c_void_p]
+        self._lib = lib
+        handle = lib.mpv_create()
+        if not handle:
+            raise OSError("mpv_create failed")
+        self._handle = ctypes.c_void_p(handle)
+        # Audio only, no window, no key bindings; keep-open so end-of-file is a
+        # queryable state instead of an unload; idle so the core waits for us.
+        # config=no and ytdl=no: never read an mpv.conf from the user's profile,
+        # and never let mpv's ytdl hook shell out to a yt-dlp.exe it finds on the
+        # host's PATH (which would write ~/.cache/yt-dlp) -- Radio resolves
+        # YouTube itself, so the hook only ever ran on a URL that failed anyway.
+        for option, value in (
+            ("config", "no"),
+            ("ytdl", "no"),
+            ("vid", "no"),
+            ("audio-display", "no"),
+            ("terminal", "no"),
+            ("input-default-bindings", "no"),
+            ("osc", "no"),
+            ("load-scripts", "no"),
+            ("load-stats-overlay", "no"),
+            ("load-console", "no"),
+            ("load-auto-profiles", "no"),
+            ("load-select", "no"),
+            ("load-positioning", "no"),
+            ("load-commands", "no"),
+            ("load-context-menu", "no"),
+            ("idle", "yes"),
+            ("keep-open", "yes"),
+        ):
+            status = lib.mpv_set_option_string(self._handle, option.encode(), value.encode())
+            if status < 0:
+                _log.warning("libmpv did not accept embedded-player option %s", option)
+        if lib.mpv_initialize(self._handle) < 0:
+            lib.mpv_terminate_destroy(self._handle)
+            raise OSError("mpv_initialize failed")
+
+    def close(self) -> None:
+        if self._handle:
+            self._lib.mpv_terminate_destroy(self._handle)
+            self._handle = ctypes.c_void_p(None)
+
+    def command(self, *args: str) -> None:
+        if not self._handle:
+            raise OSError("The mpv client is no longer available.")
+        encoded = [a.encode("utf-8") for a in args]
+        array = (ctypes.c_char_p * (len(encoded) + 1))(*encoded, None)
+        status = int(self._lib.mpv_command(self._handle, array))
+        if status < 0:
+            raise OSError(f"mpv rejected an audio command (status {status}).")
+
+    def set_str(self, name: str, value: str) -> int:
+        """Set a property; the mpv status (0 on success, negative on refusal)."""
+        if not self._handle:
+            raise OSError("The mpv client is no longer available.")
+        return int(self._lib.mpv_set_property_string(self._handle, name.encode(), value.encode()))
+
+    def get_double(self, name: str) -> float | None:
+        if not self._handle:
+            raise OSError("The mpv client is no longer available.")
+        out = ctypes.c_double(0.0)
+        status = self._lib.mpv_get_property(
+            self._handle, name.encode(), _MPV_FORMAT_DOUBLE, ctypes.byref(out)
+        )
+        return float(out.value) if status >= 0 else None
+
+    def get_flag(self, name: str) -> bool | None:
+        if not self._handle:
+            raise OSError("The mpv client is no longer available.")
+        out = ctypes.c_int(0)
+        status = self._lib.mpv_get_property(
+            self._handle, name.encode(), _MPV_FORMAT_FLAG, ctypes.byref(out)
+        )
+        return bool(out.value) if status >= 0 else None
+
+    def get_str(self, name: str) -> str | None:
+        """A property as text (mpv formats list properties as JSON), or None.
+
+        The returned C string is owned by libmpv and must be released with
+        ``mpv_free`` -- copied out before freeing.
+        """
+        if not self._handle:
+            raise OSError("The mpv client is no longer available.")
+        out = ctypes.c_char_p(None)
+        status = self._lib.mpv_get_property(
+            self._handle, name.encode(), _MPV_FORMAT_STRING, ctypes.byref(out)
+        )
+        if status < 0 or out.value is None:
+            return None
+        try:
+            return out.value.decode("utf-8", "replace")
+        finally:
+            self._lib.mpv_free(out)
+
+
+class MpvAudioEngine:
+    """The libmpv implementation of the player's ``AudioEngine`` protocol.
+
+    Same contract as ``WxMediaEngine``: all calls on the UI thread, callbacks
+    on the UI thread (driven by a polling timer, never an mpv event thread).
+    """
+
+    def __init__(
+        self,
+        parent: wx.Window,
+        *,
+        on_loaded: Callable[[int], None],
+        on_finished: Callable[[], None],
+        on_error: Callable[[str], None],
+        dll_path: Path | None = None,
+        audio_device: str = "",
+    ) -> None:
+        self._parent = parent
+        self._parent_id = parent.GetId()
+        path = dll_path or find_libmpv()
+        if path is None:
+            raise OSError("libmpv is not installed")
+        self._mpv = _MpvClient(path)
+        self._audio_device = ""
+        if audio_device:
+            self.set_audio_device(audio_device)
+        self._on_loaded = on_loaded
+        self._on_finished = on_finished
+        self._on_error = on_error
+        self._loaded = False
+        self._terminated = False
+        self._eof_fired = False
+        self._length_ms = 0
+        self._timer = wx.Timer(parent)
+        parent.Bind(wx.EVT_TIMER, self._on_poll, self._timer)
+        parent.Bind(wx.EVT_WINDOW_DESTROY, self._on_parent_destroyed)
+
+    # -- engine protocol -------------------------------------------------------
+
+    def load(self, path: str) -> bool:
+        self._loaded = False
+        self._eof_fired = False
+        self._length_ms = 0
+        try:
+            self._set_pause(True)
+            self._mpv.command("loadfile", path, "replace")
+        except Exception:  # noqa: BLE001 - a bad file must not crash the studio
+            _log.exception("mpv loadfile failed")
+            self._on_error("This file could not be loaded for playback.")
+            return False
+        self._timer.Start(_POLL_MS)
+        return True
+
+    def close(self) -> None:
+        self._stop_timer()
+        self._loaded = False
+        if not self._terminated:
+            self._mpv.command("stop")
+
+    def terminate(self) -> None:
+        if self._terminated:
+            return
+        self._terminated = True
+        self._stop_timer()
+        self._loaded = False
+        self._mpv.close()
+
+    def _stop_timer(self) -> None:
+        try:
+            self._timer.Stop()
+        except RuntimeError:
+            _log.exception("The mpv polling timer was already destroyed")
+
+    def _set_pause(self, paused: bool) -> None:
+        status = self._mpv.set_str("pause", "yes" if paused else "no")
+        if status < 0:
+            raise OSError(f"mpv rejected a playback change (status {status}).")
+
+    def play(self) -> None:
+        if not self._loaded:
+            raise OSError("There is no loaded mpv audio to play.")
+        self._set_pause(False)
+
+    def pause(self) -> None:
+        if not self._loaded:
+            raise OSError("There is no loaded mpv audio to pause.")
+        self._set_pause(True)
+
+    def stop(self) -> None:
+        if self._loaded:
+            self._set_pause(True)
+            self.seek(0, resume=False)
+
+    def seek(self, ms: int, *, resume: bool | None = None) -> None:
+        if not self._loaded:
+            return
+        was_playing = self.is_playing()
+        self._eof_fired = False
+        self._mpv.command("seek", f"{max(0, int(ms)) / 1000.0:.3f}", "absolute+exact")
+        should_play = was_playing if resume is None else resume
+        self._set_pause(not should_play)
+
+    def position_ms(self) -> int:
+        if not self._loaded:
+            return 0
+        value = self._mpv.get_double("time-pos")
+        return int(value * 1000) if value is not None and value > 0 else 0
+
+    def length_ms(self) -> int:
+        return self._length_ms if self._loaded else 0
+
+    def is_playing(self) -> bool:
+        if not self._loaded:
+            return False
+        paused = self._mpv.get_flag("pause")
+        return paused is False
+
+    def set_volume(self, percent: int) -> None:
+        self._mpv.set_str("volume", str(max(0, min(100, int(percent)))))
+
+    def set_rate(self, rate: float) -> None:
+        """Playback speed (1.0 = normal); mpv's scaletempo keeps the pitch."""
+        self._mpv.set_str("speed", f"{max(0.25, min(4.0, float(rate))):.2f}")
+
+    def set_audio_device(self, name: str) -> None:
+        """Route output to mpv device *name* ("" = system default).
+
+        Runtime-settable: mpv switches a playing file to the new device with
+        no reload. The same call Quill Radio's own mpv engine makes, on the
+        same ``wasapi/{guid}`` names the family shares
+        (:mod:`quill.ui.audio.output_routing`), so a device chosen in one app
+        is understood by every other and by the Windows Media engine too.
+
+        A name mpv refuses leaves the previous device playing rather than
+        silence: the caller is told by :meth:`audio_device` still reporting
+        the old one.
+        """
+        status = self._mpv.set_str("audio-device", name.strip() or "auto")
+        if status < 0:  # a refused name; mpv keeps the previous device
+            _log.warning("mpv refused audio-device %r (status %s)", name, status)
+            return
+        self._audio_device = name.strip()
+
+    def audio_device(self) -> str:
+        """The device this engine is routed to ("" = system default)."""
+        return self._audio_device
+
+    def set_audio_filters(self, chain: str) -> None:
+        """Apply an ffmpeg audio-filter chain (mpv ``af``): EQ, boost, silence.
+
+        ``chain`` is a comma-separated ffmpeg filter string (see
+        :func:`quill.core.media.build_audio_filters`); an empty string clears it.
+        Only libmpv can do this -- the ``wx.media`` backend has no equivalent.
+        """
+        self._mpv.set_str("af", chain)
+
+    # -- polling ---------------------------------------------------------------
+
+    def _on_poll(self, _evt: wx.TimerEvent) -> None:
+        if self._terminated:
+            return
+        try:
+            if not self._loaded:
+                duration = self._mpv.get_double("duration")
+                if duration is not None and duration > 0:
+                    self._loaded = True
+                    self._length_ms = int(duration * 1000)
+                    self._set_pause(True)
+                    self._on_loaded(self._length_ms)
+                return
+            if not self._eof_fired and self._mpv.get_flag("eof-reached"):
+                self._eof_fired = True
+                self._on_finished()
+        except Exception:  # noqa: BLE001 - polling must never take the app down
+            _log.exception("mpv poll failed")
+            self._stop_timer()
+            self._on_error("The audio engine could not continue playback.")
+
+    def _on_parent_destroyed(self, evt: wx.WindowDestroyEvent) -> None:
+        from quill.ui.surface_lifetime import destroy_event_matches
+
+        evt.Skip()
+        if not destroy_event_matches(evt, self._parent, self._parent_id):
+            return
+        self.terminate()

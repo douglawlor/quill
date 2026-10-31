@@ -58,7 +58,16 @@ def call_ui_safely(func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
 
     call_after = getattr(wx, "CallAfter", None) if wx is not None else None
     if callable(call_after):
-        call_after(wrapped)
+        get_app = getattr(wx, "GetApp", None)
+        if callable(get_app) and get_app() is None:
+            logger.info("UI callback retained only by its worker: wx.App has already closed")
+            return
+        try:
+            call_after(wrapped)
+        except AssertionError:
+            if not callable(get_app) or get_app() is not None:
+                raise
+            logger.info("UI callback not delivered: wx.App closed while scheduling it")
         return
     logger.warning(
         "call_ui_safely: wx.CallAfter unavailable; running %s synchronously on caller thread",
@@ -72,7 +81,14 @@ class CoalescedUiReporter:
         self.ui_callback = ui_callback
         self.min_interval_seconds = min_interval_seconds
         self._lock = threading.Lock()
-        self._last_emit = 0.0
+        # time.monotonic()'s epoch is undefined (on Windows it's tied to
+        # system uptime via GetTickCount64) -- seeding this at 0.0 meant the
+        # very first report() on a freshly-booted machine with under
+        # min_interval_seconds of uptime would compute now - 0.0 as SMALLER
+        # than the interval and silently skip scheduling the first flush.
+        # -inf guarantees the first report always schedules regardless of
+        # the clock's absolute value.
+        self._last_emit = float("-inf")
         self._pending: tuple[tuple[Any, ...], dict[str, Any]] | None = None
         self._scheduled = False
 

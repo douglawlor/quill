@@ -14,7 +14,8 @@ Focus returns to the editor on close, meeting the A11Y-4 dialog contract.
 
 from __future__ import annotations
 
-from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
+from quill.ui.dialog_contract import apply_modal_ids, set_accessible_name, show_modal_dialog
+from quill.ui.dpi import dip_size
 
 
 class OcrReviewDialog:
@@ -54,7 +55,7 @@ class OcrReviewDialog:
         self.dialog = wx.Dialog(
             parent, title=title, style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
         )
-        self.dialog.SetSize((820, 640))
+        self.dialog.SetSize(dip_size(self.dialog, 820, 640))
         self.dialog.SetName(title)
 
         panel = wx.Panel(self.dialog)
@@ -72,7 +73,8 @@ class OcrReviewDialog:
         root.Add(label, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         self.text_ctrl = wx.TextCtrl(panel, value=text, style=wx.TE_MULTILINE | wx.TE_READONLY)
-        self.text_ctrl.SetMinSize((760, 440))
+        set_accessible_name(self.text_ctrl, "Recognized text")
+        self.text_ctrl.SetMinSize(dip_size(self.text_ctrl, 760, 440))
         root.Add(self.text_ctrl, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         # Button row using a standard dialog button sizer for platform-native,

@@ -1,0 +1,1890 @@
+"""Offline speech model + optional-component acquisition for MainFrame
+(CQ-1 decomposition).
+
+``SpeechDownloadsMixin`` owns the download/install surface split off from
+``SpeechCommandsMixin``: the Speech Models manager, the HuggingFace token
+prompt, the Optional Components hub (install / remove / test / manage), the
+guided offline-speech setup, and every ``download_*`` acquisition
+(ffmpeg, faster-whisper, DECtalk, Piper, Node runtime, eSpeak-NG,
+Kokoro, the braille pack, MathCAT, PDF-OCR support, Pandoc, audio extras)
+plus per-model download/remove/test with progress. Each acquisition is a
+user-initiated action routed through ``_run_background_task`` (or a worker
+thread) with a progress dialog; the component sources are the verified
+release-asset feeds. Extracted verbatim from ``main_frame_speech.py``; runs
+on ``MainFrame`` (``self``). All network fetches here are covered by the
+network egress audit.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from quill.core.error_codes import user_facing_message
+
+
+class SpeechDownloadsMixin:
+    # -- model manager ---------------------------------------------------- #
+
+    def open_speech_models(self) -> None:
+        """Open the unified Speech Hub on the Dictation (Offline) tab."""
+        from quill.ui.speech_hub_dialog import TAB_DICTATION_OFFLINE
+
+        self.open_speech_hub(TAB_DICTATION_OFFLINE)
+
+    def set_huggingface_token(self) -> None:
+        """Store an optional Hugging Face access token for model downloads (#617).
+
+        A token is not required for QUILL's public models, but it raises Hugging
+        Face's anonymous rate limits. First-time users are guided to create one
+        (with an offer to open the token page); the token is then entered masked
+        and saved to the OS credential store, not to settings. Blank removes it.
+        """
+        import webbrowser
+
+        from quill.core.speech.hf_auth import HF_TOKEN_URL, load_hf_token, save_hf_token
+
+        wx = self._wx
+        current = load_hf_token()
+        if not current:
+            steps = (
+                "A free Hugging Face access token raises download rate limits. It is "
+                "optional — QUILL's speech models work without one.\n\n"
+                "To create a token:\n"
+                "1. Sign in or sign up at huggingface.co (it is free).\n"
+                "2. Open your profile menu, then Settings, then Access Tokens.\n"
+                "3. Create a token with the 'Read' role and copy it.\n"
+                "4. Come back here and paste it.\n\n"
+                "Open the Hugging Face token page in your browser now?"
+            )
+            choice = self._show_message_box(
+                steps, "Hugging Face Token", wx.ICON_INFORMATION | wx.YES_NO | wx.CANCEL
+            )
+            if choice == wx.CANCEL:
+                return
+            if choice == wx.YES:
+                opened = webbrowser.open(HF_TOKEN_URL)
+                self._set_status(
+                    "Opened the Hugging Face token page in your browser."
+                    if opened
+                    else f"Create a token at {HF_TOKEN_URL}"
+                )
+        prompt = "Paste your Hugging Face access token. Leave blank to remove a saved token."
+        dlg = wx.PasswordEntryDialog(self.frame, prompt, "Hugging Face Token", current)
+        if self._show_modal_dialog(dlg, "Hugging Face Token") != wx.ID_OK:
+            return
+        value = dlg.GetValue().strip()
+        try:
+            save_hf_token(value)
+        except Exception as exc:  # noqa: BLE001 - surface a clean message
+            self._set_status(f"Could not save token: {user_facing_message(exc)}")
+            return
+        message = "Hugging Face token saved." if value else "Hugging Face token cleared."
+        self._announce(message)
+        self._set_status(message)
+
+    def download_ffmpeg(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Download an official ffmpeg build so any audio/video format transcribes.
+
+        ffmpeg is GPL/LGPL and QUILL does not bundle it; this fetches it from the
+        official builder on an explicit action, into the QUILL tools folder the
+        resolver searches. Runs on a worker thread behind a cancelable percentage.
+        """
+        import threading
+
+        from quill.core.speech.ffmpeg import ffmpeg_available
+        from quill.core.speech.ffmpeg_install import (
+            FFmpegInstallError,
+            ffmpeg_install_supported,
+            install_ffmpeg,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if not ffmpeg_install_supported():
+            self._show_message_box(
+                "Automatic ffmpeg download is Windows-only. On macOS install it with "
+                "Homebrew (brew install ffmpeg); on Linux use your package manager.",
+                "Download FFmpeg",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if ffmpeg_available():
+            again = self._show_message_box(
+                "ffmpeg is already available on this computer. Download QUILL's own "
+                "managed copy anyway?",
+                "Download FFmpeg",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if again != wx.YES:
+                return
+        confirm = self._show_message_box(
+            "Download ffmpeg (about 110 MB) from the official Gyan.dev build so QUILL "
+            "can transcribe MP3, M4A, MP4, and other formats? ffmpeg is open-source "
+            "(GPL/LGPL) and is fetched directly from the builder; QUILL does not bundle "
+            "it.",
+            "Download FFmpeg",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading FFmpeg",
+            "Preparing to download ffmpeg...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading ffmpeg.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise FFmpegInstallError("Download cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                install_ffmpeg(_on_progress)
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "ffmpeg download cancelled.")
+                    wx.CallAfter(self._announce, "ffmpeg download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"Could not install ffmpeg: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._announce, f"Could not install ffmpeg. {user_facing_message(exc)}"
+                    )
+                return
+            wx.CallAfter(progress.close)
+            done = "ffmpeg installed. You can now transcribe more audio and video formats."
+            wx.CallAfter(self._set_status, done)
+            wx.CallAfter(self._announce, done)
+            if on_done is not None:
+                wx.CallAfter(on_done, True)
+
+        threading.Thread(  # GATE-40-OK: ffmpeg download worker.
+            target=_run, daemon=True
+        ).start()
+
+    def open_optional_components(self, *, preselect: str = "") -> None:
+        """Help > Download Optional Components: the one hub to see what is
+        installed versus available, download it, prove it works (Test), or remove
+        it. ``preselect`` focuses a given row on open (used by the routed startup
+        prompt and the #874 point-of-failure routes).
+
+        Test and Remove act in place; Download returns the chosen id and we run
+        that component's existing, tested, progress-reporting installer (so there
+        are no stacked download modals)."""
+        from quill.core import optional_components as oc
+        from quill.ui.optional_components_dialog import show_optional_components_picker
+
+        wx = self._wx
+        frame = self
+
+        # Per-app filtering: the editor (no allowlist) sees the whole catalog; a
+        # companion app that declares ``_optional_component_allowlist`` (e.g. Audio
+        # Studio -> speech engines, voices, and the audio pack) sees only those,
+        # so document/editor-only extras (Pandoc, PDF/OCR, braille, MathCAT, Node,
+        # Git, gh, spell dictionaries) never appear where they cannot be used.
+        allowlist = getattr(frame, "_optional_component_allowlist", None)
+
+        class _Controller:
+            def components(self) -> list:
+                items = oc.gather_optional_components()
+                if allowlist is None:
+                    return items
+                return [c for c in items if c.component_id in allowlist]
+
+            def removable(self, component_id: str) -> bool:
+                return oc.removable_path(component_id) is not None
+
+            def remove(self, component_id: str) -> bool:
+                return frame._remove_optional_component(component_id)
+
+            def test(
+                self, component_id: str, *, on_state_change: Callable[[str], None] | None = None
+            ) -> None:
+                frame._test_optional_component(component_id, on_state_change=on_state_change)
+
+            def stop_test(self, component_id: str) -> None:
+                frame._stop_active_voice_preview()
+
+            def is_previewable(self, component_id: str) -> bool:
+                from quill.core import optional_components as oc
+
+                return oc.read_aloud_engine_for_component(component_id) is not None
+
+            def can_set_default(self, component_id: str) -> bool:
+                from quill.core import optional_components as oc
+
+                return oc.read_aloud_engine_for_component(component_id) is not None
+
+            def set_default(self, component_id: str) -> None:
+                frame._set_default_voice_component(component_id)
+
+            def manage(self, component_id: str) -> None:
+                frame._manage_component_models_or_voices(component_id)
+
+        chosen = show_optional_components_picker(
+            wx, self.frame, self._show_modal_dialog, _Controller(), preselect=preselect
+        )
+        if not chosen:
+            return
+
+        # The hub closes itself to dispatch a download, so every handler reopens it
+        # on completion -- the user is never dropped out into the editor or another
+        # tab. Handlers take an on_done(success) callback for this; the guided
+        # picker already returns to the hub itself. Reselecting the row just
+        # downloaded (rather than reopening with no preselect, which lands on the
+        # first row) keeps the reopened hub from jarringly resetting to the top
+        # of the list.
+        def _back(_ok: bool = True) -> None:
+            self.open_optional_components(preselect=chosen)
+
+        if chosen.startswith("spell-"):
+            from quill.ui.spell_language import _download_then_apply
+
+            _download_then_apply(wx, self, chosen[len("spell-") :], on_done=_back)
+            return
+
+        actions = {
+            # The offline-speech row opens the guided picker (engine + model:
+            # whisper.cpp, Faster Whisper, Parakeet or Nemotron), not a bare
+            # engine download -- meet people where they are.
+            "whispercpp": self.open_guided_offline_speech,
+            "kokoro": lambda: self._download_kokoro_models(on_done=_back),
+            "piper": lambda: self.download_piper_exe(on_done=_back),
+            "espeak": lambda: self.download_espeak_exe(on_done=_back),
+            "dectalk": lambda: self.download_dectalk_exe(on_done=_back),
+            "pandoc": lambda: self.download_pandoc(on_done=_back),
+            "pdf_ocr": lambda: self.download_pdf_ocr_support(on_done=_back),
+            "node": lambda: self.download_node_runtime(on_done=_back),
+            "braille": lambda: self.download_braille_pack(on_done=_back),
+            "audio_extras": lambda: self.download_audio_extras(on_done=_back),
+            "mathcat": lambda: self.download_mathcat(on_done=_back),
+            "git": lambda: self.download_git(on_done=_back),
+            "gh": lambda: self.download_gh(on_done=_back),
+        }
+        action = actions.get(chosen)
+        if action is not None:
+            action()
+
+    def _remove_optional_component(self, component_id: str) -> bool:
+        """Delete QUILL's downloaded copy of *component_id* and close the loop.
+
+        Resets the active Read Aloud engine to the always-present SAPI 5 when the
+        removed engine was the active one (dependent features are dynamic, so they
+        degrade on their own). Announces the outcome. Returns True on success."""
+        from quill.core import optional_components as oc
+
+        if not oc.remove_component(component_id):
+            self._set_status("There is nothing for QUILL to remove for this component.")
+            return False
+        engine = oc.read_aloud_engine_for_component(component_id)
+        if engine and getattr(self.settings, "read_aloud_engine", "") == engine:
+            from quill.core.settings import save_settings
+
+            self.settings.read_aloud_engine = "sapi5"
+            save_settings(self.settings)
+            self._announce("Read Aloud switched back to the system voice.")
+        # _set_status already speaks; a following _announce would double-speak (#728).
+        self._set_status(f"Removed {component_id}.")
+        return True
+
+    def _test_optional_component(
+        self, component_id: str, *, on_state_change: Callable[[str], None] | None = None
+    ) -> None:
+        """Prove *component_id* works: voices play a spoken sample; other
+        components run their wx-free self-test on a worker and announce the
+        result. Expected "get one more piece" states (no model / no voice) route
+        the user to Manage rather than erroring or offering a bug report."""
+        from quill.core import optional_components as oc
+
+        engine = oc.read_aloud_engine_for_component(component_id)
+        if engine is not None:
+            voices = oc.available_live_voices(engine)
+            if not voices:
+                # Engine present but no voice to speak yet: route to Manage Voices
+                # instead of previewing an empty voice (which errors with "model
+                # file not found" and leaves focus stranded behind the hub).
+                self._set_status(
+                    f"No {engine} voice is downloaded yet — opening Manage Voices to get one."
+                )
+                self._manage_component_models_or_voices(component_id)
+                return
+            # One voice: play it straight away (no dialog friction). More than one:
+            # let the user pick which to hear via an accessible single-select
+            # dialog, so Test is a small delight rather than always voice #1.
+            chosen = voices[0]
+            if len(voices) > 1:
+                picked = self._choose_voice_to_preview(engine, voices)
+                if picked is None:
+                    self._set_status("Voice test cancelled.")
+                    return
+                chosen = picked
+            self._announce(f"Playing {chosen.name}.")
+            self._preview_voice(
+                engine,
+                chosen.id,
+                live=True,
+                text=oc.voice_preview_phrase(),
+                on_state_change=on_state_change,
+            )
+            return
+
+        def _work(_progress: Callable[[str, int, int], None]) -> object:
+            return oc.verify_component(component_id)
+
+        def _done(result: object) -> None:
+            # _set_status speaks the summary; a second _announce would double it (#728).
+            summary = getattr(result, "summary", "")
+            self._set_status(summary)
+            if getattr(result, "ok", True):
+                # A non-voice component has no audio to play, so a passing Test
+                # showed only a status-bar flash -- which does not speak in the
+                # standalone shell, making Test look like a no-op. Show the
+                # result in a dialog so Test visibly (and audibly) confirms it.
+                self._show_message_box(
+                    summary or "It works.",
+                    f"Test {component_id}",
+                    self._wx.OK | self._wx.ICON_INFORMATION,
+                )
+                return
+            # An expected "needs one more piece" outcome is not a bug. Today the
+            # only remedy is "no offline speech model yet" -- reopen the same
+            # guided engine+model picker used for the initial download (pick a
+            # model, install it, back to the hub) rather than the full, multi-tab
+            # Speech Settings dialog; don't offer a bug report for this normal,
+            # not-yet-downloaded state.
+            if getattr(result, "remedy", ""):
+                self.open_guided_offline_speech()
+                return
+            self._offer_component_bug_report(component_id, summary, getattr(result, "detail", ""))
+
+        self._run_background_task(f"Testing {component_id}", _work, _done)
+
+    def _choose_voice_to_preview(
+        self,
+        engine: str,
+        voices: list,
+        *,
+        title: str = "Choose a Voice to Hear",
+        prompt: str | None = None,
+    ) -> object | None:
+        """Accessible single-select voice picker; returns the choice, or None.
+
+        Native ``wx.SingleChoiceDialog`` (screen-reader friendly, keyboard
+        navigable) through the standard modal contract. Voice enumeration and
+        label text are wx-free in ``optional_components`` so they stay testable.
+        ``title``/``prompt`` let callers reuse it for picking a default voice,
+        not only a voice to hear.
+        """
+        from quill.core import optional_components as oc
+
+        wx = self._wx
+        labels = [oc.voice_pick_label(v) for v in voices]
+        with wx.SingleChoiceDialog(
+            self.frame, prompt or f"Pick a {engine} voice to hear:", title, labels
+        ) as dlg:
+            dlg.SetSelection(0)
+            if self._show_modal_dialog(dlg, title) != wx.ID_OK:
+                return None
+            index = dlg.GetSelection()
+        return voices[index] if 0 <= index < len(voices) else None
+
+    def _apply_read_aloud_default(self, engine: str, voice_id: str) -> bool:
+        """Point Read Aloud at ``engine`` + ``voice_id``, mapping the engine to
+        its per-engine voice setting (mirrors the Manage Voices 'select' path).
+
+        Returns False without changing the active engine when a Piper voice file
+        is not actually present, so the caller can bail cleanly."""
+        wx = self._wx
+        if engine == "piper":
+            from quill.core.read_aloud import default_piper_model_dir
+
+            onnx_path = default_piper_model_dir() / f"{voice_id}.onnx"
+            if not onnx_path.exists():
+                self._show_message_box(
+                    f"'{voice_id}' is not downloaded yet. Use Manage Voices to fetch it first.",
+                    "Set as Default",
+                    wx.ICON_INFORMATION | wx.OK,
+                )
+                return False
+            self.settings.read_aloud_piper_model = str(onnx_path)
+        elif engine == "dectalk":
+            self.settings.read_aloud_dectalk_voice = voice_id
+        elif engine == "kokoro":
+            self.settings.read_aloud_kokoro_voice = voice_id
+        elif engine == "espeak":
+            self.settings.read_aloud_espeak_voice = voice_id
+        elif engine == "macos":
+            self.settings.read_aloud_macos_voice = voice_id
+        else:
+            self.settings.read_aloud_voice = voice_id
+        self.settings.read_aloud_engine = engine
+        return True
+
+    def _set_default_voice_component(self, component_id: str) -> None:
+        """Make an installed voice engine (and a chosen voice) the Read Aloud
+        default straight from the hub -- no trip through Manage Voices.
+
+        With one installed voice it applies immediately; with several it offers
+        the same accessible picker Test uses. Persists settings and announces.
+        Voice engines only; a no-op for tool/model components."""
+        from quill.core import optional_components as oc
+        from quill.core.settings import save_settings
+
+        engine = oc.read_aloud_engine_for_component(component_id)
+        if engine is None:
+            return
+        voices = oc.available_live_voices(engine)
+        if not voices:
+            self._set_status(
+                f"No {engine} voice is downloaded yet -- opening Manage Voices to get one."
+            )
+            self._manage_component_models_or_voices(component_id)
+            return
+        chosen = voices[0]
+        if len(voices) > 1:
+            picked = self._choose_voice_to_preview(
+                engine,
+                voices,
+                title="Choose the Default Voice",
+                prompt=f"Pick the {engine} voice to make your Read Aloud default:",
+            )
+            if picked is None:
+                self._set_status("Set as default cancelled.")
+                return
+            chosen = picked
+        if not self._apply_read_aloud_default(engine, str(getattr(chosen, "id", "") or "")):
+            return
+        save_settings(self.settings)
+        label = str(getattr(chosen, "name", "") or getattr(chosen, "id", "") or engine)
+        self._announce(f"{label} is now your Read Aloud default voice.")
+        self._set_status(f"Default voice set: {label} ({engine}).")
+
+    def _manage_component_models_or_voices(self, component_id: str) -> None:
+        """Route the hub's Manage button to the component's own dialog: offline
+        STT engines open Manage Speech Models; Read Aloud voice engines open
+        Manage Voices. The rich per-item screens live there, not in the hub."""
+        from quill.core.optional_components import manage_target
+
+        target = manage_target(component_id)
+        if target == "models":
+            self.open_speech_models()
+        elif target == "voices":
+            self.choose_read_aloud_configuration()
+
+    def open_guided_offline_speech(self) -> None:
+        """Guided offline-speech setup from the Download Optional Components hub:
+        pick an engine (Faster Whisper vs whisper.cpp, with explanations) and a
+        model, then install both in one flow and return to the hub."""
+        from quill.core.speech import guided_setup
+        from quill.ui.guided_speech_dialog import show_guided_speech_setup
+
+        wx = self._wx
+
+        class _Data:
+            def engine_options(self) -> list:
+                return guided_setup.offline_speech_engine_options()
+
+            def models_for(self, engine_id: str) -> list:
+                return guided_setup.models_for_engine(engine_id)
+
+            def recommended_engine(self) -> str:
+                return guided_setup.recommended_engine_id()
+
+            def default_model(self, engine_id: str) -> str:
+                return guided_setup.default_model_id(engine_id)
+
+        choice = show_guided_speech_setup(wx, self.frame, self._show_modal_dialog, _Data())
+        if choice is None:
+            return
+        engine_id, model_id = choice
+        self._install_offline_speech(engine_id, model_id)
+
+    def _ensure_offline_engine(
+        self, engine_id: str, progress: Callable[[float, str], None], cancel: object
+    ) -> None:
+        """Install the engine if it is not already present (runs on a worker)."""
+        if engine_id == "whispercpp":
+            from quill.core.speech import models
+            from quill.core.speech.providers.whispercpp import resolve_whisper_executable
+
+            if resolve_whisper_executable() is None:
+                from quill.core.release_assets import fetch_component
+
+                fetch_component(
+                    "whispercpp",
+                    models.app_data_dir() / "speech-engine",
+                    progress=progress,
+                    should_cancel=cancel.is_set,  # type: ignore[attr-defined]
+                    label="Downloading offline speech engine...",
+                )
+        else:
+            # The pip-installed offline engines share one install path: install the
+            # pack if the runtime is absent, then activate it on sys.path. Unknown
+            # engine ids are a no-op (unchanged behavior).
+            import quill.core.speech.engine_install as ei
+
+            pip_engines = {
+                "fasterwhisper": (ei.is_faster_whisper_available, ei.install_faster_whisper),
+                "sherpa": (ei.is_nemotron_available, ei.install_nemotron),  # sherpa-onnx
+            }
+            entry = pip_engines.get(engine_id)
+            if entry is not None:
+                is_available, install_engine = entry
+                if not is_available():
+                    install_engine(progress)
+                    ei.activate_engine_packs()
+
+    def _install_offline_speech(self, engine_id: str, model_id: str) -> None:
+        """Install the chosen engine (if needed) and download the chosen model in
+        one worker behind a single progress dialog, then return to the hub."""
+        import threading
+
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Setting up offline speech",
+            "Preparing to set up offline speech...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Setting up offline speech.")
+        last_percent = {"value": -1}
+
+        def _p(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise RuntimeError("Offline speech setup cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            if percent == last_percent["value"]:
+                return  # throttle to whole-percent changes (#748)
+            last_percent["value"] = percent
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                self._ensure_offline_engine(engine_id, _p, cancel)
+                from quill.core.speech.service import default_registry
+
+                provider = default_registry().get(engine_id)
+                if provider is None:
+                    raise RuntimeError("The speech engine was not available after installing.")
+                provider.download_model(model_id, _p)  # type: ignore[attr-defined]
+                # The engine + model just set up is what the user wants to
+                # dictate/transcribe with -- make it the default so Dictate
+                # (Offline)/Transcribe/Captions use it without a separate
+                # "Set as Default" step.
+                from quill.core.settings import save_settings
+
+                self.settings.speech_provider = engine_id
+                self.settings.speech_default_model_id = model_id
+                save_settings(self.settings)
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Offline speech setup cancelled.")
+                    wx.CallAfter(self._announce, "Offline speech setup cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"Offline speech setup failed: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._offer_component_bug_report,
+                        engine_id,
+                        "Offline speech setup failed.",
+                        str(exc),
+                    )
+                return
+
+            def _done() -> None:
+                progress.switch_to_ok(
+                    f"Offline speech is ready — the {model_id} model is installed.",
+                    on_ok=lambda: self.open_optional_components(preselect=engine_id),
+                )
+
+            wx.CallAfter(_done)
+
+        threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: install worker.
+
+    def download_audio_extras(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Install the whole audio pack in one go: the mpv playback engine, MP3
+        chapter-marker support, and FFmpeg (export/recording converter). One
+        download instead of three separate prompts. mpv is pinned +
+        SHA-256-verified via quill.core.release_assets; MP3 support (mutagen) is a
+        pip install; FFmpeg is the official Gyan essentials build fetched over
+        verified HTTPS. Only what is actually missing is fetched. Runs on a worker
+        thread behind one combined progress dialog, blocked in Safe Mode."""
+        import threading
+
+        from quill.core.mpv_install import MpvInstallError
+        from quill.core.optional_components import (
+            _ffmpeg_installed,
+            _libmpv_installed,
+            _mp3_installed,
+        )
+        from quill.core.speech.engine_install import (
+            EngineInstallError,
+            activate_engine_packs,
+            install_mp3_support,
+            mp3_install_supported,
+        )
+        from quill.core.speech.ffmpeg_install import (
+            FFmpegInstallError,
+            ffmpeg_install_supported,
+            install_ffmpeg,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if bool(getattr(self, "_safe_mode", False)):
+            self._announce("Downloading components is disabled in Safe Mode.")
+            return
+        need_libmpv = not _libmpv_installed()
+        need_mp3 = not _mp3_installed() and mp3_install_supported()
+        need_ffmpeg = not _ffmpeg_installed() and ffmpeg_install_supported()
+        if not need_libmpv and not need_mp3 and not need_ffmpeg:
+            self._show_message_box(
+                "Audio playback, MP3 chapter-marker support, and FFmpeg are already installed.",
+                "Audio: Export, Playback & Chapters",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            if on_done is not None:
+                on_done(True)
+            return
+        size_hint = "about 136 MB total" if need_ffmpeg else "about 46 MB total"
+        ffmpeg_line = (
+            " FFmpeg powers compressed audio export (MP3, M4A/M4B, OGG, Opus, "
+            "FLAC) and Internet Radio recording."
+            if need_ffmpeg
+            else ""
+        )
+        if (
+            self._show_message_box(
+                f"Download the audio pack ({size_hint})? mpv upgrades the Audio "
+                "Studio player to gapless audio with exact seeking; MP3 chapter "
+                "markers add a jumpable chapter list to MP3 audiobook exports."
+                f"{ffmpeg_line} Everything is optional -- QUILL works without it. "
+                "Pieces already installed are skipped.",
+                "Download Audio: Export, Playback & Chapters",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            != wx.YES
+        ):
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading Audio Extras",
+            "Preparing to download...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading the audio pack.")
+        last_percent = {"value": -1}
+
+        # Each step reports its own 0.0-1.0 fraction; map each into its share
+        # of one combined bar so the user sees a single, continuous download
+        # rather than two or three separate ones. FFmpeg's share is weighted
+        # heavier because it is by far the largest piece (~90 of ~136 MB).
+        steps = float(int(need_libmpv) + int(need_mp3)) + (2.0 if need_ffmpeg else 0.0)
+        span = 1.0 / max(steps, 1.0)
+
+        def _combined_progress(base: float, width: float = 1.0) -> Callable[[float, str], None]:
+            def _p(fraction: float, message: str) -> None:
+                if cancel.is_set():
+                    raise RuntimeError("Download cancelled.")
+                percent = int((base + width * span * max(0.0, min(1.0, fraction))) * 100)
+                if percent == last_percent["value"]:
+                    return
+                last_percent["value"] = percent
+                progress.set_progress(percent, f"{message} {percent}%")
+
+            return _p
+
+        def _run() -> None:
+            base = 0.0
+            try:
+                if need_libmpv:
+                    # Through core.mpv_install rather than fetch_component
+                    # directly: Quill Radio's Help > Get mpv needs the same
+                    # download, and two call sites picking their own target
+                    # folder is how a downloader ends up writing where the
+                    # resolver does not look.
+                    from quill.core.mpv_install import install_mpv
+
+                    install_mpv(_combined_progress(base))
+                    base += span
+                if need_mp3:
+                    install_mp3_support(_combined_progress(base))
+                    activate_engine_packs()
+                    base += span
+                if need_ffmpeg:
+                    install_ffmpeg(_combined_progress(base, width=2.0))
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Download cancelled.")
+                    wx.CallAfter(self._announce, "Download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status,
+                        f"Could not finish the download: {user_facing_message(exc)}",
+                    )
+                    detail = str(exc)
+                    if not isinstance(
+                        exc, EngineInstallError | FFmpegInstallError | MpvInstallError
+                    ):
+                        detail = f"Unexpected error: {user_facing_message(exc)}"
+                    wx.CallAfter(
+                        self._offer_component_bug_report,
+                        "audio_extras",
+                        "Audio pack download failed.",
+                        detail,
+                    )
+                return
+
+            def _done() -> None:
+                progress.switch_to_ok(
+                    "The audio pack is installed: playback, MP3 chapter markers, "
+                    "and FFmpeg export/recording support.",
+                    on_ok=(lambda: on_done(True)) if on_done else self.open_optional_components,
+                )
+
+            wx.CallAfter(_done)
+
+        threading.Thread(target=_run, daemon=True).start()  # GATE-40-OK: audio extras worker.
+
+    def _offer_component_bug_report(self, component_id: str, summary: str, detail: str) -> None:
+        """On a failed self-test, offer to send a report with the captured detail."""
+        from quill.core.optional_components import DownloadFailure
+
+        wx = self._wx
+        if not detail:
+            return
+        if (
+            self._show_message_box(
+                f"{summary}\n\nSend a bug report with the technical details so the "
+                "QUILL team can help?",
+                "Component Test",
+                wx.ICON_ERROR | wx.YES_NO,
+            )
+            == wx.YES
+        ):
+            self._report_component_failure(DownloadFailure(component_id, summary, detail=detail))
+
+    def _report_component_failure(self, failure: object) -> None:
+        """Route a captured component failure into the diagnostics/bug-report flow.
+
+        Copies the failure detail to the clipboard and opens Save Diagnostics so
+        the user can attach the redacted bundle (which carries the logged install
+        error) to a report."""
+        text = failure.as_report_text() if hasattr(failure, "as_report_text") else str(failure)
+        try:
+            wx = self._wx
+            if wx.TheClipboard.Open():
+                try:
+                    wx.TheClipboard.SetData(wx.TextDataObject(text))
+                finally:
+                    wx.TheClipboard.Close()
+        except Exception:  # noqa: BLE001 - clipboard is best-effort
+            pass
+        try:
+            self.save_diagnostics_bundle()
+        except Exception:  # noqa: BLE001 - never let the report path crash
+            self._set_status("Could not open diagnostics; the details are on your clipboard.")
+
+    def download_braille_pack(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Fetch the braille pack on demand (footprint unbundle).
+
+        liblouis tables + BRF profiles that power the Translation submenu and
+        BRF/embossing export. Pinned + SHA-256-verified via
+        quill.core.braille_pack.install_braille_pack, on a worker thread with
+        live status progress (no cancel affordance — the fetch is ~9 MB),
+        blocked in Safe Mode. Refreshes the menu on success so Translation
+        appears without a restart."""
+        from quill.core.braille_pack import (
+            braille_install_supported,
+            install_braille_pack,
+            is_braille_pack_installed,
+        )
+
+        wx = self._wx
+        if bool(getattr(self, "_safe_mode", False)):
+            self._announce("Downloading the braille pack is disabled in Safe Mode.")
+            return
+        if not braille_install_supported():
+            # The pinned pack ships the Windows lou_translate.exe binary; on
+            # macOS the managed download cannot run. Point to Homebrew, which
+            # is_braille_pack_installed() detects via PATH/module lookup (#47).
+            self._show_message_box(
+                "The managed braille pack download is Windows-only. On macOS "
+                "install liblouis with Homebrew (brew install liblouis); QUILL "
+                "will detect it automatically.",
+                "Braille Pack",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if is_braille_pack_installed():
+            again = self._show_message_box(
+                "The braille pack is already installed. Download QUILL's verified "
+                "copy again anyway?",
+                "Braille Pack",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if again != wx.YES:
+                if on_done is not None:
+                    on_done(True)
+                return
+        proceed = self._show_message_box(
+            "QUILL will download the braille translation pack (liblouis tables and "
+            "BRF profiles, about 9 MB) and verify it. It powers the Translation "
+            "submenu and BRF/embossing export. Continue?",
+            "Download Braille Pack",
+            wx.ICON_INFORMATION | wx.YES_NO,
+        )
+        if proceed != wx.YES:
+            return
+
+        def _work(progress):
+            return install_braille_pack(
+                lambda fraction, message: progress(message, int(fraction * 100), 100)
+            )
+
+        def _finished(result: object) -> None:
+            ok = bool(result)
+            if ok:
+                self._announce("Braille pack installed. Translation is ready.")
+                # A structural change (Tools > Braille gains the Translation
+                # submenu), not a menu-item state change -- _request_menu_refresh()
+                # only refreshes existing item state and never adds submenus.
+                self._build_menu()
+            else:
+                self._announce("The braille pack could not be installed.")
+            if on_done is not None:
+                on_done(ok)
+
+        self._run_background_task("Downloading braille pack", _work, _finished)
+
+    def download_mathcat(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Fetch the MathCAT math-speech engine for Explore Equation Structure.
+
+        Pinned + SHA-256-verified via quill.core.release_assets, on a worker
+        thread with live progress, blocked in Safe Mode. "Read this part
+        aloud" uses it automatically the next time it runs; nothing else in
+        QUILL changes, and the simpler built-in template reading keeps
+        working without it."""
+        from quill.core.optional_components import _mathcat_installed
+
+        wx = self._wx
+        if bool(getattr(self, "_safe_mode", False)):
+            self._announce("Downloading components is disabled in Safe Mode.")
+            return
+        if _mathcat_installed():
+            again = self._show_message_box(
+                "The MathCAT math speech engine is already installed. Download "
+                "QUILL's verified copy again anyway?",
+                "MathCAT Math Speech Engine",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if again != wx.YES:
+                if on_done is not None:
+                    on_done(True)
+                return
+        proceed = self._show_message_box(
+            "QUILL will download the MathCAT math speech engine (about 3 MB) and "
+            "verify it. It upgrades Insert > Explore Equation Structure...'s "
+            '"Read this part aloud" to real natural-language math speech; the '
+            "simpler built-in reading keeps working without it. Continue?",
+            "Download MathCAT Math Speech Engine",
+            wx.ICON_INFORMATION | wx.YES_NO,
+        )
+        if proceed != wx.YES:
+            return
+
+        def _work(progress):
+            from quill.core.math.mathcat_engine import pack_dir
+            from quill.core.release_assets import fetch_component
+
+            fetch_component(
+                "mathcat",
+                pack_dir(),
+                progress=lambda fraction, message: progress(message, int(fraction * 100), 100),
+                label="Downloading the MathCAT math speech engine...",
+            )
+            return True
+
+        def _finished(result: object) -> None:
+            ok = bool(result)
+            if ok:
+                self._announce(
+                    "MathCAT math speech engine installed. Explore Equation "
+                    "Structure will use it the next time it runs."
+                )
+            else:
+                self._announce("The MathCAT math speech engine could not be installed.")
+            if on_done is not None:
+                on_done(ok)
+
+        self._run_background_task("Downloading MathCAT math speech engine", _work, _finished)
+
+    def download_pdf_ocr_support(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Install the free PDF/Office text-extraction pack (MarkItDown, pdfplumber,
+        pypdf) on demand -- the pip-installable "pdf-ocr" extra, wheel-only into
+        a user-writable engine-pack, same shape as MathCAT's download. Import
+        already works for Markdown/plain text and anything Pandoc handles
+        without it; this adds native Word/PowerPoint/Excel/PDF text reading."""
+        from quill.core.optional_components import _pdf_ocr_installed
+        from quill.core.pdf_ocr_install import missing_pdf_ocr_modules
+
+        wx = self._wx
+        if bool(getattr(self, "_safe_mode", False)):
+            self._announce("Downloading components is disabled in Safe Mode.")
+            return
+        if _pdf_ocr_installed():
+            again = self._show_message_box(
+                "PDF and Office text extraction is already installed. Download it again anyway?",
+                "PDF and Office Text Extraction",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if again != wx.YES:
+                if on_done is not None:
+                    on_done(True)
+                return
+        proceed = self._show_message_box(
+            "QUILL will download enhanced Office and PDF text extraction "
+            "(MarkItDown, pdfplumber, and pypdf). It reads legacy .doc/.ppt/.xls "
+            "files and awkward layouts more faithfully than the readers included "
+            "with QUILL, which already handle Word, PDF, and spreadsheets for "
+            "everyday reading. It is a large download -- about 150 MB installed, "
+            "because MarkItDown requires an ONNX runtime, NumPy, and pandas. "
+            "Scanned or image-only PDFs still need File > Import > OCR either "
+            "way. Continue?",
+            "Download PDF and Office Text Extraction",
+            wx.ICON_INFORMATION | wx.YES_NO,
+        )
+        if proceed != wx.YES:
+            return
+
+        def _work(progress):
+            from quill.core.pdf_ocr_install import install_pdf_ocr_support
+
+            install_pdf_ocr_support(
+                progress=lambda fraction, message: progress(message, int(fraction * 100), 100)
+            )
+            return True
+
+        def _finished(result: object) -> None:
+            ok = bool(result)
+            if ok:
+                self._announce(
+                    "PDF and Office text extraction installed. Import will use it "
+                    "the next time it runs."
+                )
+            else:
+                still_missing = ", ".join(missing_pdf_ocr_modules())
+                self._announce(
+                    "PDF and Office text extraction could not be installed"
+                    + (f" ({still_missing})." if still_missing else ".")
+                )
+            if on_done is not None:
+                on_done(ok)
+
+        self._run_background_task("Downloading PDF and Office text extraction", _work, _finished)
+
+    def download_pandoc(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Fetch the official, pinned Pandoc build on demand (footprint unbundle).
+
+        Pandoc is no longer bundled: this runs from the Download Optional
+        Components dialog and from the first-use prompt when a conversion needs
+        it. Pinned + SHA-256-verified (quill.core.pandoc_install), on a worker
+        thread behind a cancelable percentage (matching download_ffmpeg and the
+        other on-demand downloads, #806), blocked in Safe Mode. ``on_done``
+        (if given) is called on the UI thread with True on success."""
+        import threading
+
+        from quill.core.external_tools import get_external_tool_status
+        from quill.core.pandoc_install import (
+            PANDOC_DOWNLOAD_BYTES,
+            PandocInstallError,
+            install_pandoc,
+            pandoc_install_supported,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if bool(getattr(self, "_safe_mode", False)):
+            self._announce("Downloading Pandoc is disabled in Safe Mode.")
+            return
+        if not pandoc_install_supported():
+            self._show_message_box(
+                "The managed Pandoc download is Windows-only. On macOS install it "
+                "with Homebrew (brew install pandoc); QUILL will find it automatically.",
+                "Pandoc",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if get_external_tool_status("pandoc").installed:
+            again = self._show_message_box(
+                "Pandoc is already available. Download QUILL's verified copy again anyway?",
+                "Pandoc",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if again != wx.YES:
+                if on_done is not None:
+                    on_done(True)
+                return
+        approx_mb = round(PANDOC_DOWNLOAD_BYTES / 1_000_000)
+        proceed = self._show_message_box(
+            f"QUILL will download Pandoc (the official jgm/pandoc build, about "
+            f"{approx_mb} MB) and verify it. It powers Word, ODT, EPUB, and RTF "
+            "conversion. Continue?",
+            "Download Pandoc",
+            wx.ICON_INFORMATION | wx.YES_NO,
+        )
+        if proceed != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading Pandoc",
+            "Preparing to download Pandoc...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading Pandoc.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise PandocInstallError("Download cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                install_pandoc(_on_progress)
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Pandoc download cancelled.")
+                    wx.CallAfter(self._announce, "Pandoc download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"Could not install Pandoc: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._announce, f"Pandoc could not be installed. {user_facing_message(exc)}"
+                    )
+                if on_done is not None:
+                    wx.CallAfter(on_done, False)
+                return
+            wx.CallAfter(progress.close)
+            done = "Pandoc installed. Conversions are ready."
+            wx.CallAfter(self._set_status, done)
+            wx.CallAfter(self._announce, done)
+            if on_done is not None:
+                wx.CallAfter(on_done, True)
+
+        threading.Thread(  # GATE-40-OK: Pandoc download worker.
+            target=_run, daemon=True
+        ).start()
+
+    def download_offline_speech_engine(self) -> None:
+        """Fetch the offline whisper.cpp engine from QUILL's verified release asset.
+
+        The engine ships in the installer, so this is the recovery / optional path
+        (e.g. an older install that pre-dated bundling, #742). The download is
+        pinned + SHA-256-verified (quill.core.release_assets), runs on a worker
+        thread behind a cancelable percentage, and is blocked in Safe Mode. The
+        bundled copy is never required to be absent for this to be useful.
+        """
+        import threading
+
+        from quill.core.release_assets import fetch_component
+        from quill.core.speech import models
+        from quill.core.speech.providers.whispercpp import resolve_whisper_executable
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if resolve_whisper_executable() is not None:
+            again = self._show_message_box(
+                "The offline speech engine is already installed. Download QUILL's "
+                "verified copy again anyway?",
+                "Download Offline Speech Engine",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if again != wx.YES:
+                return
+        confirm = self._show_message_box(
+            "Download the offline speech engine (whisper.cpp, about 8 MB) from "
+            "QUILL's own verified release? It powers private, on-device dictation and "
+            "transcription, and the download is checksum-verified.",
+            "Download Offline Speech Engine",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading Offline Speech Engine",
+            "Preparing to download the offline speech engine...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading the offline speech engine.")
+        last_percent = {"value": -1}
+
+        def _on_progress(fraction: float, message: str) -> None:
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            if percent == last_percent["value"]:
+                return  # throttle UI updates to whole-percent changes (#748)
+            last_percent["value"] = percent
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        target = models.app_data_dir() / "speech-engine"
+
+        def _run() -> None:
+            try:
+                fetch_component(
+                    "whispercpp",
+                    target,
+                    progress=_on_progress,
+                    should_cancel=cancel.is_set,
+                    label="Downloading offline speech engine...",
+                )
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Speech engine download cancelled.")
+                    wx.CallAfter(self._announce, "Speech engine download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status,
+                        f"Could not install the speech engine: {user_facing_message(exc)}",
+                    )
+                    wx.CallAfter(
+                        self._announce,
+                        f"Could not install the speech engine. {user_facing_message(exc)}",
+                    )
+                return
+            wx.CallAfter(progress.close)
+            done = "Offline speech engine installed. Dictation and transcription are ready."
+            wx.CallAfter(self._set_status, done)
+            wx.CallAfter(self._announce, done)
+
+        threading.Thread(  # GATE-40-OK: speech engine download worker.
+            target=_run, daemon=True
+        ).start()
+
+    def download_faster_whisper(self) -> None:
+        """Install the optional Faster Whisper engine on demand (#669 follow-up).
+
+        QUILL does not bundle Faster Whisper (its CTranslate2/ONNX dependencies are
+        ~110 MB). This installs it wheel-only into a user-writable engine-pack folder
+        on an explicit action, then adds it to sys.path so the engine appears in the
+        speech registry. Runs on a worker thread behind a progress dialog.
+        """
+        import threading
+
+        from quill.core.speech.engine_install import (
+            EngineInstallError,
+            faster_whisper_install_supported,
+            install_faster_whisper,
+            is_faster_whisper_available,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if not faster_whisper_install_supported():
+            self._show_message_box(
+                "This build cannot install Faster Whisper automatically. Install it "
+                'from source with: pip install -e ".[fasterwhisper]".',
+                "Download Faster Whisper",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if is_faster_whisper_available():
+            self._show_message_box(
+                "Faster Whisper is already installed. Choose it in Manage Speech "
+                "Models under Speech Engine.",
+                "Download Faster Whisper",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        confirm = self._show_message_box(
+            "Download and install the Faster Whisper speech engine (about 110 MB)? "
+            "It is a faster, GPU-capable offline engine. The download happens now, "
+            "directly from the Python Package Index; nothing is uploaded.",
+            "Download Faster Whisper",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Installing Faster Whisper",
+            "Preparing to install Faster Whisper...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Installing Faster Whisper.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise EngineInstallError("Installation cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                install_faster_whisper(_on_progress)
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Faster Whisper installation cancelled.")
+                    wx.CallAfter(self._announce, "Faster Whisper installation cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status,
+                        f"Could not install Faster Whisper: {user_facing_message(exc)}",
+                    )
+                    wx.CallAfter(
+                        self._announce,
+                        f"Could not install Faster Whisper. {user_facing_message(exc)}",
+                    )
+                return
+            done = (
+                "Faster Whisper is ready. Click OK to open Manage Speech Models "
+                "and download a model for it."
+            )
+            wx.CallAfter(self._set_status, "Faster Whisper installed.")
+            wx.CallAfter(self._announce, "Faster Whisper installed.")
+            progress.switch_to_ok(done, on_ok=self.open_speech_models)
+
+        threading.Thread(  # GATE-40-OK: Faster Whisper install worker.
+            target=_run, daemon=True
+        ).start()
+
+    def download_dectalk_exe(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Explain the retired download to callers from older UI paths."""
+        self._show_message_box(
+            "QUILL no longer distributes DECtalk. You can use a separately installed copy.",
+            "DECtalk",
+            self._wx.ICON_INFORMATION | self._wx.OK,
+        )
+        if on_done:
+            on_done(False)
+
+    def download_piper_exe(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Download the Piper TTS engine (~22 MB) on demand.
+
+        Piper is a fast, local, high-quality neural TTS engine. The Windows AMD64
+        binary is downloaded from the pinned GitHub release, extracted to the
+        managed speech folder, and immediately discoverable without restarting.
+        Runs on a worker thread behind a progress dialog. Windows-only.
+        """
+        import threading
+
+        from quill.core.read_aloud import discover_piper_executable
+        from quill.core.speech.piper_install import (
+            PiperInstallError,
+            install_piper,
+            piper_install_supported,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if not piper_install_supported():
+            self._show_message_box(
+                "Automatic Piper download is Windows-only. "
+                "On other platforms, install Piper from "
+                "https://github.com/rhasspy/piper/releases",
+                "Download Piper",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if discover_piper_executable() is not None:
+            self._show_message_box(
+                "Piper is already installed. Open Manage Voices to download a voice.",
+                "Download Piper",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            if on_done:  # reopen the hub instead of dumping the user home
+                on_done(True)
+            return
+        confirm = self._show_message_box(
+            "Download the Piper TTS engine (~22 MB) from GitHub?\n\n"
+            "Piper is a fast, local, neural text-to-speech engine with dozens "
+            "of high-quality English voices. After downloading, open Manage "
+            "Voices again to download a Piper voice model.",
+            "Download Piper",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading Piper",
+            "Preparing download...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading Piper TTS engine.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise PiperInstallError("Download cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                install_piper(progress=_on_progress)
+            except Exception as exc:  # noqa: BLE001
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Piper download cancelled.")
+                    wx.CallAfter(self._announce, "Piper download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"Piper download failed: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._announce, f"Piper download failed. {user_facing_message(exc)}"
+                    )
+                return
+            done = "Piper is ready. Click OK to open Manage Voices and download a voice model."
+            wx.CallAfter(self._set_status, "Piper ready.")
+            wx.CallAfter(self._announce, "Piper ready.")
+            progress.switch_to_ok(
+                done,
+                on_ok=(lambda: on_done(True)) if on_done else self.choose_read_aloud_configuration,
+            )
+
+        threading.Thread(  # GATE-40-OK: Piper engine download worker.
+            target=_run, daemon=True
+        ).start()
+
+    def download_node_runtime(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Download the portable Node.js LTS runtime (~30 MB) on demand.
+
+        For Node (JavaScript/TypeScript) Quillins and the Developer Console's
+        TypeScript interface. Extracted to the managed tools folder and
+        immediately discoverable. Runs on a worker thread behind a progress
+        dialog. Windows-only (elsewhere install Node from nodejs.org / a package
+        manager)."""
+        import threading
+
+        from quill.core.node_install import (
+            NodeInstallError,
+            install_node_runtime,
+            is_node_available,
+            node_install_supported,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if not node_install_supported():
+            self._show_message_box(
+                "Automatic Node.js download is Windows-only. On macOS install it with "
+                "Homebrew (brew install node); on Linux use your package manager.",
+                "Download Node.js",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if is_node_available():
+            self._show_message_box(
+                "Node.js is already available.",
+                "Download Node.js",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        confirm = self._show_message_box(
+            "Download the Node.js LTS runtime (about 30 MB)?\n\n"
+            "It powers Node (JavaScript/TypeScript) Quillins and the Developer "
+            "Console's TypeScript interface. Python Quillins and the rest of QUILL "
+            "work without it.",
+            "Download Node.js",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading Node.js",
+            "Preparing download...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading the Node.js runtime.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise NodeInstallError("Download cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                install_node_runtime(progress=_on_progress)
+            except Exception as exc:  # noqa: BLE001
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Node.js download cancelled.")
+                    wx.CallAfter(self._announce, "Node.js download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"Node.js download failed: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._announce, f"Node.js download failed. {user_facing_message(exc)}"
+                    )
+                return
+            wx.CallAfter(self._set_status, "Node.js is ready.")
+            wx.CallAfter(self._announce, "Node.js is ready.")
+            wx.CallAfter(progress.close)
+            if on_done is not None:
+                wx.CallAfter(on_done, True)
+
+        threading.Thread(  # GATE-40-OK: Node.js runtime download worker.
+            target=_run, daemon=True
+        ).start()
+
+    def download_espeak_exe(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Download and extract eSpeak-NG (~50 MB) on demand.
+
+        Downloads the official eSpeak-NG Windows x64 MSI from GitHub and
+        extracts it admin-free via ``msiexec /a`` into the managed speech
+        folder. ``discover_espeak_executable()`` picks up the result
+        immediately without restarting. Runs on a worker thread.
+        """
+        import threading
+
+        from quill.core.read_aloud import discover_espeak_executable
+        from quill.core.settings import save_settings
+        from quill.core.speech.espeak_install import (
+            EspeakInstallError,
+            espeak_install_supported,
+            install_espeak,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if not espeak_install_supported():
+            self._show_message_box(
+                "Automatic eSpeak-NG download is Windows-only.\n\n"
+                "On macOS install it with Homebrew: brew install espeak-ng\n"
+                "On Linux use your package manager (apt/dnf/pacman).",
+                "Download eSpeak-NG",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        configured = getattr(self.settings, "read_aloud_espeak_executable", "")
+        if discover_espeak_executable(configured) is not None:
+            self._show_message_box(
+                "eSpeak-NG is already installed. Open Manage Voices to select a voice.",
+                "Download eSpeak-NG",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            if on_done:  # reopen the hub instead of dumping the user home
+                on_done(True)
+            return
+        confirm = self._show_message_box(
+            "Download eSpeak-NG (~50 MB) from GitHub?\n\n"
+            "eSpeak-NG is a compact, open-source speech synthesizer with many "
+            "English accents (British, American, Scottish, Indian, and more). "
+            "It is extracted without admin rights using Windows Installer's "
+            "admin-install mode.",
+            "Download eSpeak-NG",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading eSpeak-NG",
+            "Preparing download...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Downloading eSpeak-NG.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise EspeakInstallError("Download cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                exe = install_espeak(_on_progress)
+                # Save so settings-configured path also finds it immediately.
+                self.settings.read_aloud_espeak_executable = str(exe)
+                save_settings(self.settings)
+            except Exception as exc:  # noqa: BLE001
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "eSpeak-NG download cancelled.")
+                    wx.CallAfter(self._announce, "eSpeak-NG download cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"eSpeak-NG download failed: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._announce, f"eSpeak-NG download failed. {user_facing_message(exc)}"
+                    )
+                return
+            done = "eSpeak-NG is ready. Click OK to open Manage Voices and choose an accent."
+            wx.CallAfter(self._set_status, "eSpeak-NG ready.")
+            wx.CallAfter(self._announce, "eSpeak-NG ready.")
+            progress.switch_to_ok(
+                done,
+                on_ok=(lambda: on_done(True)) if on_done else self.choose_read_aloud_configuration,
+            )
+
+        threading.Thread(  # GATE-40-OK: eSpeak-NG download worker.
+            target=_run, daemon=True
+        ).start()
+
+    def _download_kokoro_models(self, *, on_done: Callable[[bool], None] | None = None) -> None:
+        """Download the Kokoro model pack (~114 MB) -- all voices in one file.
+
+        The Manage Voices "Download Kokoro" button and the Optional Components
+        "kokoro" row both call this. It fetches the pinned, SHA-256-verified
+        ``kokoro`` release asset (``kokoro-v1.0.int8.onnx`` + ``voices-v1.0.bin``)
+        into the user-writable data dir, on a worker thread with live progress,
+        blocked in Safe Mode. The Kokoro ONNX Python package is a separate,
+        smaller install handled by :meth:`download_kokoro_engine`.
+        """
+        from quill.core.paths import app_data_dir
+        from quill.core.read_aloud import kokoro_engine_ready, kokoro_onnx_ready
+
+        wx = self._wx
+        if bool(getattr(self, "_safe_mode", False)):
+            self._announce("Downloading components is disabled in Safe Mode.")
+            return
+        target = app_data_dir() / "kokoro-models"
+        # "Fully ready" means BOTH the model pack and the importable kokoro_onnx
+        # package. Guarding on kokoro_onnx_ready (models only) let the row report
+        # ready when the engine package was never installed.
+        if kokoro_engine_ready(target):
+            self._show_message_box(
+                "The Kokoro voices are already downloaded. Choose a Kokoro voice in Manage Voices.",
+                "Download Kokoro Voices",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            if on_done is not None:
+                on_done(True)
+            return
+        proceed = self._show_message_box(
+            "Download the Kokoro voice pack (about 114 MB)? This is a single "
+            "download that provides every Kokoro voice. QUILL verifies it after "
+            "downloading. Continue?",
+            "Download Kokoro Voices",
+            wx.ICON_QUESTION | wx.YES_NO,
+        )
+        if proceed != wx.YES:
+            return
+
+        def _work(progress):
+            from quill.core.release_assets import fetch_component
+            from quill.core.speech.engine_install import (
+                install_kokoro_onnx,
+                is_kokoro_onnx_available,
+            )
+
+            # Kokoro is usable only when the model pack AND the kokoro_onnx
+            # package are both present (kokoro_engine_ready). Downloading only
+            # the models left the Optional Components row stuck on "Download"
+            # forever, because readiness also needs the importable package.
+            # Fetch whichever piece is missing so the row updates to Installed.
+            if not kokoro_onnx_ready(target):
+                fetch_component(
+                    "kokoro",
+                    target,
+                    progress=lambda fraction, message: progress(message, int(fraction * 100), 100),
+                    label="Downloading Kokoro voices...",
+                )
+            if not is_kokoro_onnx_available():
+                install_kokoro_onnx(
+                    lambda fraction, message: progress(message, int(fraction * 100), 100)
+                )
+            return True
+
+        def _finished(result: object) -> None:
+            ok = bool(result)
+            if ok:
+                self._announce("Kokoro voices installed. Choose a Kokoro voice in Manage Voices.")
+            else:
+                self._announce("The Kokoro voices could not be installed.")
+            if on_done is not None:
+                on_done(ok)
+
+        self._run_background_task("Downloading Kokoro voices", _work, _finished)
+
+    def download_kokoro_engine(self, *, skip_confirm: bool = False) -> None:
+        """Install the optional Kokoro ONNX engine packages on demand.
+
+        Installs ``kokoro-onnx`` and ``soundfile`` (~20 MB + onnxruntime) via
+        pip into a user-writable engine-pack folder. Use this when the Kokoro
+        model files are already downloaded but the Python packages are missing.
+        Runs on a worker thread behind a progress dialog.
+
+        ``skip_confirm`` suppresses the built-in "install ~20 MB?" confirmation
+        for callers that already obtained consent (e.g. the one-time startup
+        prompt in :meth:`MainFrame._maybe_prompt_kokoro_package_install`), so the
+        user is not asked twice.
+        """
+        import threading
+
+        from quill.core.speech.engine_install import (
+            EngineInstallError,
+            install_kokoro_onnx,
+            is_kokoro_onnx_available,
+            kokoro_onnx_install_supported,
+        )
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        if not kokoro_onnx_install_supported():
+            self._show_message_box(
+                "This build cannot install Kokoro ONNX automatically. Install it "
+                "from source with: pip install kokoro-onnx soundfile",
+                "Install Kokoro ONNX",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if is_kokoro_onnx_available():
+            self._show_message_box(
+                "Kokoro ONNX is already installed. Choose Kokoro in Manage Voices.",
+                "Install Kokoro ONNX",
+                wx.ICON_INFORMATION | wx.OK,
+            )
+            return
+        if not skip_confirm:
+            confirm = self._show_message_box(
+                "Download and install the Kokoro ONNX engine (~20 MB)? "
+                "This enables Kokoro's high-quality neural text-to-speech. "
+                "You will also need to download the Kokoro models (~114 MB) from "
+                "Manage Voices if you have not done so already.",
+                "Install Kokoro ONNX",
+                wx.ICON_QUESTION | wx.YES_NO,
+            )
+            if confirm != wx.YES:
+                return
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Installing Kokoro ONNX",
+            "Preparing to install Kokoro ONNX...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce("Installing Kokoro ONNX.")
+
+        def _on_progress(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise EngineInstallError("Installation cancelled.")
+            percent = int(max(0.0, min(1.0, fraction)) * 100)
+            progress.set_progress(percent, f"{message} {percent}%")
+
+        def _run() -> None:
+            try:
+                install_kokoro_onnx(_on_progress)
+            except Exception as exc:  # noqa: BLE001
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, "Kokoro ONNX installation cancelled.")
+                    wx.CallAfter(self._announce, "Kokoro ONNX installation cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status,
+                        f"Could not install Kokoro ONNX: {user_facing_message(exc)}",
+                    )
+                    wx.CallAfter(
+                        self._announce, f"Could not install Kokoro ONNX. {user_facing_message(exc)}"
+                    )
+                return
+            done = "Kokoro ONNX is ready. Click OK to open Manage Voices and choose a Kokoro voice."
+            wx.CallAfter(self._set_status, "Kokoro ONNX installed.")
+            wx.CallAfter(self._announce, "Kokoro ONNX installed.")
+            progress.switch_to_ok(done, on_ok=self.choose_read_aloud_configuration)
+
+        threading.Thread(  # GATE-40-OK: Kokoro ONNX install worker.
+            target=_run, daemon=True
+        ).start()
+
+    def _maybe_remove_speech_model(self, provider: object, model_id: str) -> None:
+        wx = self._wx
+        confirm = self._show_message_box(
+            f"Remove the '{model_id}' speech model from this computer? "
+            "You can download it again later from Manage Speech Models.",
+            "Remove Speech Model",
+            wx.ICON_QUESTION | wx.YES_NO | wx.NO_DEFAULT,
+        )
+        if confirm != wx.YES:
+            return
+        try:
+            provider.remove_model(model_id)  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001 - surface a clean message
+            self._set_status(f"Could not remove model: {user_facing_message(exc)}")
+            return
+        self._announce(f"Removed the {model_id} speech model.")
+
+    def _maybe_download_speech_model(self, provider: object, row: object) -> None:
+        from quill.core.speech.service import enough_disk_for, models_dir_free_gb
+
+        wx = self._wx
+        model_id = str(getattr(row, "id", ""))
+        estimate = provider.estimate_model_size(model_id)  # type: ignore[attr-defined]
+        notes: list[str] = []
+        icon = wx.ICON_QUESTION
+        warning = str(getattr(row, "ram_warning", "") or "")
+        if warning:
+            notes.append(f"{warning} It may run very slowly or fail to load.")
+            icon = wx.ICON_WARNING
+        gpu_note = str(getattr(row, "gpu_note", "") or "")
+        if gpu_note:
+            notes.append(gpu_note)
+        free_gb = models_dir_free_gb()
+        if not enough_disk_for(int(estimate.download_mb), free_gb):
+            notes.append(
+                f"Low disk space: this needs about {estimate.download_mb} MB but only "
+                f"{free_gb:.1f} GB is free where models are stored."
+            )
+            icon = wx.ICON_WARNING
+        extra = ("\n\nWarning: " + " ".join(notes)) if notes else ""
+        # Be transparent about licensing when downloading on the user's behalf.
+        license_name = str(getattr(row, "license_name", "") or "")
+        card_url = str(getattr(row, "model_card_url", "") or "")
+        license_line = ""
+        if license_name:
+            license_line = f"\n\nThis model is {license_name} licensed."
+            if card_url:
+                license_line += f" Model card: {card_url}"
+        confirm = self._show_message_box(
+            f"Download the '{model_id}' speech model (about {estimate.download_mb} MB) "
+            "from the Hugging Face Hub? It is stored on this computer and used for "
+            f"private, offline transcription.{license_line}{extra}",
+            "Download Speech Model",
+            icon | wx.YES_NO,
+        )
+        if confirm != wx.YES:
+            return
+        self._download_speech_model_with_progress(provider, model_id)
+
+    def _download_speech_model_with_progress(self, provider: object, model_id: str) -> None:
+        """Download a model on a worker thread, showing a cancelable progress gauge.
+
+        The download never touches the UI thread (so the app stays responsive),
+        reports a real percentage, and announces coarse milestones for screen
+        readers. Cancel is cooperative: the progress callback raises when the
+        user cancels, which aborts the stream and cleans up the partial file.
+        """
+        import threading
+
+        from quill.core.speech.provider import SpeechError, download_progress_percent
+        from quill.ui.ai_transcribe_dialog import AIProgressDialog
+
+        wx = self._wx
+        cancel = threading.Event()
+        progress = AIProgressDialog(
+            self.frame,
+            "Downloading Speech Model",
+            f"Preparing to download the {model_id} model...",
+            on_cancel=cancel.set,
+            status_fn=self._set_status,
+            announce_fn=self._announce,
+        )
+        progress.show()
+        self._announce(f"Downloading the {model_id} speech model.")
+        last_milestone = {"value": -1}
+        last_percent = {"value": -1}
+
+        def _on_chunk(fraction: float, message: str) -> None:
+            if cancel.is_set():
+                raise SpeechError("Download cancelled.")
+            # Throttle to whole-percent changes: snapshot_download (Faster Whisper)
+            # fires this per chunk and set_progress marshals each update to the UI
+            # thread, so an unthrottled callback floods wx.CallAfter and freezes
+            # then crashes the download (#748). ~100 updates/download instead.
+            percent = download_progress_percent(fraction)
+            if percent == last_percent["value"]:
+                return
+            last_percent["value"] = percent
+            progress.set_progress(percent, f"{message} {percent}%")
+            milestone = percent - (percent % 25)
+            if percent < 100 and milestone != last_milestone["value"]:
+                last_milestone["value"] = milestone
+                wx.CallAfter(self._set_status, f"Downloading {model_id}: {percent}%")
+
+        def _run() -> None:
+            try:
+                provider.download_model(model_id, _on_chunk)  # type: ignore[attr-defined]
+            except SpeechError as exc:
+                wx.CallAfter(progress.close)
+                if cancel.is_set():
+                    wx.CallAfter(self._set_status, f"Download of {model_id} cancelled.")
+                    wx.CallAfter(self._announce, f"Download of the {model_id} model cancelled.")
+                else:
+                    wx.CallAfter(
+                        self._set_status, f"Could not download model: {user_facing_message(exc)}"
+                    )
+                    wx.CallAfter(
+                        self._announce, f"Could not download the model. {user_facing_message(exc)}"
+                    )
+                return
+            except Exception as exc:  # noqa: BLE001 - surface a clean message
+                wx.CallAfter(progress.close)
+                wx.CallAfter(
+                    self._set_status, f"Could not download model: {user_facing_message(exc)}"
+                )
+                wx.CallAfter(
+                    self._announce, f"Could not download the model. {user_facing_message(exc)}"
+                )
+                return
+            wx.CallAfter(self._set_status, f"Downloaded the {model_id} speech model.")
+            wx.CallAfter(self._announce, f"Downloaded the {model_id} speech model.")
+            # Confirm completion with a clear OK button (or, if minimized, a status
+            # line) instead of silently closing — the silent close read as "nothing
+            # happened" even when the model downloaded.
+            progress.switch_to_ok(
+                f"Downloaded the {model_id} speech model. It is ready to use for dictation."
+            )
+
+        threading.Thread(  # GATE-40-OK: speech model download worker.
+            target=_run, daemon=True
+        ).start()

@@ -91,36 +91,38 @@ class SimpleOpenMixin:
         self._last_file_dir = str(result.path.parent)
         return result.path
 
-    def _prompt_native_open_dialog(self) -> Path | None:
+    def _prompt_native_open_dialog(self, initial_dir: str | None = None) -> Path | None:
         """Show the standard ``wx.FileDialog`` and return the chosen path.
 
         This is the original dialog body that used to live inline in
         ``MainFrame.open_file``. It is kept here so the simple-dialog
-        path can call it as a fallback.
+        path can call it as a fallback. ``initial_dir`` overrides the usual
+        last-used-folder default -- used by "Open from Favorite Folder" to
+        seed the dialog at a favorite instead.
         """
         wx = self._wx
         with wx.FileDialog(
             self.frame,
-            "Open text file",
-            defaultDir=self._file_dialog_default_dir(),
+            "Open document",
+            defaultDir=initial_dir if initial_dir is not None else self._file_dialog_default_dir(),
             wildcard=(
                 "Supported files"
                 " (*.txt;*.md;*.html;*.htm;*.xhtml;*.json;*.yaml;*.yml;"
                 "*.toml;*.xml;*.csv;*.tsv;*.ipynb;*.sqlite;*.db;"
-                "*.doc;*.docx;*.ppt;*.pptx;*.epub;*.pages;*.pdf;*.odt;*.rtf;"
+                "*.doc;*.docx;*.docm;*.ppt;*.pptx;*.epub;*.pages;*.pdf;*.odt;*.rtf;"
                 "*.py;*.js;*.jsx;*.ts;*.tsx;*.kt;*.kts;*.go;*.rs;*.c;*.cpp;"
                 "*.h;*.hpp;*.java;*.swift;*.cs;*.rb;*.php;*.sh;*.ps1;*.lua;"
                 "*.css;*.scss;*.less;*.sql;*.log;*.diff;*.patch;*.ini;*.cfg;*.conf;"
                 "*.gradle;*.properties;*.gitignore;*.env)|"
                 "*.txt;*.md;*.html;*.htm;*.xhtml;*.json;*.yaml;*.yml;"
                 "*.toml;*.xml;*.csv;*.tsv;*.ipynb;*.sqlite;*.db;"
-                "*.doc;*.docx;*.ppt;*.pptx;*.epub;*.pages;*.pdf;*.odt;*.rtf;"
+                "*.doc;*.docx;*.docm;*.ppt;*.pptx;*.epub;*.pages;*.pdf;*.odt;*.rtf;"
                 "*.py;*.js;*.jsx;*.ts;*.tsx;*.kt;*.kts;*.go;*.rs;*.c;*.cpp;"
                 "*.h;*.hpp;*.java;*.swift;*.cs;*.rb;*.php;*.sh;*.ps1;*.lua;"
                 "*.css;*.scss;*.less;*.sql;*.log;*.diff;*.patch;*.ini;*.cfg;*.conf;"
                 "*.gradle;*.properties;*.gitignore;*.env|"
-                "Documents (*.txt;*.md;*.html;*.htm;*.docx;*.odt;*.rtf;*.pdf;*.epub)|"
-                "*.txt;*.md;*.html;*.htm;*.docx;*.odt;*.rtf;*.pdf;*.epub|"
+                "Documents (*.txt;*.md;*.html;*.htm;*.docx;*.docm;*.odt;*.rtf;*.pdf;*.epub)|"
+                "*.txt;*.md;*.html;*.htm;*.docx;*.docm;*.odt;*.rtf;*.pdf;*.epub|"
                 "Source code"
                 " (*.py;*.js;*.jsx;*.ts;*.tsx;*.kt;*.kts;*.go;*.rs;*.c;*.cpp;"
                 "*.h;*.hpp;*.java;*.swift;*.cs;*.rb;*.php;*.sh;*.ps1;*.lua)|"
@@ -130,7 +132,7 @@ class SimpleOpenMixin:
             ),
             style=wx.FD_OPEN | wx.FD_FILE_MUST_EXIST,
         ) as dialog:
-            if self._show_modal_dialog(dialog, "Open text file") != wx.ID_OK:
+            if self._show_modal_dialog(dialog, "Open document") != wx.ID_OK:
                 return None
             chosen = Path(dialog.GetPath())
             self._last_file_dir = str(chosen.parent)
@@ -170,3 +172,22 @@ class SimpleOpenMixin:
         except Exception:  # noqa: BLE001 - non-Windows or no StandardPaths
             pass
         return None
+
+    # -- opening a file that is no longer there (#1423) -----------------------
+
+    def _read_open_document_guarded(
+        self,
+        selected_path: Path,
+        suffix: str,
+        csv_mode: str | None,
+        finish: object,
+    ) -> None:
+        """Read and install a document, saying why rather than crashing.
+
+        A delegate on purpose: the behaviour lives in
+        :mod:`quill.ui.open_guard` (with the reason it exists), and both this
+        module and ``main_frame.py`` are at their GATE-11 ceilings.
+        """
+        from quill.ui.open_guard import read_document_or_report
+
+        read_document_or_report(self, selected_path, suffix, csv_mode, finish)  # type: ignore[arg-type]

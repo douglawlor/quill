@@ -1,0 +1,324 @@
+"""What dictation has been told to do: the settings, as one frozen value.
+
+Read afresh for every phrase (:meth:`DictationPreferences.from_settings`), so a
+change in Dictation Settings applies to the very next thing said. Moved out of
+the controller when the five finer choices arrived; the controller re-exports
+both names, so nothing that imported them from there changes.
+
+Pure and wx-free.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+
+from quill.core.action_feedback import ActionFeedback
+from quill.core.action_feedback import coerce as coerce_feedback
+from quill.core.windows_dictation.command_mode import (
+    DEFAULT_COMMAND_PREFIX,
+    DEFAULT_COMMAND_TIMEOUT,
+    coerce_prefix,
+    coerce_timeout,
+)
+from quill.core.windows_dictation.engines import coerce_engine, writes_punctuation
+from quill.core.windows_dictation.options import PAUSE_SECONDS, coerce_pause, coerce_silence
+from quill.core.windows_dictation.preview import coerce_preview
+from quill.core.windows_dictation.rescue import coerce_history_days
+from quill.core.windows_dictation.speech_language import (
+    STOP_PHRASES,
+    WAKE_PHRASES,
+    coerce_speech_language,
+    localised_phrase,
+)
+from quill.core.windows_dictation.vocabulary import DASH_STYLES, Vocabulary, vocabulary_for
+from quill.core.windows_dictation.wake import DEFAULT_STOP_PHRASE, DEFAULT_WAKE_PHRASE
+
+__all__ = ["DEFAULT_PHRASE_FEEDBACK", "DictationPreferences"]
+
+#: The read-back is on by default, with the tone: hearing the words is how a
+#: listener knows the recogniser got it right, which a tone alone cannot say.
+DEFAULT_PHRASE_FEEDBACK = ActionFeedback.BOTH.value
+
+
+@dataclass(frozen=True, slots=True)
+class DictationPreferences:
+    """The dictation settings, read from either editor's settings object."""
+
+    #: The microphone's name; empty means the Windows default microphone.
+    microphone: str = ""
+    #: ``moonshine``, ``whisper``, ``windows``, ``voice_typing`` or a downloaded
+    #: model's id -- see :mod:`quill.core.windows_dictation.engines`.
+    engine: str = "moonshine"
+    phrase_feedback: str = DEFAULT_PHRASE_FEEDBACK
+    cue_sounds: bool = True
+    announce: bool = True
+    #: How "dash" is written: ``em``, ``en`` or ``hyphens``.
+    dash: str = "em"
+    #: Listen for the wake phrase while dictation is off.
+    wake_enabled: bool = False
+    wake_phrase: str = DEFAULT_WAKE_PHRASE
+    #: Said on its own, stops dictation (as "stop dictation" always does).
+    stop_phrase: str = DEFAULT_STOP_PHRASE
+    #: For Windows speech recognition only: a recogniser's language name, or
+    #: empty for the one Windows uses by default.
+    language: str = ""
+    #: The language dictation listens for: ``en`` or ``es`` (dict.md 9;
+    #: :mod:`quill.core.windows_dictation.speech_language`).
+    speech_language: str = "en"
+    #: How long a pause ends a phrase: ``short`` to ``longest``
+    #: (:data:`quill.core.windows_dictation.options.PAUSE_SECONDS`).
+    pause: str = "normal"
+    #: Drop "um", "uh" and their kin before anything is written.
+    remove_fillers: bool = False
+    #: "Thursday, no, Friday" writes "Friday" (D-20, self_repair.py).
+    self_repair: bool = False
+    #: "QUILL polish that" may ask the AI to tidy the words in Review Dictation.
+    polish: bool = False
+    #: The names in My Words, for self-repair's "a name, no, another name".
+    repair_names: tuple[str, ...] = field(default=(), compare=False)
+    #: Let Moonshine and Whisper punctuate. Off: the user says every mark.
+    auto_punctuation: bool = True
+    #: Minutes of silence after which dictation stops; 0 is never.
+    silence_minutes: int = 0
+    #: Just write what I say: a pause does nothing -- no full stop, no tone, no
+    #: read-back, no command but the stop phrase.
+    continuous: bool = False
+    #: Holding the dictation key talks until it is let go (hold.py); a quick
+    #: press toggles either way. Off by default (owner, 2026-10-05): one press
+    #: starts, the next stops.
+    hold_to_talk: bool = False
+    #: The live preview of a streaming engine: ``show``, ``speak`` or ``off``.
+    preview: str = "show"
+    #: ``writing`` (the document), ``ai`` (the AI Conversation window's
+    #: message box) or ``transcript`` (a live transcript): which profile the
+    #: pause, fillers and punctuation came from.
+    profile: str = "writing"
+    #: Talking to the AI: send the message at the pause (``True``), or wait for
+    #: Enter.
+    send_after_pause: bool = True
+    #: The OpenAI transcription model chosen in More Dictation Settings.
+    openai_model: str = ""
+    #: The person agreed that their speech goes to OpenAI with their own key.
+    openai_consent: bool = False
+    #: A cloud provider's plain fields, by provider id (D-31; no secrets ever).
+    cloud_fields: Mapping[str, Mapping[str, str]] = field(default_factory=dict, compare=False)
+    #: The consent version agreed to, by cloud provider id (D-31).
+    cloud_consent: Mapping[str, int] = field(default_factory=dict, compare=False)
+    #: Say the marks by name in the read-back: "Hello comma world period"
+    #: (dict.md 3.1, question 1: on by default). The status bar keeps the marks.
+    readback_marks: bool = True
+    #: Live transcripts start each paragraph with the time, "[10:42]".
+    transcript_timestamps: bool = False
+    #: A soft tick while a heard phrase takes more than a second to recognise
+    #: (working_tick.py). Off in the editors, on in QUILL Transcribe.
+    working_tick: bool = False
+    #: The command word (D-1, command_mode.py): "QUILL scratch that". Empty is none.
+    command_prefix: str = "QUILL"
+    #: Strict mode: a bare command is written as words. On in QUILL Transcribe.
+    command_prefix_required: bool = False
+    #: Seconds command mode, or one armed command, waits for a command.
+    command_timeout: int = 8
+    #: Send dictation to review first (D-2, review_mixin.py): the first phrase
+    #: opens the review, and everything said goes there until Insert.
+    review_first: bool = False
+    #: Send this document's dictation context with a review's AI request.
+    review_context: bool = False
+    #: The named profile (D-23, profiles.py): ``standard`` is none at all.
+    named_profile: str = "standard"
+    #: How the profile writes structure: ``markdown``, ``formatted`` or ``plain``.
+    structure: str = "markdown"
+    #: Lock profile: a profile cannot be switched by voice.
+    profile_locked: bool = False
+    #: Days of dictation history to keep, text only (D-5, rescue.py); 0 is off.
+    history_days: int = 0
+    #: What this document is -- "a formal letter", "notes to a friend" -- for
+    #: OpenAI's prompt (contexts.py, dict.md 3.8). Empty for none.
+    context: str = field(default="", compare=False)
+    #: Your words from My Words and Phrases, for an engine that can be told
+    #: which words to expect (OpenAI's ``keywords``; dict.md 5.3 B).
+    keywords: tuple[str, ...] = field(default=(), compare=False)
+    #: ``text -> text``, the user's own replacements and vocabulary
+    #: (quill.core.speech.dictation_profile). Identity when they have none.
+    rewrite: Callable[[str], str] | None = field(default=None, compare=False)
+
+    @property
+    def engine_punctuates(self) -> bool:
+        """Whether the engine adds punctuation by itself, and is allowed to."""
+        return writes_punctuation(self.engine) and self.auto_punctuation
+
+    @property
+    def strips_punctuation(self) -> bool:
+        """Whether the engine's own marks are to be taken out again."""
+        return writes_punctuation(self.engine) and not self.auto_punctuation
+
+    @property
+    def pause_seconds(self) -> float:
+        return PAUSE_SECONDS[coerce_pause(self.pause)]
+
+    @property
+    def filler_language(self) -> str:
+        """The language filler removal is told, or ``""`` when it is not known.
+
+        Known for the built-in engines, and for any engine in Spanish (Windows
+        speech is then held to a Spanish recogniser). English Windows speech may
+        be running whatever recogniser the user picked, so it stays unknown and
+        only the universal hesitations go.
+        """
+        if self.speech_language != "en" or writes_punctuation(self.engine):
+            return self.speech_language
+        return ""
+
+    @property
+    def vocabulary(self) -> Vocabulary:
+        """The table a phrase is matched against: Spanish punctuation words
+        count only while the engine is not punctuating (dict.md 9.4, option 1)."""
+        return vocabulary_for(self.speech_language, spoken_marks=not self.engine_punctuates)
+
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        *,
+        rewrite: Callable[[str], str] | None = None,
+        profile: str = "writing",
+    ) -> DictationPreferences:
+        """The preferences *settings* holds, under the names both editors share.
+
+        *profile* ``ai`` is **Talking to AI** (dict.md 6): the AI Conversation
+        window's message box has its own pause, fillers and punctuation, a
+        pause there sends (or waits for Enter), and "just write what I say"
+        does not apply, because there the pause is the send key.
+
+        *profile* ``transcript`` is a **live transcript** (transcript.py): no
+        commands but the stop phrase, nothing said or played per phrase, no
+        wake phrase, never stopped by silence, fillers out, punctuation in.
+        """
+        from dataclasses import replace
+
+        preferences = cls._writing(settings, rewrite)
+        if profile == "transcript":
+            return replace(
+                preferences,
+                profile="transcript",
+                phrase_feedback="silent",
+                wake_enabled=False,
+                silence_minutes=0,
+                remove_fillers=True,
+                self_repair=False,  # a transcript keeps what the speaker said
+                auto_punctuation=True,
+                continuous=False,
+                hold_to_talk=False,
+            )
+        if profile != "ai":
+            return preferences
+
+        return replace(
+            preferences,
+            profile="ai",
+            pause=coerce_pause(getattr(settings, "windows_dictation_ai_pause", "long")),
+            remove_fillers=bool(getattr(settings, "windows_dictation_ai_remove_fillers", True)),
+            auto_punctuation=bool(getattr(settings, "windows_dictation_ai_auto_punctuation", True)),
+            continuous=False,
+            send_after_pause=str(getattr(settings, "windows_dictation_ai_send", "pause"))
+            != "enter",
+        )
+
+    @classmethod
+    def _writing(
+        cls, settings: object, rewrite: Callable[[str], str] | None
+    ) -> DictationPreferences:
+        """The settings, with the named profile's overlay on top (D-23)."""
+        from dataclasses import replace
+
+        from quill.core.windows_dictation.profiles import active_profile
+
+        preferences = cls._as_set(settings, rewrite)
+        profile = active_profile(settings)
+        overlay: dict[str, object] = {
+            name: value
+            for name, value in (
+                ("pause", profile.pause),
+                ("remove_fillers", profile.remove_fillers),
+                ("auto_punctuation", profile.auto_punctuation),
+            )
+            if value is not None
+        }
+        return replace(
+            preferences,
+            named_profile=profile.id,
+            structure=profile.structure,
+            profile_locked=bool(getattr(settings, "windows_dictation_profile_locked", False)),
+            **overlay,  # type: ignore[arg-type]
+        )
+
+    @classmethod
+    def _as_set(
+        cls, settings: object, rewrite: Callable[[str], str] | None
+    ) -> DictationPreferences:
+        dash = str(getattr(settings, "windows_dictation_dash", "em") or "em")
+        language = coerce_speech_language(
+            getattr(settings, "windows_dictation_speech_language", "")
+        )
+        return cls(
+            microphone=str(getattr(settings, "windows_dictation_microphone", "") or ""),
+            engine=coerce_engine(getattr(settings, "windows_dictation_engine", "")),
+            phrase_feedback=str(
+                coerce_feedback(
+                    getattr(settings, "windows_dictation_phrase_feedback", DEFAULT_PHRASE_FEEDBACK)
+                )
+            ),
+            cue_sounds=bool(getattr(settings, "windows_dictation_cue_sounds", True)),
+            announce=bool(getattr(settings, "windows_dictation_announce", True)),
+            dash=dash if dash in DASH_STYLES else "em",
+            wake_enabled=bool(getattr(settings, "windows_dictation_wake_enabled", False)),
+            wake_phrase=localised_phrase(
+                str(getattr(settings, "windows_dictation_wake_phrase", "") or DEFAULT_WAKE_PHRASE),
+                language,
+                WAKE_PHRASES,
+            ),
+            stop_phrase=localised_phrase(
+                str(getattr(settings, "windows_dictation_stop_phrase", "") or DEFAULT_STOP_PHRASE),
+                language,
+                STOP_PHRASES,
+            ),
+            language=str(getattr(settings, "windows_dictation_language", "") or ""),
+            speech_language=language,
+            pause=coerce_pause(getattr(settings, "windows_dictation_pause", "normal")),
+            remove_fillers=bool(getattr(settings, "windows_dictation_remove_fillers", False)),
+            self_repair=bool(getattr(settings, "windows_dictation_self_repair", False)),
+            polish=bool(getattr(settings, "windows_dictation_polish", False)),
+            auto_punctuation=bool(getattr(settings, "windows_dictation_auto_punctuation", True)),
+            silence_minutes=coerce_silence(
+                getattr(settings, "windows_dictation_silence_minutes", 0)
+            ),
+            continuous=bool(getattr(settings, "windows_dictation_continuous", False)),
+            hold_to_talk=bool(getattr(settings, "windows_dictation_hold_to_talk", False)),
+            preview=coerce_preview(getattr(settings, "windows_dictation_preview", "show")),
+            openai_model=str(getattr(settings, "windows_dictation_openai_model", "") or ""),
+            openai_consent=bool(getattr(settings, "windows_dictation_openai_consent", False)),
+            cloud_fields=dict(getattr(settings, "windows_dictation_speech_providers", {}) or {}),
+            cloud_consent=dict(
+                getattr(settings, "windows_dictation_speech_provider_consent", {}) or {}
+            ),
+            readback_marks=bool(getattr(settings, "windows_dictation_readback_marks", True)),
+            transcript_timestamps=bool(
+                getattr(settings, "windows_dictation_transcript_timestamps", False)
+            ),
+            working_tick=bool(getattr(settings, "windows_dictation_working_tick", False)),
+            command_prefix=coerce_prefix(
+                getattr(settings, "windows_dictation_command_prefix", DEFAULT_COMMAND_PREFIX)
+            ),
+            command_prefix_required=bool(
+                getattr(settings, "windows_dictation_command_prefix_required", False)
+            ),
+            command_timeout=coerce_timeout(
+                getattr(settings, "windows_dictation_command_timeout", DEFAULT_COMMAND_TIMEOUT)
+            ),
+            review_first=bool(getattr(settings, "windows_dictation_review_first", False)),
+            review_context=bool(getattr(settings, "windows_dictation_review_context", False)),
+            history_days=coerce_history_days(
+                getattr(settings, "windows_dictation_history_days", 0)
+            ),
+            rewrite=rewrite,
+        )

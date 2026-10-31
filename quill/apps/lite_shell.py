@@ -1,0 +1,325 @@
+"""The MDI shell: one QUILL Lite window holding numbered documents.
+
+QUILL Lite opens documents as **numbered children inside one parent window**
+rather than as separate top-level windows. The parent is
+:class:`QuillLiteShell`; the documents are ``wx.MDIChildFrame``s built by
+:mod:`quill.apps.lite_window`.
+
+### Why this shape, and what it costs
+
+Numbering is the point. "Document 3" is a name a person can hold, say out loud,
+and go back to; "the other Untitled" is not. With one parent window the number
+is stable, the Window menu is a real list, and Alt+1 to Alt+9 always mean the
+same nine things.
+
+The cost is honest and worth writing down: **MDI children do not appear in
+Alt+Tab.** On Windows, Alt+Tab lists top-level windows, and an MDI child is not
+one. So the whole burden of moving between documents falls on the app, and the
+app has to carry it properly:
+
+* **Ctrl+F6** (the Windows MDI convention) and **Ctrl+Tab** (what people
+  actually press) both move to the next document, with Shift for the previous.
+  A key somebody expects and does not get is indistinguishable from a broken
+  app, so both are bound rather than one.
+* **Alt+1 to Alt+9** jump straight to a numbered document from anywhere.
+* The **Window menu** lists every document by number, with a check mark on the
+  one you are in.
+* Every document's **title carries its number** ("3: notes.txt"), so the number
+  is in the one string the screen reader announces on arrival.
+
+### Multiple instances
+
+One process holds one shell; a second launch hands its files to the running one
+and exits (:mod:`quill.core.lite.inbox`). That is what makes a number mean
+something -- two processes would both start counting at 1.
+
+``--new-instance`` opts out for the case that genuinely needs it: two shells
+side by side, on two monitors, with two sets of documents. The second one gets
+its own numbering and its own window, and both write the same settings file, so
+the last one closed wins on window size. That is the documented cost of asking
+for it.
+
+### Where the menu bar lives
+
+On Windows an MDI child's menu bar replaces the parent's while that child is
+active, which is exactly what is wanted: each document owns the bar, so a menu
+item can act on *this* document without asking which one is in front. The parent
+carries its own smaller bar for the state where nothing is open at all -- which
+QUILL Lite avoids by always keeping one document, but a menu bar that vanishes is
+worse than one that is briefly short.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import wx
+
+from quill.apps.lite_shell_menu import ShellMenuMixin
+from quill.core.lite import APP_NAME
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["QuillLiteShell"]
+
+#: Documents beyond this many stop getting an Alt+digit; the Window menu still
+#: lists them all, and Ctrl+F6 still walks them.
+MAX_NUMBERED = 9
+
+
+class QuillLiteShell(ShellMenuMixin, wx.MDIParentFrame):
+    """The one top-level window. Documents live inside it, numbered.
+
+    Its own menu bar -- the one shown with every document closed -- is
+    :class:`~quill.apps.lite_shell_menu.ShellMenuMixin`'s.
+    """
+
+    def __init__(self, app: Any, size: tuple[int, int]) -> None:
+        super().__init__(None, title=APP_NAME, size=size)
+        self.app = app
+        self._build_placeholder_menu()
+        # Before any document exists, because wxMSW hands each new MDI child a
+        # copy of the parent's window menu: **wx builds a "Window" menu of its
+        # own** (Cascade, Tile, Arrange Icons, and a list of children) and
+        # inserts it into every child's bar next to the one QUILL Lite builds.
+        # The result was two menus both called Window, one of them arranging
+        # icons in an editor that has none, and a listener pressing Alt and
+        # arrowing along the bar hearing "Window" twice with no way to tell
+        # which was which. QUILL Lite's own is the one that lists documents by
+        # number, so wx's goes.
+        self.SetWindowMenu(None)
+        # F1 on the shell itself: no show path wraps a main window, so the
+        # context-help engine has to be bound here directly. A child that is
+        # active binds its own, and the child wins because it has focus.
+        from quill.ui import app_context_help
+
+        app_context_help.install(self, wx=wx)
+        self.Bind(wx.EVT_CLOSE, self._on_close)
+        # The child's bar is *this* window's bar: wxMSW merges an MDI child's
+        # menus into the parent, so EVT_MENU_OPEN is delivered here and never
+        # to the document that built the rows. The child binds it too, and
+        # harmlessly, but this is the binding that actually fires -- without it
+        # a document's Format rows were only ever right at build time.
+        self.Bind(wx.EVT_MENU_OPEN, self._on_menu_open)
+        self.Bind(wx.EVT_MENU_CLOSE, self._on_menu_close)
+        # Alt+Tab back into QUILL Lite must land in the document. THIS window is
+        # what Alt+Tab targets -- an MDI child is not a top-level window -- and
+        # Windows restores focus to whatever HWND this window last had, which
+        # after an Alt+Tab can be the shell, the MDI client or the child frame
+        # rather than the editor inside it. Reported 2026-09-29: "if I Alt+Tab
+        # to another application and then back, focus doesn't always return to
+        # the edit box". Intermittent for a reason -- it depends on what Windows
+        # remembered, and Ctrl+F6/Ctrl+Tab go through `LiteApp.focus_frame`,
+        # which sets focus explicitly and thereby fixes what Windows remembers,
+        # so the bug cures itself for the rest of the session once a listener
+        # switches documents once. QUILL learned the same thing at #170.
+        self.Bind(wx.EVT_ACTIVATE, self._on_activate)
+        self._claim_own_dictation()
+
+    def _claim_own_dictation(self) -> None:
+        """Mark this window as one that dictates and expands for itself.
+
+        The same window property QUILL's main frame sets
+        (``main_frame_abbreviations._claim_own_expansion``). QUILL Transcribe and
+        Quill Inkwell read it before typing, and refuse here with "This is a
+        QUILL window: press Ctrl+F11 to dictate here." -- because Ctrl+F11
+        already dictates into this document, and two programs typing the same
+        words is the thing to prevent. Inkwell's abbreviations keep out too,
+        since QUILL Lite expands its own (lite_window_typing.py). Only the
+        shell: it is the one top-level window, and every document is inside it.
+        """
+        try:
+            from quill.platform.windows.text_target import claim_own_expansion
+
+            claim_own_expansion(int(self.GetHandle()))
+        except Exception:  # noqa: BLE001 - not Windows, or no native handle yet
+            pass
+
+    def _on_activate(self, event: wx.ActivateEvent) -> None:
+        """Coming back to QUILL Lite puts focus in the document.
+
+        Deferred with ``CallAfter`` because this handler runs *before* Windows
+        has finished restoring its own focus: setting focus here is simply
+        overwritten a moment later, which is what makes this class of bug look
+        random. Contained, because an exception escaping native activation
+        dispatch takes the process down (QUILL's #956) and returning focus is a
+        convenience that is never worth the app.
+        """
+        try:
+            self._activation_generation = getattr(self, "_activation_generation", 0) + 1
+            self._activation_active = event.GetActive()
+            if self._activation_active:
+                generation = self._activation_generation
+
+                def repair() -> None:
+                    if generation != self._activation_generation or not self._activation_active:
+                        return
+                    self.return_focus_to_document()
+
+                def settle() -> None:
+                    repair()
+                    if generation != self._activation_generation or not self._activation_active:
+                        return
+                    call_later = getattr(wx, "CallLater", None)
+                    if callable(call_later):
+                        call_later(75, repair)
+
+                call_after = getattr(wx, "CallAfter", None)
+                if callable(call_after):
+                    call_after(settle)
+                else:
+                    repair()
+        except Exception:  # noqa: BLE001 - activation must never crash the app
+            pass
+        event.Skip()
+
+    def return_focus_to_document(self) -> None:
+        """Put focus in the active document when nothing interactive holds it.
+
+        Only then. The shell, the MDI client and the child frame are containers
+        a listener cannot type into, and focus sitting on one of them (or
+        nowhere) is the bug. A control somebody actually moved to -- a Find
+        box, a field they tabbed to, a dialog that opened as the window came
+        forward -- keeps focus: stealing it back would be a worse bug than this
+        one, and an unpredictable one.
+
+        Says nothing. The screen reader announces a focus move itself, and
+        announcing it here would be GATE-13 over-announcing.
+        """
+        try:
+            if (
+                getattr(self.app, "shutting_down", False)
+                or not getattr(self, "_activation_active", True)
+                or getattr(self, "_menu_open", False)
+            ):
+                return
+            for predicate in ("IsActive", "IsShownOnScreen"):
+                check = getattr(self, predicate, None)
+                if callable(check) and not check():
+                    return
+            child = self.GetActiveChild()
+        except RuntimeError:
+            return  # the shell is on its way out
+        if child is None:
+            # wxMSW can report no active child for a moment around activation
+            # and child creation. The app tracks the same thing from the
+            # child's own EVT_ACTIVATE, so ask it rather than give up: giving
+            # up here is exactly the "sometimes it works" the report describes.
+            child = getattr(self.app, "active_frame", None)
+        control = getattr(child, "control", None)
+        if control is None:
+            return
+        for window in (child, control):
+            check = getattr(window, "IsShownOnScreen", None)
+            try:
+                if callable(check) and not check():
+                    return
+            except RuntimeError:
+                return
+        containers: set[object] = {None, self, child}
+        client = getattr(self, "GetClientWindow", None)
+        if callable(client):
+            try:
+                containers.add(client())
+            except Exception:  # noqa: BLE001 - no client window is not a failure
+                pass
+        try:
+            focused = wx.Window.FindFocus()
+        except RuntimeError:
+            return
+        if focused not in containers:
+            return
+        try:
+            control.SetFocus()
+            landed = wx.Window.FindFocus()
+        except RuntimeError:
+            return  # the child is on its way out; the next activation focuses it
+        if landed is not control:
+            _note_repair_miss(self, landed)
+
+    def _on_menu_open(self, event: wx.MenuEvent) -> None:
+        """Hand the opening menu to the document whose rows it holds."""
+        self._menu_open = True
+        child = self.GetActiveChild()
+        sync = getattr(child, "sync_menu_state", None)
+        if callable(sync):
+            try:
+                sync()
+            except RuntimeError:
+                pass  # a child mid-destruction; its bar is about to go
+        event.Skip()
+
+    def _on_menu_close(self, event: wx.MenuEvent) -> None:
+        self._menu_open = False
+        event.Skip()
+
+    def _on_close(self, event: wx.CloseEvent) -> None:
+        """Closing the shell closes everything, and asks about each document.
+
+        Vetoed if any document refuses, because Alt+F4 on the shell is
+        indistinguishable from Exit and must not be able to lose work either.
+        """
+        if event.CanVeto():
+            for frame in list(self.app.frames):
+                if not frame.confirm_discard():
+                    event.Veto()
+                    return
+            for frame in list(self.app.frames):
+                frame.modified = False
+        # While the windows still exist: after Destroy there is nothing left to
+        # ask which files were open, and Alt+F4 on the shell has to remember the
+        # session exactly as Exit does.
+        self.app.remember_session()
+        self.app.stop_background_sources()
+        # Stop the children's timers before the parent takes them down. A
+        # wx.Timer outlives the window that owns it just long enough to fire
+        # into a destroyed control, and the resulting error surfaces as a
+        # crash dialog on the way out of a session that went fine.
+        for frame in list(self.app.frames):
+            frame.stop_timers()
+        # The bookend to the launch cue, and the one moment where the sound is
+        # the *only* confirmation: after this the window is gone, the reader has
+        # nothing left to announce, and a listener who pressed Alt+F4 by mistake
+        # would otherwise learn about it from the silence.
+        from quill.core.sound_events import SoundEvent
+        from quill.ui.sound_manager import post_sound_and_wait
+
+        # Waited for, not merely posted. Everything after this line takes the
+        # window down and then the process, so an asynchronous play is a sound
+        # cut off part-way through -- which is what it did, and what somebody
+        # heard. Capped, so a pack with a long goodbye cannot make the app look
+        # like it has hung on the way out.
+        post_sound_and_wait(SoundEvent.APP_EXITING)
+        self.Destroy()
+
+
+def _note_repair_miss(shell: Any, landed: object) -> None:
+    """Count a focus repair that did not take, and log it without content (F-04).
+
+    A repair can be overruled: Windows finishing its own restoration after the
+    second check, or a control that refuses focus. That is the case the bounded
+    repair cannot see and a listener reports as "sometimes it works", so it is
+    counted per shell and logged -- the class of what holds focus and the count,
+    never a title, a label or a word of the document, because a diagnostic log
+    travels in support bundles. Silent: an announcement here would be the app
+    talking about its own plumbing.
+
+    A module function rather than a method so the stand-in shells the focus
+    tests bind the shipped methods to need nothing new. Why this is not a family
+    helper yet: QUILL's own activation repair (#170) is a different mechanism
+    on a different frame, and a shared helper with one caller is speculation --
+    it is extracted when a second app adopts this shape (qc.md F-04).
+    """
+    misses = int(getattr(shell, "focus_repair_misses", 0) or 0) + 1
+    try:
+        shell.focus_repair_misses = misses
+    except Exception:  # noqa: BLE001 - a counter must never break focus handling
+        pass
+    holder = "nothing" if landed is None else type(landed).__name__
+    logger.info(
+        "QUILL-LITE-FOCUS-MISS: activation focus repair did not take; focus is on %s "
+        "(%d this session)",
+        holder,
+        misses,
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -32,6 +33,43 @@ def _duplicates(mapping: dict[str, str]) -> dict[str, list[str]]:
     return {binding: commands for binding, commands in grouped.items() if len(commands) > 1}
 
 
+def _free_chord(*, skip: int = 0) -> str:
+    """A chord no default claims, chosen rather than hard-coded.
+
+    Every "unrelated valid override" fixture in this module needs one, and every
+    one of them used to name a literal. That is a fixture with a shelf life: a
+    stored binding that collides with a default is dropped on purpose, so the
+    day somebody binds the literal, a test about *merging* fails with a message
+    about a chord. It has happened three times now -- Ctrl+Alt+Shift+Y became
+    Clear Copy Tray (2026-09-16), Ctrl+Alt+Z became Restore Deletion
+    (2026-09-08), and Ctrl+Alt+Shift+F5, F9 and K were all taken on 2026-09-23
+    by Move Section To and the hosted-AI commands.
+
+    ``skip`` picks the second, third, ... free chord, for the tests that need two
+    overrides that must not collide with each other either.
+    """
+    # One canonical spelling only. "Ctrl+Shift+Alt+F1" and "Ctrl+Alt+Shift+F1"
+    # are the same chord, and a set of raw strings does not know that -- the
+    # first version of this helper picked the reordered spelling of a chord that
+    # WAS taken, and the loader then correctly dropped the override and recorded
+    # the displaced default as cleared, which failed three tests with messages
+    # about deltas rather than about chords.
+    taken = {
+        "+".join(sorted(part.strip().upper() for part in value.split("+")))
+        for value in DEFAULT_KEYMAP.values()
+        if value.strip()
+    }
+    found = 0
+    for number in range(1, 25):
+        chord = f"Ctrl+Alt+Shift+F{number}"
+        if "+".join(sorted(part.upper() for part in chord.split("+"))) in taken:
+            continue
+        if found == skip:
+            return chord
+        found += 1
+    raise AssertionError("no unclaimed Ctrl+Alt+Shift+F<n> chord is left for a fixture")
+
+
 def test_load_keymap_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
     keymap = load_keymap()
@@ -41,9 +79,14 @@ def test_load_keymap_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
 
 def test_load_keymap_merges_overrides(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
-    save_keymap({"file.save": "Ctrl+Shift+Alt+S"})
+    # An F-key chord on purpose: the letter rows are saturated across the two
+    # editors, and this fixture used Ctrl+Alt+Shift+Y until 2026-09-16, when
+    # that became Clear Copy Tray's default -- at which point the loader
+    # correctly recorded the displaced default as cleared and the on-disk
+    # delta grew an entry this test did not expect.
+    save_keymap({"file.save": _free_chord()})
     keymap = load_keymap()
-    assert keymap["file.save"] == "Ctrl+Shift+Alt+S"
+    assert keymap["file.save"] == _free_chord()
     assert keymap["file.open"] == DEFAULT_KEYMAP["file.open"]
 
 
@@ -62,14 +105,18 @@ def test_import_keymap_saves_merged_defaults(
 ) -> None:
     store_path = tmp_path / "keymap-store.json"
     source_path = tmp_path / "incoming.json"
-    export_keymap(source_path, {"edit.find": "Ctrl+Alt+F"})
+    # Ctrl+Alt+Shift+K rather than Ctrl+Alt+F, which became format.editor_font's
+    # default on 2026-09-16. This test wants a chord that is only ever the
+    # user's, so a new default taking it turns a test about *saving* into a test
+    # about conflict precedence -- pick a free chord and it stays the former.
+    export_keymap(source_path, {"edit.find": _free_chord()})
     monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
 
     merged = import_keymap(source_path)
 
-    assert merged["edit.find"] == "Ctrl+Alt+F"
+    assert merged["edit.find"] == _free_chord()
     saved = load_keymap()
-    assert saved["edit.find"] == "Ctrl+Alt+F"
+    assert saved["edit.find"] == _free_chord()
     assert saved["file.save"] == DEFAULT_KEYMAP["file.save"]
 
 
@@ -84,72 +131,141 @@ def test_reset_keymap_restores_defaults(tmp_path: Path, monkeypatch: pytest.Monk
     assert load_keymap() == DEFAULT_KEYMAP
 
 
-def test_load_keymap_drops_unknown_command_id(
+def test_load_keymap_preserves_unknown_command_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A saved binding for a command id that no longer exists is dropped."""
-    store_path = tmp_path / "keymap-store.json"
-    monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
-    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+    """A binding for a command id this build does not ship is PRESERVED.
 
-    save_keymap({"definitely.not.a.command": "Ctrl+Alt+Z"})
-
-    loaded = load_keymap()
-
-    assert "definitely.not.a.command" not in loaded
-    assert loaded == DEFAULT_KEYMAP
-
-
-def test_load_keymap_drops_empty_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A saved binding that is whitespace-only is treated as 'use default'."""
-    store_path = tmp_path / "keymap-store.json"
-    monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
-    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
-
-    save_keymap({"file.save": "   "})
-
-    loaded = load_keymap()
-
-    assert loaded["file.save"] == DEFAULT_KEYMAP["file.save"]
-
-
-def test_load_keymap_persists_cleaned_map(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When the saved file contains entries that get dropped, the surviving
-    subset is written back to disk so the user sees the cleanup on next open.
-
-    Valid entries survive untouched; invalid entries (unknown command id,
-    conflicting chord, whitespace-only binding) are removed. The on-disk
-    file keeps only the user's surviving delta — not the full
-    DEFAULT_KEYMAP — so a small override file stays small.
+    The shared %APPDATA%\\Quill\\keymap.json is read and rewritten by sibling
+    apps of possibly different vintages; a command absent from this build may be
+    one a newer sibling added, so its binding must not be dropped on rewrite
+    (see the multi-vintage note in ``keymap.merge_keymaps``). A binding for a
+    genuinely-retired command is inert, so preserving it is harmless.
     """
     store_path = tmp_path / "keymap-store.json"
     monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
 
-    # Mix: one valid override, one orphan command id, one conflict.
+    # The chord must be one no default claims, and the test says so rather than
+    # assuming it: a stored binding that collides with a default is dropped on
+    # purpose (two commands cannot share a chord), so a hard-coded chord makes
+    # this test fail the day somebody binds it -- which is exactly what happened
+    # on 2026-09-08 when edit.restore_deletion took Ctrl+Alt+Z.
+    chord = _free_chord()
+
+    save_keymap({"a.sibling_app_command": chord})
+
+    loaded = load_keymap()
+
+    assert loaded["a.sibling_app_command"] == chord
+
+
+def test_load_keymap_persists_cleared_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deliberately CLEARED binding stays cleared across a restart.
+
+    When the user unbinds a command in the editor, an empty override is saved.
+    That empty override is a delta entry, distinct from an absent one: on the
+    next load it must keep the command UNBOUND rather than silently restoring
+    the (non-empty) default chord and dropping the user's reassignment. The
+    empty override normalizes to "" and round-trips to disk as such.
+    """
+    store_path = tmp_path / "keymap-store.json"
+    monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+
+    assert DEFAULT_KEYMAP["file.save"].strip()  # guard: default is non-empty
+
+    save_keymap({"file.save": "   "})
+
+    loaded = load_keymap()
+
+    # Cleared, not restored to the default.
+    assert loaded["file.save"] == ""
+
+    # Round-trips to disk as a real unbind (whitespace normalized to "").
+    on_disk = keymap_module.read_json(store_path, default={})
+    assert on_disk["file.save"] == ""
+
+
+def test_load_keymap_absent_binding_falls_back_to_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A command with no override at all still tracks the current default.
+
+    Only a command PRESENT in the delta with an empty value is treated as a
+    deliberate unbind; a genuinely-absent command falls back to DEFAULT_KEYMAP.
+    """
+    store_path = tmp_path / "keymap-store.json"
+    monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+
+    save_keymap({"file.save": _free_chord()})  # unrelated override only
+
+    loaded = load_keymap()
+
+    assert loaded["edit.find"] == DEFAULT_KEYMAP["edit.find"]
+
+
+def test_load_keymap_persists_cleaned_map(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the saved file contains entries that get cleaned, the surviving
+    subset is written back to disk so the user sees the cleanup on next open.
+
+    Valid entries survive untouched, and a binding for a command this build does
+    not ship is PRESERVED (it may be a newer sibling app's -- see
+    ``keymap.merge_keymaps``). The on-disk file keeps only the delta plus that
+    carried-forward foreign binding, never the full DEFAULT_KEYMAP.
+
+    **What "conflicting" means here changed on 2026-09-10.** Both entries below
+    are the user's own: they asked for Ctrl+Alt+Shift+F5 on Save *and* Ctrl+S on
+    the Command Palette, which together are perfectly consistent -- Ctrl+S is
+    free once Save has moved off it. The old rule read the file one entry at a
+    time against a map still holding Save's *default*, saw Ctrl+S "taken", and
+    silently discarded the Palette's binding; the user got neither the key they
+    asked for nor any indication why. An explicit choice now outranks a default,
+    so both requests are honoured -- and the file is still rewritten as a delta,
+    which is the other half of what this test is for.
+    """
+    store_path = tmp_path / "keymap-store.json"
+    monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
+    monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
+
+    # A move: Save leaves Ctrl+S, and the Palette takes it. Plus one foreign
+    # (sibling-app) command that this build knows nothing about.
     save_keymap({
-        "file.save": "Ctrl+Shift+Alt+S",  # valid override, must survive
-        "definitely.removed.command": "Ctrl+Alt+X",  # unknown id, must be dropped
-        "app.command_palette": "Ctrl+S",  # collides with file.save default
+        "file.save": _free_chord(),  # valid override, must survive
+        # A chord no command in THIS build claims, which is the point of the
+        # row: it is a newer sibling app's. It was Ctrl+Alt+X until 2026-09-18,
+        # when Exchange Cursor and Mark took that (bad.md P1.2) and the guard
+        # correctly started dropping one of the two.
+        "a.sibling_app_command": _free_chord(skip=1),  # unknown id, now preserved
+        "app.command_palette": "Ctrl+S",  # the key Save just vacated
     })
 
     loaded = load_keymap()
 
-    # Cleaned map in memory.
-    assert loaded["file.save"] == "Ctrl+Shift+Alt+S"
-    assert "definitely.removed.command" not in loaded
-    assert loaded["app.command_palette"] == DEFAULT_KEYMAP["app.command_palette"]
+    # Both of the user's requests, honoured. The default that stood on Ctrl+S
+    # is not what decides this: it is a suggestion, and the user gave an
+    # instruction.
+    assert loaded["file.save"] == _free_chord()
+    assert loaded["a.sibling_app_command"] == _free_chord(skip=1)  # preserved
+    assert loaded["app.command_palette"] == "Ctrl+S"
 
-    # Surviving user overrides persisted to disk for the next launch, as a
-    # delta plus the epoch stamp. Only the keys the user had on disk and that
-    # survived the merge are kept.
+    # And nothing ended up on two commands at once, which is the property the
+    # old drop-on-conflict rule was protecting and this one still keeps.
+    claimed = [command for command, binding in loaded.items() if binding == "Ctrl+S"]
+    assert claimed == ["app.command_palette"], claimed
+
+    # The overrides plus the carried-forward foreign binding are persisted as a
+    # delta plus the epoch stamp -- never the full DEFAULT_KEYMAP.
     on_disk = keymap_module.read_json(store_path, default={})
     assert on_disk == {
-        "file.save": "Ctrl+Shift+Alt+S",
+        "file.save": _free_chord(),
+        "a.sibling_app_command": _free_chord(skip=1),
+        "app.command_palette": "Ctrl+S",
         "_defaults_epoch": keymap_module.KEYMAP_DEFAULTS_EPOCH,
     }
-    assert "definitely.removed.command" not in on_disk
-    assert "app.command_palette" not in on_disk
 
 
 def test_load_keymap_leaves_clean_file_alone(
@@ -164,7 +280,7 @@ def test_load_keymap_leaves_clean_file_alone(
     monkeypatch.setattr(keymap_module, "keymap_path", lambda: store_path)
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
 
-    save_keymap({"file.save": "Ctrl+Shift+Alt+S"})
+    save_keymap({"file.save": _free_chord()})
     mtime_before = store_path.stat().st_mtime_ns
 
     load_keymap()
@@ -187,7 +303,14 @@ def test_keyboard_pack_names_include_default() -> None:
 
 def test_build_keymap_for_pack_applies_overlay() -> None:
     keymap = build_keymap_for_pack("VS Code")
-    assert keymap["file.open"] == "Ctrl+P"
+    # On macOS, _apply_darwin_pack_overrides (#4) correctly rejects the pack's
+    # file.open -> Ctrl+P override: at Mac runtime (Ctrl folds to Cmd) that
+    # collides with the existing file.print -> Ctrl+P default, so file.open
+    # stays at its DEFAULT_KEYMAP value instead of silently stealing Print.
+    if sys.platform == "darwin":
+        assert keymap["file.open"] == DEFAULT_KEYMAP["file.open"]
+    else:
+        assert keymap["file.open"] == "Ctrl+P"
     assert keymap["format.duplicate_line"] == "Shift+Alt+Down"
     assert keymap["file.save"] == DEFAULT_KEYMAP["file.save"]
 
@@ -197,13 +320,43 @@ def test_previous_misspelling_shortcut_is_available() -> None:
 
 
 def test_replace_shortcut_is_available() -> None:
-    assert DEFAULT_KEYMAP["edit.replace"] == "Ctrl+H"
+    # Ctrl+H becomes Cmd+H on macOS (system Hide) -- dead by default, so
+    # DEFAULT_KEYMAP uses a darwin alternate (#4).
+    expected = "Cmd+Alt+F" if sys.platform == "darwin" else "Ctrl+H"
+    assert DEFAULT_KEYMAP["edit.replace"] == expected
+
+
+def test_bundled_profiles_do_not_override_platform_aware_defaults() -> None:
+    profiles = ("profile_default.json", "profile_minimal.json", "profile_sr_friendly.json")
+    for profile_name in profiles:
+        path = Path("quill/core/keymap") / profile_name
+        data = json.loads(path.read_text(encoding="utf-8"))
+        bindings = data.get("bindings", {})
+        for command_id in (
+            "app.exit",
+            "navigate.back_location",
+            "navigate.forward_location",
+            "window.next_document",
+            "window.previous_document",
+        ):
+            assert command_id not in bindings, f"{profile_name} should not override {command_id}"
 
 
 def test_snippet_shortcuts_are_available() -> None:
-    # word_prediction moved to Ctrl+. (§4.22); Ctrl+Space freed for select_chunk
+    # word_prediction moved to Ctrl+. (§4.22), freeing Ctrl+Space for the
+    # sentence family -- which is what it means in QUILL Lite, and what it means
+    # in both editors since 2026-09-17 (bad.md P1.2b, 5.3a). It was Select
+    # Chunk here, so one key meant two different things across the two
+    # products; the sentence is what people reach for and keeps the chord.
     assert DEFAULT_KEYMAP["edit.word_prediction"] == "Ctrl+."
-    assert DEFAULT_KEYMAP["edit.select_chunk"] == "Ctrl+Space"
+    # Ctrl+Space becomes Cmd+Space on macOS (Spotlight) -- dead by default, so
+    # DEFAULT_KEYMAP uses a darwin alternate (#32).
+    expected_sentence = "Cmd+Alt+Space" if sys.platform == "darwin" else "Ctrl+Space"
+    assert DEFAULT_KEYMAP["edit.select_sentence"] == expected_sentence
+    # And Select Token, which is what Select Chunk is called now: on a word it
+    # duplicates Select Word, so what it is for is the run of punctuation or
+    # whitespace Select Word cannot take.
+    assert DEFAULT_KEYMAP["edit.select_chunk"] == "Ctrl+Alt+Space"
     assert DEFAULT_KEYMAP["format.insert_snippet"] == "Ctrl+Shift+Grave, S"
     assert DEFAULT_KEYMAP["format.manage_snippets"] == "Ctrl+Shift+Grave, Shift+S"
 
@@ -219,7 +372,11 @@ def test_indent_shortcuts_are_available() -> None:
 
 
 def test_browser_preview_shortcut_is_available() -> None:
-    assert DEFAULT_KEYMAP["view.preview"] == "Ctrl+Shift+V"
+    # Preview moved off Ctrl+Shift+V on 2026-09-16: that is Paste Without
+    # Formatting in Word 365, Notepad, every browser and QUILL Lite, so the
+    # chord everybody reaches for to strip a web page's styling was opening a
+    # preview pane instead. Preview is QUILL-only and had no competing claim.
+    assert DEFAULT_KEYMAP["view.preview"] == "Alt+Shift+V"
     assert DEFAULT_KEYMAP["view.browser_preview"] == "Ctrl+Shift+Grave, V"
 
 
@@ -228,7 +385,10 @@ def test_legacy_preview_conflict_migrates_to_in_app_preview() -> None:
         "view.preview": "Ctrl+Shift+P",
         "view.browser_preview": "Ctrl+Shift+V",
     })
-    assert merged["view.preview"] == "Ctrl+Shift+V"
+    # Both stale entries are dropped and the current defaults win. The saved
+    # browser_preview value is now Paste Text Only's chord, which is exactly
+    # the kind of stale override this migration exists to clear.
+    assert merged["view.preview"] == "Alt+Shift+V"
     assert merged["view.browser_preview"] == "Ctrl+Shift+Grave, V"
 
 
@@ -263,8 +423,9 @@ def test_beta_forces_any_quill_leader_find_to_ctrl_f() -> None:
 def test_non_leader_custom_find_binding_is_preserved() -> None:
     # A user who deliberately rebinds Find to a non-leader chord keeps it; the
     # beta force only reclaims leader-chord Find bindings.
-    merged = keymap_module.merge_keymaps({"edit.find": "Ctrl+Alt+F"})
-    assert merged["edit.find"] == "Ctrl+Alt+F"
+    # A free chord on purpose; see test_import_keymap_saves_merged_defaults.
+    merged = keymap_module.merge_keymaps({"edit.find": _free_chord()})
+    assert merged["edit.find"] == _free_chord()
 
 
 # ---------------------------------------------------------------------------
@@ -283,12 +444,12 @@ def test_save_keymap_persists_only_the_override_delta_plus_epoch(
     monkeypatch.setenv("QUILL_DATA_DIR", str(tmp_path))
 
     full = DEFAULT_KEYMAP.copy()
-    full["file.save"] = "Ctrl+Shift+Alt+S"
+    full["file.save"] = _free_chord()
     save_keymap(full)
 
     on_disk = keymap_module.read_json(store_path, default={})
     assert on_disk == {
-        "file.save": "Ctrl+Shift+Alt+S",
+        "file.save": _free_chord(),
         "_defaults_epoch": keymap_module.KEYMAP_DEFAULTS_EPOCH,
     }
 
@@ -298,11 +459,11 @@ def test_non_overridden_command_tracks_the_current_default() -> None:
     # delta resolves to whatever DEFAULT_KEYMAP says today -- so a changed or
     # newly added default reaches existing users with no migration entry.
     saved = {
-        "file.save": "Ctrl+Shift+Alt+S",
+        "file.save": _free_chord(),
         "_defaults_epoch": keymap_module.KEYMAP_DEFAULTS_EPOCH,
     }
     merged = keymap_module.merge_keymaps(saved)
-    assert merged["file.save"] == "Ctrl+Shift+Alt+S"
+    assert merged["file.save"] == _free_chord()
     assert merged["edit.find"] == DEFAULT_KEYMAP["edit.find"]
 
 
@@ -321,17 +482,21 @@ def test_legacy_full_snapshot_is_converted_to_a_stamped_delta(
         {
             "file.save": DEFAULT_KEYMAP["file.save"],  # equals default -> dropped
             "edit.find": "Ctrl+Shift+Grave, Z",  # stale leader chord -> Ctrl+F
-            "format.bold": "Ctrl+Shift+Alt+B",  # genuine override -> kept
+            # A genuine override -> kept. An F-key chord on purpose: the letter
+            # rows are saturated across the two editors, and this fixture used
+            # to pick Ctrl+Shift+Alt+B, which became edit.select_block's default
+            # on 2026-09-16 and was then correctly dropped as a duplicate.
+            "format.bold": _free_chord(),
         },
     )
 
     loaded = load_keymap()
     assert loaded["edit.find"] == DEFAULT_KEYMAP["edit.find"]
-    assert loaded["format.bold"] == "Ctrl+Shift+Alt+B"
+    assert loaded["format.bold"] == _free_chord()
 
     on_disk = keymap_module.read_json(store_path, default={})
     assert on_disk == {
-        "format.bold": "Ctrl+Shift+Alt+B",
+        "format.bold": _free_chord(),
         "_defaults_epoch": keymap_module.KEYMAP_DEFAULTS_EPOCH,
     }
 
@@ -358,9 +523,14 @@ def test_quote_lines_default_is_ctrl_shift_q() -> None:
     # #608: Quote Lines moved from Ctrl+Q to Ctrl+Shift+Q so Ctrl+Q is
     # free for the system Quit shortcut on macOS (Cmd+Q in wxPython).
     assert DEFAULT_KEYMAP["edit.quote_lines"] == "Ctrl+Shift+Q"
-    # Unquote Lines moves from Ctrl+Shift+Q to Ctrl+Shift+K to keep
-    # the pair on the home row (Q -> K) and free Ctrl+Q entirely.
-    assert DEFAULT_KEYMAP["edit.unquote_lines"] == "Ctrl+Shift+K"
+    # Unquote Lines left Ctrl+Shift+K on 2026-09-18 for one modifier off its
+    # own twin: the blockquote merge freed Ctrl+Alt+Q for Duplicate Selection,
+    # which freed Ctrl+Alt+Shift+Q for this, which freed Ctrl+Shift+K for
+    # lowercase -- QUILL Lite's chord for it (bad.md P2.5, P1.2, P1.1).
+    # Then Alt+Shift+. on 2026-10-03: Ctrl+Alt+Shift+Q is the global
+    # show/hide hotkey, which took the key before the editor ever saw it.
+    assert DEFAULT_KEYMAP["edit.unquote_lines"] == "Alt+Shift+."
+    assert DEFAULT_KEYMAP["format.lower_case"] == "Ctrl+Shift+K"
 
 
 def test_app_exit_default_is_ctrl_q_for_macos_quit() -> None:
@@ -378,11 +548,16 @@ def test_legacy_quote_lines_ctrl_q_migrates_to_ctrl_shift_q() -> None:
     assert merged["edit.quote_lines"] == "Ctrl+Shift+Q"
 
 
-def test_legacy_unquote_lines_ctrl_shift_q_migrates_to_ctrl_shift_k() -> None:
-    # #608 mirror: A user who saved Ctrl+Shift+Q on edit.unquote_lines
-    # (the prior default) has it rewritten to Ctrl+Shift+K on load.
-    merged = keymap_module.merge_keymaps({"edit.unquote_lines": "Ctrl+Shift+Q"})
-    assert merged["edit.unquote_lines"] == "Ctrl+Shift+K"
+def test_legacy_unquote_lines_binding_follows_the_command() -> None:
+    """A saved binding from either prior default lands where the command is.
+
+    #608 moved it to Ctrl+Shift+K; the 2026-09-18 blockquote merge moved it on
+    to Ctrl+Alt+Shift+Q, and the global show/hide hotkey moved it to
+    Alt+Shift+. on 2026-10-03. Somebody who saved an old one meant "Unquote
+    Lines", not "this key", and the curated rebinding is how they keep it.
+    """
+    merged = keymap_module.merge_keymaps({"edit.unquote_lines": "Ctrl+Shift+K"})
+    assert merged["edit.unquote_lines"] == "Alt+Shift+."
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +609,62 @@ def test_legacy_macos_alt_right_forward_location_rewritten_to_cmd_close_bracket(
     assert merged["navigate.forward_location"] == "Cmd+]"
 
 
+# ---------------------------------------------------------------------------
+# macOS document-switching: Ctrl+Tab / Ctrl+Shift+Tab never reach the app.
+#
+# wx's ACCEL_CTRL maps to Cmd (not the physical Control key) in a macOS
+# accelerator table, so the Windows default "Ctrl+Tab" becomes Cmd+Tab --
+# macOS's own reserved App Switcher shortcut -- and a literal physical
+# Ctrl+Tab press does not match ACCEL_CTRL there either. Neither variant
+# ever reaches the app, so the key falls through to generic focus
+# traversal (moving focus onto toolbar buttons) instead of switching
+# documents. macOS gets the conventional Safari/Xcode tab-cycling chord.
+# ---------------------------------------------------------------------------
+
+
+def test_default_keymap_uses_ctrl_tab_on_windows() -> None:
+    if sys.platform == "darwin":
+        return
+    assert DEFAULT_KEYMAP["window.next_document"] == "Ctrl+Tab"
+    assert DEFAULT_KEYMAP["window.previous_document"] == "Ctrl+Shift+Tab"
+
+
+def test_default_keymap_uses_cmd_shift_bracket_on_macos_for_document_switch() -> None:
+    if sys.platform != "darwin":
+        return
+    assert DEFAULT_KEYMAP["window.next_document"] == "Cmd+Shift+]"
+    assert DEFAULT_KEYMAP["window.previous_document"] == "Cmd+Shift+["
+
+
+def test_legacy_macos_ctrl_tab_next_document_rewritten_to_cmd_shift_close_bracket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A macOS user who saved the old Ctrl+Tab next-document binding (which
+    can never fire there -- see above) has it rewritten to Cmd+Shift+]."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    merged = keymap_module.merge_keymaps({"window.next_document": "Ctrl+Tab"})
+    assert merged["window.next_document"] == "Cmd+Shift+]"
+
+
+def test_legacy_macos_ctrl_shift_tab_previous_document_rewritten_to_cmd_shift_open_bracket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A macOS user who saved the old Ctrl+Shift+Tab previous-document
+    binding has it rewritten to Cmd+Shift+[."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    merged = keymap_module.merge_keymaps({"window.previous_document": "Ctrl+Shift+Tab"})
+    assert merged["window.previous_document"] == "Cmd+Shift+["
+
+
+def test_non_macos_ctrl_tab_binding_is_not_rewritten(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The legacy rewrite is macOS-only: Windows/Linux keep Ctrl+Tab as-is."""
+    monkeypatch.setattr(sys, "platform", "win32")
+    merged = keymap_module.merge_keymaps({"window.next_document": "Ctrl+Tab"})
+    assert merged["window.next_document"] == "Ctrl+Tab"
+
+
 def test_default_keymap_has_no_ctrl_q_collision() -> None:
     # #608 pin: no two commands in the default keymap may share Ctrl+Q,
     # because that chord is now reserved for app.exit (which maps to
@@ -475,3 +706,241 @@ def test_corrupt_keymap_file_is_quarantined_then_defaults(
     backups = list((tmp_path / "migration-backups").glob("keymap-corrupt-*.json"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == "not json at all"
+
+
+# ---------------------------------------------------------------------------
+# #4: macOS keyboard-pack collision guard
+# ---------------------------------------------------------------------------
+
+
+def test_darwin_runtime_chord_folds_ctrl_to_cmd() -> None:
+    # On macOS wx maps ACCEL_CTRL to Cmd, so a stored "Ctrl+G" fires as Cmd+G.
+    assert keymap_module._darwin_runtime_chord("Ctrl+G") == "Cmd+G"
+    assert keymap_module._darwin_runtime_chord("Ctrl+Shift+S") == "Cmd+Shift+S"
+    # An explicit Cmd chord is left as-is; F-keys have no Ctrl to fold.
+    assert keymap_module._darwin_runtime_chord("Cmd+G") == "Cmd+G"
+    assert keymap_module._darwin_runtime_chord("F12") == "F12"
+    assert keymap_module._darwin_runtime_chord("not-a-chord??") is None
+
+
+def test_is_macos_reserved_runtime_chord() -> None:
+    assert keymap_module._is_macos_reserved_runtime_chord("F12") is True
+    assert keymap_module._is_macos_reserved_runtime_chord("F11") is True
+    assert keymap_module._is_macos_reserved_runtime_chord("Cmd+H") is True
+    assert keymap_module._is_macos_reserved_runtime_chord("Cmd+Q") is True
+    # Option+<single letter> is a dead-key/diacritical (support#67).
+    assert keymap_module._is_macos_reserved_runtime_chord("Alt+A") is True
+    # Shift+F12 and Alt+Shift+A are NOT reserved.
+    assert keymap_module._is_macos_reserved_runtime_chord("Shift+F12") is False
+    assert keymap_module._is_macos_reserved_runtime_chord("Alt+Shift+A") is False
+    assert keymap_module._is_macos_reserved_runtime_chord("Cmd+G") is False
+
+
+def test_apply_darwin_pack_overrides_drops_runtime_collision() -> None:
+    # Simulate a darwin DEFAULT_KEYMAP where edit.find_next is Cmd+G (the real Mac
+    # default). A pack binding navigate.go_to_line to "Ctrl+G" fires as Cmd+G and
+    # must be dropped so it does not clobber find_next.
+    merged = {"edit.find_next": "Cmd+G", "navigate.go_to_line": "Ctrl+L"}
+    keymap_module._apply_darwin_pack_overrides(dict(merged), {"navigate.go_to_line": "Ctrl+G"})
+    # The override is dropped; the darwin default for go_to_line is preserved.
+    result = dict(merged)
+    keymap_module._apply_darwin_pack_overrides(result, {"navigate.go_to_line": "Ctrl+G"})
+    assert result["navigate.go_to_line"] == "Ctrl+L"
+
+
+def test_apply_darwin_pack_overrides_drops_reserved_f12() -> None:
+    base = {"file.save_as": "Ctrl+Shift+S"}
+    keymap_module._apply_darwin_pack_overrides(base, {"file.save_as": "F12"})
+    assert base["file.save_as"] == "Ctrl+Shift+S"
+
+
+def test_apply_darwin_pack_overrides_drops_option_letter_deadkey() -> None:
+    base = {"edit.insert_link": "Ctrl+K"}
+    keymap_module._apply_darwin_pack_overrides(base, {"edit.insert_link": "Alt+A"})
+    assert base["edit.insert_link"] == "Ctrl+K"
+
+
+def test_apply_darwin_pack_overrides_applies_safe_override() -> None:
+    base = {"edit.select_line": "Ctrl+L"}
+    keymap_module._apply_darwin_pack_overrides(base, {"edit.select_line": "Cmd+L"})
+    assert base["edit.select_line"] == "Cmd+L"
+
+
+def test_build_keymap_for_pack_darwin_drops_reserved_f12(monkeypatch) -> None:
+    monkeypatch.setattr(keymap_module.sys, "platform", "darwin")
+    for pack_name in ("Quill Writer", "Microsoft Word"):
+        keymap = build_keymap_for_pack(pack_name)
+        # The pack overrides file.save_as to F12; on macOS F12 is the Mission
+        # Control default and must not be bound. The darwin default wins.
+        assert keymap["file.save_as"] != "F12"
+
+
+def test_build_keymap_for_pack_darwin_drops_vscode_open_collision(monkeypatch) -> None:
+    # VS Code binds file.open to Ctrl+P, which fires as Cmd+P on macOS and collides
+    # with file.print (Ctrl+P -> Cmd+P). The guard drops it; the darwin default wins.
+    monkeypatch.setattr(keymap_module.sys, "platform", "darwin")
+    keymap = build_keymap_for_pack("VS Code")
+    assert keymap["file.open"] == DEFAULT_KEYMAP["file.open"]
+    assert keymap["file.open"] != "Ctrl+P"
+
+
+def test_build_keymap_for_pack_off_darwin_is_verbatim(monkeypatch) -> None:
+    # Regression: on Windows the pack overlay is applied verbatim (no guard).
+    monkeypatch.setattr(keymap_module.sys, "platform", "win32")
+    keymap = build_keymap_for_pack("VS Code")
+    assert keymap["file.open"] == "Ctrl+P"
+
+
+def test_authoring_chords_are_the_defaults() -> None:
+    """The "Authoring" chord set (x.md), user-authorized, minus what supersedes it.
+
+    The set was authorized before the family keymap existed. Where Microsoft
+    and QUILL Lite both bind a key for a verb QUILL also has, that key wins --
+    rule 1 of bad.md, decided 2026-09-16 -- so a few of these rows have moved
+    and are asserted at their new homes here rather than deleted, because the
+    point of this test is that the set is *decided* rather than accidental.
+
+    Moved, with the claim that beat it:
+      format.toggle_bullet_list  Ctrl+Alt+B -> Ctrl+Shift+L (WordPad's Bullets
+                                 key, and QUILL Lite's; Ctrl+Alt+B is Clear All
+                                 Bookmarks in QUILL Lite and now in QUILL).
+      edit.insert_link           Ctrl+Alt+K -> Ctrl+K (Word's Insert Hyperlink,
+                                 and the chord three key handlers already
+                                 hard-coded outside the keymap; Ctrl+Alt+K is
+                                 Remove Every Blank Line in QUILL Lite).
+      edit.paste_plain_text      Ctrl+Alt+V -> Ctrl+Shift+V (Word 365, Notepad
+                                 and every browser; Ctrl+Alt+V is Paste from
+                                 Tray in QUILL Lite).
+      format.horizontal_rule     Ctrl+Alt+H -> Ctrl+Alt+- (H is for Heading:
+                                 Ctrl+Alt+H walks them in QUILL Lite, and that
+                                 is an editing-loop verb where inserting a rule
+                                 is a once-a-document one).
+      format.justify             Ctrl+Alt+J -> Ctrl+J (Word, WordPad and
+                                 QUILL Lite all justify there).
+
+    Moved later, by the same authority (2026-09-17): power.insert_image gave
+    Ctrl+Alt+I to format.insert_markdown_tag, which is QUILL Lite's chord for it
+    and was listed as such in bad.md 3.7 before either moved.
+
+    Kept, deliberately: format.insert_table stays on Ctrl+Alt+T. An authorized
+    chord for a verb that builds structure outranks one that strips whitespace,
+    so QUILL's trim took Ctrl+Alt+R -- and since 2026-10-25, when QUILL Lite
+    gained Insert Table, QUILL Lite's trim is on Ctrl+Alt+R too (rule 2).
+    """
+    from quill.core.keymap import DEFAULT_KEYMAP
+
+    assert DEFAULT_KEYMAP["edit.insert_link"] == "Ctrl+K"
+    assert DEFAULT_KEYMAP["power.remove_blank_lines"] == "Ctrl+Alt+K"
+    assert DEFAULT_KEYMAP["edit.paste_plain_text"] == "Ctrl+Shift+V"
+    assert DEFAULT_KEYMAP["format.justify"] == "Ctrl+J"
+    assert DEFAULT_KEYMAP["edit.trim_trailing_whitespace"] == "Ctrl+Alt+R"
+    assert DEFAULT_KEYMAP["format.toggle_bullet_list"] == "Ctrl+Shift+L"
+    assert DEFAULT_KEYMAP["navigate.clear_numbered_bookmarks"] == "Ctrl+Alt+B"
+    # Ctrl+Alt+N changed hands on 2026-09-17 by the 2026-09-16 decision: Numbered
+    # List folded into the Ctrl+Shift+L cycle and its chord went to New Plain
+    # Text Document, which is what QUILL Lite opens with it (bad.md P1.5a, 3.4).
+    assert DEFAULT_KEYMAP["file.new_plain_text_document"] == "Ctrl+Alt+N"
+    assert DEFAULT_KEYMAP["format.toggle_numbered_list"] == "Ctrl+Shift+Grave, Shift+L"
+    # Ctrl+Alt+I changed hands on 2026-09-17 by the same authorization that
+    # granted it: bad.md 3.7 gives it to Insert Markdown Tag, which is what it
+    # opens in QUILL Lite, and sends Insert Image one modifier over to the
+    # Ctrl+Shift+I the intake report vacated in the leader reclaim (P1.1, P1.11).
+    assert DEFAULT_KEYMAP["format.insert_markdown_tag"] == "Ctrl+Alt+I"
+    assert DEFAULT_KEYMAP["power.insert_image"] == "Ctrl+Shift+I"
+    assert DEFAULT_KEYMAP["format.insert_table"] == "Ctrl+Alt+T"
+    # Block Quote gave Ctrl+Alt+Q to Duplicate Selection on 2026-09-18: it and
+    # Quote Lines were one verb registered twice, and in Markdown they wrote
+    # the identical "> " (bad.md 7.1, P2.5). The command survives for HTML,
+    # where a quote needs a wrapper, and is reached from the Format menu.
+    assert DEFAULT_KEYMAP["format.blockquote"] == ""
+    assert DEFAULT_KEYMAP["edit.duplicate_selection"] == "Ctrl+Alt+Q"
+    assert DEFAULT_KEYMAP["format.horizontal_rule"] == "Ctrl+Alt+-"
+    assert DEFAULT_KEYMAP["navigate.next_heading"] == "Ctrl+Alt+H"
+    for level in range(1, 7):
+        assert DEFAULT_KEYMAP[f"format.heading_{level}"] == f"Ctrl+Alt+{level}"
+
+
+def test_numbered_bookmarks_agree_with_quilllite() -> None:
+    """QUILL's numbered bookmarks use QUILL Lite's chords, because they are one feature.
+
+    quill.core.numbered_bookmarks says in its own docstring that it lives in
+    shared core so QUILL can adopt it; QUILL Lite was its only caller until
+    2026-09-16. Adopting it on different keys would have been the worst of
+    both: one engine, two habits.
+    """
+    from quill.core.keymap import DEFAULT_KEYMAP
+    from quill.core.lite.commands import COMMANDS
+
+    lite = {handler: key for _m, _label, key, handler, _flag in COMMANDS if key}
+    pairs = {
+        "navigate.set_numbered_bookmark": "cmd_set_bookmark",
+        "navigate.next_bookmark": "cmd_next_bookmark",
+        "navigate.previous_bookmark": "cmd_previous_bookmark",
+        "navigate.clear_numbered_bookmarks": "cmd_clear_bookmarks",
+        **{f"navigate.set_numbered_bookmark_{n}": f"cmd_set_bookmark_{n}" for n in range(1, 10)},
+    }
+    for command_id, handler in pairs.items():
+        assert DEFAULT_KEYMAP[command_id] == lite[handler], (
+            f"{command_id} and QUILL Lite's {handler} are one feature on two keys"
+        )
+
+
+def test_quick_play_favorites_left_the_editor_keymap() -> None:
+    """Ctrl+Alt+Shift+digit is numbered tray paste, not radio favorites.
+
+    It is the only free three-modifier digit row, Ctrl+Shift+digit went to
+    bookmarks, and an editing verb outranks a media convenience inside a text
+    editor (bad.md rule 3, P0.1). The ten chords survive in Quill Radio, which
+    has no editor to compete with, on the plain Alt+digit row.
+    """
+    from quill.core.app_keymaps import APP_KEYMAPS
+    from quill.core.keymap import DEFAULT_KEYMAP
+
+    for slot in range(1, 11):
+        assert DEFAULT_KEYMAP[f"radio.play_favorite_{slot}"] == ""
+        assert APP_KEYMAPS["radio"][f"radio.play_favorite_{slot}"] == (
+            f"Alt+{slot if slot < 10 else 0}"
+        )
+    assert DEFAULT_KEYMAP["edit.paste_from_tray_1"] == "Ctrl+Alt+Shift+1"
+    assert DEFAULT_KEYMAP["radio.play_favorite"], "the chooser replaces the ten chords"
+
+
+def test_every_quill_alias_is_free_parseable_and_unique() -> None:
+    """A second chord must not shadow a key something else already answers to.
+
+    Three silent failures it guards: the alias repeats a key the defaults use
+    (one of the pair stops firing), two aliases claim the same chord, or wx
+    cannot parse it and the key is documented but dead. The keyboard reference
+    lists these chords, so a wrong one is a wrong instruction as well as a
+    broken key.
+    """
+    import wx
+
+    from quill.core.keymap import DEFAULT_ALIASES, DEFAULT_KEYMAP
+
+    taken = {chord: command for command, chord in DEFAULT_KEYMAP.items() if chord}
+    seen: dict[str, str] = {}
+    for command_id, chord in DEFAULT_ALIASES.items():
+        assert command_id in DEFAULT_KEYMAP, (
+            f"{command_id} has an alias but no primary key; an alias is a SECOND route"
+        )
+        assert chord not in taken, f"alias {chord} for {command_id} is already {taken[chord]}'s key"
+        assert chord not in seen, f"alias {chord} claimed by both {seen[chord]} and {command_id}"
+        seen[chord] = command_id
+
+        entry = wx.AcceleratorEntry()
+        assert entry.FromString(chord), f"wx cannot parse the alias {chord}"
+
+
+def test_the_two_editors_agree_about_the_home_row_pair() -> None:
+    """QUILL and QUILL Lite must not disagree about a key this close to the fingers.
+
+    The pair exists because a function key means taking a hand off the home row.
+    Shipping it in one editor and not the other, or on different chords, would
+    make the habit unlearnable for anyone who uses both.
+    """
+    from quill.core.keymap import DEFAULT_ALIASES
+    from quill.core.lite.keymap import DEFAULT_ALIASES as LITE_ALIASES
+
+    assert DEFAULT_ALIASES["edit.start_selection"] == LITE_ALIASES["cmd_start_selection"]
+    assert DEFAULT_ALIASES["edit.complete_selection"] == LITE_ALIASES["cmd_complete_selection"]

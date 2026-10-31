@@ -16,9 +16,11 @@ def test_open_reads_heavy_office_formats_off_the_ui_thread() -> None:
     assert "if suffix in _OFFICE_STREAM_SUFFIXES:" in SOURCE
     # The office branch dispatches the read through the background-task helper.
     assert "self._run_background_task(" in SOURCE
-    assert "lambda _progress: read_open_document(selected_path, suffix, word_mode=word_mode)" in (
-        SOURCE
-    )
+    assert (
+        "lambda _progress: read_open_document(\n"
+        "                    selected_path, suffix, word_mode=word_mode, docx_engine=docx_engine\n"
+        "                )"
+    ) in SOURCE
 
 
 def test_open_resolves_word_prompt_before_leaving_the_ui_thread() -> None:
@@ -41,3 +43,85 @@ def test_finish_open_document_runs_on_the_ui_thread() -> None:
 
 def test_main_frame_class_is_importable() -> None:
     assert MainFrame is not None
+
+
+def test_pdf_open_needs_password_detects_encrypted_pdf_only() -> None:
+    # #58: the open flow diverts to a password prompt only for a PDF whose read
+    # came back tagged engine="encrypted"; any other engine or suffix installs
+    # normally.
+    frame = MainFrame.__new__(MainFrame)
+
+    class _Doc:
+        pass
+
+    doc = _Doc()
+    doc.source_metadata = {"source_kind": "pdf", "engine": "encrypted"}
+    assert frame._pdf_open_needs_password(doc, ".pdf") is True
+
+    doc.source_metadata = {"source_kind": "pdf", "engine": "pdfplumber"}
+    assert frame._pdf_open_needs_password(doc, ".pdf") is False
+
+    # An "encrypted" tag on a non-PDF, or a document with no metadata, never
+    # triggers the PDF password prompt.
+    doc.source_metadata = {"engine": "encrypted"}
+    assert frame._pdf_open_needs_password(doc, ".docx") is False
+    doc.source_metadata = None
+    assert frame._pdf_open_needs_password(doc, ".pdf") is False
+
+
+def test_unique_outline_bookmark_name_dedupes_and_collapses_whitespace() -> None:
+    # Moved to the shared quill.core.pdf_open on 2026-10-15, where QUILL Lite's
+    # Go To reads the same outline.
+    from quill.core.pdf_open import unique_outline_name
+
+    used: set[str] = set()
+    a = unique_outline_name("Chapter 1", used)
+    used.add(a)
+    b = unique_outline_name("Chapter 1", used)
+    used.add(b)
+    c = unique_outline_name("Chapter\n  1", used)  # collapses to "Chapter 1"
+    assert a == "Chapter 1"
+    assert b == "Chapter 1 (2)"
+    assert c == "Chapter 1 (3)"
+
+
+def test_pdf_outline_import_is_wired_into_open_and_guards_correctly() -> None:
+    # The open flow imports a PDF's embedded outline as bookmarks (source-level
+    # guards: PDF-only, first-open-only, resolved via page markers).
+    assert "self._import_pdf_outline_bookmarks(loaded, suffix)" in SOURCE
+    # The importer itself lives with the other bookmark code (moved out of
+    # MainFrame into main_frame_bookmarks.py on 2026-10-17).
+    bookmarks = (
+        Path(__file__).resolve().parents[3] / "quill" / "ui" / "main_frame_bookmarks.py"
+    ).read_text(encoding="utf-8")
+    assert 'if suffix != ".pdf":' in bookmarks
+    assert 'outline = metadata.get("pdf_outline")' in bookmarks
+    # Idempotent: skip when the document already has bookmarks.
+    assert 'if getattr(tab, "bookmarks", None):' in bookmarks
+    # Page number -> character offset via the shared page-marker helper, which
+    # QUILL Lite's Go To Outline kind uses too.
+    assert "outline_bookmark_offsets(text, outline)" in bookmarks
+    shared = (Path(__file__).resolve().parents[3] / "quill" / "core" / "pdf_open.py").read_text(
+        encoding="utf-8"
+    )
+    assert "page_start_for_number(text, page)" in shared
+
+
+def test_encrypted_pdf_open_prompts_and_rereads_with_password() -> None:
+    # #58: _finish_open_document diverts an encrypted PDF to the password prompt,
+    # and the prompt re-reads the file with the entered password (threaded as
+    # pdf_password), looping via encrypted_retry until it opens or is cancelled.
+    assert "if self._pdf_open_needs_password(loaded, suffix):" in SOURCE
+    assert "self._prompt_and_reopen_encrypted_pdf(" in SOURCE
+    assert "read_open_document(selected_path, suffix, pdf_password=password)" in SOURCE
+    # A wrong password re-enters the finish path flagged as a retry so the prompt
+    # can say "that password did not open ...".
+    assert "encrypted_retry=True" in SOURCE
+    # The password is collected on the UI thread through the modal-dialog helper,
+    # in the one password box QUILL Lite uses too (quill/ui/pdf_password.py).
+    assert "show_modal=self._show_modal_dialog" in SOURCE
+    shared = (Path(__file__).resolve().parents[3] / "quill" / "ui" / "pdf_password.py").read_text(
+        encoding="utf-8"
+    )
+    assert "wx.PasswordEntryDialog(" in shared
+    assert "runner(dialog, PASSWORD_DIALOG_TITLE)" in shared

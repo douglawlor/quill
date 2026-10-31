@@ -1,0 +1,1973 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Lite Basic Dictation</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-lite-basic-dictation">QUILL Lite Basic Dictation</h1>
+<h2 id="product-requirements-document">Product Requirements
+Document</h2>
+<p><strong>Product:</strong> QUILL Lite<br />
+<strong>Feature:</strong> Basic Dictation<br />
+<strong>Platform:</strong> Windows first<br />
+<strong>Implementation language:</strong> Python<br />
+<strong>Status:</strong> Proposed<br />
+<strong>Priority:</strong> High</p>
+<hr />
+<h1 id="1-executive-summary">1. Executive Summary</h1>
+<p>QUILL Lite will include a lightweight, highly accessible dictation
+capability as part of the normal installation.</p>
+<p>The target experience is:</p>
+<blockquote>
+<p><strong>Press a key → speak → pause → hear a short confirmation sound
+→ text appears → continue speaking.</strong></p>
+</blockquote>
+<p>The user should not have to open a separate dictation window,
+download a large speech model, manage recordings, or understand
+speech-recognition technology.</p>
+<p>The Windows implementation should use the Windows speech-recognition
+platform through lightweight Python WinRT bindings rather than bundling
+Whisper, Vosk, Torch, ONNX Runtime, FFmpeg, or another large speech
+stack.</p>
+<p>QUILL will own the editing behavior. Windows will recognize speech;
+QUILL will interpret editing commands such as:</p>
+<ul>
+<li>new line</li>
+<li>new paragraph</li>
+<li>comma</li>
+<li>period</li>
+<li>question mark</li>
+<li>exclamation point</li>
+<li>colon</li>
+<li>semicolon</li>
+<li>open quote</li>
+<li>close quote</li>
+<li>open parenthesis</li>
+<li>close parenthesis</li>
+<li>tab</li>
+<li>scratch that</li>
+<li>delete that</li>
+<li>undo that</li>
+<li>stop dictation</li>
+<li>literal …</li>
+</ul>
+<p>A future phase may add a lightweight wake phrase such as:</p>
+<blockquote>
+<p><strong>Quill dictate</strong></p>
+</blockquote>
+<p>The wake-word system should be independent from full speech
+recognition so that QUILL does not need to keep a large transcription
+model running continuously.</p>
+<hr />
+<h1 id="2-problem-statement">2. Problem Statement</h1>
+<p>Existing dictation solutions often introduce one or more of the
+following problems:</p>
+<ul>
+<li>large model downloads;</li>
+<li>high CPU, GPU, RAM, or NPU requirements;</li>
+<li>separate floating windows;</li>
+<li>unpredictable focus changes;</li>
+<li>inaccessible visual-only status;</li>
+<li>unclear phrase completion;</li>
+<li>complicated microphone setup;</li>
+<li>cloud-service configuration;</li>
+<li>recording and transcription workflows instead of direct
+editing;</li>
+<li>difficulty knowing when recognized text has actually been
+inserted;</li>
+<li>inconsistent behavior with screen readers.</li>
+</ul>
+<p>QUILL Lite needs something much simpler.</p>
+<p>The goal is not to build Dragon, Whisper, or a complete voice-control
+environment.</p>
+<p>The goal is to make speaking text into a QUILL document almost as
+simple as typing it.</p>
+<hr />
+<h1 id="3-product-vision">3. Product Vision</h1>
+<p>A user working in a QUILL Lite document should be able to:</p>
+<ol type="1">
+<li>Place the caret where text should be entered.</li>
+<li>Press the Dictation keyboard command.</li>
+<li>Hear a Start earcon.</li>
+<li>Speak naturally.</li>
+<li>Pause naturally.</li>
+<li>Have QUILL receive the finalized recognition result.</li>
+<li>Have QUILL interpret any spoken editing commands.</li>
+<li>Insert the resulting text or perform the requested editor
+action.</li>
+<li>Hear a Commit earcon only after the result has been applied.</li>
+<li>Continue speaking without restarting dictation.</li>
+<li>Repeat indefinitely.</li>
+<li>Press the Dictation command again or say “stop dictation.”</li>
+<li>Hear a Stop earcon.</li>
+</ol>
+<p>Focus must remain in the editor throughout normal operation.</p>
+<hr />
+<h1 id="4-core-product-principle">4. Core Product Principle</h1>
+<p>The feature must be explainable in one sentence:</p>
+<blockquote>
+<p><strong>Press the Dictation key, speak naturally, and every time you
+pause QUILL places the words into your document and lets you keep
+talking.</strong></p>
+</blockquote>
+<p>Everything else should remain implementation detail.</p>
+<hr />
+<h1 id="5-goals">5. Goals</h1>
+<h2 id="51-lightweight">5.1 Lightweight</h2>
+<p>The basic feature must not require QUILL to bundle or download a
+large speech-to-text model.</p>
+<p>The preferred target is:</p>
+<ul>
+<li>no Whisper model;</li>
+<li>no Torch;</li>
+<li>no ONNX Runtime;</li>
+<li>no FFmpeg;</li>
+<li>no Vosk model;</li>
+<li>no NumPy requirement solely for dictation;</li>
+<li>no GPU requirement;</li>
+<li>no NPU requirement.</li>
+</ul>
+<h2 id="52-broad-machine-support">5.2 Broad Machine Support</h2>
+<p>The feature should work on ordinary supported Windows machines,
+including lower-powered systems.</p>
+<p>It must not require:</p>
+<ul>
+<li>Copilot+ PC hardware;</li>
+<li>NVIDIA GPU;</li>
+<li>dedicated AI accelerator;</li>
+<li>unusually large amounts of memory.</li>
+</ul>
+<h2 id="53-accessible-by-default">5.3 Accessible by Default</h2>
+<p>The feature must be usable with:</p>
+<ul>
+<li>JAWS;</li>
+<li>NVDA;</li>
+<li>Narrator;</li>
+<li>keyboard-only interaction;</li>
+<li>magnification;</li>
+<li>no vision.</li>
+</ul>
+<p>No essential state may be communicated visually only.</p>
+<h2 id="54-high-confidence">5.4 High Confidence</h2>
+<p>The user must know when text has actually been inserted.</p>
+<p>The Commit earcon must therefore be tied to the <strong>successful
+application of a finalized recognition result</strong>, not merely
+silence detection.</p>
+<hr />
+<h1 id="6-primary-interaction">6. Primary Interaction</h1>
+<p>The default keyboard behavior should be a toggle.</p>
+<p>First press:</p>
+<blockquote>
+<p>Start dictation.</p>
+</blockquote>
+<p>Second press:</p>
+<blockquote>
+<p>Stop dictation.</p>
+</blockquote>
+<p>The shortcut must be configurable.</p>
+<p>A menu command must also be available for discoverability.</p>
+<p>Suggested menu:</p>
+<pre class="text"><code>Tools
+  Dictation
+    Start Dictation
+    Stop Dictation
+    Dictation Settings</code></pre>
+<hr />
+<h1 id="7-continuous-phrase-dictation">7. Continuous Phrase
+Dictation</h1>
+<p>Dictation must remain active across phrase boundaries.</p>
+<p>Expected sequence:</p>
+<pre class="text"><code>User speaks
+    ↓
+User pauses
+    ↓
+Windows returns finalized recognition result
+    ↓
+QUILL parses commands and text
+    ↓
+QUILL applies result to editor
+    ↓
+QUILL plays Commit earcon
+    ↓
+Recognition remains active
+    ↓
+User continues speaking</code></pre>
+<p>The user must not need to press the Dictation key between sentences
+or paragraphs.</p>
+<hr />
+<h1 id="8-spoken-command-layer">8. Spoken Command Layer</h1>
+<p>QUILL should treat speech recognition and editor commands as separate
+responsibilities.</p>
+<p>Windows answers:</p>
+<blockquote>
+<p>What words were spoken?</p>
+</blockquote>
+<p>QUILL answers:</p>
+<blockquote>
+<p>What should those words do inside the editor?</p>
+</blockquote>
+<p>The command parser should be ordinary Python and should not require
+an AI model.</p>
+<p>Example:</p>
+<pre class="text"><code>Recognized:
+&quot;hello everyone period new paragraph welcome to quill lite period&quot;
+
+QUILL interpretation:
+
+Hello everyone.
+
+Welcome to QUILL Lite.</code></pre>
+<hr />
+<h1 id="9-initial-command-vocabulary">9. Initial Command Vocabulary</h1>
+<p>The following commands should be supported in the first production
+release where practical.</p>
+<table>
+<thead>
+<tr>
+<th>Spoken phrase</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>new line</td>
+<td>Insert one line break</td>
+</tr>
+<tr>
+<td>newline</td>
+<td>Insert one line break</td>
+</tr>
+<tr>
+<td>new paragraph</td>
+<td>Insert paragraph break</td>
+</tr>
+<tr>
+<td>tab</td>
+<td>Perform configured tab behavior</td>
+</tr>
+<tr>
+<td>comma</td>
+<td>Insert <code>,</code></td>
+</tr>
+<tr>
+<td>period</td>
+<td>Insert <code>.</code></td>
+</tr>
+<tr>
+<td>full stop</td>
+<td>Insert <code>.</code></td>
+</tr>
+<tr>
+<td>question mark</td>
+<td>Insert <code>?</code></td>
+</tr>
+<tr>
+<td>exclamation point</td>
+<td>Insert <code>!</code></td>
+</tr>
+<tr>
+<td>exclamation mark</td>
+<td>Insert <code>!</code></td>
+</tr>
+<tr>
+<td>colon</td>
+<td>Insert <code>:</code></td>
+</tr>
+<tr>
+<td>semicolon</td>
+<td>Insert <code>;</code></td>
+</tr>
+<tr>
+<td>open quote</td>
+<td>Insert opening quotation mark</td>
+</tr>
+<tr>
+<td>close quote</td>
+<td>Insert closing quotation mark</td>
+</tr>
+<tr>
+<td>open parenthesis</td>
+<td>Insert <code>(</code></td>
+</tr>
+<tr>
+<td>close parenthesis</td>
+<td>Insert <code>)</code></td>
+</tr>
+<tr>
+<td>open bracket</td>
+<td>Insert <code>[</code></td>
+</tr>
+<tr>
+<td>close bracket</td>
+<td>Insert <code>]</code></td>
+</tr>
+<tr>
+<td>dash</td>
+<td>Insert configured dash</td>
+</tr>
+<tr>
+<td>hyphen</td>
+<td>Insert <code>-</code></td>
+</tr>
+<tr>
+<td>new page</td>
+<td>Optional future editor action</td>
+</tr>
+<tr>
+<td>scratch that</td>
+<td>Remove last dictated transaction</td>
+</tr>
+<tr>
+<td>delete that</td>
+<td>Remove last dictated transaction</td>
+</tr>
+<tr>
+<td>undo that</td>
+<td>Invoke QUILL undo</td>
+</tr>
+<tr>
+<td>stop dictation</td>
+<td>Stop the current dictation session</td>
+</tr>
+<tr>
+<td>literal …</td>
+<td>Insert the following command-like phrase literally</td>
+</tr>
+</tbody>
+</table>
+<p>The command vocabulary should be implemented in one data-driven
+location so it can be expanded without rewriting the recognition
+layer.</p>
+<hr />
+<h1 id="10-literal-escape">10. Literal Escape</h1>
+<p>Some command phrases can also occur in ordinary prose.</p>
+<p>For example:</p>
+<blockquote>
+<p>There is a new line of products coming out.</p>
+</blockquote>
+<p>QUILL must avoid changing every occurrence of “new line” into a line
+break.</p>
+<p>At minimum, QUILL should support an explicit escape phrase:</p>
+<blockquote>
+<p><strong>literal new line</strong></p>
+</blockquote>
+<p>which inserts:</p>
+<pre class="text"><code>new line</code></pre>
+<p>rather than performing the command.</p>
+<p>The parser should be designed so future versions can use more
+sophisticated contextual rules.</p>
+<hr />
+<h1 id="11-command-parsing-strategy">11. Command Parsing Strategy</h1>
+<p>The parser should not be implemented as a series of uncontrolled
+global string replacements.</p>
+<p>Recommended approach:</p>
+<ol type="1">
+<li>Normalize recognized text.</li>
+<li>Tokenize into words and recognized command phrases.</li>
+<li>Match the longest known command phrase first.</li>
+<li>Respect <code>literal</code> escape mode.</li>
+<li>Produce editor actions rather than directly modifying the text
+control.</li>
+<li>Execute those actions through QUILL’s editor abstraction.</li>
+</ol>
+<p>Example action objects:</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>InsertText(<span class="st">&quot;Hello everyone&quot;</span>)</span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>InsertPunctuation(<span class="st">&quot;.&quot;</span>)</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>NewParagraph()</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>InsertText(<span class="st">&quot;Welcome to QUILL Lite&quot;</span>)</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>InsertPunctuation(<span class="st">&quot;.&quot;</span>)</span></code></pre></div>
+<p>This architecture keeps recognition, parsing, and editor manipulation
+independent.</p>
+<hr />
+<h1 id="12-dictated-phrase-transactions">12. Dictated Phrase
+Transactions</h1>
+<p>Every finalized phrase should be treated as a transaction.</p>
+<p>Suggested representation:</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> dataclasses <span class="im">import</span> dataclass</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> DictatedPhrase:</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    original_recognition: <span class="bu">str</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    inserted_text: <span class="bu">str</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    start_position: <span class="bu">int</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    end_position: <span class="bu">int</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    timestamp: <span class="bu">float</span></span></code></pre></div>
+<p>This allows QUILL to implement:</p>
+<blockquote>
+<p>scratch that</p>
+</blockquote>
+<p>without guessing or sending simulated keystrokes.</p>
+<p>If the last phrase occupied characters 582 through 641, QUILL can
+remove exactly that transaction.</p>
+<p>This is safer than synthesizing Ctrl+Z and allows QUILL to keep
+normal undo semantics intact.</p>
+<hr />
+<h1 id="13-undo-behavior">13. Undo Behavior</h1>
+<p>Each finalized dictated phrase should normally create one undo
+unit.</p>
+<p>Example:</p>
+<pre class="text"><code>Phrase 1
+Phrase 2
+Phrase 3</code></pre>
+<p>Pressing Ctrl+Z once should remove Phrase 3.</p>
+<p>The implementation must integrate with QUILL’s existing editor undo
+stack where possible.</p>
+<p><code>scratch that</code> may either:</p>
+<ul>
+<li>remove the last dictation transaction directly; or</li>
+<li>call an editor-specific transaction undo operation.</li>
+</ul>
+<p>It should not blindly send keyboard shortcuts.</p>
+<hr />
+<h1 id="14-text-selection-behavior">14. Text Selection Behavior</h1>
+<p>If text is selected when dictation starts:</p>
+<ul>
+<li>the first inserted dictated content should replace the
+selection;</li>
+<li>the caret should remain at the end of the inserted content;</li>
+<li>subsequent phrases should continue from that location.</li>
+</ul>
+<p>QUILL must use the normal editor APIs rather than clipboard
+injection.</p>
+<hr />
+<h1 id="15-spacing-and-punctuation-rules">15. Spacing and Punctuation
+Rules</h1>
+<p>QUILL must normalize phrase boundaries carefully.</p>
+<p>It must avoid:</p>
+<pre class="text"><code>Sentence one.Sentence two.</code></pre>
+<p>and:</p>
+<pre class="text"><code>Sentence one.   Sentence two.</code></pre>
+<p>The insertion layer should determine whether a space is required
+based on:</p>
+<ul>
+<li>the preceding character;</li>
+<li>the next character;</li>
+<li>punctuation;</li>
+<li>paragraph boundaries;</li>
+<li>command output.</li>
+</ul>
+<p>Examples:</p>
+<ul>
+<li>no space before comma;</li>
+<li>one space after a completed sentence when continuing the same
+paragraph;</li>
+<li>no extra space immediately after a new line;</li>
+<li>no extra space before closing punctuation;</li>
+<li>no unintended trimming of the user’s existing text.</li>
+</ul>
+<hr />
+<h1 id="16-structural-and-formatting-commands">16. Structural and
+Formatting Commands</h1>
+<p>QUILL Dictation must understand document structure and formatting,
+not merely plain text and punctuation.</p>
+<p>These commands are part of the MVP.</p>
+<p>The dictation layer should express user intent semantically and allow
+the active QUILL editor/document type to determine the actual
+representation.</p>
+<p>For example:</p>
+<blockquote>
+<p>make that heading 2</p>
+</blockquote>
+<p>means:</p>
+<blockquote>
+<p>Apply semantic Heading Level 2 formatting to the target
+paragraph.</p>
+</blockquote>
+<p>It does <strong>not</strong> mean:</p>
+<blockquote>
+<p>Type two hash characters.</p>
+</blockquote>
+<p>This distinction allows the same spoken command to work correctly in
+Markdown and rich-text documents.</p>
+<hr />
+<h1 id="31-bold-commands">31. Bold Commands</h1>
+<p>The MVP should support both prospective and retrospective bold
+formatting.</p>
+<h2 id="prospective">Prospective</h2>
+<p>Spoken:</p>
+<pre class="text"><code>start bold
+accessibility matters
+stop bold</code></pre>
+<p>QUILL produces a bold-formatted phrase.</p>
+<h2 id="retrospective">Retrospective</h2>
+<p>Spoken:</p>
+<pre class="text"><code>accessibility matters
+bold that</code></pre>
+<p>or:</p>
+<pre class="text"><code>make that bold</code></pre>
+<p>QUILL applies bold to the most recent dictated phrase or current
+selection according to targeting rules.</p>
+<p>Supported commands:</p>
+<pre class="text"><code>start bold
+stop bold
+bold that
+make that bold</code></pre>
+<hr />
+<h1 id="32-underline-commands">32. Underline Commands</h1>
+<p>The MVP should support:</p>
+<pre class="text"><code>start underline
+stop underline
+underline that
+make that underlined</code></pre>
+<p>For rich text, QUILL should apply actual underline character
+formatting.</p>
+<p>Markdown has no universal native underline syntax.</p>
+<p>Default Markdown behavior should therefore be:</p>
+<blockquote>
+<p>Underline is not available in Markdown.</p>
+</blockquote>
+<p>QUILL may later offer an advanced option to emit HTML such as:</p>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode html"><code class="sourceCode html"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="dt">&lt;</span><span class="kw">u</span><span class="dt">&gt;</span>underlined text<span class="dt">&lt;/</span><span class="kw">u</span><span class="dt">&gt;</span></span></code></pre></div>
+<p>but this should not be the default.</p>
+<hr />
+<h1 id="33-heading-commands">33. Heading Commands</h1>
+<p>QUILL Dictation must support Heading 1 through Heading 6.</p>
+<p>Accepted forms should include:</p>
+<pre class="text"><code>heading 1
+heading one
+heading 2
+heading two
+heading 3
+heading three
+heading 4
+heading four
+heading 5
+heading five
+heading 6
+heading six</code></pre>
+<p>Retrospective forms should include:</p>
+<pre class="text"><code>make that heading 1
+make that heading one
+make that heading 2
+make that heading two
+...
+make that heading 6
+make that heading six</code></pre>
+<p>The normal target should be the current or most recently dictated
+paragraph.</p>
+<p>For Markdown:</p>
+<pre class="text"><code>Heading 1 → # Heading
+Heading 2 → ## Heading
+Heading 3 → ### Heading
+Heading 4 → #### Heading
+Heading 5 → ##### Heading
+Heading 6 → ###### Heading</code></pre>
+<p>For rich text:</p>
+<pre class="text"><code>Heading 1 → semantic Heading 1 paragraph style
+Heading 2 → semantic Heading 2 paragraph style
+...
+Heading 6 → semantic Heading 6 paragraph style</code></pre>
+<p>The user should not need to know the underlying syntax.</p>
+<hr />
+<h1 id="34-bulleted-lists">34. Bulleted Lists</h1>
+<p>QUILL Dictation must provide a conversational list mode.</p>
+<p>Supported start commands:</p>
+<pre class="text"><code>start bulleted list
+start bullet list
+begin bulleted list
+begin bullet list</code></pre>
+<p>Within an active list:</p>
+<pre class="text"><code>next item</code></pre>
+<p>ends the current item and starts the next.</p>
+<p>To leave the list:</p>
+<pre class="text"><code>end list
+stop list</code></pre>
+<p>Example:</p>
+<pre class="text"><code>start bulleted list
+accessibility testing
+next item
+documentation
+next item
+screen reader support
+end list</code></pre>
+<p>Markdown result:</p>
+<div class="sourceCode" id="cb24"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Accessibility testing</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Documentation</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Screen reader support</span></code></pre></div>
+<p>Rich-text result:</p>
+<ul>
+<li>a real semantic bulleted list;</li>
+<li>not manually typed decorative bullet characters.</li>
+</ul>
+<p>Retrospective conversion should also be supported:</p>
+<pre class="text"><code>make that a bulleted list
+make those a bulleted list</code></pre>
+<p>where the target is a current selection or recent dictated block.</p>
+<hr />
+<h1 id="35-numbered-lists">35. Numbered Lists</h1>
+<p>Supported commands:</p>
+<pre class="text"><code>start numbered list
+start number list
+begin numbered list
+begin number list
+next item
+end list
+stop list</code></pre>
+<p>Example:</p>
+<pre class="text"><code>start numbered list
+install QUILL
+next item
+open the editor
+next item
+start dictation
+end list</code></pre>
+<p>Markdown result:</p>
+<div class="sourceCode" id="cb28"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>Install QUILL</span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>Open the editor</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>Start dictation</span></code></pre></div>
+<p>Rich-text result:</p>
+<ul>
+<li>a semantic ordered list;</li>
+<li>not manually typed number strings.</li>
+</ul>
+<p>Retrospective forms:</p>
+<pre class="text"><code>make that a numbered list
+make those a numbered list</code></pre>
+<hr />
+<h1 id="36-prospective-and-retrospective-commands">36. Prospective and
+Retrospective Commands</h1>
+<p>QUILL should support both ways of working.</p>
+<h2 id="prospective-1">Prospective</h2>
+<p>The user announces formatting first:</p>
+<pre class="text"><code>start bold
+important text
+stop bold</code></pre>
+<h2 id="retrospective-1">Retrospective</h2>
+<p>The user dictates first and formats afterward:</p>
+<pre class="text"><code>important text
+make that bold</code></pre>
+<p>Retrospective commands are especially important because users often
+decide how something should be formatted only after hearing or reviewing
+what they dictated.</p>
+<p>The MVP should prioritize natural retrospective forms such as:</p>
+<pre class="text"><code>make that bold
+make that underlined
+make that heading 2
+make that a bulleted list
+make that a numbered list</code></pre>
+<hr />
+<h1 id="37-formatting-state">37. Formatting State</h1>
+<p>The Dictation Controller should maintain a small semantic formatting
+context.</p>
+<p>Conceptually:</p>
+<div class="sourceCode" id="cb33"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="at">@dataclass</span></span>
+<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> DictationContext:</span>
+<span id="cb33-3"><a href="#cb33-3" aria-hidden="true" tabindex="-1"></a>    bold: <span class="bu">bool</span> <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb33-4"><a href="#cb33-4" aria-hidden="true" tabindex="-1"></a>    underline: <span class="bu">bool</span> <span class="op">=</span> <span class="va">False</span></span>
+<span id="cb33-5"><a href="#cb33-5" aria-hidden="true" tabindex="-1"></a>    list_type: <span class="bu">str</span> <span class="op">|</span> <span class="va">None</span> <span class="op">=</span> <span class="va">None</span></span>
+<span id="cb33-6"><a href="#cb33-6" aria-hidden="true" tabindex="-1"></a>    heading_level: <span class="bu">int</span> <span class="op">|</span> <span class="va">None</span> <span class="op">=</span> <span class="va">None</span></span></code></pre></div>
+<p>Spoken commands modify semantic state.</p>
+<p>Example:</p>
+<pre class="text"><code>start bold
+    ↓
+SetFormatting(bold=True)
+
+this is important
+    ↓
+InsertText(&quot;This is important&quot;)
+
+stop bold
+    ↓
+SetFormatting(bold=False)</code></pre>
+<p>The speech recognizer must not be responsible for document
+formatting.</p>
+<hr />
+<h1 id="38-semantic-editor-actions">38. Semantic Editor Actions</h1>
+<p>The command parser should emit high-level editor operations.</p>
+<p>Examples:</p>
+<div class="sourceCode" id="cb35"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>InsertText(<span class="st">&quot;Accessibility matters&quot;</span>)</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a>InsertPunctuation(<span class="st">&quot;.&quot;</span>)</span>
+<span id="cb35-3"><a href="#cb35-3" aria-hidden="true" tabindex="-1"></a>NewLine()</span>
+<span id="cb35-4"><a href="#cb35-4" aria-hidden="true" tabindex="-1"></a>NewParagraph()</span>
+<span id="cb35-5"><a href="#cb35-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-6"><a href="#cb35-6" aria-hidden="true" tabindex="-1"></a>BeginBold()</span>
+<span id="cb35-7"><a href="#cb35-7" aria-hidden="true" tabindex="-1"></a>EndBold()</span>
+<span id="cb35-8"><a href="#cb35-8" aria-hidden="true" tabindex="-1"></a>ApplyBoldToTarget()</span>
+<span id="cb35-9"><a href="#cb35-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-10"><a href="#cb35-10" aria-hidden="true" tabindex="-1"></a>BeginUnderline()</span>
+<span id="cb35-11"><a href="#cb35-11" aria-hidden="true" tabindex="-1"></a>EndUnderline()</span>
+<span id="cb35-12"><a href="#cb35-12" aria-hidden="true" tabindex="-1"></a>ApplyUnderlineToTarget()</span>
+<span id="cb35-13"><a href="#cb35-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-14"><a href="#cb35-14" aria-hidden="true" tabindex="-1"></a>ApplyHeading(level<span class="op">=</span><span class="dv">2</span>)</span>
+<span id="cb35-15"><a href="#cb35-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-16"><a href="#cb35-16" aria-hidden="true" tabindex="-1"></a>BeginList(kind<span class="op">=</span><span class="st">&quot;bullet&quot;</span>)</span>
+<span id="cb35-17"><a href="#cb35-17" aria-hidden="true" tabindex="-1"></a>BeginList(kind<span class="op">=</span><span class="st">&quot;numbered&quot;</span>)</span>
+<span id="cb35-18"><a href="#cb35-18" aria-hidden="true" tabindex="-1"></a>NextListItem()</span>
+<span id="cb35-19"><a href="#cb35-19" aria-hidden="true" tabindex="-1"></a>EndList()</span>
+<span id="cb35-20"><a href="#cb35-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb35-21"><a href="#cb35-21" aria-hidden="true" tabindex="-1"></a>ConvertTargetToList(kind<span class="op">=</span><span class="st">&quot;bullet&quot;</span>)</span>
+<span id="cb35-22"><a href="#cb35-22" aria-hidden="true" tabindex="-1"></a>ConvertTargetToList(kind<span class="op">=</span><span class="st">&quot;numbered&quot;</span>)</span></code></pre></div>
+<p>The active editor/document adapter determines how these actions are
+represented.</p>
+<p>This provides a consistent voice interface across document types.</p>
+<hr />
+<h1 id="39-markdown-behavior">39. Markdown Behavior</h1>
+<p>For Markdown documents, semantic actions should produce conventional
+Markdown.</p>
+<p>Examples:</p>
+<pre class="text"><code>Bold          → **text**
+Heading 1     → # Heading
+Heading 2     → ## Heading
+Bulleted list → - Item
+Numbered list → 1. Item</code></pre>
+<p>QUILL should preserve valid Markdown structure.</p>
+<p>Dictation should not require users to speak Markdown punctuation
+explicitly.</p>
+<p>A user says:</p>
+<blockquote>
+<p>make that heading 2</p>
+</blockquote>
+<p>not:</p>
+<blockquote>
+<p>insert two pound signs.</p>
+</blockquote>
+<hr />
+<h1 id="40-rich-text-behavior">40. Rich-Text Behavior</h1>
+<p>For rich-text documents, QUILL must use the document/editor’s actual
+semantic formatting operations.</p>
+<p>Examples:</p>
+<pre class="text"><code>Bold          → bold character formatting
+Underline     → underline character formatting
+Heading 1     → Heading 1 paragraph style
+Heading 2     → Heading 2 paragraph style
+Bulleted list → semantic unordered list
+Numbered list → semantic ordered list</code></pre>
+<p>QUILL should avoid visual-only formatting when a semantic structure
+exists.</p>
+<p>For headings, paragraph styles are preferred over merely increasing
+font size or weight.</p>
+<hr />
+<h1 id="41-target-resolution-for-that">41. Target Resolution for
+“That”</h1>
+<p>Commands such as:</p>
+<pre class="text"><code>bold that
+scratch that
+make that heading 2
+make that a numbered list</code></pre>
+<p>require predictable target resolution.</p>
+<p>Recommended target priority:</p>
+<ol type="1">
+<li>current explicit selection, if one exists;</li>
+<li>most recent dictated transaction;</li>
+<li>most recent dictated paragraph when the command is
+paragraph-structural;</li>
+<li>current paragraph as a controlled fallback.</li>
+</ol>
+<p>Examples:</p>
+<ul>
+<li><code>bold that</code> targets the selection or most recent dictated
+phrase;</li>
+<li><code>make that heading 2</code> targets the selection’s paragraph
+or most recent dictated paragraph;</li>
+<li><code>make that a bulleted list</code> targets selected/recent
+paragraphs.</li>
+</ul>
+<p>Target behavior must be consistent and documented.</p>
+<hr />
+<h1 id="42-list-state">42. List State</h1>
+<p>The Dictation Context should track active list mode.</p>
+<p>Example:</p>
+<div class="sourceCode" id="cb39"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>list_type <span class="op">=</span> <span class="va">None</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>list_type <span class="op">=</span> <span class="st">&quot;bullet&quot;</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>list_type <span class="op">=</span> <span class="st">&quot;numbered&quot;</span></span></code></pre></div>
+<p>When list mode is active:</p>
+<ul>
+<li>dictated phrase text belongs to the current list item;</li>
+<li><code>next item</code> commits the current item and starts the
+next;</li>
+<li><code>end list</code> exits the list and returns to normal paragraph
+mode.</li>
+</ul>
+<p>If the user says <code>new paragraph</code> while in a list, QUILL
+must define the behavior clearly.</p>
+<p>Recommended MVP behavior:</p>
+<ul>
+<li><code>next item</code> creates the next list item;</li>
+<li><code>new line</code> inserts a line break within the current list
+item;</li>
+<li><code>new paragraph</code> exits the list and begins a normal
+paragraph;</li>
+<li><code>end list</code> explicitly exits the list.</li>
+</ul>
+<p>This gives each command a distinct meaning.</p>
+<hr />
+<h1 id="43-expanded-mvp-command-vocabulary">43. Expanded MVP Command
+Vocabulary</h1>
+<p>The required MVP command set now includes:</p>
+<h2 id="text-and-spacing">Text and spacing</h2>
+<pre class="text"><code>new line
+newline
+new paragraph
+tab
+literal ...</code></pre>
+<h2 id="punctuation">Punctuation</h2>
+<pre class="text"><code>comma
+period
+full stop
+question mark
+exclamation point
+exclamation mark
+colon
+semicolon
+open quote
+close quote
+open parenthesis
+close parenthesis
+open bracket
+close bracket
+hyphen
+dash</code></pre>
+<h2 id="correction">Correction</h2>
+<pre class="text"><code>scratch that
+delete that
+undo that</code></pre>
+<h2 id="bold">Bold</h2>
+<pre class="text"><code>start bold
+stop bold
+bold that
+make that bold</code></pre>
+<h2 id="underline">Underline</h2>
+<pre class="text"><code>start underline
+stop underline
+underline that
+make that underlined</code></pre>
+<h2 id="headings">Headings</h2>
+<pre class="text"><code>heading 1
+heading one
+...
+heading 6
+heading six
+make that heading 1
+...
+make that heading 6</code></pre>
+<h2 id="bulleted-lists">Bulleted lists</h2>
+<pre class="text"><code>start bulleted list
+start bullet list
+begin bulleted list
+next item
+end list
+stop list
+make that a bulleted list</code></pre>
+<h2 id="numbered-lists">Numbered lists</h2>
+<pre class="text"><code>start numbered list
+start number list
+begin numbered list
+next item
+end list
+stop list
+make that a numbered list</code></pre>
+<h2 id="session">Session</h2>
+<pre class="text"><code>stop dictation</code></pre>
+<hr />
+<h1 id="30-recognition-architecture">30. Recognition Architecture</h1>
+<p>Recommended pipeline:</p>
+<pre class="text"><code>Microphone
+    ↓
+Windows Speech Recognition
+    ↓
+Python WinRT binding
+    ↓
+windows_recognizer.py
+    ↓
+Dictation Controller
+    ↓
+Command Parser
+    ↓
+EditorAction objects
+    ↓
+QUILL editor abstraction
+    ↓
+Commit earcon</code></pre>
+<p>The editor itself should not contain Windows speech API code.</p>
+<hr />
+<h1 id="31-recommended-python-package-layout">31. Recommended Python
+Package Layout</h1>
+<p>Suggested structure:</p>
+<pre class="text"><code>quill/
+  dictation/
+    __init__.py
+    controller.py
+    windows_recognizer.py
+    commands.py
+    actions.py
+    phrase_history.py
+    sounds.py
+    settings.py
+    document_adapter.py</code></pre>
+<p>Responsibilities:</p>
+<h2 id="controllerpy"><code>controller.py</code></h2>
+<p>Owns the dictation state machine.</p>
+<p>Responsibilities include:</p>
+<ul>
+<li>start;</li>
+<li>stop;</li>
+<li>session lifecycle;</li>
+<li>error handling;</li>
+<li>interaction with current editor;</li>
+<li>phrase commit;</li>
+<li>earcons.</li>
+</ul>
+<h2 id="windows_recognizerpy"><code>windows_recognizer.py</code></h2>
+<p>Owns Windows speech API interaction.</p>
+<p>It should expose clean callbacks such as:</p>
+<div class="sourceCode" id="cb51"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a>on_started()</span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a>on_result(text, confidence)</span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>on_error(error)</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a>on_stopped()</span></code></pre></div>
+<h2 id="commandspy"><code>commands.py</code></h2>
+<p>Converts recognized language into semantic editor actions.</p>
+<h2 id="actionspy"><code>actions.py</code></h2>
+<p>Defines actions such as:</p>
+<div class="sourceCode" id="cb52"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>InsertText</span>
+<span id="cb52-2"><a href="#cb52-2" aria-hidden="true" tabindex="-1"></a>InsertPunctuation</span>
+<span id="cb52-3"><a href="#cb52-3" aria-hidden="true" tabindex="-1"></a>NewLine</span>
+<span id="cb52-4"><a href="#cb52-4" aria-hidden="true" tabindex="-1"></a>NewParagraph</span>
+<span id="cb52-5"><a href="#cb52-5" aria-hidden="true" tabindex="-1"></a>ScratchThat</span>
+<span id="cb52-6"><a href="#cb52-6" aria-hidden="true" tabindex="-1"></a>Undo</span>
+<span id="cb52-7"><a href="#cb52-7" aria-hidden="true" tabindex="-1"></a>StopDictation</span></code></pre></div>
+<h2 id="phrase_historypy"><code>phrase_history.py</code></h2>
+<p>Tracks committed dictation transactions.</p>
+<h2 id="soundspy"><code>sounds.py</code></h2>
+<p>Loads and plays earcons.</p>
+<h2 id="settingspy"><code>settings.py</code></h2>
+<p>Contains dictation-specific settings and defaults.</p>
+<hr />
+<h1 id="32-windows-speech-dependency-strategy">32. Windows Speech
+Dependency Strategy</h1>
+<p>The preferred implementation is Microsoft’s Windows Runtime
+speech-recognition API exposed to Python through PyWinRT packages.</p>
+<p>Expected dependencies are approximately:</p>
+<pre class="text"><code>winrt-runtime
+winrt-Windows.Foundation
+winrt-Windows.Globalization
+winrt-Windows.Media.SpeechRecognition</code></pre>
+<p>Additional small WinRT namespace packages may be pulled transitively
+depending on the exact implementation.</p>
+<p>These dependencies are bindings to Windows APIs, not speech
+models.</p>
+<p>The final dependency list should be confirmed during the engineering
+spike and pinned in the QUILL Lite dependency lock file.</p>
+<hr />
+<h1 id="33-dependencies-explicitly-not-required-for-mvp">33.
+Dependencies Explicitly Not Required for MVP</h1>
+<p>Do not add the following solely for basic dictation unless the
+architecture changes after testing:</p>
+<pre class="text"><code>SpeechRecognition
+PyAudio
+Whisper
+openai-whisper
+faster-whisper
+Torch
+ONNX Runtime
+Vosk
+NumPy
+FFmpeg</code></pre>
+<p>The objective is to avoid turning a basic convenience feature into a
+large AI runtime.</p>
+<hr />
+<h1 id="34-python-packaging">34. Python Packaging</h1>
+<p>The speech components must be tested in the same packaged environment
+used by QUILL Lite.</p>
+<p>If QUILL Lite uses PyInstaller, validation must include:</p>
+<ul>
+<li>PyInstaller discovery of WinRT modules;</li>
+<li>required hidden imports;</li>
+<li>native DLL inclusion;</li>
+<li>x64 build;</li>
+<li>ARM64 build if QUILL Lite supports ARM64;</li>
+<li>installer upgrade;</li>
+<li>installer repair;</li>
+<li>uninstall;</li>
+<li>clean Windows installation.</li>
+</ul>
+<p>Any PyInstaller hooks required for PyWinRT must be documented in the
+repository.</p>
+<hr />
+<h1 id="35-windows-package-identity">35. Windows Package Identity</h1>
+<p>The chosen Windows speech-recognition API may require Windows package
+identity.</p>
+<p>QUILL Lite should retain its existing desktop installer architecture
+and investigate a lightweight identity package registered during
+installation.</p>
+<p>Conceptual installer layout:</p>
+<pre class="text"><code>QUILL-Lite-Setup.exe
+    |
+    +-- Normal QUILL Lite files
+    |
+    +-- Python/WinRT dependencies
+    |
+    +-- Dictation earcons
+    |
+    +-- Lightweight Windows package identity</code></pre>
+<p>The package-identity work is a required technical spike before
+production commitment.</p>
+<p>The goal is <strong>not</strong> to force QUILL Lite into a Microsoft
+Store-only deployment model.</p>
+<hr />
+<h1 id="36-state-machine">36. State Machine</h1>
+<p>Recommended states:</p>
+<pre class="text"><code>OFF
+ |
+ | start
+ v
+STARTING
+ |
+ v
+LISTENING
+ |
+ | speech detected
+ v
+RECOGNIZING
+ |
+ | finalized result
+ v
+PROCESSING
+ |
+ | applied to document
+ v
+COMMITTED
+ |
+ +-------------------&gt; LISTENING
+ |
+ | stop
+ v
+STOPPING
+ |
+ v
+OFF</code></pre>
+<p>Any unrecoverable error should return safely to <code>OFF</code>.</p>
+<p>The microphone must never remain active when QUILL believes dictation
+has stopped.</p>
+<hr />
+<h1 id="37-earcons">37. Earcons</h1>
+<p>QUILL should ship with four short nonverbal sounds.</p>
+<h2 id="231-start-earcon">23.1 Start Earcon</h2>
+<p>Meaning:</p>
+<blockquote>
+<p>Dictation is listening.</p>
+</blockquote>
+<p>Recommended design:</p>
+<ul>
+<li>two short ascending tones;</li>
+<li>approximately 150–250 ms total;</li>
+<li>positive but subtle.</li>
+</ul>
+<h2 id="232-commit-earcon">23.2 Commit Earcon</h2>
+<p>Meaning:</p>
+<blockquote>
+<p>The recognized phrase has been successfully applied to the
+document.</p>
+</blockquote>
+<p>This is the most frequently heard sound.</p>
+<p>Recommended design:</p>
+<ul>
+<li>extremely short;</li>
+<li>gentle;</li>
+<li>approximately 40–80 ms;</li>
+<li>not a harsh click;</li>
+<li>lower volume than Start and Stop.</li>
+</ul>
+<p>The Commit earcon must play <strong>after</strong> the editor action
+succeeds.</p>
+<h2 id="233-stop-earcon">23.3 Stop Earcon</h2>
+<p>Meaning:</p>
+<blockquote>
+<p>Dictation is no longer listening.</p>
+</blockquote>
+<p>Recommended design:</p>
+<ul>
+<li>two short descending tones;</li>
+<li>approximately 150–250 ms total.</li>
+</ul>
+<h2 id="234-error-earcon">23.4 Error Earcon</h2>
+<p>Meaning:</p>
+<blockquote>
+<p>Dictation requires attention or could not continue.</p>
+</blockquote>
+<p>Recommended design:</p>
+<ul>
+<li>short double pulse or low-low tone;</li>
+<li>clearly different from the other three;</li>
+<li>not startling.</li>
+</ul>
+<hr />
+<h1 id="38-sound-file-format">38. Sound File Format</h1>
+<p>Recommended bundled format:</p>
+<pre class="text"><code>WAV
+PCM
+16-bit
+mono
+44.1 kHz</code></pre>
+<p>Reasons:</p>
+<ul>
+<li>universally supported by Windows;</li>
+<li>tiny at these durations;</li>
+<li>no codec dependency;</li>
+<li>easy to generate;</li>
+<li>easy to play from Python.</li>
+</ul>
+<p>The sounds should be stored as application resources, for
+example:</p>
+<pre class="text"><code>resources/
+  sounds/
+    dictation-start.wav
+    dictation-commit.wav
+    dictation-stop.wav
+    dictation-error.wav</code></pre>
+<hr />
+<h1 id="39-playing-sounds-in-python">39. Playing Sounds in Python</h1>
+<p>On Windows, the standard-library <code>winsound</code> module is
+sufficient for WAV playback.</p>
+<p>Example:</p>
+<div class="sourceCode" id="cb59"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb59-1"><a href="#cb59-1" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> winsound</span>
+<span id="cb59-2"><a href="#cb59-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb59-3"><a href="#cb59-3" aria-hidden="true" tabindex="-1"></a>winsound.PlaySound(</span>
+<span id="cb59-4"><a href="#cb59-4" aria-hidden="true" tabindex="-1"></a>    <span class="st">&quot;resources/sounds/dictation-commit.wav&quot;</span>,</span>
+<span id="cb59-5"><a href="#cb59-5" aria-hidden="true" tabindex="-1"></a>    winsound.SND_FILENAME <span class="op">|</span> winsound.SND_ASYNC</span>
+<span id="cb59-6"><a href="#cb59-6" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div>
+<p>This adds no third-party audio dependency.</p>
+<p>If QUILL already has a central sound service, dictation should use
+that service instead.</p>
+<hr />
+<h1 id="40-generating-the-earcons">40. Generating the Earcons</h1>
+<p>QUILL should keep sound generation reproducible.</p>
+<p>The repository should contain a script:</p>
+<pre class="text"><code>tools/generate_dictation_sounds.py</code></pre>
+<p>The script should use only the Python standard library.</p>
+<p>This has several advantages:</p>
+<ul>
+<li>no audio editor is required;</li>
+<li>every developer can regenerate the exact assets;</li>
+<li>tones can be adjusted through constants;</li>
+<li>source generation is auditable;</li>
+<li>binary WAV files do not become mysterious hand-created assets.</li>
+</ul>
+<p>A reference generator is included with this PRD.</p>
+<p>Run:</p>
+<pre class="text"><code>python generate_dictation_sounds.py</code></pre>
+<p>It produces:</p>
+<pre class="text"><code>dictation-start.wav
+dictation-commit.wav
+dictation-stop.wav
+dictation-error.wav</code></pre>
+<hr />
+<h1 id="41-sound-design-guidance">41. Sound Design Guidance</h1>
+<p>Earcons must work well with speech output.</p>
+<p>Avoid:</p>
+<ul>
+<li>long sounds;</li>
+<li>speech clips;</li>
+<li>high-volume beeps;</li>
+<li>extremely high frequencies;</li>
+<li>tones that mask a screen reader;</li>
+<li>sounds easily confused with Windows system alerts.</li>
+</ul>
+<p>Suggested frequency area:</p>
+<pre class="text"><code>400 Hz – 1200 Hz</code></pre>
+<p>Suggested peak level:</p>
+<ul>
+<li>comfortably below full-scale;</li>
+<li>Commit softer than Start/Stop;</li>
+<li>Error distinct but not dramatically louder.</li>
+</ul>
+<p>The generated examples intentionally use simple sine tones with short
+fades to prevent audible clicks.</p>
+<hr />
+<h1 id="42-earcon-accessibility-settings">42. Earcon Accessibility
+Settings</h1>
+<p>Initial settings:</p>
+<pre class="text"><code>Dictation Sounds
+
+[x] Start sound
+[x] Phrase committed sound
+[x] Stop sound
+[x] Error sound
+
+Volume:
+System/application default</code></pre>
+<p>Future versions may support individual volume levels.</p>
+<p>Users must be able to disable earcons without losing access to
+dictation status through menus or screen-reader announcements.</p>
+<hr />
+<h1 id="43-screen-reader-announcements">43. Screen Reader
+Announcements</h1>
+<p>Optional announcements may include:</p>
+<pre class="text"><code>Dictation on
+Dictation off
+Dictation unavailable</code></pre>
+<p>Do not announce:</p>
+<pre class="text"><code>Listening
+Listening
+Listening
+Recognizing
+Recognizing</code></pre>
+<p>during normal continuous operation.</p>
+<p>The user should not be flooded with status messages between
+phrases.</p>
+<p>The Commit earcon is intended to provide lightweight
+phrase-completion feedback.</p>
+<hr />
+<h1 id="44-microphone-selection">44. Microphone Selection</h1>
+<p>MVP:</p>
+<blockquote>
+<p>Use the Windows default input microphone.</p>
+</blockquote>
+<p>Do not create a complex microphone-management interface unless
+testing shows it is necessary.</p>
+<p>Future versions may offer explicit device selection.</p>
+<p>If no microphone is available, provide an accessible error message
+and return to the <code>OFF</code> state.</p>
+<hr />
+<h1 id="45-privacy">45. Privacy</h1>
+<p>QUILL itself should:</p>
+<ul>
+<li>not record speech to WAV files during normal dictation;</li>
+<li>not retain microphone audio;</li>
+<li>not upload audio to a QUILL server;</li>
+<li>not write recognized text to diagnostic logs by default;</li>
+<li>not include dictated text in telemetry;</li>
+<li>document when the selected Windows speech service uses online
+processing.</li>
+</ul>
+<p>Diagnostic logging must redact or omit recognized content unless the
+user explicitly enables a developer diagnostic mode.</p>
+<hr />
+<h1 id="46-network-behavior">46. Network Behavior</h1>
+<p>QUILL must not assume that all Windows speech modes are offline.</p>
+<p>Engineering must explicitly test and document:</p>
+<ul>
+<li>whether the selected recognizer requires Internet access;</li>
+<li>what happens when connectivity is lost;</li>
+<li>whether recognition language packs affect behavior;</li>
+<li>whether Windows settings affect availability.</li>
+</ul>
+<p>If an Internet connection is required and unavailable, QUILL must
+report the condition clearly.</p>
+<hr />
+<h1 id="47-wake-word--phase-two">47. Wake Word — Phase Two</h1>
+<p>A future hands-free mode should support a phrase such as:</p>
+<blockquote>
+<p>Quill dictate</p>
+</blockquote>
+<p>Potential stop phrase:</p>
+<blockquote>
+<p>Quill stop dictation</p>
+</blockquote>
+<p>Wake-word detection should be separate from full transcription.</p>
+<p>This allows QUILL to use a very small keyword-spotting implementation
+rather than keeping a large speech-to-text model running
+continuously.</p>
+<p>Requirements:</p>
+<ul>
+<li>optional;</li>
+<li>disabled by default initially;</li>
+<li>very low idle CPU use;</li>
+<li>very small model/resource size;</li>
+<li>clearly indicated microphone state;</li>
+<li>configurable activation phrase if technically practical.</li>
+</ul>
+<p>Preferred operating modes:</p>
+<ol type="1">
+<li>wake word only while QUILL is active;</li>
+<li>optionally, wake word while QUILL is running in the background.</li>
+</ol>
+<p>The second mode should require explicit user opt-in.</p>
+<hr />
+<h1 id="48-windows-voice-typing-compatibility-option">48. Windows Voice
+Typing Compatibility Option</h1>
+<p>Windows Voice Typing (<code>Win+H</code>) may be investigated as a
+fallback or compatibility feature.</p>
+<p>It should not be the primary architecture because QUILL would have
+limited control over:</p>
+<ul>
+<li>phrase-result events;</li>
+<li>recognition lifecycle;</li>
+<li>error state;</li>
+<li>commit timing;</li>
+<li>UI behavior.</li>
+</ul>
+<p>If implemented, it should be labeled clearly as:</p>
+<blockquote>
+<p>Use Windows Voice Typing</p>
+</blockquote>
+<p>rather than being presented as QUILL-native dictation.</p>
+<hr />
+<h1 id="49-windows-voice-access-compatibility">49. Windows Voice Access
+Compatibility</h1>
+<p>QUILL should coexist cleanly with Windows Voice Access.</p>
+<p>Voice Access users should still be able to dictate and control
+Windows normally.</p>
+<p>QUILL should not depend on Voice Access for its internal phrase
+lifecycle.</p>
+<p>Where possible, test simultaneous or alternating use so the user does
+not end up with two microphone systems fighting over state.</p>
+<hr />
+<h1 id="50-settings">50. Settings</h1>
+<p>Keep settings deliberately small.</p>
+<p>Suggested initial dialog:</p>
+<pre class="text"><code>Dictation
+
+Keyboard shortcut:
+[ configurable ]
+
+Language:
+[ System Default ]
+
+Sounds:
+[x] Start sound
+[x] Phrase committed sound
+[x] Stop sound
+[x] Error sound
+
+Screen reader announcements:
+[x] Announce dictation on and off
+
+Microphone:
+System default
+
+Wake word:
+[ ] Enable wake word
+    Future feature</code></pre>
+<p>The feature must work well without requiring the user to open this
+dialog.</p>
+<hr />
+<h1 id="51-error-handling">51. Error Handling</h1>
+<p>QUILL must provide accessible handling for:</p>
+<ul>
+<li>no microphone;</li>
+<li>microphone permission denied;</li>
+<li>Windows speech recognition unavailable;</li>
+<li>unsupported language;</li>
+<li>missing Windows speech resources;</li>
+<li>Internet unavailable when required;</li>
+<li>recognizer initialization failure;</li>
+<li>recognizer unexpectedly stopping;</li>
+<li>microphone disconnected;</li>
+<li>document read-only;</li>
+<li>editor unavailable;</li>
+<li>package identity registration failure.</li>
+</ul>
+<p>Failure must never:</p>
+<ul>
+<li>corrupt document contents;</li>
+<li>crash QUILL;</li>
+<li>leave the microphone active unexpectedly;</li>
+<li>move focus to an inaccessible control;</li>
+<li>silently fail.</li>
+</ul>
+<hr />
+<h1 id="52-performance-requirements">52. Performance Requirements</h1>
+<p>Target behavior:</p>
+<ul>
+<li>start-to-listening feels immediate;</li>
+<li>approximately one second or less under normal conditions;</li>
+<li>phrase commit occurs as soon as a finalized result is
+available;</li>
+<li>Commit earcon occurs immediately after insertion;</li>
+<li>negligible CPU use while dictation is off;</li>
+<li>no noticeable editor lag on low-end supported machines.</li>
+</ul>
+<p>Wake-word mode, if added, must also have low idle resource use.</p>
+<hr />
+<h1 id="53-accessibility-requirements">53. Accessibility
+Requirements</h1>
+<p>The feature must be fully operable:</p>
+<ul>
+<li>without a mouse;</li>
+<li>without vision;</li>
+<li>without color;</li>
+<li>with screen readers;</li>
+<li>with magnification;</li>
+<li>using the keyboard alone.</li>
+</ul>
+<p>Starting dictation must not:</p>
+<ul>
+<li>open an unnecessary floating window;</li>
+<li>steal editor focus;</li>
+<li>move the caret;</li>
+<li>require mouse interaction.</li>
+</ul>
+<p>The current dictation state must be exposed programmatically through
+the menu/status UI.</p>
+<hr />
+<h1 id="54-visual-status">54. Visual Status</h1>
+<p>QUILL may show a nonmodal status such as:</p>
+<pre class="text"><code>Dictation: Off
+Dictation: Listening
+Dictation: Recognizing
+Dictation: Unavailable</code></pre>
+<p>This display must not receive focus during normal dictation.</p>
+<p>Visual presentation is secondary to keyboard, sound, and accessible
+programmatic state.</p>
+<hr />
+<h1 id="55-non-goals-for-version-one">55. Non-Goals for Version One</h1>
+<p>Version One will not attempt to provide:</p>
+<ul>
+<li>full computer voice control;</li>
+<li>Dragon-style macro systems;</li>
+<li>speaker identification;</li>
+<li>meeting transcription;</li>
+<li>audio-file transcription;</li>
+<li>multi-speaker transcription;</li>
+<li>translation;</li>
+<li>AI rewriting;</li>
+<li>voice cloning;</li>
+<li>custom acoustic model training;</li>
+<li>a full natural-language editor agent.</li>
+</ul>
+<p>These capabilities should not delay basic dictation.</p>
+<hr />
+<h1 id="56-technical-spike">56. Technical Spike</h1>
+<p>Before full production development, implement a minimal proof of
+concept.</p>
+<p>It must answer the following questions.</p>
+<h2 id="421-recognition">42.1 Recognition</h2>
+<p>Can Python successfully use the selected Windows speech-recognition
+API through PyWinRT?</p>
+<h2 id="422-accuracy">42.2 Accuracy</h2>
+<p>Is conversational dictation accurate enough for real QUILL users?</p>
+<p>Test:</p>
+<ul>
+<li>ordinary prose;</li>
+<li>technical terminology;</li>
+<li>accessibility terminology;</li>
+<li>names;</li>
+<li>punctuation commands.</li>
+</ul>
+<h2 id="423-continuous-results">42.3 Continuous Results</h2>
+<p>Do finalized phrase boundaries feel natural for:</p>
+<blockquote>
+<p>speak → pause → commit → continue?</p>
+</blockquote>
+<h2 id="424-latency">42.4 Latency</h2>
+<p>How quickly does the recognizer finalize a phrase after a natural
+pause?</p>
+<h2 id="425-package-identity">42.5 Package Identity</h2>
+<p>Can the existing QUILL Lite installer reliably install and register
+any required Windows package identity?</p>
+<p>Test:</p>
+<ul>
+<li>clean install;</li>
+<li>upgrade;</li>
+<li>repair;</li>
+<li>uninstall;</li>
+<li>reinstall.</li>
+</ul>
+<h2 id="426-pyinstaller">42.6 PyInstaller</h2>
+<p>Can the WinRT packages be bundled reliably with the current Python
+packaging toolchain?</p>
+<h2 id="427-screen-readers">42.7 Screen Readers</h2>
+<p>Test with:</p>
+<ul>
+<li>JAWS;</li>
+<li>NVDA;</li>
+<li>Narrator.</li>
+</ul>
+<p>Confirm:</p>
+<ul>
+<li>no focus theft;</li>
+<li>no repeated unwanted announcements;</li>
+<li>correct editing feedback;</li>
+<li>no keyboard conflicts.</li>
+</ul>
+<h2 id="428-machine-classes">42.8 Machine Classes</h2>
+<p>Test at least:</p>
+<ul>
+<li>lower-end supported Windows PC;</li>
+<li>typical office laptop;</li>
+<li>high-performance desktop;</li>
+<li>ARM64 Windows device if QUILL Lite supports ARM64.</li>
+</ul>
+<hr />
+<h1 id="57-accuracy-test-vocabulary">57. Accuracy Test Vocabulary</h1>
+<p>The test corpus should intentionally include words commonly important
+to QUILL users:</p>
+<pre class="text"><code>QUILL
+QUILL Lite
+Quillbert
+JAWS
+NVDA
+Narrator
+VoiceOver
+WCAG
+accessibility
+GitHub
+Markdown
+Python
+PowerShell
+Microsoft
+Windows
+screen reader
+new line
+new paragraph</code></pre>
+<p>The tests must also determine whether command phrases can be
+distinguished reliably from literal prose.</p>
+<hr />
+<h1 id="58-mvp-acceptance-criteria">58. MVP Acceptance Criteria</h1>
+<p>The MVP is complete when:</p>
+<ol type="1">
+<li>Dictation installs as part of QUILL Lite.</li>
+<li>No separate large speech model download is required.</li>
+<li>A configurable keyboard command starts dictation.</li>
+<li>A Start earcon confirms listening.</li>
+<li>The active editor keeps focus.</li>
+<li>Speech is recognized continuously.</li>
+<li>A natural pause produces a finalized phrase.</li>
+<li>QUILL parses supported command phrases.</li>
+<li><code>new line</code> works.</li>
+<li><code>new paragraph</code> works.</li>
+<li>Basic punctuation commands work.</li>
+<li><code>literal ...</code> prevents command interpretation.</li>
+<li><code>start bold</code>, <code>stop bold</code>,
+<code>bold that</code>, and <code>make that bold</code> work.</li>
+<li>Underline commands work in supported rich-text documents and fail
+accessibly in Markdown.</li>
+<li>Heading 1 through Heading 6 commands work semantically.</li>
+<li><code>make that heading N</code> works for the current/recent
+target.</li>
+<li>Bulleted-list dictation mode works.</li>
+<li>Numbered-list dictation mode works.</li>
+<li><code>next item</code> advances to the next list item.</li>
+<li><code>end list</code> exits list mode predictably.</li>
+<li><code>make that a bulleted list</code> works for a supported
+target.</li>
+<li><code>make that a numbered list</code> works for a supported
+target.</li>
+<li>QUILL applies semantic editor actions appropriate to Markdown or
+rich text.</li>
+<li>A Commit earcon plays only after successful application.</li>
+<li>The user can immediately continue speaking.</li>
+<li><code>scratch that</code> removes the last dictated
+transaction.</li>
+<li>Normal undo continues to work.</li>
+<li>The keyboard command stops dictation.</li>
+<li><code>stop dictation</code> can stop the session if reliable.</li>
+<li>A Stop earcon confirms that listening ended.</li>
+<li>Errors are exposed accessibly.</li>
+<li>JAWS, NVDA, and Narrator work without focus disruption.</li>
+<li>Low-end supported systems remain responsive.</li>
+<li>QUILL does not retain microphone recordings.</li>
+<li>QUILL does not log dictated text by default.</li>
+<li>Dictation failure cannot damage the document.</li>
+</ol>
+<hr />
+<h1 id="59-phase-two">59. Phase Two</h1>
+<p>After MVP stabilization, evaluate:</p>
+<ul>
+<li>lightweight wake-word detection;</li>
+<li>user-defined vocabulary;</li>
+<li>user-defined spoken commands;</li>
+<li>explicit microphone selection;</li>
+<li>additional punctuation;</li>
+<li>capitalization commands;</li>
+<li>advanced selection commands;</li>
+<li>spelling mode;</li>
+<li>offline recognition alternatives;</li>
+<li>macOS native speech adapter.</li>
+</ul>
+<p>Potential commands include:</p>
+<pre class="text"><code>capitalize that
+all caps that
+select that
+delete word
+delete sentence
+go to end of line
+go to beginning of line</code></pre>
+<p>These should be added only after the basic experience remains
+predictable.</p>
+<hr />
+<h1 id="60-recommended-implementation-order">60. Recommended
+Implementation Order</h1>
+<h2 id="milestone-1--python-speech-spike">Milestone 1 — Python Speech
+Spike</h2>
+<p>Use PyWinRT to receive finalized recognition results.</p>
+<h2 id="milestone-2--command-parser">Milestone 2 — Command Parser</h2>
+<p>Implement:</p>
+<ul>
+<li>new line;</li>
+<li>new paragraph;</li>
+<li>punctuation;</li>
+<li>literal escape.</li>
+</ul>
+<h2 id="milestone-3--editor-actions">Milestone 3 — Editor Actions</h2>
+<p>Apply parsed actions through QUILL’s editor abstraction.</p>
+<h2 id="milestone-4--phrase-transactions">Milestone 4 — Phrase
+Transactions</h2>
+<p>Track committed phrases and implement <code>scratch that</code>.</p>
+<h2 id="milestone-5--continuous-session">Milestone 5 — Continuous
+Session</h2>
+<p>Keep recognition active across pauses.</p>
+<h2 id="milestone-6--earcons">Milestone 6 — Earcons</h2>
+<p>Add Start, Commit, Stop, and Error sounds.</p>
+<h2 id="milestone-7--accessibility">Milestone 7 — Accessibility</h2>
+<p>Perform JAWS, NVDA, and Narrator testing.</p>
+<h2 id="milestone-8--packaging">Milestone 8 — Packaging</h2>
+<p>Complete PyInstaller and installer/package-identity integration.</p>
+<h2 id="milestone-9--settings-and-failure-handling">Milestone 9 —
+Settings and Failure Handling</h2>
+<p>Add shortcut configuration, sounds, language, announcements, and
+diagnostics.</p>
+<h2 id="milestone-10--wake-word-prototype">Milestone 10 — Wake-Word
+Prototype</h2>
+<p>Evaluate a lightweight keyword-spotting solution independently from
+transcription.</p>
+<hr />
+<h1 id="61-repository-deliverables">61. Repository Deliverables</h1>
+<p>Suggested repository changes:</p>
+<pre class="text"><code>quill/
+  dictation/
+    __init__.py
+    controller.py
+    windows_recognizer.py
+    commands.py
+    actions.py
+    phrase_history.py
+    sounds.py
+    settings.py
+
+resources/
+  sounds/
+    dictation-start.wav
+    dictation-commit.wav
+    dictation-stop.wav
+    dictation-error.wav
+
+tools/
+  generate_dictation_sounds.py
+
+docs/
+  quill-lite-dictation-prd.md</code></pre>
+<hr />
+<h1 id="62-recommended-decision">62. Recommended Decision</h1>
+<p>Proceed first with a small Windows/Python technical spike using:</p>
+<blockquote>
+<p><strong>Python + PyWinRT + Windows speech recognition + QUILL command
+parser + QUILL editor transactions + standard-library WAV
+earcons</strong></p>
+</blockquote>
+<p>Do not add a large embedded speech model until this approach has been
+tested and shown to be insufficient.</p>
+<p>The desired production experience remains:</p>
+<blockquote>
+<p><strong>Start dictation, speak naturally, pause, hear the commit
+sound, and keep talking.</strong></p>
+</blockquote>
+<p>QUILL should own the editing intelligence while Windows provides the
+speech recognition.</p>
+</main>
+</body>
+</html>

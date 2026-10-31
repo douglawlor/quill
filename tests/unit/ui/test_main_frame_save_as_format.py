@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from quill.ui.editor_surface import PLAIN, RICH
 from quill.ui.main_frame import MainFrame
 
 
@@ -57,63 +56,123 @@ def test_no_double_extension_created() -> None:
     assert str(result).count(".") == 1
 
 
-# --------------------------------------------------------------------------- #
-# surface sync after Save As
-# --------------------------------------------------------------------------- #
-def test_resolve_surface_sync_no_change_when_kinds_match() -> None:
-    assert MainFrame._resolve_surface_sync(PLAIN, PLAIN, "always") == "none"
-    assert MainFrame._resolve_surface_sync(RICH, RICH, "prompt") == "none"
-
-
-def test_resolve_surface_sync_never_does_nothing() -> None:
-    assert MainFrame._resolve_surface_sync(PLAIN, RICH, "never") == "none"
-
-
-def test_resolve_surface_sync_always_reloads() -> None:
-    assert MainFrame._resolve_surface_sync(PLAIN, RICH, "always") == "reload"
-    assert MainFrame._resolve_surface_sync(RICH, PLAIN, "always") == "reload"
-
-
-def test_resolve_surface_sync_prompt_default() -> None:
-    assert MainFrame._resolve_surface_sync(PLAIN, RICH, "prompt") == "prompt"
-    # An unknown mode falls back to prompting rather than silently reloading.
-    assert MainFrame._resolve_surface_sync(PLAIN, RICH, "bogus") == "prompt"
-
-
-def test_surface_kind_for_path_rtf_needs_rich_lens() -> None:
+def test_default_file_dialog_folder_uses_the_user_setting(tmp_path: Path) -> None:
+    folder = tmp_path / "writing"
+    folder.mkdir()
     frame = _frame()
-    frame.settings = SimpleNamespace(editor_surface="rich")
-    assert frame._surface_kind_for_path(Path("a.rtf")) == RICH
-    assert frame._surface_kind_for_path(Path("a.txt")) == PLAIN
-    assert frame._surface_kind_for_path(Path("a.md")) == PLAIN
+    frame._last_file_dir = ""
+    frame.settings = SimpleNamespace(startup_folder=str(folder))
+    frame._wx = SimpleNamespace(
+        StandardPaths=SimpleNamespace(
+            Get=lambda: SimpleNamespace(GetDocumentsDir=lambda: str(tmp_path))
+        )
+    )
 
-
-def test_surface_kind_for_path_rtf_is_plain_when_lens_off() -> None:
-    frame = _frame()
-    frame.settings = SimpleNamespace(editor_surface="plain")
-    # With the Rich lens off there is no rich surface to offer, so .rtf stays plain.
-    assert frame._surface_kind_for_path(Path("a.rtf")) == PLAIN
+    assert MainFrame._file_dialog_default_dir(frame) == str(folder)
 
 
 # --------------------------------------------------------------------------- #
-# source contract: the reload prompt and safe reload wiring
+# source contract: save wiring
 # --------------------------------------------------------------------------- #
-_SOURCE = (Path(__file__).resolve().parents[3] / "quill" / "ui" / "main_frame.py").read_text(
-    encoding="utf-8"
-)
+_UI_DIR = Path(__file__).resolve().parents[3] / "quill" / "ui"
+_SOURCE = (_UI_DIR / "main_frame.py").read_text(encoding="utf-8")
 
 
-def test_save_file_as_triggers_surface_sync() -> None:
+def test_surface_sync_machinery_stays_retired() -> None:
+    # The post-Save-As surface reload sync retired with the Rich text lens
+    # (One Editor, Every Format): retargeting is now the Document Format
+    # switcher's explicit job. Pin the absence so it does not creep back.
+    assert "_maybe_reload_surface_after_save_as" not in _SOURCE
+    assert "_resolve_surface_sync" not in _SOURCE
+    assert "save_as_surface_sync" not in _SOURCE
+
+
+def test_save_file_redirects_when_format_retargeted() -> None:
+    # The Document Format switcher retargets the file type; Save must propose
+    # the renamed path through Save As, never silently rewrite in place.
+    start = _SOURCE.index("def save_file(")
+    body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
+    assert "_pending_format_redirect" in body
+
+
+def test_export_route_for_suffix() -> None:
+    # Pandoc-capable targets get routed to File > Export; the rest are refused.
+    assert MainFrame._export_route_for_suffix(".pdf") == "pdf"
+    assert MainFrame._export_route_for_suffix(".ODT") == "odt"
+    assert MainFrame._export_route_for_suffix(".epub") == "epub"
+    assert MainFrame._export_route_for_suffix(".xlsx") is None
+    assert MainFrame._export_route_for_suffix(".docx") is None
+
+
+def test_save_file_guards_export_only_originals() -> None:
+    # Ctrl-S on an opened PDF/EPUB/spreadsheet must never write text over the
+    # binary original; it explains and routes to Save As instead.
+    start = _SOURCE.index("def save_file(")
+    body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
+    assert "EXPORT_ONLY_SUFFIXES" in body
+    assert "self.save_file_as()" in body
+
+
+def test_save_file_as_offers_export_for_export_only_suffixes() -> None:
     start = _SOURCE.index("def save_file_as(")
     body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
-    assert "self._maybe_reload_surface_after_save_as(target)" in body
+    assert "EXPORT_ONLY_SUFFIXES" in body
+    assert "_export_route_for_suffix" in body
+    assert "self.export_document(" in body
 
 
-def test_reload_prompt_defaults_to_no_and_is_yes_no() -> None:
-    start = _SOURCE.index("def _maybe_reload_surface_after_save_as(")
+def test_save_file_as_reports_write_failures() -> None:
+    # A failed conversion/write must not crash or claim success. The wording
+    # lives in _report_save_failure since #1390, which is also what gives
+    # ENOSPC and read-only their own sentence.
+    start = _SOURCE.index("def save_file_as(")
     body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
-    assert "wx.YES_NO | wx.NO_DEFAULT" in body
-    assert "_show_message_box(" in body
+    assert "except OSError" in body
+    assert "_report_save_failure(" in body
+    helper = (_UI_DIR / "main_frame_write_safety.py").read_text(encoding="utf-8")
+    assert "Could not save" in helper
+    assert "The disk is full" in helper
+
+
+def test_save_file_as_announces_format_conversion() -> None:
+    # After a converting Save As (.docx/.rtf/HTML) the screen reader hears what
+    # actually happened: the file is Word/RTF/HTML on disk, but the editor still
+    # holds QUILL text and each save re-converts.
+    start = _SOURCE.index("def save_file_as(")
+    body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
+    assert "_announce_save_as_conversion(target)" in body
+
+
+def test_announce_save_as_conversion_wording() -> None:
+    spoken: list[str] = []
+    frame = _frame()
+    frame._announce = spoken.append  # type: ignore[method-assign]
+    frame._announce_save_as_conversion(Path("report.docx"))
+    assert spoken == [
+        "Saved as report.docx, Word format. You are still editing QUILL text; "
+        "each save converts it to Word."
+    ]
+    spoken.clear()
+    # Non-converting formats stay quiet: the status line already covers them.
+    frame._announce_save_as_conversion(Path("notes.md"))
+    frame._announce_save_as_conversion(Path("notes.txt"))
+    assert spoken == []
+
+
+def test_save_as_plain_text_uses_the_default_document_folder() -> None:
+    start = _SOURCE.index("def save_as_plain_text(")
+    body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
+    assert "defaultDir=self._file_dialog_default_dir()" in body
+
+
+def test_export_document_preserves_editor_line_breaks() -> None:
+    # The editor is line-oriented: one editor line is one paragraph. Bare "gfm"
+    # treats a single newline as a soft wrap, which joined all of a user's lines
+    # into one long paragraph in every Pandoc export (Caroline's report).
+    start = _SOURCE.index("def export_document(")
+    body = _SOURCE[start : _SOURCE.index("\n    def ", start + 1)]
+    assert 'from_format="gfm+hard_line_breaks"' in body
+    assert 'from_format="gfm",' not in body
 
 
 def test_reload_in_place_reads_before_closing() -> None:
@@ -124,3 +183,37 @@ def test_reload_in_place_reads_before_closing() -> None:
     read_at = body.index("read_open_document(")
     delete_at = body.index("DeletePage(")
     assert read_at < delete_at
+
+
+# --------------------------------------------------------------------------- #
+# which type row an untitled document opens on
+# --------------------------------------------------------------------------- #
+
+
+class _Tab:
+    def __init__(self, kind: str | None) -> None:
+        self._language_profile_pinned = kind is not None
+        self._language_profile = type("_Profile", (), {"markup_kind": kind})()
+
+
+def _frame_with(kind: str | None, setting: str = "markdown") -> MainFrame:
+    frame = _frame()
+    # _current_tab is a property over _active_tab(), so the tab goes in there.
+    frame._active_tab = lambda: _Tab(kind)  # type: ignore[assignment,method-assign]
+    frame.settings = type("_Settings", (), {"default_new_document_format": setting})()
+    return frame
+
+
+def test_new_document_opens_on_the_format_setting() -> None:
+    assert _frame_with(None, "markdown")._save_filter_index_for_new_document() == 1
+    assert _frame_with(None, "text")._save_filter_index_for_new_document() == 0
+    assert _frame_with(None, "html")._save_filter_index_for_new_document() == 2
+
+
+def test_a_pinned_markup_kind_outranks_the_setting() -> None:
+    """Somebody who has said "this is HTML" has said it; the setting is only
+    what to do when nobody has. wx appends the selected row's extension to a
+    name typed without one, so this row decides the file's name."""
+    assert _frame_with("html", "markdown")._save_filter_index_for_new_document() == 2
+    assert _frame_with("plain", "markdown")._save_filter_index_for_new_document() == 0
+    assert _frame_with("markdown", "text")._save_filter_index_for_new_document() == 1

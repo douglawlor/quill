@@ -16,13 +16,18 @@ import html
 import re
 from pathlib import Path
 
-from quill.core.browser_preview import render_preview_body
+from quill.core.browser_preview import contains_math, render_preview_body
 from quill.core.document import Document
+from quill.core.error_codes import CodedError
+from quill.core.storage import write_text_atomic
 from quill.io.rtf import write_rtf_document
-from quill.io.text import _normalize_line_endings, write_text_document
+from quill.io.text import _emit_save_warning, _normalize_line_endings, write_text_document
 
 __all__ = [
+    "EXPORT_ONLY_SUFFIXES",
+    "HTML_SUFFIXES",
     "LINK_STYLES",
+    "UnsupportedSaveFormatError",
     "markdown_to_plain_text",
     "markdown_to_html",
     "write_plain_text_document",
@@ -32,10 +37,42 @@ __all__ = [
     "format_label_for_path",
 ]
 
-_HTML_SUFFIXES = {".html", ".htm", ".xhtml"}
+HTML_SUFFIXES = frozenset({".html", ".htm", ".xhtml"})
+_HTML_SUFFIXES = HTML_SUFFIXES
 _PLAIN_SUFFIXES = {".txt", ".text"}
 _RTF_SUFFIXES = {".rtf"}
 _DOCX_SUFFIXES = {".docx"}
+
+#: Formats QUILL can open (as extracted text) but cannot write back. Writing the
+#: editor's markup to one of these would destroy a binary original (an opened
+#: PDF, EPUB, spreadsheet...) or produce a file other apps cannot open (Markdown
+#: text named .pdf). Save must refuse and steer the user to Save As / Export.
+EXPORT_ONLY_SUFFIXES: frozenset[str] = frozenset({
+    ".pdf",
+    ".doc",
+    ".odt",
+    ".epub",
+    ".pages",
+    ".ppt",
+    ".pptx",
+    ".xls",
+    ".xlsx",
+    ".sqlite",
+    ".db",
+})
+
+
+class UnsupportedSaveFormatError(CodedError):
+    """Save targeted an extension QUILL cannot convert the editor text into."""
+
+    code = "QUILL-IO-SAVE-UNSUPPORTED"
+
+    def __init__(self, suffix: str) -> None:
+        super().__init__(
+            f"QUILL cannot save directly to {suffix}. Use File > Export for this format."
+        )
+        self.suffix = suffix
+
 
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -46,6 +83,11 @@ _HRULE_RE = re.compile(r"^\s*([-*_])(\s*\1){2,}\s*$")
 
 _IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]*)\)")
+# Hidden-codes run span ``[text]{attrs}`` and alignment fence lines. Plain text
+# keeps only the visible words (the codes are lost — honest fidelity reporting
+# warns about this on plain-text save).
+_SPAN_CODE_RE = re.compile(r"\[([^\]]+)\]\{[^}]*\}")
+_FENCE_LINE_RE = re.compile(r"^:::+(\s*\{[^}]*\}|\s+pagebreak)?\s*$", re.IGNORECASE)
 _CODE_SPAN_RE = re.compile(r"`([^`]+)`")
 _BOLD_STAR_RE = re.compile(r"\*\*([^*]+)\*\*")
 _BOLD_UNDER_RE = re.compile(r"(?<!\w)__([^_]+)__(?!\w)")
@@ -56,12 +98,35 @@ _ITALIC_UNDER_RE = re.compile(r"(?<!\w)_([^_]+)_(?!\w)")
 LINK_STYLES = ("text", "text_url", "url", "markdown")
 
 
+#: Inline HTML that means emphasis. Markdown has no underline syntax, so a
+#: ``<u>`` is how QUILL writes one -- and plain text kept the tag, producing
+#: ``<u>underlined</u>`` in a file whose whole promise is that it contains no
+#: markup. Narrow on purpose: only emphasis tags, only when properly closed, so
+#: prose containing ``a < b`` is untouched.
+_INLINE_HTML_EMPHASIS_RE = re.compile(
+    r"</?(?:u|b|i|em|strong|s|strike|del|ins|mark|sub|sup|small|big)\s*/?>",
+    re.IGNORECASE,
+)
+#: GFM strikethrough, which is markup like any other and has no business
+#: surviving into a plain-text file either.
+_STRIKE_RE = re.compile(r"~~(?=\S)(.+?)(?<=\S)~~", re.DOTALL)
+
+
 def _strip_emphasis(text: str) -> str:
-    """Remove bold/italic Markdown markers, keeping the emphasized words."""
+    """Remove emphasis markers, keeping the emphasized words.
+
+    Bold and italic were always handled; strikethrough and inline HTML emphasis
+    were not, so ``~~gone~~`` and ``<u>underlined</u>`` reached plain text with
+    their markers intact. Code spans are already stashed behind placeholders by
+    :func:`_strip_inline` before this runs, so a person writing *about* ``<u>``
+    keeps their example.
+    """
     text = _BOLD_STAR_RE.sub(r"\1", text)
     text = _BOLD_UNDER_RE.sub(r"\1", text)
     text = _ITALIC_STAR_RE.sub(r"\1", text)
     text = _ITALIC_UNDER_RE.sub(r"\1", text)
+    text = _STRIKE_RE.sub(r"\1", text)
+    text = _INLINE_HTML_EMPHASIS_RE.sub("", text)
     return text
 
 
@@ -105,6 +170,9 @@ def _strip_inline(text: str, link_style: str = "text") -> str:
         placeholders.append(value)
         return f"\x00{len(placeholders) - 1}\x00"
 
+    # Unwrap hidden-codes run spans to their visible text before any other inline
+    # handling, so ``[text]{font-family="Arial"}`` reads as ``text``.
+    text = _SPAN_CODE_RE.sub(lambda m: m.group(1), text)
     text = _CODE_SPAN_RE.sub(lambda m: _stash(m.group(1)), text)
     if link_style == "markdown":
         text = _IMAGE_RE.sub(lambda m: _stash(m.group(0)), text)
@@ -142,6 +210,9 @@ def markdown_to_plain_text(markdown: str, link_style: str = "text") -> str:
         if in_fence:
             out.append(raw)
             continue
+        if _FENCE_LINE_RE.match(raw):
+            # Alignment fenced-div markers carry no visible text.
+            continue
         if _HRULE_RE.match(raw):
             out.append("")
             continue
@@ -169,30 +240,68 @@ def markdown_to_plain_text(markdown: str, link_style: str = "text") -> str:
     return re.sub(r"\n{3,}", "\n\n", text)
 
 
-def markdown_to_html(markdown: str, title: str) -> str:
-    """Render QUILL Markdown-style markup as a standalone HTML document."""
+def markdown_to_html(markdown: str, title: str, *, charset: str = "utf-8") -> str:
+    """Render QUILL Markdown-style markup as a standalone HTML document.
+
+    ``charset`` is written into the meta tag and must be the encoding the file
+    is actually written in. It used to be the literal "utf-8" while the writer
+    below forced UTF-8 too, which agreed with itself and disagreed with the
+    document: a file read as cp1252 or UTF-16 was re-encoded on the way out
+    with nothing said (bad.md F4).
+    """
     body = render_preview_body(markdown, "markdown")
+    # Only include the remote MathJax CDN when the document actually contains
+    # math, so exporting a plain document produces HTML with no third-party
+    # script/network dependency (privacy/egress).
+    mathjax = (
+        '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"'
+        " async></script>\n"
+        if contains_math(markdown)
+        else ""
+    )
     return (
         "<!doctype html>\n"
         '<html lang="en">\n'
         "<head>\n"
-        '<meta charset="utf-8">\n'
+        f'<meta charset="{html.escape(charset)}">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"<title>{html.escape(title)}</title>\n"
-        '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"'
-        " async></script>\n"
+        f"{mathjax}"
         "</head>\n"
         f"<body>\n{body}\n</body>\n"
         "</html>\n"
     )
 
 
-def _write_utf8(document: Document, target: Path, text: str) -> Path:
-    """Write ``text`` as UTF-8 with the document's line ending and mark it saved."""
+def _write_export(document: Document, target: Path, text: str) -> Path:
+    """Write ``text`` atomically, in the document's own encoding (bad.md F4).
+
+    Two defects, one function. It wrote with a plain ``open()``, so an
+    interrupted Save As Plain Text left a truncated file where the document had
+    been -- alone among QUILL's writers, every other one of which goes through
+    :func:`write_text_atomic`. And it hard-coded UTF-8 and then *assigned*
+    ``document.encoding = "utf-8"``, so a file read as cp1252, Shift-JIS or
+    UTF-16 was silently re-encoded and the document forgot it had ever been
+    anything else -- which is the same loss the save path was fixed for in
+    bad.md F1, arriving by another door.
+
+    The encoding the document was read in is kept. When the text genuinely
+    cannot be expressed in it -- an em dash exported to ASCII -- the file is
+    written as UTF-8 rather than failing, and the save warning says so, because
+    an export that refuses at the last step is worse than one that widens the
+    encoding and tells you.
+    """
     normalized = _normalize_line_endings(text, document.line_ending)
-    with target.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(normalized)
-    document.encoding = "utf-8"
+    encoding = document.encoding or "utf-8"
+    try:
+        normalized.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        _emit_save_warning(
+            f"{target.name} was written as UTF-8: its text cannot be expressed in {encoding}."
+        )
+        encoding = "utf-8"
+    write_text_atomic(target, normalized, encoding=encoding, newline="")
+    document.encoding = encoding
     document.mark_saved(target)
     return target
 
@@ -204,7 +313,7 @@ def write_plain_text_document(
     target = path or document.path
     if target is None:
         raise ValueError("A path is required to save this document.")
-    return _write_utf8(document, target, markdown_to_plain_text(document.text, link_style))
+    return _write_export(document, target, markdown_to_plain_text(document.text, link_style))
 
 
 def write_html_document(document: Document, path: Path | None = None) -> Path:
@@ -213,32 +322,85 @@ def write_html_document(document: Document, path: Path | None = None) -> Path:
     if target is None:
         raise ValueError("A path is required to save this document.")
     title = target.stem or "Document"
-    return _write_utf8(document, target, markdown_to_html(document.text, title))
+    return _write_export(
+        document,
+        target,
+        markdown_to_html(document.text, title, charset=document.encoding or "utf-8"),
+    )
 
 
-def write_docx_document(document: Document, path: Path | None = None) -> Path:
-    """Write a document's Markdown markup out as a Word (.docx) file via Pandoc.
+def write_docx_document(
+    document: Document, path: Path | None = None, *, engine: str = "auto"
+) -> Path:
+    """Write a document's Markdown markup out as a Word (.docx) file.
 
-    Pandoc maps Markdown headings, lists, emphasis, links, and simple tables to
-    real Word styles, so the result is a properly structured, screen-reader-
-    navigable document rather than flat text.
+    ``engine`` selects the converter: ``auto`` (default) prefers the native
+    python-docx writer and falls back to Pandoc; ``native`` requires python-docx
+    and fails clearly when it is missing; ``pandoc`` forces the Pandoc path for
+    users who want structure-first Word styles instead of QUILL's run-level
+    formatting codes.
+
+    Prefers the native python-docx writer (:mod:`quill.io.docx_writer`), which
+    carries QUILL's hidden-codes attributes — per-run font family, point size,
+    color, highlight, underline and per-paragraph alignment — onto real Word runs
+    and paragraphs. When python-docx is not installed, falls back to the Pandoc
+    path, which maps headings, lists, emphasis, links, and simple tables to Word
+    styles (but drops the font/size/color/alignment attributes). Either way the
+    result is a properly structured, screen-reader-navigable document, and the
+    document is marked saved at the target like every other writer here — so the
+    window title, the modified flag, and the next plain Save stay truthful.
     """
-    import tempfile
-
-    from quill.io.pandoc import convert_file_with_pandoc
-
+    if engine not in {"auto", "native", "pandoc"}:
+        raise ValueError(f"Unknown docx engine {engine!r}; use auto, native, or pandoc.")
     target = path or document.path
     if target is None:
         raise ValueError("A path is required to save this document.")
+    target = Path(target)
+
+    from quill.io.docx_writer import python_docx_available, write_docx
+
+    if engine != "pandoc" and python_docx_available():
+        write_docx(document, target)
+        document.mark_saved(target)
+        return target
+    if engine == "native":
+        raise ValueError("The native Word writer needs python-docx, which is not installed.")
+
+    import os
+    import tempfile
+    import uuid
+
+    from quill.io.pandoc import convert_file_with_pandoc
+
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp) / "source.md"
         source.write_text(document.text, encoding="utf-8", newline="\n")
-        convert_file_with_pandoc(source, Path(target), from_format="gfm", to_format="docx")
-    return Path(target)
+        # hard_line_breaks: the editor is line-oriented (one editor line is one
+        # paragraph, exactly what markdown_to_rich produces on the native path),
+        # so a bare "gfm" read — where a single newline is a soft wrap — would
+        # join the user's lines into one long Word paragraph.
+        #
+        # Convert into a temp file in the TARGET's directory, then os.replace onto
+        # the target: pandoc writing straight to ``target`` would destroy the
+        # previous file if the conversion failed partway (non-atomic save).
+        tmp_out = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            convert_file_with_pandoc(
+                source, tmp_out, from_format="gfm+hard_line_breaks", to_format="docx"
+            )
+            os.replace(tmp_out, target)
+        finally:
+            tmp_out.unlink(missing_ok=True)
+    document.mark_saved(target)
+    return target
 
 
 def write_document_as(
-    document: Document, path: Path | None = None, *, plain_text_link_style: str = "text"
+    document: Document,
+    path: Path | None = None,
+    *,
+    plain_text_link_style: str = "text",
+    docx_engine: str = "auto",
 ) -> Path:
     """Write ``document`` to ``path``, converting to the format of its extension.
 
@@ -250,15 +412,23 @@ def write_document_as(
     explicit "Save as plain text" command (``write_plain_text_document``) still
     flattens markup. ``plain_text_link_style`` is accepted for call-site symmetry
     and applies only on that explicit plain-text path (see :data:`LINK_STYLES`).
+    ``docx_engine`` is forwarded to :func:`write_docx_document` (the
+    ``docx_write_engine`` setting).
     """
     target = path or document.path
     if target is None:
         raise ValueError("A path is required to save this document.")
     suffix = Path(target).suffix.lower()
+    if suffix in EXPORT_ONLY_SUFFIXES:
+        # Never fall through to the verbatim text writer for these: it would
+        # overwrite an opened binary original (PDF, EPUB, spreadsheet...) with
+        # plain text, or mint a Markdown file wearing a .pdf name that other
+        # apps cannot open.
+        raise UnsupportedSaveFormatError(suffix)
     if suffix in _RTF_SUFFIXES:
         return write_rtf_document(document, target)
     if suffix in _DOCX_SUFFIXES:
-        return write_docx_document(document, target)
+        return write_docx_document(document, target, engine=docx_engine)
     if suffix in _HTML_SUFFIXES:
         return write_html_document(document, target)
     # A plain-text file the user opened (or saves to by extension) must round-trip

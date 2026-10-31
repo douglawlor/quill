@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Quill Radio 2.0</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-radio-20">Quill Radio 2.0</h1>
+<p>Welcome to Quill Radio 2.0. This release is about recordings you can
+trust: if you schedule shows, leave long recordings running while you
+are away, or have ever come back to find a recording cut short or
+missing, it is for you.</p>
+<p>It also gives you more to find, because iHeart and TuneIn now join
+the search. And Quill Radio is the same radio as the one in QUILL, so
+everything here reaches QUILL too.</p>
+<p>These notes cover 2.0 and the updates up to 2.1.2, newest first.
+Everything after that, including all of Quill Radio 3.0, has its own
+notes, which **Help</p>
+<blockquote>
+<p>Release Notes** (Shift+F1) opens.</p>
+</blockquote>
+<h2 id="the-updates-after-20">The updates after 2.0</h2>
+<h3 id="whats-new-in-212">What’s new in 2.1.2</h3>
+<p>A quick update for three things you told us about, two of them from
+2.1.1 itself. Thank you for the fast, clear reports.</p>
+<ul>
+<li><strong>One-click updating works again.</strong> On 2.1.1,
+<strong>Install and restart</strong> could stop with a “decompression
+bomb” message and send you off to update by hand. A safety check meant
+for documents was turning away the real update, which is much bigger.
+Now it lets a full update through, and your favorites, recordings and
+settings are kept.</li>
+<li><strong>Favorites keep the order you gave them.</strong> Some of you
+updated and found a hand-sorted list suddenly in A to Z order. Now an
+older favorites list keeps its own order. If an earlier update already
+rearranged yours, choose <strong>Unsorted</strong> in Preferences and
+your order comes right back.</li>
+<li><strong>Dictation in the Speech Hub no longer closes the
+app</strong> on an older copy.</li>
+</ul>
+<h3 id="whats-new-in-211">What’s new in 2.1.1</h3>
+<p>2.1.1 is about weather radio done properly, and about a kind of
+station that matters to this community and has never been easy to find:
+the radio reading service.</p>
+<h4 id="noaa-weather-radio-from-a-real-directory">NOAA Weather Radio,
+from a real directory</h4>
+<p>The <strong>Weather / NOAA</strong> branch in Browse Stations now
+lists the actual NOAA Weather Radio transmitters. Open it and you get
+the states. Open a state and you get its transmitters, each named with
+its call sign, frequency and town, such as “KHB36 162.550 MHz Manassas”.
+Press Enter to play the best internet stream for it. You can favorite,
+record and schedule them like any station.</p>
+<ul>
+<li><strong>Search speaks weather radio.</strong> Type the 6-digit
+county code your weather alert radio uses, a call sign, or a county and
+state such as “Fairfax, VA”, and you get the exact transmitters.</li>
+<li><strong>Your local transmitter, in one step.</strong> At the time,
+<strong>Weather &gt; Listen to your Local NOAA Weather Radio</strong>
+used the weather location you had saved and just played it.</li>
+<li><strong>It works offline.</strong> A complete list of 1,035
+transmitters, covering every state and territory, comes inside the app.
+<strong>Update NOAA Weather Radio Directory</strong> fetches the newest
+list whenever you ask.</li>
+</ul>
+<h4 id="radio-reading-services">Radio Reading Services</h4>
+<p>For decades, radio reading services have had volunteers read
+newspapers, magazines and grocery ads aloud for people who are blind or
+print-disabled. Finding their internet streams has always been word of
+mouth. A new <strong>Radio Reading Services</strong> branch in Browse
+Stations gathers them: WRBH Reading Radio in New Orleans, Sun Sounds of
+Arizona, CRIS Radio, the KPBS and WKAR reading services, ACB Media 1 to
+5, the NFB Radio Network, Voice Corps and more.</p>
+<p>Twenty services come with the app, so the branch is never empty, even
+offline. They show up in Search by name, tag or state, and
+<strong>Station &gt; Update Radio Reading Services</strong> refreshes
+the list when you ask. Play them, favorite them, and record your evening
+paper.</p>
+<p>Both lists stay offline in Safe Mode.</p>
+<h4 id="two-more-from-your-feedback">Two more from your feedback</h4>
+<ul>
+<li><strong>iHeart is something you can browse.</strong> Browse Stations
+has an <strong>iHeart</strong> branch that opens into genres, and each
+genre into A to Z. You can go to Country, then the letter K, then play,
+without typing a thing.</li>
+<li><strong>Choosing SomaFM as the source no longer hides SomaFM
+stations.</strong> “Groove Salad” now shows up whichever matching source
+you choose.</li>
+</ul>
+<h3 id="whats-new-in-210">What’s new in 2.1.0</h3>
+<h4 id="weather-in-words">Weather, in words</h4>
+<p>2.1.0 added a <strong>Weather</strong> menu with free official
+weather in plain, spoken text, with no account. (In 3.0, weather moved
+to its own app, Quill Weather.) You searched for a place by ZIP code,
+city, county or address, picked the right one from a list, and opened
+<strong>Weather Now</strong>. It read:</p>
+<ul>
+<li>any active watches, warnings and advisories first, with the full
+official instructions;</li>
+<li>a full paragraph of current conditions, from temperature and wind to
+the UV index and air quality;</li>
+<li>the National Weather Service forecast, period by period;</li>
+<li>an outlook of up to 16 days.</li>
+</ul>
+<p>Every value was written out for listening, such as “the wind is
+blowing from the west-northwest at 5 miles per hour” rather than “WNW 5
+mph”. You could turn each detail on or off, and keep several places with
+<strong>Add Location</strong> and <strong>Remove Location</strong>.
+<strong>Quick Weather</strong> spoke a one-line summary, and
+<strong>Active Alerts</strong> went straight to the alerts. It was
+always an extra tool, never a replacement for a weather radio, emergency
+alerts on your phone, or local emergency instructions.</p>
+<h4 id="one-tree-for-browsing-every-source">One tree for browsing every
+source</h4>
+<p>You asked to pick a source like SomaFM and just see its stations,
+without typing a search. So <strong>Browse Stations</strong> became its
+own window: one tree whose branches are the sources. Open a branch and
+its stations appear. Press <strong>Enter</strong> to play, and
+<strong>Shift+F10</strong> for everything else: Play or Stop, add or
+remove a favorite, copy the stream link, open the station’s website, and
+Refresh. <strong>Search Stations</strong> stays a separate window with
+your cursor already in the search box.</p>
+<p>The branches were:</p>
+<ul>
+<li><strong>Favorites</strong>, at the top, with your own folders and
+stations.</li>
+<li><strong>Popular Stations</strong>, the most listened stations right
+now.</li>
+<li><strong>Weather / NOAA</strong>, NOAA Weather Radio streams.</li>
+<li><strong>ACB Media</strong> and <strong>NFB Radio</strong>, the
+accessibility community’s own streams.</li>
+<li><strong>SomaFM</strong>, its whole line-up at once.</li>
+<li><strong>TuneIn</strong>, as real folders: Music, Talk, Sports, Local
+Radio, By Location, By Language and more.</li>
+<li><strong>Community M3U (Music Genres)</strong>, a big community
+catalog by genre, from the m3u-radio-music-playlists collection by
+junguler, with our thanks.</li>
+<li><strong>Xiph / Icecast Directory</strong>, the long-running free
+directory, by genre.</li>
+</ul>
+<h4 id="smaller-things-you-will-notice">Smaller things you will
+notice</h4>
+<ul>
+<li><strong>Move a favorite from the keyboard.</strong> In your own
+(Unsorted) order, press <strong>Alt+Shift+Up</strong> or
+<strong>Alt+Shift+Down</strong> to move a station within its folder.
+Quill Radio tells you where it landed, such as “Moved down, now above
+WABC.”</li>
+<li><strong>Update in one click.</strong> Choose Download, then
+<strong>Install and restart now</strong>. Quill Radio installs the
+update and opens again, with every favorite, recording and setting
+kept.</li>
+<li><strong>Only one copy at a time.</strong> Starting Quill Radio while
+it is already running, even in the tray, now brings the running copy
+forward.</li>
+<li><strong>The Record button tells you when you are recording.</strong>
+It changes to <strong>Stop Recording</strong> while a recording runs,
+and back to <strong>Record</strong> after.</li>
+<li><strong>Volume changes are quiet again.</strong> Holding Ctrl+Up on
+a saved station used to repeat the station’s name at every step. Now you
+just hear “Radio volume 60”, “Radio volume 70”.</li>
+<li><strong>The Country list stays put while you arrow through
+it.</strong> A search now only runs when you ask for one.</li>
+<li><strong>No bitrate for a raw recording.</strong> Recording Settings
+shows Quality only for the MP3 and OGG formats, where it does
+something.</li>
+<li><strong>Search finds stations by branding and call sign.</strong>
+“103.1 Austin”, “1031 Austin” and the station’s number all find the same
+station.</li>
+<li><strong>Exiting after a recording works.</strong> Quill Radio no
+longer stops answering when you close it after recording.</li>
+<li><strong>SomaFM search ignores spacing and punctuation</strong>, so
+“GrooveSalad” finds “Groove Salad”.</li>
+</ul>
+<h3 id="whats-new-in-202">What’s new in 2.0.2</h3>
+<h4 id="hear-sound-enhancements-as-you-change-them">Hear Sound
+Enhancements as you change them</h4>
+<p>Move any control in <strong>Playback &gt; Sound Enhancements</strong>
+and you hear the change on what is playing straight away.
+<strong>OK</strong> keeps it. <strong>Cancel</strong> or
+<strong>Escape</strong> puts everything back. Every setting can now
+belong to one station: open the window while a favorite plays to give
+that station its own sound, or with nothing playing to set the default
+for every other station.</p>
+<h4 id="broadcast-polish">Broadcast polish</h4>
+<p>Sound Enhancements has a new broadcast polish section, adapted with
+thanks from OptiLab Core by Lanes Audio (dgl1984). Choose
+<strong>Podcast Leveler</strong> for speech, <strong>Stream
+Polish</strong> for music, or <strong>Smooth Limiter</strong> for gentle
+peak control. It evens out stations that are much louder or quieter than
+each other, which is lovely for talk and for recordings you leave
+running.</p>
+<h4 id="record-as-many-stations-at-once-as-you-like">Record as many
+stations at once as you like</h4>
+<p>Before, Quill Radio could only record one thing at a time, so
+overlapping scheduled shows lost out. Now every recording runs on its
+own. Overlapping shows all record, and you can record one station while
+you listen to another.</p>
+<ul>
+<li><strong>Maximum simultaneous recordings</strong>, in Recording
+Settings, can set a limit for a slower computer. Zero, the default,
+means no limit.</li>
+<li><strong>Record Now</strong> records the station you are on, and
+pressing it again stops that recording only.</li>
+<li><strong>Stop Recording</strong> in the Recordings window stops the
+one you chose. <strong>Stop All Recordings</strong> stops them all.</li>
+<li>The Recordings window shows each recording with its own time.</li>
+<li>After an unexpected close, Quill Radio offers to carry on with all
+of them in one question.</li>
+</ul>
+<h4 id="more">More</h4>
+<ul>
+<li><strong>Left only and Right only now play in one ear.</strong> In
+2.0.1 they played in both. Now you can keep the radio in one ear and
+your screen reader in the other.</li>
+<li><strong>Sort your favorites</strong> A to Z, Z to A, or keep your
+own order, in Preferences (Ctrl+comma). A folder can have its own
+sort.</li>
+<li><strong>Import Stations from Playlist</strong> reads an M3U playlist
+into the folder you choose, and asks what to do about stations you
+already have.</li>
+</ul>
+<h3 id="whats-new-in-201">What’s new in 2.0.1</h3>
+<ul>
+<li><strong>A recording no longer stops after a minute on a small
+hiccup.</strong> A brief problem at the station now reconnects as it
+should.</li>
+<li><strong>You know when recording has begun.</strong> You hear
+“Recording started” and the station’s name.</li>
+<li><strong>Review and copy What’s Playing.</strong> <strong>What’s
+Playing - Review and Copy</strong> shows the title and artist in a box
+you can arrow through letter by letter, with a Copy button. <strong>Copy
+What’s Playing</strong> copies it straight away.</li>
+<li><strong>Channel mode</strong>: Stereo, Mono, Left only or Right
+only, for all stations or one.</li>
+<li><strong>Turn a recording down while it plays.</strong> Ctrl+Up and
+Ctrl+Down work in the Recordings window too.</li>
+</ul>
+<h2 id="what-20-brought">What 2.0 brought</h2>
+<h3 id="recordings-you-can-trust">Recordings you can trust</h3>
+<h4 id="a-recording-carries-on-after-a-restart">A recording carries on
+after a restart</h4>
+<p>This was the worst one. You started a recording, Quill Radio or
+Windows closed unexpectedly, and the recording was simply gone.</p>
+<p>Now Quill Radio remembers a recording in progress. The next time it
+opens, it moves any finished piece into your recordings folder where you
+will find it. Then, if the show has not ended, it asks you once:</p>
+<blockquote>
+<p>A recording of WQXR was in progress until 9:00 AM. Resume it for the
+remaining 12 minutes?</p>
+</blockquote>
+<p><strong>Resume</strong> (Enter) records the minutes that are left.
+<strong>Skip</strong> (Escape) leaves it. <strong>Don’t ask me
+again</strong> remembers your answer, and you can change it later in
+Preferences.</p>
+<h4
+id="scheduled-recordings-start-even-when-quill-radio-is-late">Scheduled
+recordings start even when Quill Radio is late</h4>
+<p>A recording set for 8:00 used to be missed if Quill Radio only got
+there at 8:01. Now a scheduled recording starts any time during the show
+and records the rest of it. If it fails to start, it tries again while
+the show is still on. When two shows are due at once, you are told, and
+neither is quietly lost.</p>
+<h4 id="the-recordings-list-keeps-your-place">The Recordings list keeps
+your place</h4>
+<p>The Recordings list used to jump back to the top every time it
+refreshed. Now it keeps your place and your selection. Its counts are
+right, the recording in progress shows a running time, and the tray says
+“(recording)” while one runs.</p>
+<h4 id="recordings-survive-dropped-connections">Recordings survive
+dropped connections</h4>
+<ul>
+<li>If the station drops at minute 50 of an hour, Quill Radio records
+the last 10 minutes, not another hour.</li>
+<li>A recording never overwrites an earlier one. A second file with the
+same name gets “(2)”, “(3)” and so on.</li>
+<li>If the station has really gone, or your disk is full, Quill Radio
+stops trying rather than filling your folder with empty pieces.</li>
+<li>If Quill Radio closes unexpectedly, the recording stops with it, and
+closing the window never hangs while a recording finishes.</li>
+</ul>
+<h3 id="more-stations-iheart-and-tunein">More stations: iHeart and
+TuneIn</h3>
+<p>Search now includes <strong>iHeart</strong> and
+<strong>TuneIn</strong>, two of the biggest station directories, in the
+same list as before. Each result says where it came from, and you play
+it the same way. Neither needs an account.</p>
+<p>To steer a search, a <strong>Source</strong> list narrows it to one
+directory, and the <strong>Tag/genre</strong> and
+<strong>Country</strong> boxes are now lists you choose from, so you
+never have to guess a spelling. <strong>Find Streams from a
+Website</strong> also understands a TuneIn or iHeart page. Both are off
+in Safe Mode, and QUILL and QUILL Cast can find these stations too.</p>
+<h3 id="scheduling-recordings-with-real-editing">Scheduling recordings,
+with real editing</h3>
+<p>The schedule used to let you add an entry or delete it, and nothing
+else. Now you can:</p>
+<ul>
+<li><strong>Edit</strong> an entry: its station, time or length.</li>
+<li><strong>Duplicate</strong> an entry, to set up the same show on
+another day.</li>
+<li><strong>Turn an entry off and on</strong> without losing it. An
+entry that is off says “(disabled)”.</li>
+<li><strong>Type the time your way</strong>, “7:30 PM” or “19:30”.</li>
+<li><strong>Give an entry its own time zone</strong>, so a show quoted
+in Eastern time records at the right moment wherever you are.</li>
+</ul>
+<h3 id="whats-playing-reaches-more-stations">What’s Playing reaches more
+stations</h3>
+<p>When a station will not say what is playing the usual way, Quill
+Radio now asks the station’s own server for the title. So many stations
+that used to answer with silence now tell you the song. It only ever
+asks the server you are already listening to, and it is off in Safe
+Mode.</p>
+<h3 id="when-something-needs-looking-into">When something needs looking
+into</h3>
+<p>Preferences (Ctrl+comma) has <strong>Verbose logging</strong>, which
+records more detail, and <strong>Log folder</strong>, so you can keep
+the log somewhere easy to find and send to support. Recording problems
+are now written to the log as well.</p>
+<h3 id="built-on-11">Built on 1.1</h3>
+<p>Everything 1.1 brought is still here: the newer player and the
+classic Windows Media one, nearly every kind of station stream, a second
+sound card for the radio, pausing and rewinding live radio, Volume
+Boost, Sound Enhancements, Alt+F4 to the tray, and automatic update
+checks. The Quill Radio 1.0 notes tell that story.</p>
+<h3 id="good-to-know">Good to know</h3>
+<p>At the time, releases were not yet signed, so Windows SmartScreen
+could warn you the first time. Choosing More info, then Run anyway,
+started it.</p>
+<h2 id="where-to-learn-more">Where to learn more</h2>
+<p>The user guide, <strong>Help &gt; User Guide</strong> (Ctrl+F1),
+covers today’s Quill Radio. For recording, read Chapter 8, Recording.
+For finding stations, read Chapter 6, Finding something to listen
+to.</p>
+<p><strong>Help &gt; Tutorials</strong> (Ctrl+Alt+F1) has a Recording
+group of lessons, starting with Record what is on now and Book a show
+that has not started yet.</p>
+<p>If you get stuck, choose <strong>Help &gt; Get Help from
+Support</strong> (Ctrl+Alt+F2), or write to <a
+href="mailto:support@community-access.org">support@community-access.org</a>.
+A person at Community Access reads every message.</p>
+</main>
+</body>
+</html>

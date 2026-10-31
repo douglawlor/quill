@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>The QUILL Cast</title>
+    <link>https://community-access.github.io/quill/podcast/</link>
+    <description>A 54-episode, two-host audio course on QUILL, the free, screen-reader-first writing studio from Community Access. Liam and Jessica lead you from your very first launch to mastery of every feature family: the editor and keyboard, documents and formats, document rescue and OCR, the private speech suite, optional AI, the Accessible Vault, Story Studio, GLOW accessibility review, braille production, extensions, and the trust architecture underneath it all. Episode voices are generated with QUILL&#x27;s own on-device Kokoro neural speech engine.</description>
+    <language>en-us</language>
+    <lastBuildDate>Fri, 16 Oct 2026 03:48:17 +0000</lastBuildDate>
+    <atom:link href="https://community-access.github.io/quill/podcast/feed.xml" rel="self" type="application/rss+xml"/>
+    <itunes:author>Community Access / BITS</itunes:author>
+    <itunes:subtitle>A complete audio course on the screen-reader-first writing studio</itunes:subtitle>
+    <itunes:summary>A 54-episode, two-host audio course on QUILL, the free, screen-reader-first writing studio from Community Access. Liam and Jessica lead you from your very first launch to mastery of every feature family: the editor and keyboard, documents and formats, document rescue and OCR, the private speech suite, optional AI, the Accessible Vault, Story Studio, GLOW accessibility review, braille production, extensions, and the trust architecture underneath it all. Episode voices are generated with QUILL&#x27;s own on-device Kokoro neural speech engine.</itunes:summary>
+    <itunes:explicit>false</itunes:explicit>
+    <itunes:category text="Technology"/>
+    <itunes:owner><itunes:name>Community Access / BITS</itunes:name><itunes:email>jeff@jeffbishop.com</itunes:email></itunes:owner>
+    <image>
+      <url>https://community-access.github.io/quill/podcast/cover.png</url>
+      <title>The QUILL Cast</title>
+      <link>https://community-access.github.io/quill/podcast/</link>
+    </image>
+    <itunes:image href="https://community-access.github.io/quill/podcast/cover.png"/>
+  </channel>
+</rss>

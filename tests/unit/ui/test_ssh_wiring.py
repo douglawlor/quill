@@ -23,21 +23,21 @@ def test_main_frame_mixes_in_ssh_editing() -> None:
 def test_save_uploads_back_over_ssh() -> None:
     source = _read("quill/ui/main_frame.py")
     start = source.index("def save_file")
-    # Read a generous window so we can match across the function body even
-    # when the file grows; the contract is that save_file triggers the
+    # Read the whole function body so we can match regardless of how the
+    # earlier guards grow; the contract is that save_file triggers the
     # SSH upload helper from SshEditingMixin.
-    body = source[start : start + 1500]
+    body = source[start : source.index("\n    def ", start + 1)]
     assert "self.maybe_upload_remote_on_save()" in body
 
 
 def test_commands_registered_for_palette() -> None:
-    source = _read("quill/ui/main_frame.py")
+    source = _read("quill/ui/main_frame_commands.py")
     assert '"file.ssh_quick_connect"' in source
     assert '"file.ssh_site_manager"' in source
 
 
 def test_file_menu_has_ssh_items_and_bindings() -> None:
-    menu = _read("quill/ui/main_frame_menu.py")
+    menu = _read("quill/ui/main_frame_menu.py") + _read("quill/ui/main_frame_menu_bindings.py")
     assert "Open over SS&H" in menu
     assert "self._bind_ssh_file_menu()" in menu
     ssh = _read("quill/ui/main_frame_ssh.py")

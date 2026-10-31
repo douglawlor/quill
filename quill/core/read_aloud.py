@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 import subprocess
@@ -12,9 +13,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from quill.core.error_codes import CodedError
 from quill.core.punctuation_speech import normalize_punctuation_level, verbalize_punctuation
 from quill.core.sentence_split import SentenceSpan, sentence_spans
+from quill.core.speech.text_polish import clean_markdown_text
 from quill.core.tts_cache import cached_sentence_generator
+
+# The static voice tables live in voice_catalog (GATE-11 extract). Only the
+# names this module itself uses are imported; catalog-only consumers import
+# straight from quill.core.voice_catalog.
+from quill.core.voice_catalog import (
+    ESPEAK_ACCENTS,
+    ESPEAK_ENGLISH_VOICES,
+    ESPEAK_WORLD_VOICES,
+    KOKORO_ACCENTS,
+    KOKORO_LANG_BY_LETTER,
+    KOKORO_VOICES,
+    PIPER_ACCENTS_BY_LANG,
+    PIPER_VOICES,
+    kokoro_lang_for_voice,
+)
 
 # Windows system speech (SAPI 5) is reached through
 # quill.platform.windows.sapi5, imported lazily inside the functions that need
@@ -25,6 +43,78 @@ try:
     import winsound as _winsound  # type: ignore[import]
 except ImportError:  # pragma: no cover - non-Windows
     _winsound = None  # type: ignore[assignment]
+
+
+def _detect_live_wav_backend() -> str:
+    """Return the live WAV playback backend: ``'winsound'``, ``'afplay'``, or ``''``.
+
+    Read Aloud plays generated per-sentence WAVs through this. ``winsound`` is
+    Windows-only; on macOS there is no stdlib equivalent, so without an
+    ``afplay`` fallback Piper/Kokoro/ElevenLabs synthesized a WAV and then
+    silently deleted it without ever playing it (finding #28). ``afplay`` ships
+    with macOS, so no new dependency is added.
+    """
+    if _winsound is not None:
+        return "winsound"
+    if sys.platform == "darwin" and shutil.which("afplay"):
+        return "afplay"
+    return ""
+
+
+class _LiveWavPlayer:
+    """Play one WAV file at a time, blocking, with cross-thread interrupt.
+
+    Wraps the platform's synchronous WAV playback so :meth:`_run_wav_sentences`
+    can stay platform-neutral: ``play(path)`` blocks until the sound finishes
+    (or is stopped), and ``stop()`` interrupts an in-progress playback from
+    another thread.
+    """
+
+    def __init__(self, backend: str | None = None) -> None:
+        self._backend = backend if backend is not None else _detect_live_wav_backend()
+        self._proc: subprocess.Popen[bytes] | None = None
+        self._lock = threading.Lock()
+
+    @property
+    def available(self) -> bool:
+        return self._backend != ""
+
+    def play(self, path: Path) -> None:
+        if self._backend == "winsound" and _winsound is not None:
+            _winsound.PlaySound(  # type: ignore[union-attr]
+                str(path),
+                _winsound.SND_FILENAME | _winsound.SND_NODEFAULT,
+            )
+        elif self._backend == "afplay":
+            try:
+                with self._lock:
+                    self._proc = subprocess.Popen(  # noqa: S603
+                        ["afplay", str(path)]
+                    )
+                try:
+                    self._proc.wait()
+                finally:
+                    with self._lock:
+                        self._proc = None
+            except OSError:
+                pass
+        # No backend: play() is a silent no-op (matches the prior winsound-None
+        # behavior, but now _detect_live_wav_backend makes that an edge case
+        # rather than the entire macOS platform).
+
+    def stop(self) -> None:
+        if self._backend == "winsound" and _winsound is not None:
+            try:
+                _winsound.PlaySound(None, _winsound.SND_PURGE)
+            except Exception:  # noqa: BLE001
+                pass
+        with self._lock:
+            proc = self._proc
+        if proc is not None:
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,114 +151,6 @@ KOKORO_ONNX_VOICES_URL = (
 KOKORO_ONNX_MODEL_FILENAME = "kokoro-v1.0.int8.onnx"
 KOKORO_ONNX_VOICES_FILENAME = "voices-v1.0.bin"
 
-KOKORO_VOICES: list[tuple[str, str]] = [
-    ("af_heart", "Heart (American Female, warm)"),
-    ("af_bella", "Bella (American Female, expressive)"),
-    ("af_nicole", "Nicole (American Female, conversational)"),
-    ("af_alloy", "Alloy (American Female)"),
-    ("af_aoede", "Aoede (American Female)"),
-    ("af_jessica", "Jessica (American Female)"),
-    ("af_kore", "Kore (American Female)"),
-    ("af_nova", "Nova (American Female)"),
-    ("af_river", "River (American Female)"),
-    ("af_sarah", "Sarah (American Female)"),
-    ("af_sky", "Sky (American Female)"),
-    ("am_adam", "Adam (American Male, deep)"),
-    ("am_echo", "Echo (American Male)"),
-    ("am_eric", "Eric (American Male)"),
-    ("am_fenrir", "Fenrir (American Male)"),
-    ("am_liam", "Liam (American Male)"),
-    ("am_michael", "Michael (American Male)"),
-    ("am_onyx", "Onyx (American Male)"),
-    ("am_puck", "Puck (American Male)"),
-    ("am_santa", "Santa (American Male)"),
-    ("bf_alice", "Alice (British Female)"),
-    ("bf_emma", "Emma (British Female)"),
-    ("bf_isabella", "Isabella (British Female)"),
-    ("bf_lily", "Lily (British Female)"),
-    ("bm_daniel", "Daniel (British Male)"),
-    ("bm_fable", "Fable (British Male)"),
-    ("bm_george", "George (British Male)"),
-    ("bm_lewis", "Lewis (British Male)"),
-]
-
-ESPEAK_ENGLISH_VOICES: list[tuple[str, str]] = [
-    # 8 definition files bundled in the QUILL eSpeak NG binary (lang/gmw/en*)
-    ("en-gb", "English (British)"),
-    ("en-us", "English (American)"),
-    ("en-029", "English (Caribbean)"),
-    ("en-gb-scotland", "English (Scottish)"),
-    ("en-gb-x-gbclan", "English (Lancashire)"),
-    ("en-gb-x-gbcwmd", "English (West Midlands)"),
-    ("en-gb-x-rp", "English (Received Pronunciation)"),
-    ("en-us-nyc", "English (New York City)"),
-]
-
-# Generic voice characters appended as ``accent+variant`` (e.g. ``en-gb+m1``).
-# All entries verified in the bundled eSpeak NG voices/!v directory.
-ESPEAK_VARIANTS: list[tuple[str, str]] = [
-    ("", "Default"),
-    ("m1", "Male 1"),
-    ("m2", "Male 2"),
-    ("m3", "Male 3"),
-    ("m4", "Male 4"),
-    ("m5", "Male 5"),
-    ("f1", "Female 1"),
-    ("f2", "Female 2"),
-    ("f3", "Female 3"),
-    ("f4", "Female 4"),
-    ("whisper", "Whisper"),
-    ("whisperf", "Whisper (feminine)"),
-    ("klatt", "Klatt"),
-    ("croak", "Croak"),
-    ("grandma", "Grandma"),
-    ("grandpa", "Grandpa"),
-    ("Tweaky", "Tweaky (robotic)"),
-    ("UniRobot", "UniRobot"),
-]
-
-PIPER_ENGLISH_VOICES: list[tuple[str, str]] = [
-    # British English
-    ("en_GB-alan-low", "Alan (British, low)"),
-    ("en_GB-alan-medium", "Alan (British, medium)"),
-    ("en_GB-alba-medium", "Alba (British, medium)"),
-    ("en_GB-aru-medium", "Aru (British, medium)"),
-    ("en_GB-cori-high", "Cori (British, high)"),
-    ("en_GB-cori-medium", "Cori (British, medium)"),
-    ("en_GB-jenny_dioco-medium", "Jenny Dioco (British, medium)"),
-    ("en_GB-northern_english_male-medium", "Northern English Male (British, medium)"),
-    ("en_GB-semaine-medium", "Semaine (British, medium)"),
-    ("en_GB-southern_english_female-low", "Southern English Female (British, low)"),
-    ("en_GB-vctk-medium", "VCTK (British, medium)"),
-    # American English
-    ("en_US-amy-low", "Amy (US, low)"),
-    ("en_US-amy-medium", "Amy (US, medium)"),
-    ("en_US-arctic-medium", "Arctic (US, medium)"),
-    ("en_US-bryce-medium", "Bryce (US, medium)"),
-    ("en_US-danny-low", "Danny (US, low)"),
-    ("en_US-hfc_female-medium", "HFC Female (US, medium)"),
-    ("en_US-hfc_male-medium", "HFC Male (US, medium)"),
-    ("en_US-joe-medium", "Joe (US, medium)"),
-    ("en_US-john-medium", "John (US, medium)"),
-    ("en_US-kathleen-low", "Kathleen (US, low)"),
-    ("en_US-kristin-medium", "Kristin (US, medium)"),
-    ("en_US-kusal-medium", "Kusal (US, medium)"),
-    ("en_US-l2arctic-medium", "L2Arctic (US, medium)"),
-    ("en_US-lessac-high", "Lessac (US, high)"),
-    ("en_US-lessac-low", "Lessac (US, low)"),
-    ("en_US-lessac-medium", "Lessac (US, medium)"),
-    ("en_US-libritts-high", "LibriTTS (US, high)"),
-    ("en_US-libritts_r-medium", "LibriTTS R (US, medium)"),
-    ("en_US-ljspeech-high", "LJSpeech (US, high)"),
-    ("en_US-ljspeech-medium", "LJSpeech (US, medium)"),
-    ("en_US-norman-medium", "Norman (US, medium)"),
-    ("en_US-reza_ibrahim-medium", "Reza Ibrahim (US, medium)"),
-    ("en_US-ryan-high", "Ryan (US, high)"),
-    ("en_US-ryan-low", "Ryan (US, low)"),
-    ("en_US-ryan-medium", "Ryan (US, medium)"),
-    ("en_US-sam-medium", "Sam (US, medium)"),
-]
-
 
 def default_piper_model_dir() -> Path:
     from quill.core.paths import app_data_dir
@@ -176,18 +158,25 @@ def default_piper_model_dir() -> Path:
     return app_data_dir() / "piper-models"
 
 
+def resolve_piper_model_path(voice_id: str, model_dir: Path | None = None) -> Path:
+    """The on-disk ``.onnx`` file for a catalog voice id.
+
+    Mirrors the exact check :func:`list_piper_catalog_voices` uses to decide a
+    voice is installed, so callers that synthesize from a voice id resolve the
+    same file the catalog already confirmed exists -- a bare voice id (e.g.
+    ``"en_GB-alan-medium"``) is not itself a usable path.
+    """
+    d = model_dir if model_dir is not None else default_piper_model_dir()
+    return d / f"{voice_id}.onnx"
+
+
 def list_piper_catalog_voices(model_dir: Path | None = None) -> list[VoiceOption]:
     """Return all catalog Piper voices with download status and accent metadata."""
     d = model_dir if model_dir is not None else default_piper_model_dir()
     result = []
-    for voice_id, display_name in PIPER_ENGLISH_VOICES:
+    for voice_id, display_name in PIPER_VOICES:
         downloaded = (d / f"{voice_id}.onnx").exists()
-        if voice_id.startswith("en_GB"):
-            accent = "British English"
-        elif voice_id.startswith("en_US"):
-            accent = "American English"
-        else:
-            accent = "English"
+        accent = PIPER_ACCENTS_BY_LANG.get(voice_id.split("-", 1)[0], "English")
         # Extract quality from name, e.g. "medium" from "Alan (British, medium)"
         desc = ""
         if "(" in display_name and ")" in display_name:
@@ -432,19 +421,11 @@ def discover_espeak_executable(configured_path: str = "") -> Path | None:
     return None
 
 
-_KOKORO_ACCENT: dict[str, str] = {
-    "af": "American English",
-    "am": "American English",
-    "bf": "British English",
-    "bm": "British English",
-}
-
-
 def list_kokoro_voices() -> list[VoiceOption]:
     ready = kokoro_onnx_ready()
     result = []
     for vid, display_name in KOKORO_VOICES:
-        accent = _KOKORO_ACCENT.get(vid[:2], "English")
+        accent = KOKORO_ACCENTS.get(vid[:2], "English")
         # Extract style note: "warm" from "Heart (American Female, warm)"
         desc = ""
         if "(" in display_name and ")" in display_name:
@@ -476,25 +457,20 @@ def list_piper_voices(model_search_path: str = "") -> list[VoiceOption]:
     return voices
 
 
-_ESPEAK_ACCENT: dict[str, str] = {
-    "en": "English",
-    "en-us": "American English",
-    "en-gb": "British English",
-    "en-au": "Australian English",
-    "en-ca": "Canadian English",
-    "en-in": "Indian English",
-    "en-sc": "Scottish English",
-    "en-wls": "Welsh English",
-    "en-rp": "British English",
-    "en-gb-x-rp": "British English",
-}
-
-
 def list_espeak_english_voices() -> list[VoiceOption]:
     return [
-        VoiceOption(id=vid, name=name, accent=_ESPEAK_ACCENT.get(vid, "English"))
+        VoiceOption(id=vid, name=name, accent=ESPEAK_ACCENTS.get(vid, "English"))
         for vid, name in ESPEAK_ENGLISH_VOICES
     ]
+
+
+def list_espeak_voices() -> list[VoiceOption]:
+    """The full eSpeak catalog: English variants plus the world languages."""
+    world = [
+        VoiceOption(id=vid, name=name, accent=name.split(" (")[0])
+        for vid, name in ESPEAK_WORLD_VOICES
+    ]
+    return list_espeak_english_voices() + world
 
 
 def _kokoro_dir_has_models(d: Path) -> bool:
@@ -532,6 +508,23 @@ def kokoro_onnx_ready(model_dir: Path | None = None) -> bool:
     return _kokoro_dir_has_models(model_dir or default_kokoro_model_dir())
 
 
+def kokoro_engine_ready(model_dir: Path | None = None) -> bool:
+    """True when Kokoro can actually synthesize right now.
+
+    ``kokoro_onnx_ready`` alone only checks that model *files* exist on disk --
+    it says nothing about whether the ``kokoro_onnx`` pip package actually
+    imports. A caller (a UI availability flag, or the synthesis path below)
+    that trusts it alone can claim Kokoro is ready when the package install
+    was skipped or failed, discovering the gap only at synthesis time (#2,
+    beta-2 fix pass).
+    """
+    if not kokoro_onnx_ready(model_dir):
+        return False
+    from quill.core.speech.engine_install import is_kokoro_onnx_available
+
+    return is_kokoro_onnx_available()
+
+
 # Cache the loaded kokoro-onnx model so repeated synthesis (every section and,
 # with a sentence pause, every sentence of a batch) reuses one ~88 MB model load
 # instead of reloading it per call. The instance is stateless across calls
@@ -545,21 +538,30 @@ def _get_cached_kokoro_onnx(model_dir: Path) -> Any:
     """Return a shared, lazily-built ``kokoro_onnx.Kokoro`` for *model_dir*."""
     from kokoro_onnx import Kokoro as _KokoroOnnx  # type: ignore[import-not-found,import-untyped]
 
+    from quill.core import lifecycle_service, onnx_threads
+
     model_path = str(model_dir / KOKORO_ONNX_MODEL_FILENAME)
     voices_path = str(model_dir / KOKORO_ONNX_VOICES_FILENAME)
     key = (model_path, voices_path)
     with _KOKORO_ONNX_LOCK:
         instance = _KOKORO_ONNX_CACHE.get(key)
         if instance is None:
-            instance = _KokoroOnnx(model_path, voices_path)
+            # Low-resource mode may evict another engine before we build this one.
+            lifecycle_service.reserve("tts:kokoro")
+            instance = onnx_threads.kokoro_with_threads(_KokoroOnnx, model_path, voices_path)
             _KOKORO_ONNX_CACHE[key] = instance
+            lifecycle_service.note_loaded("tts:kokoro", clear_kokoro_cache)
+    lifecycle_service.touch("tts:kokoro")
     return instance
 
 
 def clear_kokoro_cache() -> None:
     """Drop the cached kokoro-onnx model (frees ~88 MB); the next call reloads it."""
+    from quill.core import lifecycle_service
+
     with _KOKORO_ONNX_LOCK:
         _KOKORO_ONNX_CACHE.clear()
+    lifecycle_service.note_unloaded("tts:kokoro")
 
 
 def warm_kokoro_onnx() -> bool:
@@ -576,7 +578,79 @@ def warm_kokoro_onnx() -> bool:
         _get_cached_kokoro_onnx(model_dir)
         return True
     except Exception:  # noqa: BLE001 - prewarm is best-effort
+        # Best-effort, but log why: a prewarm failure here is the same
+        # onnxruntime/model load error that will otherwise surface only as the
+        # generic fallback message at first synthesis (#kokoro-onnx).
+        logging.getLogger(__name__).debug("Kokoro onnx prewarm failed", exc_info=True)
         return False
+
+
+# When a single kokoro-onnx call fails, re-synthesize the passage in pieces no
+# larger than this. The onnx model's context window is ~510 phoneme tokens; a
+# dense ~1000-char chunk (what the batch runner hands it) can overrun that and
+# make ``create`` raise. Re-splitting on safe sentence/word boundaries and
+# concatenating recovers without needing the 2 GB torch fallback, so a portable
+# build completes on its own.
+_KOKORO_ONNX_RETRY_CHARS = 400
+
+
+def _synthesize_with_kokoro_onnx(
+    text: str,
+    output_path: Path,
+    model_dir: Path,
+    *,
+    voice: str,
+    speed: float,
+) -> None:
+    """Synthesize *text* via kokoro-onnx, writing a WAV to *output_path*.
+
+    On a single-call failure -- most often a chunk that overran the model's
+    ~510 phoneme-token window -- re-synthesize the passage in smaller
+    boundary-safe pieces and concatenate. Only ``create`` failures trigger the
+    retry; a model-load failure (bad DLL, unreadable model) is unrecoverable and
+    propagates unchanged. Re-raises the original error if the retry cannot help.
+    """
+    import numpy as np  # type: ignore[import]
+    import soundfile as sf  # type: ignore[import]
+
+    from quill.core.ai.tts_chunk import chunk_text
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    lang = kokoro_lang_for_voice(voice)
+    # A model-load failure here is unrecoverable and must surface as-is; only a
+    # per-passage ``create`` failure (below) is worth retrying in smaller pieces.
+    kokoro = _get_cached_kokoro_onnx(model_dir)
+    try:
+        samples, sample_rate = kokoro.create(text, voice=voice, speed=float(speed), lang=lang)
+        sf.write(str(output_path), np.array(samples), sample_rate)
+        return
+    except Exception:  # noqa: BLE001 - fall through to boundary-safe sub-chunk retry
+        pieces = chunk_text(text, _KOKORO_ONNX_RETRY_CHARS)
+        if len(pieces) <= 1:
+            # Nothing to split -- the passage itself is what the model rejects.
+            raise
+        logging.getLogger(__name__).warning(
+            "Kokoro onnx failed on a %d-char passage; retrying as %d smaller chunks",
+            len(text),
+            len(pieces),
+        )
+        parts: list[Any] = []
+        sample_rate = 24000
+        for piece in pieces:
+            piece_samples, sample_rate = kokoro.create(
+                piece, voice=voice, speed=float(speed), lang=lang
+            )
+            arr = np.array(piece_samples)
+            if arr.size:
+                parts.append(arr)
+        if not parts:
+            raise
+        sf.write(str(output_path), np.concatenate(parts), sample_rate)
+        logging.getLogger(__name__).info(
+            "Kokoro onnx recovered a %d-char passage by splitting it into %d chunks",
+            len(text),
+            len(parts),
+        )
 
 
 def synthesize_with_kokoro(
@@ -592,28 +666,49 @@ def synthesize_with_kokoro(
     # Try kokoro-onnx first — no torch required, just onnxruntime (~20 MB).
     # Uses the int8 quantized model downloaded to the default model directory.
     model_dir = default_kokoro_model_dir()
-    if kokoro_onnx_ready(model_dir):
+    onnx_ready = kokoro_engine_ready(model_dir)
+    onnx_error: Exception | None = None
+    if onnx_ready:
         try:
-            import numpy as _np  # type: ignore[import]
-            import soundfile as _sf  # type: ignore[import]
-
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            lang = "en-gb" if voice.startswith("b") else "en-us"
-            _k = _get_cached_kokoro_onnx(model_dir)
-            samples, sample_rate = _k.create(text, voice=voice, speed=float(speed), lang=lang)
-            _sf.write(str(output_path), _np.array(samples), sample_rate)
+            _synthesize_with_kokoro_onnx(text, output_path, model_dir, voice=voice, speed=speed)
             return
-        except Exception:  # noqa: BLE001 - fall through to kokoro + torch
-            pass
+        except Exception as exc:  # noqa: BLE001 - fall through to kokoro + torch
+            # The onnx path (with its own boundary-safe sub-chunk retry) is the
+            # primary route once kokoro_engine_ready() is True (models present +
+            # kokoro_onnx importable). If it still throws -- e.g. onnxruntime
+            # cannot load its native DLL, or the model rejects this passage --
+            # log the true cause so Help > Save Diagnostics captures it, and
+            # keep it so the fallback below can report it instead of the
+            # misleading "download a component you already have" message
+            # (#kokoro-onnx).
+            onnx_error = exc
+            logging.getLogger(__name__).exception(
+                "Kokoro onnx synthesis failed; falling back to kokoro+torch"
+            )
 
-    # Fall back to kokoro + torch.
+    # Fall back to kokoro + torch — only useful if that ~2 GB package is present.
     try:
         from kokoro import KPipeline  # type: ignore[attr-defined]
     except ImportError as exc:
+        if onnx_ready:
+            # The onnx model IS installed (it just failed on this passage), so do
+            # not tell the user to download it again. Name the real cause and how
+            # to report it -- never a vague "needs a component" for a component
+            # that is already present.
+            raise KokoroSynthesisError(
+                "Kokoro is installed but could not turn this passage into speech. "
+                f"Root cause: {onnx_error}. "
+                "This usually means the passage was too long or held characters "
+                "the voice model cannot pronounce; the rest of the document is "
+                "unaffected. Please report it (Help > Report a Problem; Help > "
+                "Save Diagnostics captures the details) quoting error code "
+                "QUILL-READALOUD-KOKORO-SYNTH."
+            ) from onnx_error
         raise ReadAloudUnavailableError(
-            "Kokoro TTS requires either:\n"
-            "  - kokoro-onnx models via Voice Picker > Download Kokoro (~114 MB)\n"
-            "  - the 'kokoro' package with torch (pip install kokoro, ~2 GB)"
+            "Kokoro voices need one more component. "
+            "Help > Download Optional Components will fetch it (~114 MB).\n"
+            "(Advanced: the 'kokoro' package with torch also works, but needs "
+            "~2 GB: pip install kokoro)"
         ) from exc
     try:
         import numpy as np  # type: ignore[import]
@@ -626,7 +721,7 @@ def synthesize_with_kokoro(
             "Kokoro audio saving requires the 'soundfile' package (pip install soundfile)"
         ) from exc
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    lang_code = "b" if voice.startswith("b") else "a"
+    lang_code = voice[:1].lower() if voice[:1].lower() in KOKORO_LANG_BY_LETTER else "a"
     pipeline = KPipeline(lang_code=lang_code)
     samples_list: list[np.ndarray] = []
     for _g, _p, audio in pipeline(text, voice=voice, speed=float(speed)):
@@ -678,10 +773,17 @@ def synthesize_with_espeak(
     # so point it explicitly at the co-located data directory when present.
     if (executable_path.parent / "espeak-ng-data").is_dir():
         command.append(f"--path={executable_path.parent}")
-    command.append(text)
+    # Pipe very long input via --stdin: a long utterance as a trailing argv
+    # element can overflow the OS command-line length (Windows ~32,767) (#64/#77).
+    use_stdin = len(text) > 8000
+    if use_stdin:
+        command.append("--stdin")
+    else:
+        command.append(text)
     try:
         completed = subprocess.run(
             command,
+            input=text.encode("utf-8") if use_stdin else None,
             capture_output=True,
             check=False,
             timeout=_MAX_SYNTHESIS_SECONDS,
@@ -703,6 +805,84 @@ def synthesize_with_espeak(
             f"eSpeak-NG failed: {detail}"
             if detail
             else f"eSpeak-NG exited with code {completed.returncode}."
+        )
+
+
+def macos_say_available() -> bool:
+    """True when the macOS ``say`` CLI is present (the macOS engine backend).
+
+    ``say`` ships with macOS, so this is a Darwin + ``shutil.which`` check rather
+    than the pyobjc ``NSSpeechSynthesizer`` probe used by the announcement
+    fallback -- the read-aloud engine shells out to ``say`` so it works even on a
+    Mac without pyobjc installed.
+    """
+    return sys.platform == "darwin" and shutil.which("say") is not None
+
+
+def synthesize_with_macos(
+    text: str,
+    output_path: Path,
+    *,
+    voice: str = "",
+    rate: int = 175,
+) -> None:
+    """Synthesize ``text`` to an audio file via the macOS ``say`` CLI (#21/#75).
+
+    ``say -v <voice> -r <rate> -o <output>`` writes audio in the format implied
+    by ``output_path``'s extension (WAV for ``.wav``), which the shared WAV
+    runner plays via ``afplay``. A blank ``voice`` uses the system default.
+    Very long input is fed via a temp file (``-f``) to avoid argv-length overflow,
+    mirroring the eSpeak ``--stdin`` guard (#64/#77). Inert off-darwin.
+    """
+    if not text.strip():
+        raise ReadAloudUnavailableError("Cannot generate speech from empty text")
+    if not macos_say_available():
+        raise ReadAloudUnavailableError("macOS system speech (say) is not available")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    bounded_rate = max(80, min(450, int(rate)))
+    command = ["say", "-r", str(bounded_rate)]
+    voice_id = (voice or "").strip()
+    if voice_id:
+        command += ["-v", voice_id]
+    command += ["-o", str(output_path)]
+    use_file = len(text) > 8000
+    if use_file:
+        with tempfile.NamedTemporaryFile(
+            suffix=".txt", delete=False, mode="w", encoding="utf-8"
+        ) as fh:
+            fh.write(text)
+            input_file = Path(fh.name)
+        command += ["-f", str(input_file)]
+    else:
+        command.append(text)
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            timeout=_MAX_SYNTHESIS_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ReadAloudUnavailableError(
+            f"macOS say did not complete within {_MAX_SYNTHESIS_SECONDS:.0f} seconds."
+        ) from exc
+    finally:
+        if use_file:
+            try:
+                input_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+    if completed.returncode != 0:
+        raw = completed.stderr or completed.stdout or b""
+        detail = (
+            raw.decode("utf-8", errors="replace").strip()
+            if isinstance(raw, bytes)
+            else str(raw).strip()
+        )
+        raise ReadAloudUnavailableError(
+            f"macOS say failed: {detail}"
+            if detail
+            else f"macOS say exited with code {completed.returncode}."
         )
 
 
@@ -780,6 +960,26 @@ def synthesize_to_file_with_dectalk(
     _run_dectalk_say(executable_path, payload, output_path)
 
 
+def _worker_python_executable() -> str:
+    """A real Python interpreter for running helper scripts (e.g. dectalk_say.py).
+
+    In a bundled build ``sys.executable`` is the QUILL launcher (``quill.exe``),
+    not a Python interpreter -- launching it with a bare script path makes QUILL
+    *open the script as a document* instead of running it (the "DECtalk opens a
+    Python file" bug). The embedded runtime ships ``pythonw.exe``/``python.exe``
+    beside the launcher, so prefer one of those when the launcher isn't itself
+    Python.
+    """
+    exe = Path(sys.executable)
+    if exe.stem.lower() in ("python", "pythonw"):
+        return str(exe)
+    for name in ("pythonw.exe", "python.exe"):
+        candidate = exe.with_name(name)
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
+
+
 def _run_dectalk_say(dll_path: Path, payload: str, output_path: Path) -> None:
     """Drive the DECtalk console worker; raise with a rich diagnostic on failure.
 
@@ -793,7 +993,7 @@ def _run_dectalk_say(dll_path: Path, payload: str, output_path: Path) -> None:
     try:
         completed = subprocess.run(
             [
-                sys.executable,
+                _worker_python_executable(),
                 str(_DECTALK_SAY_WORKER),
                 "--dll",
                 str(dll_path),
@@ -844,8 +1044,90 @@ def list_voices() -> list[VoiceOption]:
     ]
 
 
-class ReadAloudUnavailableError(RuntimeError):
-    pass
+def list_macos_voices() -> list[VoiceOption]:
+    """The macOS system voices as read-aloud options, or ``[]`` off-mac (#21/#75).
+
+    The voice id is the string ``say -v`` accepts. PyObjC's
+    ``NSSpeechSynthesizer.availableVoices()`` (via ``quill.platform.macos.tts``)
+    is the rich source; when it is unavailable the ``say -v ?`` CLI listing is
+    parsed so the picker is populated even on a Mac without pyobjc. Both are
+    inert (return ``[]``) off-darwin.
+    """
+    if sys.platform != "darwin":
+        return []
+    # Prefer the pyobjc catalog (names + language metadata) when available.
+    try:
+        from quill.platform.macos import tts as macos_tts
+
+        voices = macos_tts.list_voices()
+    except Exception:  # noqa: BLE001 - catalog must never raise into the UI
+        voices = []
+    if voices:
+        return [
+            VoiceOption(id=v.id, name=v.name, language=v.language, installed=True) for v in voices
+        ]
+    # Fallback: parse ``say -v ?`` (lines of "VoiceName<spaces>lang_code").
+    try:
+        completed = subprocess.run(
+            ["say", "-v", "?"],
+            capture_output=True,
+            check=False,
+            text=True,
+            errors="replace",
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    if completed.returncode != 0:
+        return []
+    options: list[VoiceOption] = []
+    for line in completed.stdout.splitlines():
+        parts = line.split(None, 2)
+        if len(parts) < 2:
+            continue
+        name, lang = parts[0], parts[1]
+        options.append(VoiceOption(id=name, name=name, language=lang, installed=True))
+    return options
+
+
+def list_elevenlabs_voices(api_key: str) -> list[VoiceOption]:
+    """The ElevenLabs account's voices as read-aloud options, or ``[]``.
+
+    A read-only network call. Returns ``[]`` when there is no key, the optional SDK is
+    absent, or the call fails, so the caller can offer ElevenLabs voices without ever
+    raising into the UI. The actual synthesis is gated by per-session consent and Safe
+    Mode at the point of use.
+    """
+    key = (api_key or "").strip()
+    if not key:
+        return []
+    from quill.core.ai import elevenlabs_tts
+
+    if not elevenlabs_tts.available():
+        return []
+    try:
+        return [
+            VoiceOption(id=vid, name=name, language="")
+            for vid, name in elevenlabs_tts.list_voices(key)
+        ]
+    except Exception:  # noqa: BLE001 - listing voices must never raise into the UI
+        return []
+
+
+class ReadAloudUnavailableError(CodedError):
+    code = "QUILL-READALOUD-UNAVAILABLE"
+
+
+class KokoroSynthesisError(ReadAloudUnavailableError):
+    """Kokoro is installed but could not synthesize a specific passage.
+
+    Distinct from the generic "component missing" case: the onnx model is
+    present and loaded (other passages synthesized fine), so the message names
+    the real cause and a report path rather than telling the user to re-download
+    a component they already have.
+    """
+
+    code = "QUILL-READALOUD-KOKORO-SYNTH"
 
 
 class ReadAloudController:
@@ -855,6 +1137,7 @@ class ReadAloudController:
         self._thread: threading.Thread | None = None
         self._active_process: subprocess.Popen[bytes] | None = None
         self._active_wav_thread: threading.Thread | None = None
+        self._wav_player = _LiveWavPlayer()
         self._stop_event = threading.Event()
         self._pause_event = threading.Event()
         self._lock = threading.Lock()
@@ -895,6 +1178,11 @@ class ReadAloudController:
         espeak_executable: str = "",
         espeak_voice: str = "en",
         espeak_rate: int = 175,
+        macos_voice: str = "",
+        macos_rate: int = 175,
+        elevenlabs_api_key: str = "",
+        elevenlabs_voice: str = "",
+        elevenlabs_model: str = "",
         sentence_pause_ms: int = 0,
         punctuation_level: str = "some",
         end: int | None = None,
@@ -912,6 +1200,8 @@ class ReadAloudController:
             "piper",
             "kokoro",
             "espeak",
+            "macos",
+            "elevenlabs",
         }
         if normalized_engine == "sapi5" and not sapi5_available():
             raise ReadAloudUnavailableError("Windows SAPI 5 speech is not available")
@@ -929,6 +1219,22 @@ class ReadAloudController:
                 "eSpeak-NG executable was not found. "
                 "Install eSpeak-NG or configure the path in Read Aloud Settings."
             )
+        if normalized_engine == "macos" and not macos_say_available():
+            raise ReadAloudUnavailableError(
+                "macOS system speech (the say command) is not available on this platform."
+            )
+        if normalized_engine == "elevenlabs":
+            from quill.core.ai import elevenlabs_tts
+
+            if os.environ.get("QUILL_SAFE_MODE") == "1":
+                raise ReadAloudUnavailableError("ElevenLabs Read Aloud is disabled in Safe Mode.")
+            if not elevenlabs_api_key.strip():
+                raise ReadAloudUnavailableError("Connect ElevenLabs to use its Read Aloud voice.")
+            if not elevenlabs_tts.available():
+                raise ReadAloudUnavailableError(
+                    "ElevenLabs support needs the optional SDK. "
+                    "Install it with: pip install quill[elevenlabs]"
+                )
         if normalized_engine not in _valid_engines:
             raise ReadAloudUnavailableError(f"Unsupported read-aloud engine: {normalized_engine}")
         self.stop()
@@ -997,6 +1303,23 @@ class ReadAloudController:
                         or Path(espeak_executable).expanduser(),
                         voice=espeak_voice,
                         rate=espeak_rate,
+                        on_progress=on_progress,
+                    )
+                elif normalized_engine == "macos":
+                    self._run_macos_live(
+                        spans,
+                        text,
+                        voice=macos_voice,
+                        rate=macos_rate,
+                        on_progress=on_progress,
+                    )
+                elif normalized_engine == "elevenlabs":
+                    self._run_elevenlabs_live(
+                        spans,
+                        text,
+                        api_key=elevenlabs_api_key,
+                        voice=elevenlabs_voice,
+                        model=elevenlabs_model,
                         on_progress=on_progress,
                     )
             except Exception as exc:  # noqa: BLE001
@@ -1114,12 +1437,8 @@ class ReadAloudController:
             return sentence
 
     def _interrupt_wav(self) -> None:
-        """Stop any in-progress winsound WAV playback immediately."""
-        if _winsound is not None:
-            try:
-                _winsound.PlaySound(None, _winsound.SND_PURGE)
-            except Exception:  # noqa: BLE001
-                pass
+        """Stop any in-progress WAV playback immediately (winsound or afplay)."""
+        self._wav_player.stop()
 
     def _run_wav_sentences(
         self,
@@ -1138,6 +1457,9 @@ class ReadAloudController:
             sentence = text[span.start : span.end].strip()
             if not sentence:
                 continue
+            sentence = clean_markdown_text(sentence).strip()
+            if not sentence:
+                continue
             sentence = self._apply_pronunciation(sentence)
             if not sentence.lstrip().startswith("<speak"):
                 # SSML utterances must reach the engine intact; verbalizing their
@@ -1154,7 +1476,7 @@ class ReadAloudController:
                 generate_sentence_wav(sentence, wav_path)
                 if self._stop_event.is_set() or self._pause_event.is_set():
                     break
-                if _winsound is not None and wav_path.exists():
+                if self._wav_player.available and wav_path.exists():
                     play_done = threading.Event()
 
                     def _play(
@@ -1162,10 +1484,7 @@ class ReadAloudController:
                         done: threading.Event = play_done,
                     ) -> None:
                         try:
-                            _winsound.PlaySound(  # type: ignore[union-attr]
-                                str(p),
-                                _winsound.SND_FILENAME | _winsound.SND_NODEFAULT,
-                            )
+                            self._wav_player.play(p)
                         except Exception:  # noqa: BLE001
                             pass
                         finally:
@@ -1185,8 +1504,13 @@ class ReadAloudController:
                     wav_path.unlink(missing_ok=True)
                 except OSError:
                     pass
+            interrupted = self._stop_event.is_set() or self._pause_event.is_set()
             with self._lock:
-                self._cursor = span.end
+                # #65/#78: only advance past a sentence that actually finished.
+                # On pause/stop mid-sentence, leave the cursor at the sentence
+                # start so a resume re-reads it instead of skipping the part that
+                # was never spoken.
+                self._cursor = span.start if interrupted else span.end
 
     def _run_piper_live(
         self,
@@ -1218,6 +1542,59 @@ class ReadAloudController:
         self._cache_seed = ("kokoro", voice, speed)
         self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
 
+    def _run_macos_live(
+        self,
+        spans: list[SentenceSpan],
+        text: str,
+        *,
+        voice: str,
+        rate: int,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> None:
+        """macOS system voice: synthesize each sentence via ``say`` then play it.
+
+        Reuses the cached WAV runner + the afplay playback path, so a repeated
+        sentence is not re-synthesized and stop/pause interrupts between
+        sentences exactly as for the other WAV-based engines (#21/#75).
+        """
+
+        def gen(sentence: str, out: Path) -> None:
+            synthesize_with_macos(sentence, out, voice=voice, rate=rate)
+
+        self._cache_seed = ("macos", voice, rate)
+        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
+
+    def _run_elevenlabs_live(
+        self,
+        spans: list[SentenceSpan],
+        text: str,
+        *,
+        api_key: str,
+        voice: str,
+        model: str,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> None:
+        """ElevenLabs cloud voice: synthesize each sentence to WAV, then play it.
+
+        Reuses the cached WAV runner, so a repeated sentence is not re-synthesized -
+        saving cost and latency, since each fresh sentence is one billable ElevenLabs
+        call. Stop/pause interrupt between sentences exactly as for the local engines.
+        """
+        from quill.core.ai import elevenlabs_tts
+
+        chosen_voice = voice.strip() or elevenlabs_tts.DEFAULT_VOICE
+        chosen_model = model.strip() or elevenlabs_tts.DEFAULT_MODEL
+
+        def gen(sentence: str, out: Path) -> None:
+            out.write_bytes(
+                elevenlabs_tts.synthesize_wav(
+                    sentence, api_key, voice=chosen_voice, model=chosen_model
+                )
+            )
+
+        self._cache_seed = ("elevenlabs", chosen_voice, chosen_model)
+        self._run_wav_sentences(spans, text, on_progress=on_progress, generate_sentence_wav=gen)
+
     def _run_espeak_live(
         self,
         spans: list[SentenceSpan],
@@ -1237,6 +1614,9 @@ class ReadAloudController:
             sentence = text[span.start : span.end].strip()
             if not sentence:
                 continue
+            sentence = clean_markdown_text(sentence).strip()
+            if not sentence:
+                continue
             sentence = self._apply_pronunciation(sentence)
             if not sentence.lstrip().startswith("<speak"):
                 # SSML utterances must reach the engine intact; verbalizing their
@@ -1248,12 +1628,30 @@ class ReadAloudController:
             if on_progress is not None:
                 on_progress(span.start, span.end)
             bounded_rate = max(80, min(450, int(rate)))
+            # #64/#77: pipe very long input via --stdin to avoid OS command-line
+            # length overflow (Windows ~32,767) -- same guard as the batch synth
+            # path. A long utterance as a trailing argv element can fail or truncate.
+            use_stdin = len(sentence) > 8000
+            command = [str(executable), "-v", voice, "-s", str(bounded_rate)]
+            if use_stdin:
+                command.append("--stdin")
+            else:
+                command.append(sentence)
             process = subprocess.Popen(
-                [str(executable), "-v", voice, "-s", str(bounded_rate), sentence],
+                command,
+                stdin=subprocess.PIPE if use_stdin else subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=create_no_window,
             )
+            if use_stdin and process.stdin is not None:
+                try:
+                    process.stdin.write(sentence.encode("utf-8"))
+                    process.stdin.close()
+                except (BrokenPipeError, OSError):
+                    # eSpeak exited before reading all input; the poll loop
+                    # observes the exit code and raises as appropriate.
+                    pass
             self._active_process = process
             start = time.monotonic()
             while process.poll() is None:
@@ -1270,8 +1668,13 @@ class ReadAloudController:
             exit_code = process.wait(timeout=2)
             if exit_code != 0 and not (self._stop_event.is_set() or self._pause_event.is_set()):
                 raise ReadAloudUnavailableError(f"eSpeak-NG exited with code {exit_code}.")
+            interrupted = self._stop_event.is_set() or self._pause_event.is_set()
             with self._lock:
-                self._cursor = span.end
+                # #65/#78: only advance past a sentence that actually finished.
+                # On pause/stop mid-sentence, leave the cursor at the sentence
+                # start so a resume re-reads it instead of skipping the part that
+                # was never spoken.
+                self._cursor = span.start if interrupted else span.end
 
     def pause(self) -> None:
         with self._lock:

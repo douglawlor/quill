@@ -22,6 +22,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from quill.core.net import context_for
+
+#: Hard cap on a Quillin fetch response body (mirrors host.FETCH_MAX_BYTES).
+_FETCH_MAX_BYTES = 10 * 1024 * 1024  # 10 MiB
+
 
 class _EditorHostServices:
     """Adapt :class:`MainFrame`'s editor to the host ``HostServices`` protocol.
@@ -33,6 +38,22 @@ class _EditorHostServices:
 
     def __init__(self, frame: Any) -> None:
         self._frame = frame
+
+    def _on_ui_thread(self, func: Any, *args: Any) -> None:
+        """Run *func* on the wx UI thread.
+
+        Quillin event handlers are dispatched into daemon threads by
+        ``main_frame_quillins._run_quillin_event_handler_async``, so a service
+        that ends up touching a widget -- ``_announce`` and ``_set_status_quiet``
+        both repaint the status bar -- was doing wx work off the UI thread.
+        Falls back to a direct call when wx is unavailable (tests, headless).
+        """
+        wx = getattr(self._frame, "_wx", None)
+        call_after = getattr(wx, "CallAfter", None)
+        if callable(call_after):
+            call_after(func, *args)
+            return
+        func(*args)
 
     def get_text(self) -> str:
         return str(self._frame.editor.GetValue())
@@ -85,7 +106,7 @@ class _EditorHostServices:
         self._frame._power_tools_open_text_in_new_buffer(text, title or "Opened Quillin result")
 
     def announce(self, message: str) -> None:
-        self._frame._announce(message)
+        self._on_ui_thread(self._frame._announce, message)
 
     def is_verbosity_speech_enabled(self) -> bool:
         settings = getattr(self._frame, "settings", None)
@@ -97,7 +118,20 @@ class _EditorHostServices:
         return self._frame._power_tools_prompt_single(title, label, default)
 
     def set_status(self, message: str) -> None:
-        self._frame._set_status(message)
+        """Display *message* in the status bar. Display only -- never spoken.
+
+        ``api.set_status`` is documented as "set the editor status bar text",
+        but it used to land on ``MainFrame._set_status``, which also speaks.
+        A Quillin refreshing a status cell therefore hijacked the screen
+        reader: Status Scribe pushed its word count after every save and QUILL
+        said "Words: 386" even though the Quillin's own "speak count after
+        save" preference was off. Routing to ``_set_status_quiet`` gives
+        Quillins a way to update a cell silently; ``api.announce`` remains the
+        one way a Quillin speaks, which is what its capability set implies.
+        """
+        quiet = getattr(self._frame, "_set_status_quiet", None)
+        target = quiet if callable(quiet) else self._frame._set_status
+        self._on_ui_thread(target, message)
 
     def show_choices(self, title: str, items: list[str]) -> str | None:
         wx = self._frame._wx if hasattr(self._frame, "_wx") else None
@@ -118,10 +152,19 @@ class _EditorHostServices:
         Path(path).write_text(text, encoding="utf-8")
 
     def fetch(self, url: str, method: str, body: str | None) -> dict[str, Any]:
+        # URL scheme/host safety (https-only for non-loopback, private/link-local
+        # blocking) is enforced by the host dispatcher before this runs; here we
+        # keep the bounded timeout and add a hard response-size cap so a hostile
+        # endpoint cannot stream an unbounded body into memory.
         data = body.encode("utf-8") if body is not None else None
         request = urllib.request.Request(url, data=data, method=method)  # noqa: S310
-        with urllib.request.urlopen(request, timeout=15) as response:  # noqa: S310
-            payload = response.read().decode("utf-8", errors="replace")
+        with urllib.request.urlopen(  # noqa: S310
+            request, timeout=15, context=context_for(url)
+        ) as response:
+            raw = response.read(_FETCH_MAX_BYTES + 1)
+            if len(raw) > _FETCH_MAX_BYTES:
+                raise ValueError(f"fetch response exceeds the {_FETCH_MAX_BYTES} byte cap")
+            payload = raw.decode("utf-8", errors="replace")
             return {"status": int(getattr(response, "status", 200)), "body": payload}
 
     def get_clipboard(self) -> str:

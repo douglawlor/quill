@@ -1,12 +1,37 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.error import URLError
 
+import pytest
+
+import quill.core.updates as updates_module
 import quill.ui.main_frame as main_frame_module
+import quill.ui.main_frame_spellcheck as frame_spellcheck_module
+import quill.ui.main_frame_updates as frame_updates_module
 from quill.core.document import Document
 from quill.core.notifications import Notification
 from quill.core.updates import GitHubRelease, UpdateManifest
 from quill.ui.main_frame import MainFrame
+
+
+@pytest.fixture(autouse=True)
+def _force_non_portable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin check_for_updates onto the installer (non-portable) path.
+
+    ``check_for_updates`` branches on ``running_portable()``, which sniffs the
+    filesystem/env for a portable bundle. In a full-suite run that ambient state
+    can be left set by an earlier test, flipping these tests onto the GitHub
+    releases path they do not stub (manifest -> None -> live fetch_releases).
+    These unit tests exercise the installer flow, so they must control that
+    branch explicitly rather than depend on detection.
+
+    Patched on ``quill.core.updates`` (the source module) rather than
+    ``quill.ui.main_frame``: ``check_for_updates``/``_on_update_fetch_done``
+    import these names locally (perf: lazy-import quill.core.updates), so
+    patching the consumer's namespace no longer has any effect.
+    """
+    monkeypatch.setattr(updates_module, "running_portable", lambda: False)
 
 
 class _Frame:
@@ -29,135 +54,92 @@ def _build_frame() -> MainFrame:
     return frame
 
 
-def test_report_bug_feedback_hub_path_goes_through_show_modal_dialog(monkeypatch) -> None:
-    import sys
+def test_report_bug_opens_the_shared_support_surface(monkeypatch) -> None:
+    """QUILL's Help item is the family flow, not a GitHub issue.
 
-    frame = _build_frame()
-    frame._wx = type("Wx", (), {"version": staticmethod(lambda: "4.2-test"), "ID_OK": 5100})()
+    The old path filed the reporter's own words into a public repository and
+    gave them no way to be answered; the rule it broke is in
+    docs/design/2026-08-26-feedback-redesign-for-freescout.md. What is pinned
+    here is that ``report_bug`` reaches the shared surface at all, and that it
+    hands over QUILL's own name -- triage should never have to guess which of
+    nine products somebody was running.
+    """
+    import quill.ui.support_dialog as support_dialog
 
-    modal_calls: list[str] = []
-    frame._show_modal_dialog = lambda _dlg, label, **_kw: (
-        modal_calls.append(label) or frame._wx.ID_OK
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        support_dialog,
+        "open_support_message",
+        lambda host, **kwargs: calls.append({"host": host, **kwargs}),
     )
 
-    monkeypatch.setattr(frame, "_feedback_hub_available", lambda: True)
+    frame = _build_frame()
+    frame.report_bug()
 
-    class _FakeSchema:
-        pass
+    assert len(calls) == 1
+    assert calls[0]["host"] is frame
+    assert calls[0]["source_app"] == "QUILL"
+
+
+def test_report_bug_carries_the_ai_support_id_like_quill_lite(monkeypatch) -> None:
+    """The support form asks its host for ``ai_support_facts``, as in QUILL Lite.
+
+    QUILL gets it from the shared hosted-AI mixin, so the ID support asks for
+    first is written into the message without the person looking it up.
+    """
+    import quill.ui.support_dialog as support_dialog
+
+    built: list[dict] = []
 
     class _FakeDialog:
-        def __init__(self, *_args, **_kwargs) -> None:
-            pass
+        def __init__(self, host, wx, **kwargs):
+            built.append(kwargs)
 
-        def ShowModal(self) -> int:
-            raise AssertionError("ShowModal must not be called directly on FeedbackDialog")
+        def show(self) -> None:
+            return None
 
-        def Destroy(self) -> None:
-            pass
-
-    import types
-
-    fake_hub = types.ModuleType("feedback_hub")
-    fake_hub.load_schema = lambda _path: _FakeSchema()  # type: ignore[attr-defined]
-    fake_wx_dialog = types.ModuleType("feedback_hub.wx_dialog")
-    fake_wx_dialog.FeedbackDialog = _FakeDialog  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "feedback_hub", fake_hub)
-    monkeypatch.setitem(sys.modules, "feedback_hub.wx_dialog", fake_wx_dialog)
+    monkeypatch.setattr(support_dialog, "_SupportDialog", _FakeDialog)
+    assert callable(getattr(MainFrame, "ai_support_facts", None))
+    frame = _build_frame()
+    frame.ai_support_facts = lambda: {"QUILL AI support ID": "SUP-7"}
 
     frame.report_bug()
 
-    assert modal_calls == ["Report an Issue"]
-    assert frame._notification == ("Submitted feedback via feedback hub", "support")
+    assert built and built[0]["extra"] == {"QUILL AI support ID": "SUP-7"}
+    assert built[0]["product"].startswith("QUILL ")
 
 
-def test_report_bug_falls_back_to_legacy_when_hub_raises(monkeypatch) -> None:
-    # A broken/incompatible feedback_hub must not strand the user without a
-    # report dialog (#210 follow-up): report_bug falls back to the built-in form.
-    frame = _build_frame()
-    monkeypatch.setattr(frame, "_feedback_hub_available", lambda: True)
+def test_help_menu_item_is_get_help_from_support_on_ctrl_alt_f2() -> None:
+    """Command id kept (rebinding survives), label and chord shared with QUILL Lite."""
+    from quill.core.keymap import DEFAULT_KEYMAP
 
-    def _boom() -> None:
-        raise RuntimeError("hub exploded")
-
-    monkeypatch.setattr(frame, "_report_bug_via_hub", _boom)
-    legacy_called: list[bool] = []
-    monkeypatch.setattr(frame, "_report_bug_legacy", lambda: legacy_called.append(True))
-
-    frame.report_bug()
-
-    assert legacy_called == [True]
-    assert frame._status_message == "Report a Bug: using the built-in form"
-
-
-def test_report_bug_reviews_then_opens_support_form(monkeypatch) -> None:
-    # #618: the auto-open-browser step is opt-in via the
-    # report_bug_auto_open_browser setting (default False in 0.7.0).
-    # This test exercises the opt-in path.
-    frame = _build_frame()
-    frame.settings.report_bug_auto_open_browser = True
-    opened: list[str] = []
-    copied: list[str] = []
-    monkeypatch.setattr(frame, "_feedback_hub_available", lambda: False)
-    monkeypatch.setattr(
-        frame,
-        "_review_bug_report",
-        lambda: ({"summary": "Bug report: note.md", "body": "Body"}, "https://example.invalid"),
+    assert DEFAULT_KEYMAP["help.report_bug"] == "Ctrl+Alt+F2"
+    menu_source = (
+        Path(main_frame_module.__file__).with_name("main_frame_menu.py").read_text(encoding="utf-8")
     )
-    monkeypatch.setattr(frame, "_copy_to_clipboard", lambda text: copied.append(text) or True)
-    monkeypatch.setattr("quill.ui.main_frame.webbrowser.open", lambda url: opened.append(url))
-
-    frame.report_bug()
-
-    assert copied == ["Body"]
-    assert opened == ["https://example.invalid"]
-    assert frame._notification == ("Opened support-hub bug report form", "support")
+    assert '_("Get He&lp from Support..."), "help.report_bug"' in menu_source
 
 
-def test_report_bug_includes_diagnostics_path_when_present(monkeypatch) -> None:
-    # #618: opt-in auto-open-browser to test the diagnostics-bundle path.
-    frame = _build_frame()
-    frame.settings.report_bug_auto_open_browser = True
-    opened: list[str] = []
-    copied: list[str] = []
-    frame._last_bug_report_diagnostics_path = Path(r"C:\Temp\quill-diagnostics.zip")
-    monkeypatch.setattr(frame, "_feedback_hub_available", lambda: False)
-    monkeypatch.setattr(
-        frame,
-        "_review_bug_report",
-        lambda: ({"summary": "Bug report: note.md", "body": "Body"}, "https://example.invalid"),
-    )
-    monkeypatch.setattr(frame, "_copy_to_clipboard", lambda text: copied.append(text) or True)
-    monkeypatch.setattr("quill.ui.main_frame.webbrowser.open", lambda url: opened.append(url))
-
-    frame.report_bug()
-
-    assert copied[0].startswith("Body")
-    assert "Diagnostics bundle path" in copied[0]
-    assert "quill-diagnostics.zip" in copied[0]
-    assert opened == ["https://example.invalid"]
+def test_nothing_in_quill_imports_feedback_hub_or_a_bundled_token() -> None:
+    """feedback-hub and the bundled GitHub token are gone from the application."""
+    root = Path(main_frame_module.__file__).resolve().parents[1]
+    offenders = []
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if (
+            "import feedback_hub" in text
+            or "from feedback_hub" in text
+            or "_feedback_token" in text
+            or "quill.core.feedback_token" in text
+            or "quill.core.issue_submit" in text
+        ):
+            offenders.append(str(path.relative_to(root)))
+    assert offenders == []
 
 
-def test_report_bug_does_not_open_browser_by_default(monkeypatch) -> None:
-    # #618: 0.7.0 default is "Quill copies, you decide whether to open the
-    # browser". The browser must NOT open when report_bug_auto_open_browser
-    # is False (the default). The clipboard still receives the report.
-    frame = _build_frame()
-    opened: list[str] = []
-    copied: list[str] = []
-    monkeypatch.setattr(frame, "_feedback_hub_available", lambda: False)
-    monkeypatch.setattr(
-        frame,
-        "_review_bug_report",
-        lambda: ({"summary": "Bug report: note.md", "body": "Body"}, "https://example.invalid"),
-    )
-    monkeypatch.setattr(frame, "_copy_to_clipboard", lambda text: copied.append(text) or True)
-    monkeypatch.setattr("quill.ui.main_frame.webbrowser.open", lambda url: opened.append(url))
-
-    frame.report_bug()
-
-    assert copied == ["Body"], "report must always be copied to the clipboard"
-    assert opened == [], "browser must NOT open when auto_open_browser is False"
-    assert frame._notification == ("Copied support-hub bug report to clipboard", "support")
+def test_get_help_from_support_is_the_same_flow() -> None:
+    """Two names, one implementation: the menu's name and the command id's."""
+    assert MainFrame.get_help_from_support is MainFrame.report_bug
 
 
 def test_save_diagnostics_bundle_cancels_when_review_cancelled(monkeypatch) -> None:
@@ -225,7 +207,10 @@ def test_open_notifications_clears_from_dialog_action(monkeypatch) -> None:
 
 def test_open_notifications_marks_viewed_when_not_cleared(monkeypatch) -> None:
     frame = _build_frame()
-    frame._notifications = [Notification.create("Recovered autosave snapshot", "recovery")]
+    held = [Notification.create("Recovered autosave snapshot", "recovery")]
+    # open_notifications reloads from disk; hand it this list rather than
+    # whatever an earlier test in the same worker left behind.
+    monkeypatch.setattr(main_frame_module, "load_notifications", lambda: list(held))
     frame._wx = type("Wx", (), {"ID_CLEAR": 1001})()
     monkeypatch.setattr(frame, "_show_notifications_dialog", lambda: 1000)
 
@@ -236,7 +221,7 @@ def test_open_notifications_marks_viewed_when_not_cleared(monkeypatch) -> None:
 
 def test_open_notifications_reports_empty_state(monkeypatch) -> None:
     frame = _build_frame()
-    frame._notifications = []
+    monkeypatch.setattr(main_frame_module, "load_notifications", lambda: [])
     frame._wx = type("Wx", (), {"ID_CLEAR": 1001})()
     monkeypatch.setattr(frame, "_show_notifications_dialog", lambda: 1000)
 
@@ -253,20 +238,20 @@ def test_dictionary_status_uses_friendly_not_created_wording(monkeypatch) -> Non
     frame._show_message_box = lambda message, *_args: captured.setdefault("message", message)
 
     monkeypatch.setattr(
-        main_frame_module,
+        frame_spellcheck_module,
         "load_scope_dictionary",
         lambda *_args, **_kwargs: set(),
     )
     monkeypatch.setattr(
-        main_frame_module,
+        frame_spellcheck_module,
         "app_data_dir",
         lambda: Path(r"C:\Users\tester\AppData\Roaming\Quill"),
     )
     backend = type("Backend", (), {"name": "enchant", "detail": "en_US (hunspell)"})()
-    monkeypatch.setattr(main_frame_module, "spellcheck_backend_info", lambda: backend)
-    monkeypatch.setattr(main_frame_module.thesaurus_engine, "is_available", lambda: True)
+    monkeypatch.setattr(frame_spellcheck_module, "spellcheck_backend_info", lambda: backend)
+    monkeypatch.setattr(frame_spellcheck_module.thesaurus_engine, "is_available", lambda: True)
     monkeypatch.setattr(
-        main_frame_module.thesaurus_engine,
+        frame_spellcheck_module.thesaurus_engine,
         "data_path",
         lambda: Path(r"C:\quill\python\Lib\site-packages\quill\data\th_en_US_v2.dat"),
     )
@@ -293,7 +278,7 @@ def test_check_for_updates_can_close_app_before_installer(monkeypatch) -> None:
     frame.exit_app = lambda: exits.append("exit")
     opened: list[str] = []
     monkeypatch.setattr(
-        main_frame_module,
+        updates_module,
         "fetch_update_manifest",
         lambda *_a, **_k: UpdateManifest(
             version="0.1.1",
@@ -303,7 +288,7 @@ def test_check_for_updates_can_close_app_before_installer(monkeypatch) -> None:
             signature="sig",
         ),
     )
-    monkeypatch.setattr(main_frame_module, "is_newer_version", lambda _current, _available: True)
+    monkeypatch.setattr(updates_module, "is_newer_version", lambda _current, _available: True)
     monkeypatch.setattr(
         "quill.ui.main_frame.webbrowser.open",
         lambda url: opened.append(url) or True,
@@ -329,7 +314,7 @@ def test_check_for_updates_allows_download_without_immediate_exit(monkeypatch) -
     frame.exit_app = lambda: (_ for _ in ()).throw(AssertionError("exit_app should not be called"))
     opened: list[str] = []
     monkeypatch.setattr(
-        main_frame_module,
+        updates_module,
         "fetch_update_manifest",
         lambda *_a, **_k: UpdateManifest(
             version="0.1.1",
@@ -339,7 +324,7 @@ def test_check_for_updates_allows_download_without_immediate_exit(monkeypatch) -
             signature="sig",
         ),
     )
-    monkeypatch.setattr(main_frame_module, "is_newer_version", lambda _current, _available: True)
+    monkeypatch.setattr(updates_module, "is_newer_version", lambda _current, _available: True)
     monkeypatch.setattr(
         "quill.ui.main_frame.webbrowser.open",
         lambda url: opened.append(url) or True,
@@ -369,7 +354,7 @@ def test_skip_update_version_records_choice(monkeypatch) -> None:
     frame = _build_frame()
     frame.settings.skipped_update_version = ""
     frame._announce = lambda *_args, **_kwargs: None
-    monkeypatch.setattr(main_frame_module, "save_settings", lambda _settings: None)
+    monkeypatch.setattr(frame_updates_module, "save_settings", lambda _settings: None)
 
     frame._skip_update_version("0.2.0")
 
@@ -387,11 +372,11 @@ def test_check_for_updates_silent_honors_skipped_version(monkeypatch) -> None:
     # version regardless of when this test runs.
     frame.settings.skipped_update_version = "9.9.9"
     frame.settings.last_update_check = ""
-    monkeypatch.setattr(main_frame_module, "save_settings", lambda _settings: None)
+    monkeypatch.setattr(frame_updates_module, "save_settings", lambda _settings: None)
     monkeypatch.setattr(
-        main_frame_module,
+        updates_module,
         "fetch_update_manifest",
-        lambda *_a, **_k: (_ for _ in ()).throw(main_frame_module.URLError("offline")),
+        lambda *_a, **_k: (_ for _ in ()).throw(URLError("offline")),
     )
     release = GitHubRelease(
         version="9.9.9",
@@ -400,7 +385,7 @@ def test_check_for_updates_silent_honors_skipped_version(monkeypatch) -> None:
         notes="New",
         prerelease=False,
     )
-    monkeypatch.setattr(main_frame_module, "fetch_releases", lambda: [release])
+    monkeypatch.setattr(updates_module, "fetch_releases", lambda: [release])
     frame._download_update_release = lambda _release: (_ for _ in ()).throw(
         AssertionError("a skipped version must not download")
     )
@@ -408,3 +393,51 @@ def test_check_for_updates_silent_honors_skipped_version(monkeypatch) -> None:
     frame.check_for_updates(silent_no_update=True)
 
     assert frame._notification == ("Update 9.9.9 available (skipped by you)", "update")
+
+
+def test_check_for_updates_never_offers_the_running_version(monkeypatch) -> None:
+    """#919's same-version "self-heal" offer is gone (2026-09-26).
+
+    It reinstalled the running version to restore a bundled GitHub token. No
+    build carries that token any more -- support messages and crash reports go
+    by email -- so a check that finds only the version already installed must
+    offer nothing, interactively or in the background.
+    """
+    frame = _build_frame()
+    frame.settings.beta_updates = False
+    frame.settings.skipped_update_version = ""
+    frame.settings.last_update_check = ""
+    monkeypatch.setattr(frame_updates_module, "save_settings", lambda _settings: None)
+    monkeypatch.setattr(
+        updates_module,
+        "fetch_update_manifest",
+        lambda *_a, **_k: (_ for _ in ()).throw(URLError("offline")),
+    )
+    release = GitHubRelease(
+        version="0.9.0",
+        download_url="https://example.com/Quill-Setup-0.9.0.exe",
+        published_at="2026-07-09",
+        notes="Same version.",
+        prerelease=False,
+    )
+    monkeypatch.setattr(updates_module, "fetch_releases", lambda: [release])
+    monkeypatch.setattr(updates_module, "is_newer_version", lambda _c, _a: False)
+
+    def _no_offer(*_a, **_k):
+        raise AssertionError("the running version must not be offered")
+
+    monkeypatch.setattr(frame, "_show_update_available_dialog", _no_offer)
+    monkeypatch.setattr(frame, "_download_update_release", _no_offer)
+    frame._html_info = lambda *_a, **_k: None
+
+    frame.check_for_updates(silent_no_update=True)
+
+    assert "token" not in str(getattr(frame, "_notification", ("",))[0])
+    assert "token" not in str(getattr(frame, "_status_message", ""))
+
+
+def test_update_flow_no_longer_reads_a_bundled_token() -> None:
+    """Nothing in the update flow asks whether a feedback token is present."""
+    source = Path(frame_updates_module.__file__).read_text(encoding="utf-8")
+    assert "feedback_token" not in source
+    assert "self_heal" not in source

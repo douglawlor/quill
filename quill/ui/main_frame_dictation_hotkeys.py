@@ -25,9 +25,12 @@ they behave normally the rest of the time.
 from __future__ import annotations
 
 import logging
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+from quill.ui.main_frame_windows_dictation import WindowsDictationCommandsMixin
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +59,11 @@ class _LiveDictationServices:
         return self._repo
 
     def start_capture(self, session: Any) -> None:
-        from quill.core.speech.capture import MicRecorder, list_input_devices
+        from quill.core.speech.capture import MicRecorder
         from quill.core.speech.service import load_input_device
 
         device = load_input_device()
-        try:
-            name = next(
-                (n for i, n in list_input_devices() if i == device),
-                "system default" if device < 0 else f"index {device}",
-            )
-        except Exception:  # noqa: BLE001 - logging must not block capture
-            name = "?"
-        logger.info("dictation: capture start, mic index=%s (%s)", device, name)
+        logger.info("dictation: capture start, mic index=%s", device)
         recorder = MicRecorder()
         recorder.start(device)  # raises on failure -> MIC_UNAVAILABLE
         self._recorder = recorder
@@ -118,63 +114,12 @@ class _LiveDictationServices:
             pass
 
     def transcribe(self, session: Any) -> None:
-        frame = self._frame
-        controller = frame._live_dictation
-        provider = frame._dictation_provider()
-        installed = provider.list_installed_models()  # type: ignore[attr-defined]
-        if not installed:
-            controller.transcription_failed(session.session_id, "No speech model installed.")
-            return
-        model_id = frame._default_model_id(installed)
-        audio_path = Path(session.audio_path) if session.audio_path else None
-        session_id = session.session_id
+        # The whole worker — silence pre-pass, engine call, profile
+        # replacements, controller callbacks — lives in its own module
+        # (GATE-11 extraction; the pipeline order is documented there).
+        from quill.ui.dictation_transcription import start_transcription
 
-        from quill.core.speech.provider import TranscriptionRequest
-
-        request = TranscriptionRequest(source_path=audio_path, model_id=model_id)
-        asize = audio_path.stat().st_size if (audio_path and audio_path.exists()) else -1
-        logger.info("dictation: transcribe model=%s audio size=%d bytes", model_id, asize)
-
-        import threading
-
-        from quill.core.speech.provider import SpeechError
-        from quill.ui.ai_transcribe_dialog import AIProgressDialog
-
-        wx = frame._wx
-        cancel = threading.Event()
-        progress = AIProgressDialog(
-            frame.frame,
-            "Transcribing dictation",
-            "Transcribing your dictation...",
-            on_cancel=cancel.set,
-            # Quiet mirroring so a minimized run isn't chatty; the controller's
-            # state feedback announces the start and the inserted word count.
-            status_fn=frame._set_status_quiet,
-        )
-        progress.show()
-
-        def _on_progress(fraction: float, message: str) -> None:
-            if cancel.is_set():
-                raise SpeechError("Transcription cancelled.")
-            percent = int(max(0.0, min(1.0, fraction)) * 100)
-            progress.set_progress(percent, f"{message} {percent}%")
-
-        def _run() -> None:
-            try:
-                result = provider.transcribe_file(request, _on_progress)  # type: ignore[attr-defined]
-                text = (getattr(result, "full_text", "") or "").strip()
-                logger.info("dictation: transcription ok, %d chars: %r", len(text), text[:120])
-            except Exception as exc:  # noqa: BLE001 - report failure to the controller
-                logger.warning("dictation: transcription failed: %s", exc)
-                wx.CallAfter(progress.close)
-                wx.CallAfter(controller.transcription_failed, session_id, str(exc))
-                return
-            wx.CallAfter(progress.close)
-            wx.CallAfter(controller.transcription_succeeded, session_id, text)
-
-        threading.Thread(  # GATE-40-OK: dictation transcription worker.
-            target=_run, daemon=True
-        ).start()
+        start_transcription(self._frame, session)
 
     def insert(self, session: Any, text: str) -> bool:
         frame = self._frame
@@ -194,11 +139,17 @@ class _LiveDictationServices:
     def feedback(self, event: Any, session: Any) -> None:
         self._frame._dictation_feedback(event, session)
 
+    def microphone_busy(self, sentence: str) -> None:
+        """Another program has the family's microphone (D-11): say who."""
+        self._frame._play_speech_sound("windows_dictation_error")
+        self._frame._set_status(sentence)
+        self._frame._announce(sentence, force=True)
+
     def now(self) -> float:
         return time.time()
 
 
-class DictationHotkeysMixin:
+class DictationHotkeysMixin(WindowsDictationCommandsMixin):
     """Ctrl+F9 Locked Dictation and its controls, fully remappable."""
 
     # Relies on MainFrame helpers: _wx, frame, editor, document, settings,
@@ -215,13 +166,39 @@ class DictationHotkeysMixin:
 
     def _ensure_dictation_controller(self) -> Any:
         if self._live_dictation is None:
+            from quill.core.dictation_owner import MicrophoneLock
             from quill.core.speech.dictation import DictationController
 
             self._dictation_services = _LiveDictationServices(self)
             self._live_dictation = DictationController(
-                self._dictation_services, self._dictation_config()
+                self._dictation_services,
+                self._dictation_config(),
+                microphone=MicrophoneLock(  # one microphone in the family (D-11)
+                    "quill", key=lambda: self._binding_for("tools.dictation_lock_toggle") or ""
+                ),
             )
+            self._release_microphone_on_close(self._live_dictation)
+        else:
+            # Config is a cheap snapshot; rebuilding it on every access means a
+            # Preferences change (spacing, fillers, vocabulary, language) takes
+            # effect on the *next* dictation rather than the next restart.
+            self._live_dictation.config = self._dictation_config()
         return self._live_dictation
+
+    def _release_microphone_on_close(self, controller: Any) -> None:
+        """The frame going away lets go of the microphone at once."""
+        frame = getattr(self, "frame", None)
+        try:
+            import wx
+
+            def on_destroy(event: Any) -> None:
+                event.Skip()
+                if event.GetEventObject() is frame:
+                    controller.release_microphone()
+
+            frame.Bind(wx.EVT_WINDOW_DESTROY, on_destroy)
+        except Exception:  # noqa: BLE001 - no frame (tests): the kernel lets go at exit
+            pass
 
     def _dictation_config(self) -> Any:
         """Build the controller policy from user Settings (PRD §10, §20)."""
@@ -233,7 +210,25 @@ class DictationHotkeysMixin:
             stop_on_focus_loss=getattr(settings, "dictation_stop_on_focus_loss", True),
             intelligent_spacing=getattr(settings, "dictation_intelligent_spacing", True),
             min_hold_seconds=getattr(settings, "dictation_min_hold_seconds", 0.0),
+            # Transcript refinement (PRD §17 addendum): vocabulary + fillers,
+            # composed core-side by refine_transcript. The vocabulary comes
+            # from the dictation profile — the same list that biases Whisper's
+            # initial_prompt now also drives the fuzzy corrector, so engines
+            # with no prompt support (Parakeet 3) still learn the user's terms.
+            # The language setting doubles as the filler gated-tier evidence.
+            custom_vocabulary=self._dictation_profile_vocabulary(),
+            remove_fillers=bool(getattr(settings, "dictation_remove_fillers", False)),
+            language=str(getattr(settings, "dictation_language", "") or ""),
         )
+
+    def _dictation_profile_vocabulary(self) -> tuple:
+        """The profile's vocabulary terms, or () when unreadable (best-effort)."""
+        try:
+            from quill.core.speech.dictation_profile import load_profile
+
+            return tuple(load_profile().vocabulary)
+        except Exception:  # noqa: BLE001 - a bad profile must never block dictation
+            return ()
 
     def _register_dictation_hotkey_commands(self) -> None:
         handlers = {
@@ -251,6 +246,7 @@ class DictationHotkeysMixin:
                 self._binding_for(command_id),
                 feature_id="core.dictation",
             )
+        self._register_windows_dictation_commands()  # Tools > Speech > Live Dictation
         # Deferred so the prompt lands after the startup announcements settle.
         try:
             self._wx.CallLater(2000, self.check_dictation_recovery_on_startup)
@@ -285,6 +281,11 @@ class DictationHotkeysMixin:
 
         controller = self._live_dictation
         state = controller.state if controller is not None else DictationState.IDLE
+        if state is DictationState.IDLE:
+            # Locked Dictation is idle: the key answers for Live Dictation, as
+            # Dictation Status does on the same key in QUILL Lite (2026-10-05).
+            self._announce(self._dictation_status_sentence(), force=True)
+            return
         self._announce(_DICTATION_STATUS_TEXT.get(state, "Dictation is off."), force=True)
 
     def open_dictation_settings(self) -> None:
@@ -318,11 +319,22 @@ class DictationHotkeysMixin:
             return
         s = self.settings
         s.dictation_max_locked_seconds = result.max_locked_seconds
-        s.dictation_min_hold_seconds = result.min_hold_seconds
         s.dictation_stop_on_focus_loss = result.stop_on_focus_loss
         s.dictation_intelligent_spacing = result.intelligent_spacing
+        s.dictation_remove_fillers = result.remove_fillers
         if result.reset_onboarding:
             s.dictation_onboarding_shown = False
+        if result.open_vocabulary:
+            # "Edit My Dictation Words...": settings were captured (OK
+            # semantics), now open the dictation.md profile in QUILL itself —
+            # created from its template on first use so the user lands in a
+            # documented file, not an empty buffer.
+            try:
+                from quill.core.speech.dictation_profile import ensure_profile_file
+
+                self.open_file(ensure_profile_file())
+            except Exception as exc:  # noqa: BLE001 - opening the profile must not lose the save
+                self._set_status(f"Could not open the dictation profile: {exc}")
         try:
             save_settings(s)
         except Exception:  # noqa: BLE001 - persistence is best-effort
@@ -368,7 +380,7 @@ class DictationHotkeysMixin:
         if pending:
             self._announce(
                 f"{len(pending)} dictation recording(s) await review. Open Tools, "
-                "Speech, Hold and Locked Dictation, Dictation History.",
+                "Speech, Locked Dictation, Dictation History.",
                 force=True,
             )
 
@@ -387,23 +399,28 @@ class DictationHotkeysMixin:
                 force=True,
             )
             return False
-        provider = self._dictation_provider()
+        provider = self._speech_provider()
         try:
             if not provider.is_available():  # type: ignore[attr-defined]
-                # The engine itself (e.g. the whisper.cpp binary) is missing, so
-                # recording would capture audio that can never be transcribed.
-                self._announce(
-                    "The speech engine isn't set up on this computer, so dictation can't "
-                    "run. Open Tools, Speech and Dictation to set it up.",
-                    force=True,
+                # The engine (the whisper.cpp binary) is no longer bundled (PRD
+                # 10.2.4 unbundle), so recording would capture audio that can't be
+                # transcribed. Offer to fetch it right here rather than stranding
+                # the user -- the download is small, verified, and one click.
+                wx = self._wx
+                offer = self._show_message_box(
+                    "The offline speech engine isn't installed yet. Download it now "
+                    "(about 8 MB, verified)? Dictation will be ready once it finishes.",
+                    "Offline Speech Engine",
+                    wx.ICON_QUESTION | wx.YES_NO,
                 )
-                return False
-            if not provider.list_installed_models():  # type: ignore[attr-defined]
-                self._announce(
-                    "No speech model is installed. Open Tools, Speech and Dictation "
-                    "to download one.",
-                    force=True,
-                )
+                if offer == wx.YES:
+                    self.download_offline_speech_engine()
+                else:
+                    self._announce(
+                        "Dictation needs the offline speech engine. You can install it "
+                        "any time from Help, Download Optional Components.",
+                        force=True,
+                    )
                 return False
         except Exception:  # noqa: BLE001 - a provider probe must not block the editor
             return False
@@ -611,7 +628,12 @@ def _build_feedback() -> dict:
         FeedbackEvent.MIC_UNAVAILABLE: (
             "",
             "The microphone could not be opened. Check your input device and "
-            "Windows microphone permissions.",
+            + (
+                "Windows microphone permissions."
+                if sys.platform.startswith("win")
+                else "microphone permissions (System Settings > Privacy & "
+                "Security > Microphone on macOS)."
+            ),
             "Microphone unavailable",
         ),
         FeedbackEvent.BUSY: ("", "The previous dictation is still being transcribed.", ""),

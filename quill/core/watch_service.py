@@ -15,7 +15,13 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+from .monitor_policy import MONITOR_WATCH_FOLDER, MonitorPolicy, resolve_monitor_policy
 from .watch_actions import WatchActionRegistry, default_registry
+from .watch_default import (
+    DEFAULT_WATCH_PROFILE_ID,
+    default_watch_profile,
+    wants_default_watch,
+)
 from .watch_profile_store import WatchProfileStore
 from .watch_profiles import WatchManager, WatchProfile
 from .watch_queue import QueueItem, WatchQueue
@@ -44,8 +50,24 @@ class WatchService:
         on_ai: Callable[[Path, object], object] | None = None,
         queue_listener: Callable[[str, QueueItem | None], None] | None = None,
         registry: WatchActionRegistry | None = None,
+        settings: object | None = None,
+        policy: MonitorPolicy | None = None,
+        on_tick: Callable[[str], None] | None = None,
     ) -> None:
+        """``settings`` (or an explicit ``policy``) supplies the shared
+        ambient-monitor triple for watched folders: cadence, audible tick, and
+        whether a result interrupts speech. ``on_tick`` is the shell's earcon
+        player; without one the tick is silently skipped, which is why the
+        default construction behaves exactly as it did before.
+        """
         self._data_dir = Path(data_dir)
+        #: The live settings object: the Watch Folders page's default folder and
+        #: its three switches are read from it each time the watch (re)starts.
+        self._settings = settings
+        #: Whether the enabled profiles run, as chosen by the last start(). The
+        #: default folder is decided by settings, not by the caller.
+        self._run_profiles = True
+        self._policy = policy or resolve_monitor_policy(settings, MONITOR_WATCH_FOLDER)
         self._feature_enabled = feature_enabled
         self._watch_dir = self._data_dir / "watch"
         self._watch_dir.mkdir(parents=True, exist_ok=True)
@@ -62,11 +84,11 @@ class WatchService:
             on_run_macro=on_run_macro,
             on_ai=on_ai,  # type: ignore[arg-type]
         )
-        self.manager = WatchManager(self.queue)
+        self.manager = WatchManager(self.queue, policy=self._policy, on_tick=on_tick)
         self.worker = WatchWorker(
             queue=self.queue,
             registry=self.registry,
-            profile_lookup=self.store.lookup,
+            profile_lookup=self._lookup_profile,
         )
         self._running = False
 
@@ -76,13 +98,43 @@ class WatchService:
     def is_running(self) -> bool:
         return self._running
 
+    def refresh_policy(self, settings: object) -> None:
+        """Re-resolve the monitor policy from *settings* and adopt it live.
+
+        The policy was snapshotted at construction, so the watch folder's
+        shared monitor controls (cadence, tick sound, interrupt) were
+        restart-only — the P0.3 staleness class. Called from the settings-apply
+        path; the manager's pollers pick the new values up on their next loop.
+        """
+        self._policy = resolve_monitor_policy(settings, MONITOR_WATCH_FOLDER)
+        self.manager.set_policy(self._policy)
+        # The default folder and its switches are live too: a changed folder,
+        # subfolder or existing-files choice applies to a running watch now.
+        self._settings = settings
+        self._reapply_if_running()
+
+    @property
+    def policy(self) -> MonitorPolicy:
+        """The ambient-monitor policy for watched folders.
+
+        The shell reads ``policy.force_speech`` when it announces what the
+        queue found, so "let results interrupt speech" means the same thing
+        here as it does for every other monitor.
+        """
+        return self._policy
+
     def is_feature_enabled(self) -> bool:
         if self._feature_enabled is None:
             return True
         return bool(self._feature_enabled(WATCH_FEATURE_ID))
 
-    def start(self) -> list[str]:
+    def start(self, *, profiles: bool = True) -> list[str]:
         """Start the worker and pollers for all enabled profiles.
+
+        The Watch Folders page's default folder joins them when *Start watching
+        automatically* is on and a folder is chosen (see ``watch_default``).
+        ``profiles=False`` runs the default folder alone -- the launch path when
+        only that switch is on.
 
         Does nothing and returns an empty list when the watch feature is off, so
         the subsystem disappears in lockstep with its flag (FLAG-1).
@@ -91,10 +143,29 @@ class WatchService:
             return list(self.manager.active_profile_ids())
         if not self.is_feature_enabled():
             return []
+        self._run_profiles = profiles
         self.worker.start()
-        started = self.manager.start(self.store.enabled_profiles())
+        started = self.manager.start(self._profiles_to_run())
         self._running = True
         return started
+
+    @property
+    def default_profile(self) -> WatchProfile | None:
+        """The default folder's rule as settings describe it now, or None."""
+        return default_watch_profile(self._settings)
+
+    def _profiles_to_run(self) -> list[WatchProfile]:
+        running = self.store.enabled_profiles() if self._run_profiles else []
+        default = self.default_profile
+        if default is not None and wants_default_watch(self._settings):
+            running.append(default)
+        return running
+
+    def _lookup_profile(self, profile_id: str) -> WatchProfile | None:
+        """The worker's lookup: the stored profiles, plus the default folder's rule."""
+        if profile_id == DEFAULT_WATCH_PROFILE_ID:
+            return self.default_profile
+        return self.store.lookup(profile_id)
 
     def stop(self) -> None:
         if not self._running:
@@ -106,7 +177,7 @@ class WatchService:
     def restart(self) -> list[str]:
         """Apply profile or feature changes by cleanly cycling the subsystem."""
         self.stop()
-        return self.start()
+        return self.start(profiles=self._run_profiles)
 
     # -- profile management (delegates to the store, restarts if running) ---
 
@@ -141,7 +212,7 @@ class WatchService:
 
     def _reapply_if_running(self) -> None:
         if self._running:
-            self.manager.start(self.store.enabled_profiles())
+            self.manager.start(self._profiles_to_run())
 
     # -- queue passthroughs for the monitor (WATCH-4) -------------------
 

@@ -1,0 +1,410 @@
+"""Headless build + wiring smoke for the QUILL Weather dialogs, plus the pure
+list/detail formatting helpers. Uses a real wx.App so construction and the
+report-rendering path are exercised, but never shows a modal."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+import wx
+
+from quill.core.weather.models import (
+    CurrentConditions,
+    ForecastPeriod,
+    WeatherAlert,
+    WeatherLocation,
+    WeatherReport,
+)
+from quill.core.weather.settings import WeatherSettings
+from quill.ui.weather import weather_center_dialog as wcd
+from quill.ui.weather.add_location_dialog import AddLocationDialog
+from quill.ui.weather.settings_dialog import WeatherSettingsDialog
+from quill.ui.weather.weather_center_dialog import WeatherCenterDialog
+from tests.wx_session import shared_wx_app
+
+
+@pytest.fixture
+def app():
+    a = shared_wx_app()
+    yield a
+    a.Destroy()
+
+
+class _FakeTaskManager:
+    def submit(self, _name, _work, *, on_success=None, on_failure=None):
+        return None  # never actually run work in the build smoke
+
+
+# -- pure helpers -------------------------------------------------------------
+
+
+def test_alert_list_label() -> None:
+    alert = WeatherAlert(
+        "i", "Tornado Warning", "Extreme", "Immediate", area_description="Pima, AZ; Pinal, AZ"
+    )
+    assert wcd._alert_list_label(alert) == "Tornado Warning -- Pima, AZ -- Critical"
+
+
+def test_period_detail_text_leads_with_day_and_temp() -> None:
+    p = ForecastPeriod(
+        "This Afternoon", 96, "F", "Hot", detailed_forecast="Very hot, high near 96."
+    )
+    text = wcd._period_detail_text(p)
+    assert text.startswith("This Afternoon: 96 degrees Fahrenheit")  # day + temp at the top
+    assert "Very hot, high near 96." in text  # then the full detail, copyable
+
+
+def test_weather_center_has_labels_before_each_readonly_field(app, tmp_path) -> None:
+    # A StaticText immediately before each read-only field is what names it for
+    # a screen reader; every detail field must have one.
+    dlg = WeatherCenterDialog(
+        None, data_dir=tmp_path, task_manager=_FakeTaskManager(), safe_mode=False
+    )
+    assert dlg._alert_detail_label.GetLabelText()
+    assert dlg._period_detail_label.GetLabelText()
+    assert dlg._daily_detail_label.GetLabelText()
+    dlg.dialog.Destroy()
+
+
+def test_period_detail_is_fully_spelled_out() -> None:
+    p = ForecastPeriod(
+        "This Afternoon",
+        94,
+        "F",
+        "Mostly Sunny",
+        detailed_forecast="Mostly sunny, with a high near 94. West wind around 5 mph.",
+    )
+    text = wcd._period_detail_text(p)
+    assert "This Afternoon: 94 degrees Fahrenheit" in text  # no "deg F"
+    assert "5 miles per hour" in text and " mph" not in text
+    from quill.ui.weather import center_text  # moved there 2026-10-01 (GATE-11)
+
+    assert center_text._spell_out("gusts to 20 mph") == "gusts to 20 miles per hour"
+
+
+def test_remove_location_clears_when_it_was_the_last(app, tmp_path) -> None:
+    from quill.core.weather import locations as loc_store
+    from quill.core.weather.models import WeatherLocation
+
+    store = loc_store.WeatherLocationStore()
+    store.add(WeatherLocation("Home", 1.0, 2.0))
+    loc_store.save_locations(tmp_path, store)
+    dlg = WeatherCenterDialog(
+        None, data_dir=tmp_path, task_manager=_FakeTaskManager(), safe_mode=False
+    )
+    dlg._remove_location()
+    assert loc_store.load_locations(tmp_path).locations == []
+    assert not dlg._daily_detail.IsShown()  # detail fields hidden again
+    dlg.dialog.Destroy()
+
+
+def test_alert_detail_text_includes_instructions() -> None:
+    alert = WeatherAlert(
+        "i",
+        "Flash Flood Warning",
+        "Severe",
+        "Immediate",
+        "Observed",
+        headline="Flash Flood Warning until 6:30 PM",
+        instruction="Move to higher ground now.",
+        description="Heavy rain.",
+        area_description="Maricopa",
+        expires="2026-07-19T18:30:00-07:00",
+        sender_name="NWS Phoenix",
+    )
+    text = wcd._alert_detail_text(alert)
+    assert "Flash Flood Warning until 6:30 PM" in text
+    assert "Instructions: Move to higher ground now." in text
+    assert "Severity Severe" in text
+    assert "Issued by NWS Phoenix." in text
+
+
+# -- dialog construction ------------------------------------------------------
+
+
+def test_weather_center_builds_and_renders(app, tmp_path) -> None:
+    dlg = WeatherCenterDialog(
+        None, data_dir=tmp_path, task_manager=_FakeTaskManager(), safe_mode=False
+    )
+    report = WeatherReport(
+        location=WeatherLocation("Home", 32.2, -110.9, resolved_name="Tucson, AZ"),
+        current=CurrentConditions(
+            text_description="Clear", temperature_f=96.0, wind_speed_mph=5.0, wind_direction="WNW"
+        ),
+        periods=[
+            ForecastPeriod("This Afternoon", 96, "F", "Hot", detailed_forecast="Very hot."),
+            ForecastPeriod("Tonight", 71, "F", "Clear", is_daytime=False),
+        ],
+        alerts=[
+            WeatherAlert(
+                "a", "Excessive Heat Warning", "Severe", "Expected", instruction="Drink water."
+            )
+        ],
+        office="TWC",
+        time_zone="America/Phoenix",
+    )
+    dlg._render_report(report.location, report)
+    assert dlg._alerts_list.GetCount() == 1
+    assert "Excessive Heat Warning" in dlg._alerts_list.GetString(0)
+    assert dlg._current.GetValue().startswith("Weather for Home.")
+    assert "in Home" in dlg._current.GetValue()
+    assert "96 degrees Fahrenheit" in dlg._current.GetValue()
+    assert dlg._forecast_list.GetCount() == 2
+    assert "This Afternoon" in dlg._forecast_list.GetString(0)
+    assert "TWC" in dlg._status.GetValue()
+    dlg.dialog.Destroy()
+
+
+def test_weather_center_no_alerts_shows_placeholder(app, tmp_path) -> None:
+    dlg = WeatherCenterDialog(
+        None, data_dir=tmp_path, task_manager=_FakeTaskManager(), safe_mode=False
+    )
+    report = WeatherReport(location=WeatherLocation("Home", 1, 2), office="TWC")
+    dlg._render_report(report.location, report)
+    assert dlg._alerts_list.GetString(0) == "No active alerts."
+    dlg.dialog.Destroy()
+
+
+def test_add_location_dialog_builds(app, tmp_path) -> None:
+    from quill.core.weather.locations import WeatherLocationStore
+
+    dlg = AddLocationDialog(
+        None,
+        store=WeatherLocationStore(),
+        data_dir=tmp_path,
+        task_manager=_FakeTaskManager(),
+        safe_mode=False,
+    )
+    assert dlg.dialog is not None
+    dlg.dialog.Destroy()
+
+
+def test_add_location_show_applies_modal_ids(app, tmp_path, monkeypatch) -> None:
+    # Regression: show() must call apply_modal_ids with valid kwargs
+    # (affirmative_id, not ok_id) -- the old ok_id= raised TypeError so the
+    # dialog never appeared.
+    import quill.ui.dialog_contract as dc
+    from quill.core.weather.locations import WeatherLocationStore
+
+    monkeypatch.setattr(dc, "show_modal_dialog", lambda *a, **k: None)
+    dlg = AddLocationDialog(
+        None,
+        store=WeatherLocationStore(),
+        data_dir=tmp_path,
+        task_manager=_FakeTaskManager(),
+        safe_mode=False,
+    )
+    assert dlg.show() is False  # no exception; nothing added
+
+
+def test_settings_show_applies_modal_ids(app, tmp_path, monkeypatch) -> None:
+    import quill.ui.dialog_contract as dc
+
+    monkeypatch.setattr(dc, "show_modal_dialog", lambda *a, **k: None)
+    dlg = WeatherSettingsDialog(None, settings=WeatherSettings(), data_dir=tmp_path)
+    assert dlg.show() is False  # no exception
+
+
+def test_weather_center_show_applies_modal_ids(app, tmp_path, monkeypatch) -> None:
+    import quill.ui.dialog_contract as dc
+
+    monkeypatch.setattr(dc, "show_modal_dialog", lambda *a, **k: None)
+    dlg = WeatherCenterDialog(
+        None, data_dir=tmp_path, task_manager=_FakeTaskManager(), safe_mode=False
+    )
+    dlg.show()  # no exception (no locations -> no fetch)
+
+
+class _MenuHost:
+    def __init__(self, frame, wx_mod) -> None:
+        self.frame = frame
+        self._wx = wx_mod
+        self._safe_mode = False
+        self._task_manager = _FakeTaskManager()
+
+    def _announce(self, _m) -> None:
+        pass
+
+    def _show_message_box(self, *_a) -> None:
+        pass
+
+
+def test_weather_menu_appends_with_expected_items(app) -> None:
+    from quill.ui.main_frame_weather import WeatherMixin
+
+    class _Host(WeatherMixin, _MenuHost):
+        pass
+
+    frame = wx.Frame(None)
+    bar = wx.MenuBar()
+    _Host(frame, wx)._append_weather_menu(bar)
+    titles = [bar.GetMenuLabelText(i) for i in range(bar.GetMenuCount())]
+    assert "Weather" in titles
+    menu = bar.GetMenu(titles.index("Weather"))
+    labels = [
+        menu.FindItemByPosition(i).GetItemLabelText()
+        for i in range(menu.GetMenuItemCount())
+        if menu.FindItemByPosition(i).GetKind() != wx.ITEM_SEPARATOR
+    ]
+    assert any("Weather Now" in text for text in labels)
+    assert any("Quick Weather" in text for text in labels)
+    assert any("Active Alerts" in text for text in labels)
+    assert any("Add Location" in text for text in labels)
+    assert any("Settings" in text for text in labels)
+    assert any("Monitoring" in text for text in labels)
+    frame.Destroy()
+
+
+def test_weather_monitoring_toggle_starts_and_stops(app, tmp_path) -> None:
+    from quill.core.weather import locations as loc_store
+    from quill.core.weather import monitor
+    from quill.core.weather.models import WeatherLocation
+    from quill.ui.main_frame_weather import WeatherMixin
+
+    # A saved primary location for the monitor to watch.
+    store = loc_store.WeatherLocationStore()
+    store.add(WeatherLocation(display_name="Tucson, AZ", latitude=32.22, longitude=-110.97))
+    loc_store.save_locations(tmp_path, store)
+
+    class _Host(WeatherMixin, _MenuHost):
+        def _weather_data_dir(self):  # keep the test off the real data dir
+            return tmp_path
+
+    frame = wx.Frame(None)
+    bar = wx.MenuBar()
+    host = _Host(frame, wx)
+    host._append_weather_menu(bar)
+
+    assert host._weather_monitoring_active() is False
+    assert "Start" in host._weather_monitor_menu_text()
+
+    host.toggle_weather_monitoring()  # start (task manager is a no-op stub)
+    assert host._weather_monitoring_active() is True
+    assert "Stop" in host._weather_monitor_menu_text()
+    assert monitor.load_config(tmp_path).enabled is True  # persisted on
+
+    host.toggle_weather_monitoring()  # stop
+    assert host._weather_monitoring_active() is False
+    assert monitor.load_config(tmp_path).enabled is False
+    frame.Destroy()
+
+
+def test_weather_menu_area_gating_hides_disabled_items(app) -> None:
+    from quill.ui.main_frame_weather import WeatherMixin
+
+    class _Host(WeatherMixin, _MenuHost):
+        # Simulate the Quill Weather app turning off NOAA radio and monitoring.
+        def _app_area_enabled(self, area_id):
+            return area_id not in {"noaa_radio", "monitoring"}
+
+    frame = wx.Frame(None)
+    bar = wx.MenuBar()
+    _Host(frame, wx)._append_weather_menu(bar)
+    menu = bar.GetMenu(
+        [bar.GetMenuLabelText(i) for i in range(bar.GetMenuCount())].index("Weather")
+    )
+    labels = [
+        menu.FindItemByPosition(i).GetItemLabelText()
+        for i in range(menu.GetMenuItemCount())
+        if menu.FindItemByPosition(i).GetKind() != wx.ITEM_SEPARATOR
+    ]
+    assert not any("NOAA" in t for t in labels)  # NOAA radio area hidden
+    assert not any("Monitoring" in t for t in labels)  # monitoring area hidden
+    assert any("Weather Now" in t for t in labels)  # core items remain
+    frame.Destroy()
+
+
+def test_weather_menu_has_test_alert_and_pause(app) -> None:
+    from quill.ui.main_frame_weather import WeatherMixin
+
+    class _Host(WeatherMixin, _MenuHost):
+        pass
+
+    frame = wx.Frame(None)
+    bar = wx.MenuBar()
+    _Host(frame, wx)._append_weather_menu(bar)
+    menu = bar.GetMenu(
+        [bar.GetMenuLabelText(i) for i in range(bar.GetMenuCount())].index("Weather")
+    )
+    labels = [
+        menu.FindItemByPosition(i).GetItemLabelText()
+        for i in range(menu.GetMenuItemCount())
+        if menu.FindItemByPosition(i).GetKind() != wx.ITEM_SEPARATOR
+    ]
+    assert any("Test Alert" in t for t in labels)
+    assert any("Pause Alert" in t for t in labels)
+    frame.Destroy()
+
+
+def test_test_alert_fires_every_channel(app) -> None:
+    from quill.ui.main_frame_weather import WeatherMixin
+
+    class _Host(WeatherMixin, _MenuHost):
+        pass
+
+    frame = wx.Frame(None)
+    host = _Host(frame, wx)
+    calls: list[str] = []
+    host._play_weather_alert_sound = lambda: calls.append("sound")  # type: ignore[method-assign]
+    host._show_weather_toast = lambda t, b: calls.append(f"toast:{t}")  # type: ignore[method-assign]
+    host._announce = lambda m, **k: calls.append(f"speak:{m}")  # type: ignore[method-assign]
+    host._show_message_box = lambda m, c, s: calls.append(f"dialog:{c}") or 0  # type: ignore[method-assign]
+    host.weather_test_alert()
+    assert "sound" in calls
+    assert any(c.startswith("toast:[TEST]") for c in calls)
+    assert any(c.startswith("speak:Test weather alert") for c in calls)
+    assert any(c.startswith("dialog:Test Weather Alert") for c in calls)
+    frame.Destroy()
+
+
+def test_pause_and_resume_gate_polling(app, tmp_path) -> None:
+    from quill.core.weather import locations as loc_store
+    from quill.core.weather.models import WeatherLocation
+    from quill.ui.main_frame_weather import WeatherMixin
+
+    store = loc_store.WeatherLocationStore()
+    store.add(WeatherLocation(display_name="Tucson, AZ", latitude=32.22, longitude=-110.97))
+    loc_store.save_locations(tmp_path, store)
+
+    class _Host(WeatherMixin, _MenuHost):
+        def _weather_data_dir(self):
+            return tmp_path
+
+    frame = wx.Frame(None)
+    bar = wx.MenuBar()
+    host = _Host(frame, wx)
+    host._append_weather_menu(bar)
+    host.toggle_weather_monitoring()  # start (no-op task manager)
+    assert host._weather_monitoring_active() is True
+    assert host._weather_monitor_paused is False
+
+    host.toggle_weather_monitoring_pause()  # pause
+    assert host._weather_monitor_paused is True
+    # A poll while paused submits nothing.
+    submitted: list[str] = []
+    host._task_manager = SimpleNamespace(  # type: ignore[assignment]
+        submit=lambda *a, **k: submitted.append("x")
+    )
+    host._weather_monitor_poll()
+    assert submitted == []  # paused -> no fetch
+
+    host.toggle_weather_monitoring_pause()  # resume
+    assert host._weather_monitor_paused is False
+    host.stop_weather_monitoring(announce=False)
+    frame.Destroy()
+
+
+def test_settings_dialog_builds_and_saves(app, tmp_path) -> None:
+    from quill.core.weather import settings as settings_mod
+
+    dlg = WeatherSettingsDialog(
+        None, settings=WeatherSettings(temperature_unit="F"), data_dir=tmp_path
+    )
+    dlg._temp.SetSelection(1)  # Celsius
+    dlg._q_humidity.SetValue(True)
+    dlg._save()
+    saved = settings_mod.load_settings(tmp_path)
+    assert saved.temperature_unit == "C"
+    assert saved.quick_include_humidity is True
+    dlg.dialog.Destroy()

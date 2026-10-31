@@ -21,6 +21,8 @@ import wx
 from quill.core.verbosity.channels import VISUAL_ALWAYS_ON_NAME, Channel
 from quill.core.verbosity.profiles import BUILTIN_PROFILES, DEFAULT_PROFILE
 from quill.core.verbosity.registry import VerbRegistry, default_registry
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 __all__ = ["VerbosityPrefsPanel"]
 
@@ -42,6 +44,10 @@ class VerbosityPrefsPanel(wx.Panel):
         self._registry = registry or default_registry()
         self._announce = announce_cb or (lambda _m: None)
         self._verbs = self._registry.all()
+        #: Per-chord template overrides the user saved from the chord editor.
+        #: Held rather than written, like every other result this panel
+        #: collects -- the hub owns the profile that these belong to.
+        self.chord_overrides: dict[str, str] = {}
 
         root = wx.BoxSizer(wx.VERTICAL)
 
@@ -90,12 +96,18 @@ class VerbosityPrefsPanel(wx.Panel):
         self._library_btn = wx.Button(self, label="&Templates...")
         self._safe_btn = wx.Button(self, label="&Safe Mode...")
         self._io_btn = wx.Button(self, label="Import / E&xport...")
+        # Two siblings that were built, hardened and tested, and never given a
+        # way in (list.md 12.3). The reachability gate found them on its first
+        # run: seven of the nine verbosity dialogs opened from here and these
+        # two opened from nowhere at all.
+        self._qvp_btn = wx.Button(self, label="Install &Pack...")
         for b in (
             self._preview_btn,
             self._history_btn,
             self._library_btn,
             self._safe_btn,
             self._io_btn,
+            self._qvp_btn,
         ):
             tools.Add(b, 0, wx.RIGHT, 6)
         root.Add(tools, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
@@ -110,19 +122,25 @@ class VerbosityPrefsPanel(wx.Panel):
         split = wx.BoxSizer(wx.HORIZONTAL)
         self._verb_list = wx.ListBox(self, style=wx.LB_SINGLE)
         self._verb_list.SetName("Verbs")
-        self._verb_list.SetMinSize(wx.Size(220, 180))
+        set_spoken_name(self._verb_list, "Verbs")
+        self._verb_list.SetMinSize(dip_size(self._verb_list, 220, 180))
         split.Add(self._verb_list, 1, wx.EXPAND | wx.RIGHT, 8)
         self._detail = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP)
         self._detail.SetName("Verb details")
-        self._detail.SetMinSize(wx.Size(260, 180))
+        set_spoken_name(self._detail, "Verb details")
+        self._detail.SetMinSize(dip_size(self._detail, 260, 180))
         split.Add(self._detail, 1, wx.EXPAND)
         root.Add(split, 1, wx.EXPAND | wx.ALL, 10)
 
         edit_row = wx.BoxSizer(wx.HORIZONTAL)
         self._edit_btn = wx.Button(self, label="&Edit announcement...")
         self._order_btn = wx.Button(self, label="Data &order...")
+        # Beside the two per-verb editors, because that is what it is: the
+        # chord editor overrides one verb's template for one chord.
+        self._chord_btn = wx.Button(self, label="Per-&chord wording...")
         edit_row.Add(self._edit_btn, 0, wx.RIGHT, 6)
-        edit_row.Add(self._order_btn, 0)
+        edit_row.Add(self._order_btn, 0, wx.RIGHT, 6)
+        edit_row.Add(self._chord_btn, 0)
         root.Add(edit_row, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 10)
 
         self._status = wx.StaticText(self, label="")
@@ -141,6 +159,8 @@ class VerbosityPrefsPanel(wx.Panel):
         self._io_btn.Bind(wx.EVT_BUTTON, lambda _e: self._launch_import_export())
         self._edit_btn.Bind(wx.EVT_BUTTON, lambda _e: self._launch_token_editor())
         self._order_btn.Bind(wx.EVT_BUTTON, lambda _e: self._launch_data_order())
+        self._chord_btn.Bind(wx.EVT_BUTTON, lambda _e: self._launch_chord_editor())
+        self._qvp_btn.Bind(wx.EVT_BUTTON, lambda _e: self._launch_qvp_install())
 
         self._repopulate()
         self._filter.SetFocus()  # power users come here first
@@ -249,6 +269,58 @@ class VerbosityPrefsPanel(wx.Panel):
         VerbosityTokenEditorDialog(
             self._top_window(), verb, template=verb.default_template, announce_cb=self._announce
         ).show()
+
+    def _launch_chord_editor(self) -> None:
+        """Reword a verb for one chord (verbosity §16).
+
+        Not verb-scoped like the token editor beside it: the whole point of a
+        per-chord override is that the *key* is the thing being distinguished,
+        so the dialog opens on the full chord list with the live keymap folded
+        in. Anything the user saves is kept on the panel for the hub to
+        persist, exactly as the other launchers hand back their result.
+        """
+        from quill.core.keymap import load_keymap
+        from quill.core.verbosity.chords import chord_verbs
+        from quill.ui.verbosity_chord_editor import VerbosityChordEditorDialog
+
+        try:
+            keymap = load_keymap()
+        except OSError:
+            # An unreadable keymap costs the rebindable chords, not the dialog.
+            keymap = None
+        pairs = chord_verbs(keymap, known_verbs={verb.id for verb in self._verbs})
+        if not pairs:
+            self._set_status("No chord-fired verbs to reword.")
+            return
+
+        dialog = VerbosityChordEditorDialog(
+            self._top_window(),
+            pairs,
+            overrides=dict(self.chord_overrides),
+            registry=self._registry,
+            announce_cb=self._announce,
+        )
+        dialog.show()
+        if dialog.overrides is not None:
+            self.chord_overrides = dialog.overrides
+            count = len(self.chord_overrides)
+            # Spelled out rather than "override(s)": a screen reader reads the
+            # brackets aloud, and this line is read every time it changes.
+            noun = "override" if count == 1 else "overrides"
+            self._set_status(f"{count} per-chord {noun} set.")
+
+    def _launch_qvp_install(self) -> None:
+        """Install a ``.qvp.json`` verbosity pack (verbosity §21).
+
+        ``installed_template_ids`` is left empty deliberately: it exists so the
+        dialog can report a pack that collides with templates already in
+        force, and this panel does not own a template store to answer that
+        from. An empty tuple reports no collisions, which is honest here --
+        claiming collisions against a store we do not have would not be.
+        """
+        from quill.ui.verbosity_qvp_install import VerbosityQvpInstallDialog
+
+        VerbosityQvpInstallDialog(self._top_window(), announce_cb=self._announce).show()
 
     def _launch_data_order(self) -> None:
         verb = self._selected_verb()

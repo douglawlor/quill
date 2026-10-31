@@ -28,9 +28,11 @@ spawning real processes.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,6 +47,42 @@ _CONFIG_FILE = "external-engines.json"
 # Used by _resolve_which to fall back to the QUILL-managed path when the
 # executable is not on the system PATH.
 _MANAGED_RUNTIME_BASENAMES: frozenset[str] = frozenset({"node", "node.exe"})
+
+# Well-known macOS install locations a Finder-launched .app bundle misses: it
+# gets a minimal default PATH and never sources the user's login shell profile,
+# so a Homebrew/MacPorts install (or an nvm-managed Node) can be on disk yet
+# invisible to shutil.which(). Checked only after PATH itself comes up empty.
+_MACOS_FALLBACK_DIRS: tuple[str, ...] = (
+    "/usr/local/bin",
+    "/opt/homebrew/bin",
+    "/opt/local/bin",  # MacPorts
+)
+
+
+def _macos_engine_fallback(name: str) -> str | None:
+    """Resolve *name* against macOS well-known dirs PATH misses (#48).
+
+    Covers Homebrew/MacPorts bin dirs and, for Node, the per-version bin under
+    ``~/.nvm/versions/node`` (the highest installed version wins). Returns the
+    executable path or None when nothing is on disk.
+    """
+    base = Path(name).name
+    for directory in _MACOS_FALLBACK_DIRS:
+        candidate = Path(directory) / base
+        if candidate.is_file():
+            return str(candidate)
+    if base.lower() in {"node", "node.exe"}:
+        nvm_root = Path.home() / ".nvm" / "versions" / "node"
+        if nvm_root.is_dir():
+            # nvm keeps one dir per installed version (e.g. v20.10.0); pick the
+            # highest by reverse-sorted name so a stale lower version is skipped.
+            versions = sorted((p for p in nvm_root.iterdir() if p.is_dir()), reverse=True)
+            for entry in versions:
+                candidate = entry / "bin" / "node"
+                if candidate.is_file():
+                    return str(candidate)
+    return None
+
 
 # Canonical basenames the external-engine boundary is willing to launch.
 # Anything else is rejected by ``configure_engine`` and ``probe_engine`` as
@@ -68,21 +106,67 @@ _ENGINE_EXECUTABLE_BASENAMES: frozenset[str] = frozenset((
     "quill-engine.exe",
 ))
 
+# The allowlisted interpreters. Allowing ``node``/``python`` alone would gut
+# the allowlist: ``python -c "<payload>"`` runs arbitrary code with no file on
+# disk, which is exactly what a settings-tampering attacker (who can write
+# settings.json but not plant an executable) needs. So for interpreters the
+# first argument must be the engine's script file, never an option flag.
+_INTERPRETER_BASENAMES: frozenset[str] = frozenset((
+    "node",
+    "node.exe",
+    "python",
+    "python.exe",
+    "python3",
+    "python3.exe",
+))
+
+
+def _interpreter_arg_problem(command: tuple[str, ...]) -> str | None:
+    """A plain-language reason the interpreter command is unsafe, or None.
+
+    The script file itself is not required to exist yet (users wire engines
+    up before writing them; relative paths resolve at run time) — the check
+    only forbids option flags in the script position, which is the inline-code
+    escape hatch.
+    """
+    basename = Path(command[0]).name.lower()
+    if basename not in _INTERPRETER_BASENAMES:
+        return None
+    if len(command) < 2:
+        return "An interpreter engine needs a script file to run (for example: node my-engine.js)."
+    first = command[1]
+    if first.startswith("-"):
+        return (
+            "Interpreter options such as '-c', '-e', or '-m' are not allowed in "
+            "an engine command: the first argument must be the engine's script "
+            "file. Inline code would let a tampered settings file run arbitrary "
+            "programs."
+        )
+    return None
+
+
 # A runner takes (command, stdin_text, timeout_seconds) and returns
 # (returncode, stdout_text, stderr_text). Injectable for tests.
 Runner = Callable[[list[str], str, float], "tuple[int, str, str]"]
 
 
 def _resolve_which(name: str) -> str | None:
-    """Like shutil.which, but also checks the QUILL-managed Node.js path.
+    """Like shutil.which, but also checks macOS well-known dirs and the
+    QUILL-managed Node.js path.
 
     Used as the default ``which`` argument in :func:`probe_engine` and
     :func:`configure_engine`. Tests that inject their own ``which`` function
-    bypass this entirely, so injected fakes remain authoritative.
+    bypass this entirely, so injected fakes remain authoritative. On macOS a
+    Finder-launched app gets a minimal PATH, so Homebrew/nvm installs are also
+    checked against well-known dirs (#48).
     """
     found = shutil.which(name)
     if found is not None:
         return found
+    if sys.platform == "darwin":
+        fallback = _macos_engine_fallback(name)
+        if fallback is not None:
+            return fallback
     if Path(name).name.lower() in _MANAGED_RUNTIME_BASENAMES:
         try:
             from quill.core.node_install import node_executable_path
@@ -93,6 +177,36 @@ def _resolve_which(name: str) -> str | None:
         except Exception:  # noqa: BLE001 - node_install is optional; never crash the boundary
             pass
     return None
+
+
+def _resolved_executable(executable: str, which: Callable[[str], str | None]) -> str | None:
+    """Resolve *executable* to an absolute path, or None if it cannot be found
+    without relying on the current working directory.
+
+    Three cases, all of which must land on an absolute path before we hand it to
+    ``subprocess``:
+
+    * An **absolute path** is accepted only when it exists on disk.
+    * A **relative path with a directory component** (``bin/node``, ``./node``)
+      is rejected outright: resolving it would go through the process CWD, so a
+      planted ``./node`` could hijack the engine.
+    * A **bare name** (``node``) is resolved through ``which`` (PATH + the
+      QUILL-managed/macOS fallbacks); the result is accepted only when it is
+      itself absolute, so a CWD hit from ``shutil.which`` is discarded.
+    """
+    # ``os.path.isabs`` (not ``Path.is_absolute``) so the check matches how the
+    # OS/``subprocess`` will interpret the string on this platform -- e.g. on
+    # Windows ``/usr/bin/node`` is treated as rooted, while ``.\\node`` and a
+    # bare ``node`` are not.
+    if os.path.isabs(executable):
+        return executable if Path(executable).exists() else None
+    if os.path.dirname(executable):
+        # A relative path with a directory component -> would resolve via CWD.
+        return None
+    resolved = which(executable)
+    if resolved is None:
+        return None
+    return resolved if os.path.isabs(resolved) else None
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +352,9 @@ def configure_engine(
                 f"The program '{command[0]}' was not found on PATH. "
                 "Install it or provide the full path to the executable."
             )
+        problem = _interpreter_arg_problem(command)
+        if problem is not None:
+            raise ValueError(problem)
     config = EngineConfig(
         engine_id=cleaned_id,
         command=command,
@@ -292,10 +409,13 @@ def probe_engine(
             False,
             f"The program '{executable}' is not in the QUILL external-engine allowlist.",
         )
-    if which(executable) is None and not Path(executable).exists():
+    if _resolved_executable(executable, which) is None:
         return EngineStatus(
             config.engine_id, False, f"The program '{executable}' was not found on this computer."
         )
+    problem = _interpreter_arg_problem(config.command)
+    if problem is not None:
+        return EngineStatus(config.engine_id, False, problem)
     return EngineStatus(config.engine_id, True, "Ready.")
 
 
@@ -322,6 +442,8 @@ class EngineResult:
 
 
 def _default_runner(command: list[str], stdin_text: str, timeout: float) -> tuple[int, str, str]:
+    from quill.core.ai.harness_credentials import scrubbed_child_env
+
     completed = subprocess.run(  # noqa: S603 - command is user-consented and configured
         command,
         input=stdin_text,
@@ -329,6 +451,9 @@ def _default_runner(command: list[str], stdin_text: str, timeout: float) -> tupl
         text=True,
         timeout=timeout,
         check=False,
+        # An engine that needs a key gets it through its own configuration,
+        # never by inheriting QUILL's exported cloud API keys.
+        env=scrubbed_child_env(),
     )
     return completed.returncode, completed.stdout, completed.stderr
 
@@ -338,7 +463,7 @@ def run_request(
     request: JsonlRequest,
     *,
     master_enabled: bool | None = None,
-    which: Callable[[str], str | None] = shutil.which,
+    which: Callable[[str], str | None] = _resolve_which,
     runner: Runner = _default_runner,
     timeout: float = 30.0,
 ) -> EngineResult:
@@ -352,8 +477,19 @@ def run_request(
     if not status.available:
         return EngineResult(ok=False, error=status.reason, unavailable=True)
 
+    # Hand ``subprocess`` the fully-resolved absolute path rather than the
+    # configured token, so it performs no PATH/CWD lookup of its own.
+    resolved = _resolved_executable(config.command[0], which)
+    if resolved is None:
+        return EngineResult(
+            ok=False,
+            error=f"The program '{config.command[0]}' was not found on this computer.",
+            unavailable=True,
+        )
+    command = [resolved, *config.command[1:]]
+
     try:
-        returncode, stdout, stderr = runner(list(config.command), request.to_line() + "\n", timeout)
+        returncode, stdout, stderr = runner(command, request.to_line() + "\n", timeout)
     except subprocess.TimeoutExpired:
         return EngineResult(ok=False, error=f"The {config.engine_id} engine timed out.")
     except OSError as error:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
@@ -27,7 +26,7 @@ from quill.core.publishing_providers import (
     publishing_auth_method_name,
     publishing_provider_display_name,
 )
-from quill.core.publishing_schedule import validate_scheduled_publish_time
+from quill.core.publishing_schedule import ScheduledPublishChoice, validate_scheduled_publish_time
 from quill.core.publishing_worker import browse_publishing_content_task
 from quill.stability.task_manager import CancelledError, TaskManager
 from quill.ui.dialog_contract import (
@@ -36,14 +35,11 @@ from quill.ui.dialog_contract import (
     show_message_box,
     show_modal_dialog,
 )
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
+from quill.ui.surface_lifetime import surface_tasks
 
 _TIMEZONE_CHOICES = sorted(available_timezones())
-
-
-@dataclass(frozen=True, slots=True)
-class ScheduledPublishChoice:
-    content_kind: str
-    scheduled_at: datetime
 
 
 class EditPublishingConnectionDialog:
@@ -66,7 +62,7 @@ class EditPublishingConnectionDialog:
             title="Edit Publishing Connection",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((760, 560))
+        self.dialog.SetSize(dip_size(self.dialog, 760, 560))
 
         self._profile = profile or PublishingConnectionProfile()
         self._secret = load_publishing_secret(self._profile.id) if self._profile.id else ""
@@ -138,6 +134,7 @@ class EditPublishingConnectionDialog:
         self.secret_plain = wx.TextCtrl(panel)
         self.secret_plain.SetValue(self._secret)
         self.secret_plain.SetName("Application password")
+        set_spoken_name(self.secret_plain, "Application password")
         self.secret_plain.Hide()
         self.secret = self.secret_masked
         self.secret_stack.Add(self.secret_masked, 1, wx.EXPAND)
@@ -311,7 +308,8 @@ class BrowsePublishingContentDialog:
         import wx
 
         self._wx = wx
-        self._task_manager = task_manager
+        # Every task this window starts is tied to its lifetime (qc.md F-02).
+        self._task_manager = surface_tasks(task_manager, lambda: getattr(self, "dialog", None))
         self._announce = announce_cb or (lambda _message: None)
         self._profile = current_publishing_connection()
         self._secret = load_publishing_secret(self._profile.id) if self._profile is not None else ""
@@ -326,7 +324,7 @@ class BrowsePublishingContentDialog:
             title="Browse Publishing Content",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((860, 620))
+        self.dialog.SetSize(dip_size(self.dialog, 860, 620))
 
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
@@ -402,7 +400,7 @@ class BrowsePublishingContentDialog:
         self.summary = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 140),
+            size=dip_size(self.dialog, -1, 140),
         )
         self.summary.SetName("Selected publishing content details")
         root.Add(self.summary, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
@@ -625,7 +623,7 @@ class PublishingConnectionsDialog:
             title="Publishing Connections",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((820, 520))
+        self.dialog.SetSize(dip_size(self.dialog, 820, 520))
 
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(
@@ -647,7 +645,7 @@ class PublishingConnectionsDialog:
         self.summary = wx.TextCtrl(
             self.dialog,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.BORDER_SIMPLE,
-            size=(-1, 120),
+            size=dip_size(self.dialog, -1, 120),
         )
         self.summary.SetName("Selected publishing connection details")
         root.Add(self.summary, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
@@ -758,7 +756,7 @@ class PublishingConnectionsDialog:
         answer = show_message_box(
             f"Remove the publishing connection '{selected.label or selected.site_url}'?",
             "Remove Publishing Connection",
-            self._wx.YES_NO | self._wx.ICON_WARNING,
+            self._wx.YES_NO | self._wx.NO_DEFAULT | self._wx.ICON_WARNING,
             self.dialog,
             announce=self._announce,
         )
@@ -821,7 +819,7 @@ class SchedulePublishDialog:
             title="Schedule Publish",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize((520, 380))
+        self.dialog.SetSize(dip_size(self.dialog, 520, 380))
 
         root = wx.BoxSizer(wx.VERTICAL)
         root.Add(

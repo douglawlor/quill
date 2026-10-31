@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from quill.core import read_aloud
+from quill.core.error_codes import CodedError
 from quill.core.speech.chapter_assemble import (
     ChapterAssembleOptions,
     ChapterAssembleResult,
@@ -35,16 +36,35 @@ from quill.core.speech.translate_sections import Translator, translate_sections
 
 # Engine ids accepted by :func:`make_synthesizer`. These mirror the
 # ``read_aloud_engine`` setting and the batch options' per-engine blocks.
-SUPPORTED_ENGINES = ("sapi5", "kokoro", "piper", "dectalk", "espeak")
+SUPPORTED_ENGINES = ("sapi5", "kokoro", "piper", "dectalk", "espeak", "macos")
 # Multilingual cloud TTS providers (the premium tier for translated export). Each
 # voice can speak any language, so these are the natural fit for a translated
 # document; they require a configured API key and ffmpeg (to conform the provider's
 # MP3/WAV into the splice-ready PCM WAV the assembler expects).
 CLOUD_ENGINES = ("openai", "gemini", "elevenlabs")
 
+# Per-engine chunk ceiling (chars) for long-document synthesis. Kokoro's neural
+# model has a small context window (~510 phoneme tokens): a dense chunk near that
+# limit makes onnx synthesis fail and forces a slower boundary-safe sub-chunk
+# retry inside ``read_aloud.synthesize_with_kokoro``, so keep Kokoro well under
+# it. Piper streams sentence-by-sentence and only needs a modest cap; every other
+# engine (subprocess/classic and the cloud providers, which have their own
+# per-request caps) takes the large default to avoid needless per-call overhead.
+# This is the single source of truth -- batch, per-document, and translated
+# export all resolve their cap here so no path silently over-feeds an engine.
+_ENGINE_CHUNK_CHARS = {"kokoro": 500, "piper": 4000}
+DEFAULT_CHUNK_CHARS = 8000
 
-class DocumentSpeechError(Exception):
+
+def engine_chunk_chars(engine: str) -> int:
+    """Return the long-document chunk ceiling (chars) for *engine*."""
+    return _ENGINE_CHUNK_CHARS.get(engine.strip().lower(), DEFAULT_CHUNK_CHARS)
+
+
+class DocumentSpeechError(CodedError):
     """Raised when an engine cannot be resolved into a usable synthesizer."""
+
+    code = "QUILL-SPEECH-DOCUMENT-ENGINE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +159,15 @@ def make_synthesizer(spec: SynthesisSpec) -> Synthesizer:
             )
 
         return _espeak
+
+    if engine == "macos":
+        if not read_aloud.macos_say_available():
+            raise DocumentSpeechError("macOS system speech (the say command) is not available.")
+
+        def _macos(text: str, out: Path) -> None:
+            read_aloud.synthesize_with_macos(text, out, voice=spec.voice, rate=spec.rate)
+
+        return _macos
 
     if engine in CLOUD_ENGINES:
         return _make_cloud_synthesizer(engine, spec)
@@ -262,6 +291,41 @@ def _build_voice_rotation(
     return rotation
 
 
+def _build_casting(
+    spec: SynthesisSpec,
+    rules: list[tuple[str, str]] | None,
+    pronunciation_dictionaries: list[Any] | None,
+    blacklist: Any | None = None,
+) -> Any | None:
+    """A ``synthesizer_for(index, title)`` from explicit casting rules, or None.
+
+    Each cast voice reuses *spec*'s engine and pace (one PCM format across the
+    book) and gets the same pronunciation + failure-recording wrappers as the
+    rotation. Blacklisted voices lose their rules (those sections fall through
+    to the rotation / single voice rather than failing the run).
+    """
+    from quill.core.speech.casting import cast_voices, normalize_rules, voice_for_section
+
+    usable = [
+        (pattern, voice)
+        for pattern, voice in normalize_rules(rules)
+        if blacklist is None or not blacklist.is_blacklisted(spec.engine, voice)
+    ]
+    if not usable:
+        return None
+    synth_by_voice: dict[str, Synthesizer] = {}
+    for voice in cast_voices(usable):
+        synth = make_synthesizer(replace(spec, voice=voice))
+        synth = _wrap_with_pronunciations(synth, spec.engine, pronunciation_dictionaries)
+        synth_by_voice[voice] = _wrap_with_failure_recording(synth, spec.engine, voice, blacklist)
+
+    def synthesizer_for(index: int, title: str) -> Synthesizer | None:
+        voice = voice_for_section(usable, index + 1, title)
+        return synth_by_voice.get(voice) if voice else None
+
+    return synthesizer_for
+
+
 def synthesize_document_to_chaptered_file(
     source: Path,
     output_path: Path,
@@ -271,7 +335,9 @@ def synthesize_document_to_chaptered_file(
     work_dir: Path | None = None,
     pronunciation_dictionaries: list[Any] | None = None,
     combine_headings: bool = False,
+    max_heading_level: int = 0,
     voice_rotation: list[str] | None = None,
+    casting_rules: list[tuple[str, str]] | None = None,
     translate: Translator | None = None,
     voice_blacklist: Any | None = None,
     on_progress: Any | None = None,
@@ -290,7 +356,9 @@ def synthesize_document_to_chaptered_file(
     :class:`ChapterAssembleResult` (the clean file plus, when the sounder is
     enabled, the with-tones variant carrying identical chapter timing).
     """
-    sections = extract_sections(source, combine_headings=combine_headings)
+    sections = extract_sections(
+        source, combine_headings=combine_headings, max_heading_level=max_heading_level
+    )
     if not sections:
         raise DocumentSpeechError(f"No readable text found in {source.name}.")
     if translate is not None:
@@ -303,6 +371,9 @@ def synthesize_document_to_chaptered_file(
     rotation = _build_voice_rotation(
         spec, voice_rotation, pronunciation_dictionaries, voice_blacklist
     )
+    synthesizer_for = _build_casting(
+        spec, casting_rules, pronunciation_dictionaries, voice_blacklist
+    )
 
     owns_work_dir = work_dir is None
     work_dir = work_dir or Path(tempfile.mkdtemp(prefix="quill_docspeech_"))
@@ -314,6 +385,7 @@ def synthesize_document_to_chaptered_file(
             options,
             work_dir=work_dir,
             synthesizers=rotation,
+            synthesizer_for=synthesizer_for,
             on_progress=on_progress,
         )
     finally:
@@ -342,6 +414,7 @@ def synthesize_document_to_separate_files(
     work_dir: Path | None = None,
     pronunciation_dictionaries: list[Any] | None = None,
     combine_headings: bool = False,
+    max_heading_level: int = 0,
     voice_rotation: list[str] | None = None,
     translate: Translator | None = None,
     voice_blacklist: Any | None = None,
@@ -357,7 +430,9 @@ def synthesize_document_to_separate_files(
     *voice_rotation*, each file is voiced by the next voice in the list. Returns
     the written paths in order.
     """
-    sections = extract_sections(source, combine_headings=combine_headings)
+    sections = extract_sections(
+        source, combine_headings=combine_headings, max_heading_level=max_heading_level
+    )
     if not sections:
         raise DocumentSpeechError(f"No readable text found in {source.name}.")
     if translate is not None:

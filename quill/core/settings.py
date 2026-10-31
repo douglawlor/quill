@@ -4,26 +4,53 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from quill.core.action_feedback import coerce as _coerce_action_feedback
+from quill.core.ai.own_key import load_settings_fields as load_own_key_fields
 from quill.core.ai.vision_prompts import BUILTIN_STYLE_IDS
+from quill.core.editor_font import DEFAULT_FONT_POINTS, clamp_font_points
+from quill.core.inline_note_cue import coerce_note_line_cue
+from quill.core.markdown_breaks import normalise_hard_break_style
+from quill.core.monitor_policy import (
+    MONITOR_GITHUB,
+    MONITOR_PODCASTS,
+    clamp_interval_minutes,
+)
 from quill.core.paths import app_data_dir
+from quill.core.recovery_triage import DEFAULT_KEEP_DAYS as RECOVERY_KEEP_DAYS
+from quill.core.session_restore import ASK_MODES
 from quill.core.settings_normalizers import (
     STATUS_BAR_ITEMS,
     _clamp_int,
     _default_status_bar_hidden,
     _default_status_bar_order,
+    _normalize_browse_mode,
     _normalize_status_bar_hidden,
     _normalize_status_bar_order,
 )
+from quill.core.speech.sherpa_migration import migrate_choice
+from quill.core.speech.vosk_retirement import migrate_vosk_choices
 from quill.core.storage import write_json_atomic
+from quill.core.structure_announce import HEADING_POSITIONS as _HEADING_POSITIONS
 from quill.core.versioned_store import load_with_migration
+from quill.core.windows_dictation.settings_fields import DictationSettings
+from quill.core.windows_dictation.settings_fields import (
+    load_fields as load_windows_dictation_fields,
+)
 
 __all__ = [
     "STATUS_BAR_ITEMS",
+    "VOICE_REPLY_MODES",
     "Settings",
     "load_settings",
     "save_settings",
     "settings_path",
 ]
+
+#: How a voice-asked AI reply comes back. Ordered cheapest/most private first:
+#: the two offline modes cost nothing and send nothing, ``local_tts`` reads the
+#: whole reply with QUILL's own voices, and ``ai_voice`` is the only one that
+#: bills and transmits the reply text to a cloud provider.
+VOICE_REPLY_MODES: tuple[str, ...] = ("announce", "text", "local_tts", "ai_voice")
 
 
 def _coerce_non_negative_float(value: object, default: float) -> float:
@@ -35,8 +62,31 @@ def _coerce_non_negative_float(value: object, default: float) -> float:
     return result if result >= 0 else 0.0
 
 
+def _suffix_list(value: object) -> list[str]:
+    """A clean list of lower-case file suffixes from whatever was on disk.
+
+    Anything that is not a list, and any entry that is not a string, is simply
+    dropped: a settings file somebody hand-edited should cost them the entry
+    they got wrong, not the ability to start the app (bad.md F5).
+    """
+    if not isinstance(value, list):
+        return []
+    cleaned: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        suffix = item.strip().lower()
+        if not suffix:
+            continue
+        if not suffix.startswith("."):
+            suffix = f".{suffix}"
+        if suffix not in cleaned:
+            cleaned.append(suffix)
+    return cleaned
+
+
 @dataclass(slots=True)
-class Settings:
+class Settings(DictationSettings):  # the windows_dictation_* fields, shared with QUILL Lite
     theme: str = "system"
     keyboard_pack: str = "Quill Default"
     soft_wrap: bool = True
@@ -51,12 +101,24 @@ class Settings:
     browse_mode_followon_custom_ms: int = 4000
     csv_open_mode: str = "prompt"
     word_open_mode: str = "prompt"
-    editor_surface: str = "plain"
-    save_as_surface_sync: str = "prompt"
+    # Conversion engine preferences for Word documents. "auto" keeps QUILL's
+    # default chains: MarkItDown-first when opening a .docx, the native
+    # python-docx writer first when saving one. The explicit choices trade
+    # differently: see the Settings descriptions for what each keeps and drops.
+    docx_read_engine: str = "auto"
+    docx_write_engine: str = "auto"
     plain_text_link_style: str = "text_url"
+    content_handoff_format: str = "text"
+    auto_outline_style: str = "numeric"
+    clip_library_autocapture: bool = False
+    clipboard_collector_saves: bool = True  # shared; quill/core/clipboard_collector.py
     indent_with_tabs: bool = False
     indent_size: int = 4
-    auto_check_updates: bool = False
+    # On by default so signed safety advisories (the remote feature kill
+    # switch) actually reach installs; the check fetches QUILL's own signed
+    # feed and sends nothing about the user. An explicit stored False is
+    # honored, and Safe Mode skips the check entirely.
+    auto_check_updates: bool = True
     beta_updates: bool = False
     # Recommended (force-once) updates to important defaults, e.g. restoring
     # Find to Ctrl+F for users who had it on a QUILL-key chord. This is the
@@ -74,20 +136,61 @@ class Settings:
     recent_files_limit: int = 10
     recent_files_auto_clear_missing: bool = False
     # When saving an untitled document, suggest a filename from its first line
-    # (works across formats; strips leading markup). Opt-in.
-    first_line_as_title: bool = False
+    # (works across formats; strips leading markup). On by default: it only
+    # pre-fills the name for an untitled document, never renames anything.
+    first_line_as_title: bool = True
+    # Restore points: snapshot the document text on every save so File >
+    # Restore Previous Version can bring any earlier save back. On by default;
+    # recording is content-addressed (an unchanged save stores nothing) and
+    # best-effort (it can never be the reason a save fails).
+    restore_points_enabled: bool = True
+    # Per-document disk cap for restore-point history, in megabytes. Age
+    # thinning (keep a week fully, then daily, then weekly) runs first; the
+    # newest five versions are never pruned regardless of the cap.
+    restore_points_max_mb: int = 200
     # Background model warm-up after startup so the first use is fast. Loads the
     # model into memory; turn off to save RAM if you don't use the feature.
     warm_dictation_model: bool = True
     warm_kokoro_model: bool = True
     tray_enabled: bool = False
+    # Registers a per-user Windows Run-key entry (quill/platform/windows/startup.py);
+    # a no-op setting on non-Windows platforms. Checking this also forces
+    # tray_enabled on -- launching silently at login with no tray icon would
+    # leave no visible way back into a hidden window.
+    launch_at_windows_startup: bool = False
     persistent_undo: bool = False
     spellcheck_as_you_type: bool = False
+    # Live check stays quiet in code; see quill/core/spellcheck_filetypes.py.
+    spellcheck_skip_code_files: bool = True
+    # When True, saving a document first opens the F7 spelling review so the user
+    # can correct misspellings before the file is written. Off by default.
+    spell_check_before_save: bool = False
+    # Hunspell language the spell checker validates against. en_US ships bundled;
+    # other languages download on demand (quill.core.spellcheck.install_language).
+    spellcheck_language: str = "en_US"
+    # Reveal Codes pane (WordPerfect-style hidden-code inspector). Hidden by
+    # default; Alt+F3 toggles it, F6 cycles focus into it.
+    reveal_codes_visible: bool = False
+    reveal_codes_view: str = "flowed"  # "flowed" (interactive) | "structured"
+    reveal_codes_verbosity: str = "balanced"  # "quiet" | "balanced" | "detailed"
+    # When True, QUILL speaks the rich code phrase (e.g. "italic on, 15
+    # characters") as you arrow onto a code in the flowed pane. Off by default so
+    # the screen reader is the single voice — it narrates the flowed line itself,
+    # and QUILL mirrors the phrase to the status bar silently — which stops the
+    # doubled/te inconsistent speech NVDA and JAWS produced (#1244, #1245). Turn
+    # it on for the verbose spoken examination some users prefer. When off, the
+    # doubled/inconsistent speech NVDA and JAWS produced is gone.
+    reveal_codes_speak: bool = False
     intellisense_as_you_type: bool = False
     snippet_trigger_expansion: bool = True
     preview_browser: str = "system"
     auto_side_preview: bool = True
     show_tab_control: bool = False
+    #: The whole status bar, not the per-cell ``status_bar_hidden`` list below.
+    #: QUILL could hide individual cells and not the bar (bad.md G3, P1.10);
+    #: QUILL Lite has had Notepad's View > Status Bar since it shipped, under
+    #: this name, so a settings file means the same thing in both.
+    show_status_bar: bool = True
     title_bar_path_mode: str = "name"
     dirty_title_style: str = "text"
     start_with_no_document_open: bool = False
@@ -100,27 +203,102 @@ class Settings:
     read_aloud_dectalk_voice: str = "paul"
     read_aloud_dectalk_rate: int = 180
     read_aloud_dectalk_dictionary: str = ""
+    read_aloud_piper_executable: str = ""
     read_aloud_piper_model: str = ""
     announcement_backend: str = "auto"
+    #: What Quill Radio says when a recording resumes where you stopped
+    #: (Quill Radio 3.0). "spoken" gives the position -- "Resuming at 12 minutes
+    #: 8 seconds" -- because a recording that silently starts twenty minutes in
+    #: is disorienting if you had forgotten you were part-way through it.
+    #: "brief" says only "Resuming."; "silent" says nothing. Live stations are
+    #: unaffected: they have no position to resume.
+    radio_resume_announcement: str = "spoken"
+
+    #: Mirror spoken announcements to a connected braille display (#1283).
+    #: On by default: a braille user was receiving none of these messages
+    #: at all, so this is a bug fix rather than an opt-in feature.
+    announcement_braille: bool = True
+    #: Braille rendering style: "speech" sends the spoken string (nobody
+    #: loses information by default), "compact" the short position-first
+    #: labels from #425 (p7/87 l14 c3 mod).
+    announcement_braille_style: str = "speech"
+    #: How long an identical braille message is suppressed. A flash
+    #: physically replaces what the reader is touching, so a repeated
+    #: now-playing title should not keep stealing the display.
+    announcement_braille_dedupe_seconds: float = 2.0
+    #: Hold an error on the display instead of flashing past it -- the one
+    #: message a reader most needs to catch.
+    announcement_braille_sticky_errors: bool = True
+    #: Earcons in the companion apps, which had none before the service.
+    announcement_sounds_in_apps: bool = True
+    #: Let a cue confirm an action while Quiet Mode keeps speech silent.
+    announcement_sound_instead_of_speech_when_quiet: bool = True
+    #: Keep the Spoken Echo / announcement history in every app.
+    announcement_echo_history: bool = True
+    #: Which severities interrupt speech: "errors", "warnings" (always did) or "never".
+    announcement_severity_interrupt: str = "warnings"
     read_aloud_piper_model_dir: str = ""
     read_aloud_kokoro_voice: str = "af_heart"
     read_aloud_kokoro_speed: float = 1.0
     read_aloud_espeak_executable: str = ""
     read_aloud_espeak_voice: str = "en"
     read_aloud_espeak_rate: int = 175
+    # macOS system voice for Read Aloud (#21/#75): the say CLI voice id. Blank
+    # uses the system default voice. The say CLI ships with macOS, so no
+    # executable path field is needed (unlike espeak/piper/dectalk).
+    read_aloud_macos_voice: str = ""
+    read_aloud_macos_rate: int = 175
+    # ElevenLabs premium cloud voice for Read Aloud (opt-in, per-session consent,
+    # billed to the user's ElevenLabs quota). Blank ids use the module defaults.
+    read_aloud_elevenlabs_voice: str = ""
+    read_aloud_elevenlabs_model: str = ""
     # AI Voice (cloud TTS): which provider/model/voice the AI read-aloud and
     # export actions use. Provider is "openai" or "gemini".
     ai_tts_provider: str = "openai"
     ai_tts_model: str = ""
     ai_tts_voice: str = ""
     ai_tts_speed: float = 1.0
+    # How an AI chat reply is delivered when you ask by voice (Ctrl+F9 in Ask
+    # Quill). "announce" is the historical behaviour and stays the default:
+    # a short spoken summary through your screen reader, free and offline.
+    # "text" shows the reply without speaking it, "local_tts" reads it with
+    # QUILL's own offline voices, and "ai_voice" reads it with the cloud voice
+    # configured above -- which bills per character and sends the reply text to
+    # that provider, so it is opt-in and never a silent upgrade.
+    ai_voice_reply_mode: str = "announce"
+    # An announcement is a summary, so it is truncated; spoken and text modes
+    # deliver the whole reply. 0 disables truncation for announcements too.
+    ai_voice_reply_announce_limit: int = 140
     announcement_trace_enabled: bool = False
     announcement_startup_tips_enabled: bool = False
     verbosity_speech_enabled: bool = True
     announce_screen_reader_detected: bool = False
     assistant_enabled: bool = False
     assistant_prompt_style: str = "balanced"
-    markdown_clipboard_format: str = "html"
+    #: Which version of the hosted-AI privacy agreement this person has
+    #: accepted, or 0. **Same field name and same meaning as QUILL Lite's**
+    #: (``quill/core/lite/settings.py``), because it is the same agreement about
+    #: the same service -- the two products must not be able to disagree about
+    #: whether it was accepted.
+    #:
+    #: Deliberately a *version* rather than a boolean: a material change to what
+    #: is sent or kept bumps ``gateway_privacy.AGREEMENT_VERSION`` and everybody
+    #: is asked again, which a boolean could not express -- an old yes would
+    #: silently cover a new thing.
+    #:
+    #: Separate from the Use AI master switch on purpose. The switch answers
+    #: "is AI turned on in my copy"; this answers "have I agreed to what the
+    #: hosted service does". A switch flipped by a profile, a settings import or
+    #: somebody else using the machine is not consent.
+    ai_privacy_accepted_version: int = 0
+    ai_own_key_model: str = ""  # own-key AI's model (core/ai/own_key.py); empty: the default
+    # Which company the own key belongs to: "openai" or "gemini". An explicit
+    # choice made in Use My Own AI Key, never inferred (core/ai/own_key.py).
+    ai_own_key_provider: str = "openai"
+    # Where a hosted-AI answer goes: "window", "cursor" or "clipboard" (QUILL
+    # Lite's field too; core/ai/answer_delivery.py). Chosen in the AI Assistant.
+    ai_answer_delivery: str = "window"
+    markdown_clipboard_format: str = "text"  # Copy With Source: "text", "html" or "rtf"
     markdown_profile_id: str = "standard"
     citation_style: str = "footnotes"
     auto_clean_html_paste: bool = False
@@ -140,6 +318,90 @@ class Settings:
     dictation_intelligent_spacing: bool = True  # conservative insertion spacing
     dictation_onboarding_shown: bool = False  # one-time first-use dictation hint shown
     dictation_min_hold_seconds: float = 0.0  # ignore accidental F9 taps below this
+    # Filler-word removal (PRD §17 addendum, 2026-08-17): the two-tier,
+    # language-honest pass in speech.fillers. Off by default to keep §17's
+    # conservative-normalization promise. Its language evidence is the
+    # ``dictation_language`` field above; the fuzzy custom-vocabulary pass has
+    # no setting here on purpose — the dictation profile (dictation.md) is the
+    # one authoring surface for the user's terms, and its list feeds both the
+    # Whisper initial_prompt bias and the fuzzy corrector.
+    dictation_remove_fillers: bool = False
+    # Speak the formatting delta as the caret moves (hidden-codes interrogation);
+    # off by default so navigation stays quiet (Describe Formatting is on-demand).
+    announce_formatting_on_move: bool = False
+    # Unified Find rollout flag (#1327 F1): when on, Ctrl+F/Ctrl+H open QUILL's
+    # own accessible Find dialog instead of the native Windows one. Off by
+    # default until the JAWS/NVDA validation pass; the native dialog remains
+    # the fallback either way.
+    find_use_quill_dialog: bool = False
+    # Look Up may ask three free online services (the Free Dictionary,
+    # Datamuse, Wikipedia) for definitions and more words. Off until the
+    # listener switches it on in the Look Up window; sends the word alone.
+    dictionary_online_lookups: bool = False
+    # Speak "Entered/Exited <name> dialog" as dialogs open/close. Off by default:
+    # every supported screen reader already announces the dialog and its title,
+    # so the cue is redundant; turn it back on to hear the explicit transition.
+    announce_dialog_transitions: bool = False
+    # Runtime-memory policy (AI footprint & optimization, QUILL-PRD.md §5.25f).
+    # low_resource_mode caps concurrently-loaded engines to one and biases model
+    # selection to the smallest that fits — trading concurrency for fit, never
+    # disabling AI or speech. idle_unload_minutes unloads a model untouched for
+    # that many minutes (0 = never unload); a later use simply reloads.
+    low_resource_mode: bool = False
+    idle_unload_minutes: int = 10
+    # Speak the new indentation depth ("4 spaces" / "1 tab") when Tab / Shift+Tab
+    # indents, instead of the terse "Indented lines". Aware of indent_with_tabs
+    # and indent_size; on by default, off restores the terse message.
+    announce_indent_depth: bool = True
+    # Double-press an informational command (Describe Formatting, Document
+    # Summary, Context Help, Announce Contrast) to open the Spoken Echo review
+    # dialog instead of re-speaking. The dedicated Echo key works regardless; this
+    # only governs the double-press shortcut. See quill/core/spoken_echo.py.
+    spoken_echo_on_double_press: bool = True
+    # The braille editor fix (Preferences > Braille). QUILL's one editor surface
+    # on Windows is QuillRichEdit — the native Rich Edit (RICHEDIT50W) plus the
+    # TOM wrapper. Live JAWS + braille testing (2026-07) confirmed the fix for
+    # the two long-standing braille bugs: text starting in cell 2 (#616) and
+    # selection dots 7-8 not shown (#813). Both halves default ON; each is a
+    # plain checkbox on the Braille tab. Windows only; restart to apply
+    # everywhere.
+    #   braille_editor_system_edit_fix: apply SES_EMULATESYSEDIT to the editor so
+    #   braille displays show text from cell 1 and mark selections with dots 7-8.
+    braille_editor_system_edit_fix: bool = True
+    #   braille_editor_hide_border: draw the editor with no border. The visible
+    #   border itself pushes braille output out of cell 1, so a hidden border is
+    #   part of the fix, not cosmetics. Unchecking warns that cell alignment
+    #   will break.
+    braille_editor_hide_border: bool = True
+    #   experimental_acknowledged: the master Experimental switch — the user has
+    #   opted in to experimental features as a group. Every experimental option
+    #   below is ignored (and its controls disabled) until this is True.
+    experimental_acknowledged: bool = False
+    #   glow_experimental_enabled: opt-in for the GLOW accessibility review and
+    #   repair suite (Tools > GLOW). Gated by experimental_acknowledged; off by
+    #   default while GLOW matures; takes effect on settings apply (menu rebuild).
+    glow_experimental_enabled: bool = False
+    #   publishing_experimental_enabled: opt-in for the read-only WordPress
+    #   publishing connections tools (File > Publishing). Gated by
+    #   experimental_acknowledged; the send/publish half stays locked regardless.
+    publishing_experimental_enabled: bool = False
+    #   table_studio_experimental_enabled: opt-in for the accessible Table
+    #   Studio grid surface (Tools menu) — one surface for both a new table and
+    #   an opened CSV. Gated by experimental_acknowledged; off by default while
+    #   it matures; takes effect on settings apply (menu rebuild).
+    table_studio_experimental_enabled: bool = False
+    #   edge_read_aloud_enabled: opt-in experimental read-aloud that opens an
+    #   accessible reader page in the user's real browser (see
+    #   quill/core/browser_reader.py), where the full/online Web Speech voices
+    #   are available. Gated by experimental_acknowledged; takes effect on
+    #   settings apply — command always registered, menu appears on the settings
+    #   menu rebuild, no restart. Voice is chosen/remembered in the page itself.
+    edge_read_aloud_enabled: bool = False
+    # What to do when a document that carries hidden formatting is saved as plain
+    # text: "ask" (offer to keep the formatting), "illuminate" (always write a
+    # <name>.illumination sidecar so the .txt round-trips formatting in QUILL), or
+    # "plain" (drop the formatting, the classic lossy save). See quill/io/illumination.py.
+    plain_text_with_formatting: str = "ask"
     # Pronunciation dictionaries (batch-document-to-speech-plan §4.7). The
     # dictionaries themselves live in JSON files (global under app_data_dir, project
     # under <project>/.quill/pronunciation); settings holds only the selection state.
@@ -149,9 +411,13 @@ class Settings:
     # plus the serialized TextNormalizationOptions (empty = recommended defaults).
     tts_normalization_enabled: bool = True
     tts_normalization: dict[str, Any] = field(default_factory=dict)
-    # Offline speech engine: "" = bundled whisper.cpp; "fasterwhisper" opts into
-    # the Faster Whisper (CTranslate2) engine on machines that have it.
+    # Offline speech engine: "" = the ladder (service.py); "whispercpp", "fasterwhisper"
+    # or "sherpa" (every local sherpa-onnx model, D-26). "vosk" loads as "" (2026-10-13).
     speech_provider: str = ""
+    # The model id to prefer for speech_provider (e.g. "small", "base.en"); ""
+    # falls back to the first installed model of whichever engine is active.
+    # Set by the guided offline-speech picker and "Set as Default".
+    speech_default_model_id: str = ""
     bw_speech_selection_mode: str = "recommended"
     bw_speech_model_id: str = "whisper-base"
     bw_provider_id: str = "local_whisper"
@@ -161,9 +427,56 @@ class Settings:
     bw_safe_mode_lock: bool = False
     status_page_refresh_announcement_cadence: str = "quiet"
     voice_commands_enabled: bool = False
+    # Voice conversation mode (Hey QUILL Phase 2). Hands-free multi-command
+    # loop timing, in milliseconds; 0 disables the corresponding window. See
+    # quill/core/speech/conversation.py (Timing) and the plan doc §3.2.
+    voice_conversation_enabled: bool = False
+    voice_conversation_silence_ms: int = 2000
+    voice_conversation_review_ms: int = 900
+    voice_conversation_followup_ms: int = 3000
+    voice_conversation_thinking_ms: int = 2000
+    # Refinements: an optional name for warm spoken prompts ("Listening, Jeff."),
+    # spoken cue phrases (welcome/follow-up) via TTS, and speaking answers in the
+    # voice loop. When a screen reader is active, spoken cues stay off by default
+    # so QUILL never talks over the reader (SR-parity).
+    voice_conversation_user_name: str = ""
+    voice_conversation_spoken_cues: bool = False
+    # Which on-device speech engine powers the voice-interaction features
+    # (Voice Command, Conversation Mode, Hey QUILL). "" = follow the main speech
+    # engine; "whispercpp" for accuracy, "moonshine_tiny" (bundled) for fast, light
+    # recognition (best for the wake word). Falls back when one is unavailable.
+    voice_recognition_engine: str = ""
+    vosk_retirement_notice: str = ""  # "voice"/"dictation" pending, "done" (vosk_retirement)
+    # Wake word (Hey QUILL Phase 3). Always-listening for "Hey QUILL" on-device;
+    # off by default and never persisted-on across a restart unless the user
+    # opts in. See quill/core/speech/wakeword.py.
+    voice_wakeword_enabled: bool = False
+    voice_wakeword_persist: bool = False
     watch_folder_enabled: bool = False
     watch_folder_path: str = ""
     startup_folder: str = ""
+    git_sync_last_folder: str = ""  # last folder used with Sync Folder with GitHub
+    vault_root: str = ""  # active Accessible Vault folder ("" = no vault open)
+    vault_templates_folder: str = ""  # vault-relative Templates folder ("" = "Templates")
+    vault_daily_pattern: str = ""  # daily-note path pattern ("" = "Journal/{{date:YYYY-MM-DD}}.md")
+    # Free-first document conversion (Import / Convert Document): the local
+    # Tesseract OCR language (three-letter code, "" = "eng") and an optional
+    # explicit tesseract executable override ("" = auto-discover).
+    ocr_language: str = ""
+    tesseract_path: str = ""
+    # Tier 3 — Datalab Chandra cloud OCR (consent-gated, BYOK; PRD §5.93).
+    # The API key is NEVER stored here — it lives in the credential vault
+    # (see quill/core/datalab_ocr.py). These are the non-secret knobs from the
+    # AI Hub Services tab. Every upload still requires a per-action consent.
+    datalab_enabled: bool = False
+    datalab_endpoint: str = "https://www.datalab.to"
+    datalab_mode: str = "balanced"  # fast | balanced | accurate
+    datalab_output: str = "markdown"  # markdown | html | json
+    datalab_paginate: bool = True
+    # AI-assisted "Improve Reading Order" (PRD 5.6): the largest document, in pages,
+    # the command will send to the configured AI provider. Guards accidental huge,
+    # slow, or costly sends. Clamped to a sane range on load.
+    reading_order_max_pages: int = 40
     # #620: Simple File Open dialog. When true, File > Open... shows a
     # keyboard-friendly picker with a small filter, recent locations, and
     # a hidden-files toggle. The standard Windows file dialog is still
@@ -174,6 +487,24 @@ class Settings:
     watch_folder_process_existing: bool = False
     watch_folder_auto_start: bool = False
     watch_folder_poll_interval_seconds: int = 5
+    # Ambient-monitor policy triple (see quill/core/monitor_policy.py). Every
+    # background watcher exposes the same three controls: how often it checks,
+    # whether the check itself is audible, and whether a result interrupts
+    # speech. Both flags default off for every monitor -- an unrequested tick is
+    # noise, and an unrequested interruption talks over the screen reader.
+    watch_folder_audible_tick: bool = False
+    watch_folder_interrupt_speech: bool = False
+    weather_monitor_audible_tick: bool = False
+    weather_monitor_interrupt_speech: bool = False
+    # The podcast new-episode check had no cadence at all before this: feeds
+    # refreshed only when asked. It stays opt-in, and off it costs nothing.
+    podcast_check_enabled: bool = False
+    podcast_check_interval_minutes: int = 60
+    podcast_check_audible_tick: bool = False
+    podcast_check_interrupt_speech: bool = False
+    github_poll_interval_minutes: int = 15
+    github_poll_audible_tick: bool = False
+    github_poll_interrupt_speech: bool = False
     # #262: Pandoc Import / Export batch conversion defaults. The wizard
     # reads these as starting values; the user can override per batch.
     import_export_recursive: bool = True
@@ -185,12 +516,33 @@ class Settings:
     # memory, not a user-tunable policy, so not exposed in Preferences.
     convert_file_last_output_dir: str = ""
     convert_file_last_format: str = "gfm"
+    # -- The face and size the editor draws in -------------------------------
+    # QUILL had neither until 2026-09-16. No code in quill/ui called SetFont on
+    # an editor control -- every call site was a dialog heading or a print DC --
+    # so the editor rendered in whatever font wx picked, forever, for an
+    # audience that includes low-vision users (bad.md 4.3, the P0 viability
+    # bar). QUILL Lite has had both since its first release.
+    #
+    # Deliberately QUILL Lite's field names, so the grow-up path has two fewer
+    # rows to map (bad.md G1) and a settings file carried between the two
+    # products means the same thing in both.
+    #
+    #: The face. Empty means "whatever wx picks", which is the system's own
+    #: default and the right answer for somebody who has never chosen.
+    font_name: str = ""
+    #: The size, in points. Clamped to 6..72 by quill.core.editor_font.
+    font_size: int = 12
     # SET-2: tunable timing and pacing
     autosave_interval_seconds: int = 30
     quick_nav_debounce_ms: int = 250
     quick_nav_min_chars: int = 1
     announcement_throttle_ms: int = 0
     read_aloud_sentence_pause_ms: int = 0
+    # When True, Read Aloud selects each sentence as it is spoken so sighted
+    # users can follow along. Off by default: QUILL is screen-reader-first, and
+    # moving the selection makes the screen reader announce "selected" over
+    # QUILL's chosen voice. Sighted/low-vision users can opt in.
+    read_aloud_follow_cursor: bool = False
     # OCR-2: image-to-text engine selection
     ocr_engine: str = "auto"
     # SHELL-1: file-manager "Send to Quill" context-menu verbs
@@ -199,13 +551,30 @@ class Settings:
     shell_verb_ocr_structured: bool = False
     shell_verb_open: bool = True
     shell_verb_read: bool = False
-    shell_file_types: str = "images_pdf"
+    shell_verb_convert: bool = False
+    shell_file_types: str = "images_pdf_docs"
     ocr_structured: bool = False
     ocr_capture_geometry: bool = False
     # FEAT-19: external file-change watch and safe reload
     external_change_watch_enabled: bool = True
-    external_change_auto_reload_when_clean: bool = True
+    # Off since 2026-09-18 (bad.md F5). A clean tab used to be replaced in
+    # place whenever the file changed, which destroyed every non-text format it
+    # touched and said nothing. Every change asks now; this is the blanket
+    # escape hatch for somebody who wants the old behaviour for all formats at
+    # once, and the per-format answer below is the usual way.
+    external_change_auto_reload_when_clean: bool = False
     external_change_prompt_on_conflict: bool = True
+    # Answers a person asked to have remembered, by file suffix: the "do not
+    # ask me again for .docx files" checkbox in the File Changed on Disk
+    # dialog. Forgotten again by Tools > Forget Remembered File-Change Answers.
+    external_change_always_reload: list[str] = field(default_factory=list)
+    external_change_always_keep: list[str] = field(default_factory=list)
+    # Asked once, on first activating the QUILL Lite profile (bad.md P2.4): bring
+    # a QUILL Lite setup over. A profile switched back and forth must not keep
+    # asking, and the sharing itself is QUILL Lite's own two switches pointed at
+    # QUILL's folder -- QUILL's folder was already the shared home, so there is
+    # no second one here to go stale.
+    quilllite_bring_offered: bool = False
     external_change_debounce_ms: int = 750
     # SET-3: tunable verbosity and announcements
     announcement_verbosity: str = "normal"
@@ -244,13 +613,57 @@ class Settings:
     confirm_destructive_actions: bool = True
     default_export_preset: str = "html"
     default_new_document_format: str = "markdown"
+    # CRLF, like Notepad, WordPad, Word and QUILL Lite. A file that is OPENED
+    # keeps whatever line ending it had; this is only what a new document is
+    # born with (bad.md F11, P2.10).
+    default_line_ending: str = "crlf"
+    #: Reopen last session's documents at launch, which is what Notepad 11 and
+    #: QUILL Lite both do (bad.md G4, P2.12). Files named on the command line
+    #: always win: somebody who double-clicked a file asked for that file.
+    restore_session: bool = True
+    #: Whether reopening asks first: "always", "when_it_matters" or "never".
+    #: Both editors reopened silently until 2026-09-19, which is right for one
+    #: file and wrong for four -- see ``quill/core/session_restore.py`` for what
+    #: "when it matters" means and why it is the default. Orthogonal to
+    #: ``restore_session``, which says whether to reopen at all.
+    session_restore_ask: str = "when_it_matters"
+    #: The paths that were open when QUILL last exited, saved documents only --
+    #: an untitled window has nothing to reopen *from*, and its content is the
+    #: recovery store's business, which is a different promise.
+    session_files: list[str] = field(default_factory=list)
+    #: Offer unsaved work back from a document that never had a file. On by
+    #: default; off means such a snapshot is not offered after an unclean exit.
+    #: Same field name and same meaning in QUILL Lite, which is where the need
+    #: showed up first -- see ``quill/core/recovery_triage.py``. QUILL can
+    #: answer it because an untitled document autosaves under a known key.
+    recover_untitled_documents: bool = True
+    #: New inline notes in Markdown and HTML go into the file as quill-note
+    #: comments, not the private sidecar. Off by default; shared with Lite.
+    inline_notes_in_file: bool = False
+    #: "sound", "speech" or "off" when the caret enters a noted line (inline_note_cue).
+    inline_note_line_cue: str = "sound"
+    #: How many days of autosave history to keep. Only the previous session is
+    #: ever offered back, so older directories are unreachable by design and
+    #: were nevertheless kept for ever -- a real install had eighty-six days of
+    #: them. 0 keeps everything, which is the pre-2026-09-21 behaviour.
+    recovery_keep_days: int = RECOVERY_KEEP_DAYS
+    # How QUILL writes a hard line break in Markdown: "backslash" (audible,
+    # survives a trailing-whitespace strip) or "spaces" (the older two-space
+    # spelling). Both are always *read*; this chooses what is written (#1488).
+    markdown_hard_break_style: str = "backslash"
     autoformat_smart_quotes: bool = False
     autoformat_dashes: bool = False
+    continue_lists_in_plain_text: bool = False
+    autocorrect_misspellings: bool = False
     quick_nav_include_headings: bool = True
     quick_nav_include_links: bool = True
     quick_nav_include_lists: bool = True
     status_bar_order: list[str] = field(default_factory=_default_status_bar_order)
     status_bar_hidden: list[str] = field(default_factory=_default_status_bar_hidden)
+    #: User-defined system-wide hotkeys: command_id -> "Ctrl+Alt+X". Only
+    #: commands on main_frame_hotkeys.GLOBAL_HOTKEY_SAFE_COMMANDS ever
+    #: register, whatever this dict says (the allowlist is the boundary).
+    global_hotkeys: dict[str, str] = field(default_factory=dict)
     # GLOW: the shared accessibility engine is on by default; its optional
     # networked features stay off until the user gives explicit consent (GLOW-7).
     glow_enabled: bool = True
@@ -267,20 +680,6 @@ class Settings:
     ollama_base_url: str = "http://localhost:11434"
     # AI prompts (Phase 3): separate default model for prompt-library runs.
     ai_prompt_default_model: str = ""
-    # Bug reporter identity: pre-fill the Report a Bug dialog for speed.
-    bug_reporter_name: str = ""
-    bug_reporter_email: str = ""
-    # #618: open the Report a Bug dialog in a separate, non-modal
-    # window by default so users can alt-tab between the form and
-    # the editor to document exact reproduction steps. The 0.5.0
-    # default was a modal dialog that blocked the editor.
-    report_bug_separate_window: bool = True
-    # #618: when the user submits a bug report, copy the report to
-    # the clipboard and stop. The 0.5.0 default also opened a
-    # browser to the GitHub "New Issue" page; that step is now
-    # opt-in via this setting (default False) so the upgrade story
-    # is "Quill copies, you decide whether to open the browser."
-    report_bug_auto_open_browser: bool = False
     # STABILITY: when True, an unhandled exception shows the crash-submit
     # dialog so the user can review a redacted preview and choose whether
     # to send the report to the developers. When False, the local-only
@@ -305,6 +704,9 @@ class Settings:
     setup_wizard_wants_automation: bool = False
     # UPGRADE: True once we have shown the post-upgrade braille-pack install prompt.
     upgrade_prompt_braille_pack: bool = False
+    # UPGRADE: True once we have shown the post-upgrade Kokoro-ONNX package prompt
+    # (models present on disk but the kokoro_onnx package not importable).
+    upgrade_prompt_kokoro_onnx: bool = False
     # QDC: Developer Console settings.
     console_enabled: bool = True
     console_python_timeout: int = 30
@@ -314,6 +716,65 @@ class Settings:
     sound_pack_path: str = ""  # empty = bundled Ink pack
     sound_volume: int = 80  # 0-100; passed to sound_lib Output.set_volume()
     sound_events_disabled: str = ""  # comma-separated SoundEvent IDs to silence
+    # What a key that performed an action reports back with, where that moment
+    # has both an earcon and a phrase: "sound" (the default, and what QUILL has
+    # always done), "speech", "both", or "silent". See core/action_feedback.py --
+    # the resolution rule lives there because it has to be identical in both
+    # editors, and it deliberately never silences a moment that has only words.
+    action_feedback: str = "sound"
+    # Say "Heading 2" when the caret arrives on a heading (and the shape of a
+    # table when it arrives in one). On, because nothing else can say it: no
+    # Windows edit control exposes a paragraph style to a screen reader, so with
+    # this off a heading reads exactly like ordinary text. Off is for reading a
+    # document *as* text, where the structure is not what you are listening for.
+    # Ctrl+Alt+F3 toggles it without leaving the document -- a per-task decision
+    # rather than a preference you set once. Shared with QUILL Lite, which must
+    # never be ahead of QUILL (CLAUDE.md).
+    announce_headings: bool = True
+    # Say "Bulleted list, 5 items" on entering a list, "Level 2, 3 items" a rung
+    # down, and "Out of list" on leaving one -- in Markdown and in HTML, over
+    # ul/ol/dl alike. On, and switched separately from announce_headings because
+    # the two answer different questions: reorganising an outline the list level
+    # is the work, and proof-reading the same file it is a phrase between you and
+    # every item. This is the one cue in the set a screen reader gives you
+    # everywhere else -- a browser hands it an <ul> with a count and an editor
+    # hands it characters -- so switching it off is giving something up rather
+    # than declining an extra. Ctrl+Alt+F5. Shared with QUILL Lite.
+    announce_lists: bool = True
+    # Where "Heading 2" goes relative to the heading's own text: ``"before"``
+    # (the default) says "Heading 2, Installing" as one sentence of QUILL's
+    # own, and ``"after"`` lets the screen reader read the line and adds
+    # "Heading 2" behind it.
+    #
+    # Before is the default because after is **lossy**, and not in a way anyone
+    # would guess. A cue queued behind the reader is at the reader's mercy: on
+    # a large caret jump -- Ctrl+Home, a search hit, a bookmark -- NVDA and JAWS
+    # cancel what is pending and start again on the new line, so the "Heading 1"
+    # waiting its turn is never heard. Reported exactly that way: arrowing onto
+    # a heading announced it, Ctrl+Home onto the same heading did not. Before is
+    # also the order a browser gives you, where the reader says "heading level
+    # two" and then the words.
+    #
+    # After is kept, and is the right choice for anyone who would rather hear
+    # the words first and the label as a footnote -- it is the same information
+    # in the other order, and on ordinary line-by-line reading it is reliable.
+    heading_announce_position: str = "before"
+    # And the same choice for the one failure a search can have: nothing found.
+    # Separate from action_feedback on purpose -- somebody who wants every
+    # successful action spoken may well want the *failure* to be a tone, and
+    # somebody who wants silence while they work still wants to know a search
+    # missed. Default "sound", which is the tone alone: F3 is pressed in runs, and
+    # "Not found" spoken on every press of it is the fastest way to make a person
+    # turn the speech off altogether.
+    find_not_found_feedback: str = "sound"
+    # Play a silent clip every 20 s so USB/Bluetooth audio devices never power
+    # down and clip the start of the next earcon. Off by default.
+    sound_keepalive_enabled: bool = False
+    # Speak "Generating preview, please wait" when a voice preview's synthesis
+    # is still running after the ~400ms cue delay (paired with the
+    # voice_preview_generating earcon, configured independently via the
+    # Sound Events dialog).
+    voice_preview_announce_generating: bool = True
     # Indent tone overlay: "" = off, else one of pentatonic/whole_tone/diatonic/chromatic.
     # When set, moving the caret across indent levels plays a pitched tone per level.
     indent_tone_scale: str = ""
@@ -325,6 +786,10 @@ class Settings:
     # documents round-trip unchanged.
     braille_cells_per_line: int = 40
     braille_lines_per_page: int = 25
+    # Page indicator (#872): word-count basis for the estimated page count
+    # shown for documents with no real page breaks (plain text, Markdown,
+    # most DOCX). This is an approximation, not a printed page count.
+    page_estimate_words_per_page: int = 300
     braille_use_form_feeds: bool = True
     braille_calculate_pages: bool = True
     braille_save_sidecar: bool = True
@@ -341,6 +806,34 @@ class Settings:
     spell_review_spell_word_pause_ms: int = 800
     spell_review_wrap_to_beginning: bool = True
     spell_review_context_mode: str = "sentence"
+    # Kurzweil-1000-style ranked spelling: walk the review by how often each
+    # word recurs rather than by position. It was a second command on a
+    # second chord until 2026-09-16 (bad.md P0.3); it is the F7 dialog's own
+    # checkbox now, and this is where the choice is remembered.
+    spell_review_ranked: bool = False
+    # How a misspelling is *said*, everywhere it is said (quill/core/spelling/
+    # voicing.py). The two spell_review_* fields above are the review dialog's
+    # own switch and pause and stay as they are; these govern the surfaces the
+    # review does not own -- landing on a word, arrowing the suggestions, and
+    # the alert while you type -- and QUILL Lite stores the same nine names, so
+    # somebody who tunes this in one editor finds the other already tuned.
+    spell_aloud_enabled: bool = True
+    spell_aloud_delay_ms: int = 800
+    spell_aloud_on_navigation: bool = True
+    spell_aloud_navigation_delay_ms: int = 600
+    spell_aloud_suggestions: bool = True
+    spell_aloud_suggestion_delay_ms: int = 600
+    spell_aloud_first_suggestion: bool = False
+    spell_aloud_style: str = "letters"
+    spell_aloud_capitals: bool = True
+    # The alert while you type: a sound, never a voice, unless asked.
+    spelling_alert_sound: bool = True
+    spelling_alert_speech: bool = False
+    spelling_alert_repeat_ms: int = 750
+    #: Open a blank document at launch when nothing else is being opened. The
+    #: same name and default QUILL Lite uses, so the two editors answer this the
+    #: same way and a listener who has set it once is not surprised by the other.
+    open_blank_document_at_startup: bool = True
     # Vision prompt library: image description style management.
     vision_default_prompt_style: str = "accessibility"
     vision_prompt_picker_enabled: bool = False
@@ -382,28 +875,29 @@ class Settings:
     batch_speech_intro_section_title: str = "Introduction"
     batch_speech_temp_folder: str = ""  # parent for scratch dirs; blank = system temp
     batch_speech_save_spoken_text: bool = False  # also save the text sent to the engine
+    audio_studio_last_journey: str = "documents"  # remembered journey
+    # How far one press of the Chapter Workbench's Nudge back/forward moves a
+    # chapter marker. Remembered because the step somebody picked by ear is
+    # the step they will want next session too.
+    audio_studio_chapter_nudge_ms: int = 500  # 10-60000
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
         theme = str(data.get("theme", "system"))
         keyboard_pack = str(data.get("keyboard_pack", "Quill Default"))
         soft_wrap = bool(data.get("soft_wrap", True))
+        # The two caret cues. Both were saved and neither was read back, so
+        # Ctrl+Alt+F3 held until you closed QUILL and was forgotten by the next
+        # launch -- the shape of bug a settings file cannot show you, because
+        # the file was right the whole time and only the loader was not.
+        announce_headings = bool(data.get("announce_headings", True))
+        announce_lists = bool(data.get("announce_lists", True))
         wrap_find = bool(data.get("wrap_find", True))
-        browse_mode_wrap = bool(data.get("browse_mode_wrap", True))
-        browse_mode_feedback = str(data.get("browse_mode_feedback", "speech")).strip().lower()
-        if browse_mode_feedback not in {"sound", "speech", "both", "none"}:
-            browse_mode_feedback = "speech"
-        browse_mode_move_detail = (
-            str(data.get("browse_mode_move_detail", "position")).strip().lower()
-        )
-        if browse_mode_move_detail not in {"none", "line", "position"}:
-            browse_mode_move_detail = "position"
-        browse_mode_preload_cache = bool(
-            data.get(
-                "browse_mode_preload_cache",
-                data.get("browse_mode_prewarm_for_large_docs", True),
-            )
-        )
+        browse_mode = _normalize_browse_mode(data)
+        browse_mode_wrap = browse_mode["wrap"]
+        browse_mode_feedback = browse_mode["feedback"]
+        browse_mode_move_detail = browse_mode["move_detail"]
+        browse_mode_preload_cache = browse_mode["preload_cache"]
         quill_key_binding = str(data.get("quill_key_binding", "Ctrl+Shift+Grave")).strip()
         if not quill_key_binding:
             quill_key_binding = "Ctrl+Shift+Grave"
@@ -415,50 +909,37 @@ class Settings:
             quill_key_timeout_seconds = 0.0
         if quill_key_timeout_seconds > 60:
             quill_key_timeout_seconds = 60.0
-        # #265 follow-up: replace float seconds with a string-valued choice
-        # (preset token) plus an integer custom-ms override. Unknown tokens
-        # fall back to 'unlimited' so the consumer treats them as no
-        # timeout. Custom-ms clamps to [0, 60000] ms = [0, 60] s.
-        browse_mode_followon_timeout = (
-            str(data.get("browse_mode_followon_timeout", "unlimited")).strip().lower()
-        )
-        if browse_mode_followon_timeout not in {
-            "instant",
-            "fast",
-            "normal",
-            "slow",
-            "custom",
-            "unlimited",
-        }:
-            browse_mode_followon_timeout = "unlimited"
-        try:
-            browse_mode_followon_custom_ms = int(data.get("browse_mode_followon_custom_ms", 4000))
-        except (TypeError, ValueError):
-            browse_mode_followon_custom_ms = 4000
-        if browse_mode_followon_custom_ms < 0:
-            browse_mode_followon_custom_ms = 0
-        if browse_mode_followon_custom_ms > 60000:
-            browse_mode_followon_custom_ms = 60000
+        browse_mode_followon_timeout = browse_mode["followon_timeout"]
+        browse_mode_followon_custom_ms = browse_mode["followon_custom_ms"]
         csv_open_mode = str(data.get("csv_open_mode", "prompt")).strip().lower()
         if csv_open_mode not in {"prompt", "text", "grid"}:
             csv_open_mode = "prompt"
         word_open_mode = str(data.get("word_open_mode", "prompt")).strip().lower()
         if word_open_mode not in {"prompt", "text", "structured"}:
             word_open_mode = "prompt"
-        # core.rich_text_lens is locked_off; always "plain" regardless of stored value.
-        editor_surface = "plain"
-        save_as_surface_sync = str(data.get("save_as_surface_sync", "prompt")).strip().lower()
-        if save_as_surface_sync not in {"prompt", "always", "never"}:
-            save_as_surface_sync = "prompt"
+        docx_read_engine = str(data.get("docx_read_engine", "auto")).strip().lower()
+        if docx_read_engine not in {"auto", "markitdown", "pandoc"}:
+            docx_read_engine = "auto"
+        docx_write_engine = str(data.get("docx_write_engine", "auto")).strip().lower()
+        if docx_write_engine not in {"auto", "native", "pandoc"}:
+            docx_write_engine = "auto"
         plain_text_link_style = str(data.get("plain_text_link_style", "text_url")).strip().lower()
         if plain_text_link_style not in {"text", "text_url", "url", "markdown"}:
             plain_text_link_style = "text_url"
+        content_handoff_format = str(data.get("content_handoff_format", "text")).strip().lower()
+        if content_handoff_format not in {"text", "markdown", "html"}:
+            content_handoff_format = "text"
+        auto_outline_style = str(data.get("auto_outline_style", "numeric")).strip().lower()
+        if auto_outline_style not in {"numeric", "legal"}:
+            auto_outline_style = "numeric"
+        clip_library_autocapture = bool(data.get("clip_library_autocapture", False))
+        clipboard_collector_saves = bool(data.get("clipboard_collector_saves", True))
         indent_with_tabs = bool(data.get("indent_with_tabs", False))
         try:
             indent_size = int(data.get("indent_size", 4))
         except (TypeError, ValueError):
             indent_size = 4
-        auto_check_updates = bool(data.get("auto_check_updates", False))
+        auto_check_updates = bool(data.get("auto_check_updates", True))
         beta_updates = bool(data.get("beta_updates", False))
         apply_recommended_keymap_updates = bool(data.get("apply_recommended_keymap_updates", True))
         raw_applied = data.get("applied_recommended_updates", [])
@@ -477,17 +958,31 @@ class Settings:
         except (TypeError, ValueError):
             recent_files_limit = 10
         recent_files_auto_clear_missing = bool(data.get("recent_files_auto_clear_missing", False))
-        first_line_as_title = bool(data.get("first_line_as_title", False))
+        first_line_as_title = bool(data.get("first_line_as_title", True))
+        restore_points_enabled = bool(data.get("restore_points_enabled", True))
+        restore_points_max_mb = _clamp_int(data.get("restore_points_max_mb", 200), 200, 10, 5000)
         warm_dictation_model = bool(data.get("warm_dictation_model", True))
         warm_kokoro_model = bool(data.get("warm_kokoro_model", True))
         tray_enabled = bool(data.get("tray_enabled", False))
         persistent_undo = bool(data.get("persistent_undo", False))
         spellcheck_as_you_type = bool(data.get("spellcheck_as_you_type", False))
+        spellcheck_skip_code_files = bool(data.get("spellcheck_skip_code_files", True))
+        spell_check_before_save = bool(data.get("spell_check_before_save", False))
+        spellcheck_language = str(data.get("spellcheck_language", "en_US")).strip() or "en_US"
+        reveal_codes_visible = bool(data.get("reveal_codes_visible", False))
+        reveal_codes_view = str(data.get("reveal_codes_view", "flowed")).strip().lower()
+        if reveal_codes_view not in {"structured", "flowed"}:
+            reveal_codes_view = "flowed"
+        reveal_codes_verbosity = str(data.get("reveal_codes_verbosity", "balanced")).strip().lower()
+        if reveal_codes_verbosity not in {"quiet", "balanced", "detailed"}:
+            reveal_codes_verbosity = "balanced"
+        reveal_codes_speak = bool(data.get("reveal_codes_speak", False))
         intellisense_as_you_type = bool(data.get("intellisense_as_you_type", False))
         snippet_trigger_expansion = bool(data.get("snippet_trigger_expansion", True))
         preview_browser = str(data.get("preview_browser", "system")).strip() or "system"
         auto_side_preview = bool(data.get("auto_side_preview", True))
         show_tab_control = bool(data.get("show_tab_control", False))
+        show_status_bar = bool(data.get("show_status_bar", True))
         title_bar_path_mode = str(data.get("title_bar_path_mode", "name"))
         if title_bar_path_mode not in {"name", "full_path"}:
             title_bar_path_mode = "name"
@@ -504,35 +999,26 @@ class Settings:
             "piper",
             "kokoro",
             "espeak",
+            "macos",
+            "elevenlabs",
         }
         if read_aloud_engine not in _valid_engines:
             read_aloud_engine = "sapi5"
+        read_aloud_elevenlabs_voice = str(data.get("read_aloud_elevenlabs_voice", "")).strip()
+        read_aloud_elevenlabs_model = str(data.get("read_aloud_elevenlabs_model", "")).strip()
         read_aloud_voice = str(data.get("read_aloud_voice", ""))
-        read_aloud_rate = int(data.get("read_aloud_rate", 200))
-        if read_aloud_rate < 80:
-            read_aloud_rate = 80
-        if read_aloud_rate > 450:
-            read_aloud_rate = 450
-        read_aloud_volume = int(data.get("read_aloud_volume", 100))
-        if read_aloud_volume < 0:
-            read_aloud_volume = 0
-        if read_aloud_volume > 100:
-            read_aloud_volume = 100
-        read_aloud_pitch = int(data.get("read_aloud_pitch", 50))
-        if read_aloud_pitch < 0:
-            read_aloud_pitch = 0
-        if read_aloud_pitch > 100:
-            read_aloud_pitch = 100
+        # _clamp_int (not a bare int()) so a JSON 1e999 -> float('inf') value
+        # falls back to the default instead of raising OverflowError at startup.
+        read_aloud_rate = _clamp_int(data.get("read_aloud_rate", 200), 200, 80, 450)
+        read_aloud_volume = _clamp_int(data.get("read_aloud_volume", 100), 100, 0, 100)
+        read_aloud_pitch = _clamp_int(data.get("read_aloud_pitch", 50), 50, 0, 100)
         read_aloud_dectalk_executable = str(data.get("read_aloud_dectalk_executable", "")).strip()
         read_aloud_dectalk_voice = str(data.get("read_aloud_dectalk_voice", "paul")).strip().lower()
         if not read_aloud_dectalk_voice:
             read_aloud_dectalk_voice = "paul"
-        read_aloud_dectalk_rate = int(data.get("read_aloud_dectalk_rate", 180))
-        if read_aloud_dectalk_rate < 75:
-            read_aloud_dectalk_rate = 75
-        if read_aloud_dectalk_rate > 650:
-            read_aloud_dectalk_rate = 650
+        read_aloud_dectalk_rate = _clamp_int(data.get("read_aloud_dectalk_rate", 180), 180, 75, 650)
         read_aloud_dectalk_dictionary = str(data.get("read_aloud_dectalk_dictionary", "")).strip()
+        read_aloud_piper_executable = str(data.get("read_aloud_piper_executable", "")).strip()
         read_aloud_piper_model = str(data.get("read_aloud_piper_model", "")).strip()
         announcement_backend = str(data.get("announcement_backend", "auto")).strip().lower()
         read_aloud_piper_model_dir = str(data.get("read_aloud_piper_model_dir", "")).strip()
@@ -547,11 +1033,9 @@ class Settings:
         read_aloud_kokoro_speed = max(0.5, min(2.0, read_aloud_kokoro_speed))
         read_aloud_espeak_executable = str(data.get("read_aloud_espeak_executable", "")).strip()
         read_aloud_espeak_voice = str(data.get("read_aloud_espeak_voice", "en")).strip() or "en"
-        read_aloud_espeak_rate = int(data.get("read_aloud_espeak_rate", 175))
-        if read_aloud_espeak_rate < 80:
-            read_aloud_espeak_rate = 80
-        if read_aloud_espeak_rate > 450:
-            read_aloud_espeak_rate = 450
+        read_aloud_espeak_rate = _clamp_int(data.get("read_aloud_espeak_rate", 175), 175, 80, 450)
+        read_aloud_macos_voice = str(data.get("read_aloud_macos_voice", "")).strip()
+        read_aloud_macos_rate = _clamp_int(data.get("read_aloud_macos_rate", 175), 175, 80, 450)
         ai_tts_provider = str(data.get("ai_tts_provider", "openai")).strip().lower()
         if ai_tts_provider not in {"openai", "gemini", "elevenlabs"}:
             ai_tts_provider = "openai"
@@ -562,8 +1046,42 @@ class Settings:
         except (TypeError, ValueError):
             ai_tts_speed = 1.0
         ai_tts_speed = max(0.25, min(4.0, ai_tts_speed))
+        ai_voice_reply_mode = str(data.get("ai_voice_reply_mode", "announce")).strip().lower()
+        if ai_voice_reply_mode not in VOICE_REPLY_MODES:
+            ai_voice_reply_mode = "announce"
+        ai_voice_reply_announce_limit = _clamp_int(
+            data.get("ai_voice_reply_announce_limit", 140), 140, 0, 2000
+        )
         if announcement_backend not in {"auto", "prism", "status_only"}:
             announcement_backend = "auto"
+        announcement_braille = bool(data.get("announcement_braille", True))
+        announcement_braille_style = (
+            str(data.get("announcement_braille_style", "speech")).strip().lower()
+        )
+        if announcement_braille_style not in {"speech", "compact"}:
+            announcement_braille_style = "speech"
+        try:
+            announcement_braille_dedupe_seconds = float(
+                data.get("announcement_braille_dedupe_seconds", 2.0)
+            )
+        except (TypeError, ValueError):
+            announcement_braille_dedupe_seconds = 2.0
+        announcement_braille_dedupe_seconds = max(
+            0.0, min(30.0, announcement_braille_dedupe_seconds)
+        )
+        announcement_braille_sticky_errors = bool(
+            data.get("announcement_braille_sticky_errors", True)
+        )
+        announcement_sounds_in_apps = bool(data.get("announcement_sounds_in_apps", True))
+        announcement_sound_instead_of_speech_when_quiet = bool(
+            data.get("announcement_sound_instead_of_speech_when_quiet", True)
+        )
+        announcement_echo_history = bool(data.get("announcement_echo_history", True))
+        announcement_severity_interrupt = (
+            str(data.get("announcement_severity_interrupt", "warnings")).strip().lower()
+        )
+        if announcement_severity_interrupt not in {"errors", "warnings", "never"}:
+            announcement_severity_interrupt = "warnings"
         announcement_trace_enabled = bool(data.get("announcement_trace_enabled", False))
         announcement_startup_tips_enabled = bool(
             data.get("announcement_startup_tips_enabled", False)
@@ -571,22 +1089,28 @@ class Settings:
         verbosity_speech_enabled = bool(data.get("verbosity_speech_enabled", True))
         announce_screen_reader_detected = bool(data.get("announce_screen_reader_detected", False))
         assistant_enabled = bool(data.get("assistant_enabled", False))
+        ai_privacy_accepted_version = _clamp_int(
+            data.get("ai_privacy_accepted_version", 0), 0, 0, 1_000_000
+        )
         assistant_prompt_style = str(data.get("assistant_prompt_style", "balanced")).strip().lower()
         if assistant_prompt_style not in {"balanced", "concise", "gentle", "technical"}:
             assistant_prompt_style = "balanced"
         markdown_clipboard_format = (
-            str(data.get("markdown_clipboard_format", "html")).strip().lower() or "html"
+            str(data.get("markdown_clipboard_format", "text")).strip().lower() or "text"
         )
-        if markdown_clipboard_format not in {"html", "rtf"}:
-            markdown_clipboard_format = "html"
+        if markdown_clipboard_format not in {"text", "html", "rtf"}:
+            markdown_clipboard_format = "text"
         engine = str(data.get("dictation_engine", "windows")).strip().lower()
         engine = "offline" if engine in {"vosk", "whisper"} else engine  # #617 migrate
         dictation_engine = engine if engine in {"offline", "windows", "cloud"} else "windows"
         dictation_language = str(data.get("dictation_language", "en-US")).strip() or "en-US"
         dictation_model = str(data.get("dictation_model", "base")).strip() or "base"
-        dictation_device_index = int(data.get("dictation_device_index", -1))
-        if dictation_device_index < -1:
-            dictation_device_index = -1
+        # _clamp_int guards against a non-finite JSON value (int(inf) would raise
+        # OverflowError). -1 means "default device"; the high ceiling never clips
+        # a real audio-device index.
+        dictation_device_index = _clamp_int(
+            data.get("dictation_device_index", -1), -1, -1, 1_000_000
+        )
         # Dictation policy: durations clamp non-negative (0 disables a cap).
         dictation_max_locked_seconds = _coerce_non_negative_float(
             data.get("dictation_max_locked_seconds", 300.0), 300.0
@@ -597,6 +1121,34 @@ class Settings:
         dictation_stop_on_focus_loss = bool(data.get("dictation_stop_on_focus_loss", True))
         dictation_intelligent_spacing = bool(data.get("dictation_intelligent_spacing", True))
         dictation_onboarding_shown = bool(data.get("dictation_onboarding_shown", False))
+        dictation_remove_fillers = bool(data.get("dictation_remove_fillers", False))
+        windows_dictation = load_windows_dictation_fields(data) | load_own_key_fields(data)
+        announce_formatting_on_move = bool(data.get("announce_formatting_on_move", False))
+        find_use_quill_dialog = bool(data.get("find_use_quill_dialog", False))
+        dictionary_online_lookups = bool(data.get("dictionary_online_lookups", False))
+        announce_dialog_transitions = bool(data.get("announce_dialog_transitions", False))
+        low_resource_mode = bool(data.get("low_resource_mode", False))
+        idle_unload_minutes = _clamp_int(data.get("idle_unload_minutes", 10), 10, 0, 240)
+        announce_indent_depth = bool(data.get("announce_indent_depth", True))
+        spoken_echo_on_double_press = bool(data.get("spoken_echo_on_double_press", True))
+        # The retired surface-experiment keys (editor_control_kind,
+        # experimental_editor_surface, editor_hide_border,
+        # experimental_richedit_emulate_sysedit,
+        # experimental_editor_surfaces_enabled) are deliberately NOT read here:
+        # the delta store drops unknown keys on load, so every upgrader lands on
+        # the promoted default — QuillRichEdit with the braille fix on.
+        braille_editor_system_edit_fix = bool(data.get("braille_editor_system_edit_fix", True))
+        braille_editor_hide_border = bool(data.get("braille_editor_hide_border", True))
+        experimental_acknowledged = bool(data.get("experimental_acknowledged", False))
+        glow_experimental_enabled = bool(data.get("glow_experimental_enabled", False))
+        publishing_experimental_enabled = bool(data.get("publishing_experimental_enabled", False))
+        table_studio_experimental_enabled = bool(
+            data.get("table_studio_experimental_enabled", False)
+        )
+        edge_read_aloud_enabled = bool(data.get("edge_read_aloud_enabled", False))
+        plain_text_with_formatting = str(data.get("plain_text_with_formatting", "ask"))
+        if plain_text_with_formatting not in {"ask", "illuminate", "plain"}:
+            plain_text_with_formatting = "ask"
         pronunciation_enabled = bool(data.get("pronunciation_enabled", True))
         pronunciation_ids_raw = data.get("pronunciation_enabled_dictionary_ids")
         pronunciation_enabled_dictionary_ids = (
@@ -609,9 +1161,8 @@ class Settings:
         tts_normalization = (
             dict(tts_normalization_raw) if isinstance(tts_normalization_raw, dict) else {}
         )
-        speech_provider = str(data.get("speech_provider", "")).strip().lower()
-        if speech_provider not in {"", "whispercpp", "fasterwhisper"}:
-            speech_provider = ""
+        # nemotron/parakeet load as the shared engine, sherpa (dict.md D-26).
+        speech_provider, speech_default_model_id = migrate_choice(data)
         bw_speech_selection_mode = (
             str(data.get("bw_speech_selection_mode", "recommended")).strip().lower()
             or "recommended"
@@ -642,6 +1193,28 @@ class Settings:
         watch_folder_enabled = bool(data.get("watch_folder_enabled", False))
         watch_folder_path = str(data.get("watch_folder_path", "")).strip()
         startup_folder = str(data.get("startup_folder", "")).strip()
+        git_sync_last_folder = str(data.get("git_sync_last_folder", "")).strip()
+        vault_root = str(data.get("vault_root", "")).strip()
+        vault_templates_folder = str(data.get("vault_templates_folder", "")).strip()
+        vault_daily_pattern = str(data.get("vault_daily_pattern", "")).strip()
+        ocr_language = str(data.get("ocr_language", "")).strip()
+        tesseract_path = str(data.get("tesseract_path", "")).strip()
+        datalab_enabled = bool(data.get("datalab_enabled", False))
+        datalab_endpoint = str(data.get("datalab_endpoint", "https://www.datalab.to")).strip()
+        if not datalab_endpoint.lower().startswith("https://"):
+            datalab_endpoint = "https://www.datalab.to"
+        try:
+            reading_order_max_pages = int(data.get("reading_order_max_pages", 40))
+        except (TypeError, ValueError):
+            reading_order_max_pages = 40
+        reading_order_max_pages = max(1, min(500, reading_order_max_pages))
+        datalab_mode = str(data.get("datalab_mode", "balanced")).strip().lower()
+        if datalab_mode not in {"fast", "balanced", "accurate"}:
+            datalab_mode = "balanced"
+        datalab_output = str(data.get("datalab_output", "markdown")).strip().lower()
+        if datalab_output not in {"markdown", "html", "json"}:
+            datalab_output = "markdown"
+        datalab_paginate = bool(data.get("datalab_paginate", True))
         # #620: Simple File Open dialog opt-in.
         use_simple_file_dialog = bool(data.get("use_simple_file_dialog", False))
         watch_folder_include_subfolders = bool(data.get("watch_folder_include_subfolders", False))
@@ -672,7 +1245,47 @@ class Settings:
             watch_folder_poll_interval_seconds = 2
         if watch_folder_poll_interval_seconds > 300:
             watch_folder_poll_interval_seconds = 300
+        # Ambient-monitor policy triple. Intervals clamp through the shared
+        # per-monitor table so a hand-edited settings file can never persist a
+        # zero-second (continuous) poll; both flags default off.
+        watch_folder_audible_tick = bool(data.get("watch_folder_audible_tick", False))
+        watch_folder_interrupt_speech = bool(data.get("watch_folder_interrupt_speech", False))
+        weather_monitor_audible_tick = bool(data.get("weather_monitor_audible_tick", False))
+        weather_monitor_interrupt_speech = bool(data.get("weather_monitor_interrupt_speech", False))
+        podcast_check_enabled = bool(data.get("podcast_check_enabled", False))
+        podcast_check_interval_minutes = clamp_interval_minutes(
+            MONITOR_PODCASTS, data.get("podcast_check_interval_minutes", 60)
+        )
+        podcast_check_audible_tick = bool(data.get("podcast_check_audible_tick", False))
+        podcast_check_interrupt_speech = bool(data.get("podcast_check_interrupt_speech", False))
+        github_poll_interval_minutes = clamp_interval_minutes(
+            MONITOR_GITHUB, data.get("github_poll_interval_minutes", 15)
+        )
+        github_poll_audible_tick = bool(data.get("github_poll_audible_tick", False))
+        github_poll_interrupt_speech = bool(data.get("github_poll_interrupt_speech", False))
         voice_commands_enabled = bool(data.get("voice_commands_enabled", False))
+        voice_conversation_enabled = bool(data.get("voice_conversation_enabled", False))
+
+        def _voice_ms(key: str, default: int) -> int:
+            try:
+                value = int(data.get(key, default))
+            except (TypeError, ValueError):
+                return default
+            return value if value >= 0 else default
+
+        voice_conversation_silence_ms = _voice_ms("voice_conversation_silence_ms", 2000)
+        voice_conversation_review_ms = _voice_ms("voice_conversation_review_ms", 900)
+        voice_conversation_followup_ms = _voice_ms("voice_conversation_followup_ms", 3000)
+        voice_conversation_thinking_ms = _voice_ms("voice_conversation_thinking_ms", 2000)
+        voice_conversation_user_name = str(data.get("voice_conversation_user_name", "")).strip()
+        voice_conversation_spoken_cues = bool(data.get("voice_conversation_spoken_cues", False))
+        voice_recognition_engine, vosk_retirement_notice = migrate_vosk_choices(data)
+        voice_wakeword_persist = bool(data.get("voice_wakeword_persist", False))
+        # Always-listening never survives a restart unless the user opted into
+        # persistence; otherwise it always loads off, no matter what was saved.
+        voice_wakeword_enabled = voice_wakeword_persist and bool(
+            data.get("voice_wakeword_enabled", False)
+        )
         # SET-2: timing and pacing
         autosave_interval_seconds = _clamp_int(
             data.get("autosave_interval_seconds", 30), 30, 5, 600
@@ -680,9 +1293,14 @@ class Settings:
         quick_nav_debounce_ms = _clamp_int(data.get("quick_nav_debounce_ms", 250), 250, 0, 2000)
         quick_nav_min_chars = _clamp_int(data.get("quick_nav_min_chars", 1), 1, 1, 5)
         announcement_throttle_ms = _clamp_int(data.get("announcement_throttle_ms", 0), 0, 0, 2000)
+        font_name = str(data.get("font_name", "") or "")
+        # Through the shared clamp rather than a local one, so "what is a legal
+        # text size" is answered in one place for both editors.
+        font_size = clamp_font_points(data.get("font_size", DEFAULT_FONT_POINTS))
         read_aloud_sentence_pause_ms = _clamp_int(
             data.get("read_aloud_sentence_pause_ms", 0), 0, 0, 2000
         )
+        read_aloud_follow_cursor = bool(data.get("read_aloud_follow_cursor", False))
         # OCR-2: image-to-text engine selection
         ocr_engine = str(data.get("ocr_engine", "auto")).strip().lower()
         if ocr_engine not in {"auto", "windows"}:
@@ -693,16 +1311,20 @@ class Settings:
         shell_verb_ocr_structured = bool(data.get("shell_verb_ocr_structured", False))
         shell_verb_open = bool(data.get("shell_verb_open", True))
         shell_verb_read = bool(data.get("shell_verb_read", False))
-        shell_file_types = str(data.get("shell_file_types", "images_pdf")).strip().lower()
+        shell_verb_convert = bool(data.get("shell_verb_convert", False))
+        shell_file_types = str(data.get("shell_file_types", "images_pdf_docs")).strip().lower()
         if shell_file_types not in {"images", "images_pdf", "images_pdf_docs"}:
-            shell_file_types = "images_pdf"
+            shell_file_types = "images_pdf_docs"
         ocr_structured = bool(data.get("ocr_structured", False))
         ocr_capture_geometry = bool(data.get("ocr_capture_geometry", False))
         # FEAT-19: external file-change watch and safe reload
         external_change_watch_enabled = bool(data.get("external_change_watch_enabled", True))
         external_change_auto_reload_when_clean = bool(
-            data.get("external_change_auto_reload_when_clean", True)
+            data.get("external_change_auto_reload_when_clean", False)
         )
+        external_change_always_reload = _suffix_list(data.get("external_change_always_reload", []))
+        external_change_always_keep = _suffix_list(data.get("external_change_always_keep", []))
+        quilllite_bring_offered = bool(data.get("quilllite_bring_offered", False))
         external_change_prompt_on_conflict = bool(
             data.get("external_change_prompt_on_conflict", True)
         )
@@ -763,14 +1385,48 @@ class Settings:
         )
         if default_new_document_format not in {"markdown", "text", "html"}:
             default_new_document_format = "markdown"
+        default_line_ending = str(data.get("default_line_ending", "crlf")).strip().lower()
+        if default_line_ending not in {"crlf", "lf"}:
+            default_line_ending = "crlf"
+        restore_session = bool(data.get("restore_session", True))
+        session_restore_ask = (
+            str(data.get("session_restore_ask", "when_it_matters")).strip().lower()
+        )
+        if session_restore_ask not in ASK_MODES:
+            session_restore_ask = "when_it_matters"
+        recover_untitled_documents = bool(data.get("recover_untitled_documents", True))
+        inline_notes_in_file = bool(data.get("inline_notes_in_file", False))
+        inline_note_line_cue = coerce_note_line_cue(data.get("inline_note_line_cue"))
+        # Upper bound of ten years rather than none: this field deletes, and a
+        # hand-edited 1e999 would otherwise become an int() crash at launch.
+        recovery_keep_days = _clamp_int(
+            data.get("recovery_keep_days", RECOVERY_KEEP_DAYS), RECOVERY_KEEP_DAYS, 0, 3650
+        )
+        raw_session = data.get("session_files", [])
+        session_files = (
+            [str(entry) for entry in raw_session if str(entry).strip()][:20]
+            if isinstance(raw_session, list)
+            else []
+        )
+        markdown_hard_break_style = normalise_hard_break_style(
+            data.get("markdown_hard_break_style", "backslash")
+        )
         autoformat_smart_quotes = bool(data.get("autoformat_smart_quotes", False))
         autoformat_dashes = bool(data.get("autoformat_dashes", False))
+        continue_lists_in_plain_text = bool(data.get("continue_lists_in_plain_text", False))
+        autocorrect_misspellings = bool(data.get("autocorrect_misspellings", False))
         quick_nav_include_headings = bool(data.get("quick_nav_include_headings", True))
         quick_nav_include_links = bool(data.get("quick_nav_include_links", True))
         quick_nav_include_lists = bool(data.get("quick_nav_include_lists", True))
         status_bar_order = _normalize_status_bar_order(data.get("status_bar_order"))
         status_bar_hidden = _normalize_status_bar_hidden(
             data.get("status_bar_hidden"), status_bar_order
+        )
+        raw_global_hotkeys = data.get("global_hotkeys")
+        global_hotkeys = (
+            {str(k): str(v) for k, v in raw_global_hotkeys.items() if str(v).strip()}
+            if isinstance(raw_global_hotkeys, dict)
+            else {}
         )
         # GLOW engine defaults on; networked features default off (GLOW-7).
         glow_enabled = bool(data.get("glow_enabled", True))
@@ -785,8 +1441,6 @@ class Settings:
             or "http://localhost:11434"
         )
         ai_prompt_default_model = str(data.get("ai_prompt_default_model", ""))
-        bug_reporter_name = str(data.get("bug_reporter_name", "")).strip()
-        bug_reporter_email = str(data.get("bug_reporter_email", "")).strip()
         language = str(data.get("language", "")).strip()
         setup_wizard_completed = bool(data.get("setup_wizard_completed", False))
         setup_wizard_intent = str(data.get("setup_wizard_intent", "")).strip()
@@ -794,6 +1448,7 @@ class Settings:
         setup_wizard_wants_braille = bool(data.get("setup_wizard_wants_braille", False))
         setup_wizard_wants_automation = bool(data.get("setup_wizard_wants_automation", False))
         upgrade_prompt_braille_pack = bool(data.get("upgrade_prompt_braille_pack", False))
+        upgrade_prompt_kokoro_onnx = bool(data.get("upgrade_prompt_kokoro_onnx", False))
         console_enabled = bool(data.get("console_enabled", True))
         auto_ask_crash_submit = bool(data.get("auto_ask_crash_submit", True))
         try:
@@ -809,6 +1464,7 @@ class Settings:
         abbreviation_expansion_sound = bool(data.get("abbreviation_expansion_sound", False))
         abbreviation_expansion_sound_file = str(data.get("abbreviation_expansion_sound_file", ""))
         sound_enabled = bool(data.get("sound_enabled", True))
+        sound_keepalive_enabled = bool(data.get("sound_keepalive_enabled", False))
         sound_pack_path = str(data.get("sound_pack_path", ""))
         try:
             sound_volume = int(data.get("sound_volume", 80))
@@ -816,12 +1472,26 @@ class Settings:
             sound_volume = 80
         sound_volume = max(0, min(100, sound_volume))
         sound_events_disabled = str(data.get("sound_events_disabled", ""))
+        action_feedback = str(_coerce_action_feedback(data.get("action_feedback", "sound")))
+        find_not_found_feedback = str(
+            _coerce_action_feedback(data.get("find_not_found_feedback", "sound"))
+        )
+        voice_preview_announce_generating = bool(
+            data.get("voice_preview_announce_generating", True)
+        )
         indent_tone_scale = str(data.get("indent_tone_scale", ""))
         if indent_tone_scale not in ("", "pentatonic", "whole_tone", "diatonic", "chromatic"):
             indent_tone_scale = ""
         abbreviation_backspace_behavior = str(data.get("abbreviation_backspace_behavior", "delete"))
         if abbreviation_backspace_behavior not in {"delete", "revert"}:
             abbreviation_backspace_behavior = "delete"
+        # Back to "before" rather than to "after" on a bad value, because
+        # "before" is the one that works on every kind of caret move: a
+        # hand-edited file with a typo in it should not quietly cost somebody
+        # the heading cue on every Ctrl+Home.
+        heading_announce_position = str(data.get("heading_announce_position", "before"))
+        if heading_announce_position not in set(_HEADING_POSITIONS):
+            heading_announce_position = "before"
         # Braille Mode (BR-008) field parsing with clamping and validation.
         try:
             braille_cells_per_line = int(data.get("braille_cells_per_line", 40))
@@ -833,6 +1503,11 @@ class Settings:
         except (TypeError, ValueError):
             braille_lines_per_page = 25
         braille_lines_per_page = max(20, min(30, braille_lines_per_page))
+        try:
+            page_estimate_words_per_page = int(data.get("page_estimate_words_per_page", 300))
+        except (TypeError, ValueError):
+            page_estimate_words_per_page = 300
+        page_estimate_words_per_page = max(150, min(600, page_estimate_words_per_page))
         braille_use_form_feeds = bool(data.get("braille_use_form_feeds", True))
         braille_calculate_pages = bool(data.get("braille_calculate_pages", True))
         braille_save_sidecar = bool(data.get("braille_save_sidecar", True))
@@ -856,10 +1531,38 @@ class Settings:
         if spell_review_verbosity not in {"concise", "balanced", "detailed"}:
             spell_review_verbosity = "balanced"
         spell_review_spell_word = bool(data.get("spell_review_spell_word", True))
-        spell_review_spell_word_pause_ms = max(
-            100, min(3000, int(data.get("spell_review_spell_word_pause_ms", 800)))
+        spell_review_spell_word_pause_ms = _clamp_int(
+            data.get("spell_review_spell_word_pause_ms", 800), 800, 100, 3000
         )
         spell_review_wrap_to_beginning = bool(data.get("spell_review_wrap_to_beginning", True))
+        # Spelling voicing. The two delays are clamped wider than the review's
+        # 3000 ms ceiling: a listener on a slow synthesiser genuinely waits
+        # longer than three seconds to hear a word out, and the number that
+        # makes the feature usable for them should not be un-typeable.
+        spell_aloud_enabled = bool(data.get("spell_aloud_enabled", True))
+        spell_aloud_delay_ms = _clamp_int(data.get("spell_aloud_delay_ms", 800), 800, 100, 5000)
+        spell_aloud_on_navigation = bool(data.get("spell_aloud_on_navigation", True))
+        spell_aloud_navigation_delay_ms = _clamp_int(
+            data.get("spell_aloud_navigation_delay_ms", 600), 600, 100, 5000
+        )
+        spell_aloud_suggestions = bool(data.get("spell_aloud_suggestions", True))
+        spell_aloud_suggestion_delay_ms = _clamp_int(
+            data.get("spell_aloud_suggestion_delay_ms", 600), 600, 100, 5000
+        )
+        spell_aloud_first_suggestion = bool(data.get("spell_aloud_first_suggestion", False))
+        spell_aloud_style = str(data.get("spell_aloud_style", "letters")).strip().lower()
+        if spell_aloud_style not in {"letters", "phonetic", "both"}:
+            spell_aloud_style = "letters"
+        spell_aloud_capitals = bool(data.get("spell_aloud_capitals", True))
+        spelling_alert_sound = bool(data.get("spelling_alert_sound", True))
+        spelling_alert_speech = bool(data.get("spelling_alert_speech", False))
+        # Floor of 0, not 100: "every time" is a legitimate answer for somebody
+        # who wants the alert to track their typing exactly, and a throttle you
+        # cannot turn off is a throttle that eventually hides something.
+        spelling_alert_repeat_ms = _clamp_int(
+            data.get("spelling_alert_repeat_ms", 750), 750, 0, 10000
+        )
+        open_blank_document_at_startup = bool(data.get("open_blank_document_at_startup", True))
         spell_review_context_mode = (
             str(data.get("spell_review_context_mode", "sentence")).strip().lower()
         )
@@ -900,8 +1603,7 @@ class Settings:
             e.get("id") == vision_default_prompt_style for e in vision_custom_prompts
         ):
             vision_default_prompt_style = "accessibility"
-        raw_mp = int(data.get("multi_press_window_ms", 400))
-        multi_press_window_ms = max(100, min(1000, raw_mp))
+        multi_press_window_ms = _clamp_int(data.get("multi_press_window_ms", 400), 400, 100, 1000)
         hygiene_min_confidence = str(data.get("hygiene_min_confidence", "high")).strip().lower()
         if hygiene_min_confidence not in {"high", "medium", "low"}:
             hygiene_min_confidence = "high"
@@ -946,6 +1648,17 @@ class Settings:
         )
         batch_speech_temp_folder = str(data.get("batch_speech_temp_folder", "")).strip()
         batch_speech_save_spoken_text = bool(data.get("batch_speech_save_spoken_text", False))
+        # Remember the last journey so the wizard's first page lands on
+        # the radio the user used last. Falls back to "documents" when
+        # missing or unrecognized so older settings files still work.
+        audio_studio_last_journey = (
+            str(data.get("audio_studio_last_journey", "documents")).strip().lower()
+        )
+        if audio_studio_last_journey not in {"documents", "audio", "edit"}:
+            audio_studio_last_journey = "documents"
+        audio_studio_chapter_nudge_ms = _clamp_int(
+            data.get("audio_studio_chapter_nudge_ms", 500), 500, 10, 60000
+        )
         if recent_files_limit < 1:
             recent_files_limit = 1
         if recent_files_limit > 50:
@@ -958,6 +1671,8 @@ class Settings:
             theme=theme,
             keyboard_pack=keyboard_pack,
             soft_wrap=soft_wrap,
+            announce_headings=announce_headings,
+            announce_lists=announce_lists,
             wrap_find=wrap_find,
             browse_mode_wrap=browse_mode_wrap,
             browse_mode_feedback=browse_mode_feedback,
@@ -969,9 +1684,13 @@ class Settings:
             browse_mode_followon_custom_ms=browse_mode_followon_custom_ms,
             csv_open_mode=csv_open_mode,
             word_open_mode=word_open_mode,
-            editor_surface=editor_surface,
-            save_as_surface_sync=save_as_surface_sync,
+            docx_read_engine=docx_read_engine,
+            docx_write_engine=docx_write_engine,
             plain_text_link_style=plain_text_link_style,
+            content_handoff_format=content_handoff_format,
+            auto_outline_style=auto_outline_style,
+            clip_library_autocapture=clip_library_autocapture,
+            clipboard_collector_saves=clipboard_collector_saves,
             indent_with_tabs=indent_with_tabs,
             indent_size=indent_size,
             auto_check_updates=auto_check_updates,
@@ -984,16 +1703,26 @@ class Settings:
             recent_files_limit=recent_files_limit,
             recent_files_auto_clear_missing=recent_files_auto_clear_missing,
             first_line_as_title=first_line_as_title,
+            restore_points_enabled=restore_points_enabled,
+            restore_points_max_mb=restore_points_max_mb,
             warm_dictation_model=warm_dictation_model,
             warm_kokoro_model=warm_kokoro_model,
             tray_enabled=tray_enabled,
             persistent_undo=persistent_undo,
             spellcheck_as_you_type=spellcheck_as_you_type,
+            spellcheck_skip_code_files=spellcheck_skip_code_files,
+            spell_check_before_save=spell_check_before_save,
+            spellcheck_language=spellcheck_language,
+            reveal_codes_visible=reveal_codes_visible,
+            reveal_codes_view=reveal_codes_view,
+            reveal_codes_verbosity=reveal_codes_verbosity,
+            reveal_codes_speak=reveal_codes_speak,
             intellisense_as_you_type=intellisense_as_you_type,
             snippet_trigger_expansion=snippet_trigger_expansion,
             preview_browser=preview_browser,
             auto_side_preview=auto_side_preview,
             show_tab_control=show_tab_control,
+            show_status_bar=show_status_bar,
             title_bar_path_mode=title_bar_path_mode,
             dirty_title_style=dirty_title_style,
             start_with_no_document_open=start_with_no_document_open,
@@ -1006,24 +1735,40 @@ class Settings:
             read_aloud_dectalk_voice=read_aloud_dectalk_voice,
             read_aloud_dectalk_rate=read_aloud_dectalk_rate,
             read_aloud_dectalk_dictionary=read_aloud_dectalk_dictionary,
+            read_aloud_piper_executable=read_aloud_piper_executable,
             read_aloud_piper_model=read_aloud_piper_model,
             announcement_backend=announcement_backend,
+            announcement_braille=announcement_braille,
+            announcement_braille_style=announcement_braille_style,
+            announcement_braille_dedupe_seconds=announcement_braille_dedupe_seconds,
+            announcement_braille_sticky_errors=announcement_braille_sticky_errors,
+            announcement_sounds_in_apps=announcement_sounds_in_apps,
+            announcement_sound_instead_of_speech_when_quiet=announcement_sound_instead_of_speech_when_quiet,
+            announcement_echo_history=announcement_echo_history,
+            announcement_severity_interrupt=announcement_severity_interrupt,
             read_aloud_piper_model_dir=read_aloud_piper_model_dir,
             read_aloud_kokoro_voice=read_aloud_kokoro_voice,
             read_aloud_kokoro_speed=read_aloud_kokoro_speed,
             read_aloud_espeak_executable=read_aloud_espeak_executable,
             read_aloud_espeak_voice=read_aloud_espeak_voice,
             read_aloud_espeak_rate=read_aloud_espeak_rate,
+            read_aloud_macos_voice=read_aloud_macos_voice,
+            read_aloud_macos_rate=read_aloud_macos_rate,
+            read_aloud_elevenlabs_voice=read_aloud_elevenlabs_voice,
+            read_aloud_elevenlabs_model=read_aloud_elevenlabs_model,
             ai_tts_provider=ai_tts_provider,
             ai_tts_model=ai_tts_model,
             ai_tts_voice=ai_tts_voice,
             ai_tts_speed=ai_tts_speed,
+            ai_voice_reply_mode=ai_voice_reply_mode,
+            ai_voice_reply_announce_limit=ai_voice_reply_announce_limit,
             announcement_trace_enabled=announcement_trace_enabled,
             announcement_startup_tips_enabled=announcement_startup_tips_enabled,
             verbosity_speech_enabled=verbosity_speech_enabled,
             announce_screen_reader_detected=announce_screen_reader_detected,
             assistant_enabled=assistant_enabled,
             assistant_prompt_style=assistant_prompt_style,
+            ai_privacy_accepted_version=ai_privacy_accepted_version,
             markdown_clipboard_format=markdown_clipboard_format,
             dictation_engine=dictation_engine,
             dictation_language=dictation_language,
@@ -1032,6 +1777,24 @@ class Settings:
             dictation_max_locked_seconds=dictation_max_locked_seconds,
             dictation_stop_on_focus_loss=dictation_stop_on_focus_loss,
             dictation_intelligent_spacing=dictation_intelligent_spacing,
+            dictation_remove_fillers=dictation_remove_fillers,
+            **windows_dictation,
+            announce_formatting_on_move=announce_formatting_on_move,
+            find_use_quill_dialog=find_use_quill_dialog,
+            dictionary_online_lookups=dictionary_online_lookups,
+            announce_dialog_transitions=announce_dialog_transitions,
+            low_resource_mode=low_resource_mode,
+            idle_unload_minutes=idle_unload_minutes,
+            announce_indent_depth=announce_indent_depth,
+            spoken_echo_on_double_press=spoken_echo_on_double_press,
+            braille_editor_system_edit_fix=braille_editor_system_edit_fix,
+            braille_editor_hide_border=braille_editor_hide_border,
+            experimental_acknowledged=experimental_acknowledged,
+            glow_experimental_enabled=glow_experimental_enabled,
+            publishing_experimental_enabled=publishing_experimental_enabled,
+            table_studio_experimental_enabled=table_studio_experimental_enabled,
+            edge_read_aloud_enabled=edge_read_aloud_enabled,
+            plain_text_with_formatting=plain_text_with_formatting,
             dictation_onboarding_shown=dictation_onboarding_shown,
             pronunciation_enabled=pronunciation_enabled,
             pronunciation_enabled_dictionary_ids=pronunciation_enabled_dictionary_ids,
@@ -1039,6 +1802,7 @@ class Settings:
             tts_normalization=tts_normalization,
             dictation_min_hold_seconds=dictation_min_hold_seconds,
             speech_provider=speech_provider,
+            speech_default_model_id=speech_default_model_id,
             bw_speech_selection_mode=bw_speech_selection_mode,
             bw_speech_model_id=bw_speech_model_id,
             bw_provider_id=bw_provider_id,
@@ -1048,14 +1812,48 @@ class Settings:
             bw_safe_mode_lock=bw_safe_mode_lock,
             status_page_refresh_announcement_cadence=status_page_refresh_announcement_cadence,
             voice_commands_enabled=voice_commands_enabled,
+            voice_conversation_enabled=voice_conversation_enabled,
+            voice_conversation_silence_ms=voice_conversation_silence_ms,
+            voice_conversation_review_ms=voice_conversation_review_ms,
+            voice_conversation_followup_ms=voice_conversation_followup_ms,
+            voice_conversation_thinking_ms=voice_conversation_thinking_ms,
+            voice_conversation_user_name=voice_conversation_user_name,
+            voice_conversation_spoken_cues=voice_conversation_spoken_cues,
+            voice_recognition_engine=voice_recognition_engine,
+            vosk_retirement_notice=vosk_retirement_notice,
+            voice_wakeword_enabled=voice_wakeword_enabled,
+            voice_wakeword_persist=voice_wakeword_persist,
             watch_folder_enabled=watch_folder_enabled,
             watch_folder_path=watch_folder_path,
             startup_folder=startup_folder,
+            git_sync_last_folder=git_sync_last_folder,
+            vault_root=vault_root,
+            vault_templates_folder=vault_templates_folder,
+            vault_daily_pattern=vault_daily_pattern,
+            ocr_language=ocr_language,
+            tesseract_path=tesseract_path,
+            datalab_enabled=datalab_enabled,
+            datalab_endpoint=datalab_endpoint,
+            reading_order_max_pages=reading_order_max_pages,
+            datalab_mode=datalab_mode,
+            datalab_output=datalab_output,
+            datalab_paginate=datalab_paginate,
             use_simple_file_dialog=use_simple_file_dialog,
             watch_folder_include_subfolders=watch_folder_include_subfolders,
             watch_folder_process_existing=watch_folder_process_existing,
             watch_folder_auto_start=watch_folder_auto_start,
             watch_folder_poll_interval_seconds=watch_folder_poll_interval_seconds,
+            watch_folder_audible_tick=watch_folder_audible_tick,
+            watch_folder_interrupt_speech=watch_folder_interrupt_speech,
+            weather_monitor_audible_tick=weather_monitor_audible_tick,
+            weather_monitor_interrupt_speech=weather_monitor_interrupt_speech,
+            podcast_check_enabled=podcast_check_enabled,
+            podcast_check_interval_minutes=podcast_check_interval_minutes,
+            podcast_check_audible_tick=podcast_check_audible_tick,
+            podcast_check_interrupt_speech=podcast_check_interrupt_speech,
+            github_poll_interval_minutes=github_poll_interval_minutes,
+            github_poll_audible_tick=github_poll_audible_tick,
+            github_poll_interrupt_speech=github_poll_interrupt_speech,
             import_export_recursive=import_export_recursive,
             import_export_overwrite=import_export_overwrite,
             import_export_output_layout=import_export_output_layout,
@@ -1066,18 +1864,25 @@ class Settings:
             quick_nav_debounce_ms=quick_nav_debounce_ms,
             quick_nav_min_chars=quick_nav_min_chars,
             announcement_throttle_ms=announcement_throttle_ms,
+            font_name=font_name,
+            font_size=font_size,
             read_aloud_sentence_pause_ms=read_aloud_sentence_pause_ms,
+            read_aloud_follow_cursor=read_aloud_follow_cursor,
             ocr_engine=ocr_engine,
             shell_integration_enabled=shell_integration_enabled,
             shell_verb_ocr=shell_verb_ocr,
             shell_verb_ocr_structured=shell_verb_ocr_structured,
             shell_verb_open=shell_verb_open,
             shell_verb_read=shell_verb_read,
+            shell_verb_convert=shell_verb_convert,
             shell_file_types=shell_file_types,
             ocr_structured=ocr_structured,
             ocr_capture_geometry=ocr_capture_geometry,
             external_change_watch_enabled=external_change_watch_enabled,
             external_change_auto_reload_when_clean=external_change_auto_reload_when_clean,
+            external_change_always_reload=external_change_always_reload,
+            external_change_always_keep=external_change_always_keep,
+            quilllite_bring_offered=quilllite_bring_offered,
             external_change_prompt_on_conflict=external_change_prompt_on_conflict,
             external_change_debounce_ms=external_change_debounce_ms,
             announcement_verbosity=announcement_verbosity,
@@ -1105,13 +1910,25 @@ class Settings:
             confirm_destructive_actions=confirm_destructive_actions,
             default_export_preset=default_export_preset,
             default_new_document_format=default_new_document_format,
+            default_line_ending=default_line_ending,
+            restore_session=restore_session,
+            session_restore_ask=session_restore_ask,
+            session_files=session_files,
+            recover_untitled_documents=recover_untitled_documents,
+            inline_notes_in_file=inline_notes_in_file,
+            inline_note_line_cue=inline_note_line_cue,
+            recovery_keep_days=recovery_keep_days,
+            markdown_hard_break_style=markdown_hard_break_style,
             autoformat_smart_quotes=autoformat_smart_quotes,
             autoformat_dashes=autoformat_dashes,
+            continue_lists_in_plain_text=continue_lists_in_plain_text,
+            autocorrect_misspellings=autocorrect_misspellings,
             quick_nav_include_headings=quick_nav_include_headings,
             quick_nav_include_links=quick_nav_include_links,
             quick_nav_include_lists=quick_nav_include_lists,
             status_bar_order=status_bar_order,
             status_bar_hidden=status_bar_hidden,
+            global_hotkeys=global_hotkeys,
             glow_enabled=glow_enabled,
             glow_ai_alt_text_consent=glow_ai_alt_text_consent,
             glow_pii_redaction_consent=glow_pii_redaction_consent,
@@ -1121,8 +1938,6 @@ class Settings:
             ai_chat_default_model=ai_chat_default_model,
             ollama_base_url=ollama_base_url,
             ai_prompt_default_model=ai_prompt_default_model,
-            bug_reporter_name=bug_reporter_name,
-            bug_reporter_email=bug_reporter_email,
             abbreviation_expansion=abbreviation_expansion,
             abbreviation_expansion_sound=abbreviation_expansion_sound,
             abbreviation_expansion_sound_file=abbreviation_expansion_sound_file,
@@ -1134,18 +1949,25 @@ class Settings:
             setup_wizard_wants_braille=setup_wizard_wants_braille,
             setup_wizard_wants_automation=setup_wizard_wants_automation,
             upgrade_prompt_braille_pack=upgrade_prompt_braille_pack,
+            upgrade_prompt_kokoro_onnx=upgrade_prompt_kokoro_onnx,
             console_enabled=console_enabled,
             auto_ask_crash_submit=auto_ask_crash_submit,
             console_python_timeout=console_python_timeout,
             console_typescript_timeout=console_typescript_timeout,
             sound_enabled=sound_enabled,
+            sound_keepalive_enabled=sound_keepalive_enabled,
             sound_pack_path=sound_pack_path,
             sound_volume=sound_volume,
             sound_events_disabled=sound_events_disabled,
+            action_feedback=action_feedback,
+            find_not_found_feedback=find_not_found_feedback,
+            heading_announce_position=heading_announce_position,
+            voice_preview_announce_generating=voice_preview_announce_generating,
             indent_tone_scale=indent_tone_scale,
             abbreviation_backspace_behavior=abbreviation_backspace_behavior,
             braille_cells_per_line=braille_cells_per_line,
             braille_lines_per_page=braille_lines_per_page,
+            page_estimate_words_per_page=page_estimate_words_per_page,
             braille_use_form_feeds=braille_use_form_feeds,
             braille_calculate_pages=braille_calculate_pages,
             braille_save_sidecar=braille_save_sidecar,
@@ -1157,10 +1979,24 @@ class Settings:
             braille_include_running_head=braille_include_running_head,
             braille_include_continuation=braille_include_continuation,
             spell_review_verbosity=spell_review_verbosity,
+            spell_review_ranked=bool(data.get("spell_review_ranked", False)),
             spell_review_spell_word=spell_review_spell_word,
             spell_review_spell_word_pause_ms=spell_review_spell_word_pause_ms,
             spell_review_wrap_to_beginning=spell_review_wrap_to_beginning,
             spell_review_context_mode=spell_review_context_mode,
+            spell_aloud_enabled=spell_aloud_enabled,
+            spell_aloud_delay_ms=spell_aloud_delay_ms,
+            spell_aloud_on_navigation=spell_aloud_on_navigation,
+            spell_aloud_navigation_delay_ms=spell_aloud_navigation_delay_ms,
+            spell_aloud_suggestions=spell_aloud_suggestions,
+            spell_aloud_suggestion_delay_ms=spell_aloud_suggestion_delay_ms,
+            spell_aloud_first_suggestion=spell_aloud_first_suggestion,
+            spell_aloud_style=spell_aloud_style,
+            spell_aloud_capitals=spell_aloud_capitals,
+            spelling_alert_sound=spelling_alert_sound,
+            spelling_alert_speech=spelling_alert_speech,
+            spelling_alert_repeat_ms=spelling_alert_repeat_ms,
+            open_blank_document_at_startup=open_blank_document_at_startup,
             vision_default_prompt_style=vision_default_prompt_style,
             vision_prompt_picker_enabled=vision_prompt_picker_enabled,
             vision_disabled_builtin_styles=vision_disabled_builtin_styles,
@@ -1183,6 +2019,8 @@ class Settings:
             batch_speech_temp_folder=batch_speech_temp_folder,
             batch_speech_save_spoken_text=batch_speech_save_spoken_text,
             batch_speech_intro_section_title=batch_speech_intro_section_title,
+            audio_studio_last_journey=audio_studio_last_journey,
+            audio_studio_chapter_nudge_ms=audio_studio_chapter_nudge_ms,
         )
 
 
@@ -1204,7 +2042,9 @@ def load_settings() -> Settings:
     # SET-5: read the nested versioned document, a legacy flat file, or junk.
     from quill.core.settings_migration import (
         from_versioned,
+        is_future_settings_document,
         is_legacy_settings_document,
+        reconcile_unknown_overrides,
         to_versioned,
     )
 
@@ -1215,12 +2055,16 @@ def load_settings() -> Settings:
         serialize=to_versioned,
         is_legacy=is_legacy_settings_document,
         default=Settings,
+        reconcile_unknown=reconcile_unknown_overrides,
+        is_future=is_future_settings_document,
     )
 
 
 def save_settings(settings: Settings) -> None:
     # SET-5: persist the nested, versioned *delta* document (overrides only),
     # so future default changes flow through to the user automatically.
+    from quill.core.persistence_outcome import guarded_write
     from quill.core.settings_migration import to_versioned
 
-    write_json_atomic(settings_path(), to_versioned(settings))
+    path, document = settings_path(), to_versioned(settings)
+    guarded_write("QUILL settings", path, lambda: write_json_atomic(path, document))

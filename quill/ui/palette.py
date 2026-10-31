@@ -11,6 +11,8 @@ from quill.core.palette import (
     save_palette_usage,
 )
 from quill.ui.dialog_contract import apply_modal_ids, show_modal_dialog
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 
 class CommandPaletteDialog:
@@ -31,6 +33,8 @@ class CommandPaletteDialog:
         command_registry: CommandRegistry,
         feature_manager: FeatureManager | None = None,
         announce_fn: Callable[[str], None] | None = None,
+        on_help: Callable[[], None] | None = None,
+        binding_for: Callable[[str], str | None] | None = None,
     ) -> None:
         import wx
 
@@ -38,6 +42,17 @@ class CommandPaletteDialog:
         self._registry = command_registry
         self._features = feature_manager
         self._announce_fn = announce_fn
+        self._on_help = on_help
+        # How this palette finds a command's keystroke. A command carries one
+        # only if whoever registered it passed one, and most of the companion
+        # apps' commands do not -- Quill Radio registers three dozen with a
+        # title and a handler and nothing else, so its palette listed every
+        # one of them with no key at all while the menus beside it showed the
+        # keys correctly. The keymap is the real answer: it is what the menu
+        # labels are built from, it already carries the per-app defaults, and
+        # it follows the listener when they rebind something. So ask it first
+        # and fall back to whatever the registration happened to carry.
+        self._binding_for = binding_for
         # Show only commands whose feature is visible in the current profile.
         # Commands for OFF features are omitted entirely; the palette should
         # reflect the user's chosen experience, not the full catalogue.
@@ -57,11 +72,18 @@ class CommandPaletteDialog:
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
         self.dialog.SetName("Command Palette — type to search, Enter to run, Escape to close")
-        self.dialog.SetSize((700, 500))
+        # When a host supplies topic-based help, this dialog answers F1 itself;
+        # the marker keeps the dialog contract's generic F1 hook from shadowing
+        # it. Hosts without on_help (the standalone apps' palettes) leave the
+        # generic hook in place, which is how their palettes gained F1 at all.
+        if on_help is not None:
+            self.dialog._quill_owns_f1 = True
+        self.dialog.SetSize(dip_size(self.dialog, 700, 500))
 
         root = wx.BoxSizer(wx.VERTICAL)
         self.search = wx.SearchCtrl(self.dialog, style=wx.TE_PROCESS_ENTER)
         self.search.SetName("Search commands")
+        set_spoken_name(self.search, "Search commands")
         self.search.ShowSearchButton(True)
         self.search.ShowCancelButton(True)
         self.search.SetDescriptiveText("Type command (>, :, ?, ~ prefixes supported)")
@@ -87,18 +109,57 @@ class CommandPaletteDialog:
 
         self._refresh_results()
 
+    def _binding(self, command: Command) -> str:
+        """This command's keystroke, live from the keymap where there is one."""
+        if self._binding_for is not None:
+            try:
+                resolved = self._binding_for(command.id)
+            except Exception:  # noqa: BLE001 - a keymap lookup must not break the list
+                resolved = None
+            if resolved:
+                return str(resolved)
+        return command.keybinding or ""
+
     def _set_status(self, msg: str) -> None:
         self.status.SetLabel(msg)
         if self._announce_fn is not None and msg:
             self._announce_fn(msg)
 
     def _is_available(self, command: Command) -> bool:
+        if self._unavailable_reason(command):
+            return False
         if self._features is None:
             return True
         is_visible = getattr(self._features, "is_visible", None)
         if callable(is_visible):
             return bool(is_visible(command.feature_id))
         return True
+
+    def _unavailable_reason(self, command: Command) -> str:
+        """Why *command* cannot run right now, or "" (error specificity).
+
+        Asks the registry's availability probe so the palette can say the
+        reason -- "Turned off by a safety update: ..." -- instead of the
+        bare "(unavailable)" that leaves a screen-reader user guessing.
+        """
+        probe = getattr(self._registry, "unavailable_reason", None)
+        if not callable(probe):
+            return ""
+        try:
+            return str(probe(command.id) or "")
+        except Exception:  # noqa: BLE001 - a probe failure means "no reason known"
+            return ""
+
+    def _unavailable_suffix(self, command: Command) -> str:
+        """ " (unavailable: <reason>)", " (unavailable)", or ""."""
+        if self._is_available(command):
+            return ""
+        reason = self._unavailable_reason(command)
+        if reason.startswith("off in "):
+            # A feature the listener switched off is not "unavailable": it is
+            # where they put it, and the suffix says where (qc.md section 17).
+            return f" ({reason})"
+        return f" (unavailable: {reason})" if reason else " (unavailable)"
 
     def show_modal_and_run(self) -> None:
         self.dialog.CentreOnParent()
@@ -128,6 +189,9 @@ class CommandPaletteDialog:
             # keyboard trap (WCAG 2.1.2, #124).
             self.dialog.EndModal(wx.ID_CANCEL)
             return
+        if key_code == getattr(wx, "WXK_F1", 340) and self._on_help is not None:
+            self._on_help()
+            return
         if key_code in (wx.WXK_RETURN, wx.WXK_NUMPAD_ENTER):
             self._on_accept(event)
             return
@@ -151,9 +215,13 @@ class CommandPaletteDialog:
     def _announce_at(self, index: int) -> None:
         if 0 <= index < len(self._filtered_commands):
             command = self._filtered_commands[index]
-            available = self._is_available(command)
-            suffix = "" if available else " (unavailable)"
-            msg = f"{command.title}{suffix}"
+            suffix = self._unavailable_suffix(command)
+            # Speak the shortcut with the title so the palette teaches the
+            # keystroke while it dispatches -- the visual list already shows
+            # it, and screen-reader users must hear the same information.
+            binding = self._binding(command)
+            binding_part = f", {binding}" if binding else ""
+            msg = f"{command.title}{binding_part}{suffix}"
             if self._announce_fn is not None:
                 self._announce_fn(msg)
             else:
@@ -162,7 +230,7 @@ class CommandPaletteDialog:
     def _refresh_results(self) -> None:
         labels = []
         for command in self._filtered_commands:
-            binding = command.keybinding or ""
+            binding = self._binding(command)
             label = f"{command.title} [{binding}]" if binding else command.title
             labels.append(label)
         self.results.Set(labels)
@@ -170,9 +238,11 @@ class CommandPaletteDialog:
             self.results.SetSelection(0)
             top = self._filtered_commands[0]
             available_count = sum(1 for cmd in self._filtered_commands if self._is_available(cmd))
+            top_key = self._binding(top)
+            top_binding = f", {top_key}" if top_key else ""
             self._set_status(
                 f"{len(labels)} command(s), {available_count} available. "
-                f"Top match: {top.title}. "
+                f"Top match: {top.title}{top_binding}. "
                 "Down/Up to navigate, Enter to run."
             )
             return
@@ -184,9 +254,10 @@ class CommandPaletteDialog:
             return
         if selected < len(self._filtered_commands):
             command = self._filtered_commands[selected]
-            available = self._is_available(command)
-            suffix = "" if available else " (unavailable)"
-            self._set_status(f"Selected: {command.title}{suffix}")
+            suffix = self._unavailable_suffix(command)
+            binding = self._binding(command)
+            binding_part = f", {binding}" if binding else ""
+            self._set_status(f"Selected: {command.title}{binding_part}{suffix}")
 
     def _run_selected(self) -> None:
         selected = self.results.GetSelection()
@@ -196,7 +267,9 @@ class CommandPaletteDialog:
             return
         command = self._filtered_commands[selected]
         if not self._is_available(command):
-            self._set_status(f"{command.title} is not available in the current context.")
+            reason = self._unavailable_reason(command)
+            detail = f" {reason}" if reason else ""
+            self._set_status(f"{command.title} is not available in the current context.{detail}")
             return
         self._last_run_id: str | None = command.id
         self._registry.run(command.id)
@@ -225,6 +298,7 @@ class GoToAnythingDialog:
         feature_manager: object | None = None,
         headings: list[tuple[str, int]] | None = None,
         announce_fn: Callable[[str], None] | None = None,
+        binding_for: Callable[[str], str | None] | None = None,
     ) -> None:
         import wx
 
@@ -232,6 +306,13 @@ class GoToAnythingDialog:
         self._registry = command_registry
         self._features = feature_manager
         self._announce_fn = announce_fn
+        # Same keymap lookup CommandPaletteDialog uses, and for the same reason
+        # -- see the long note on its ``_binding_for``. This dialog went without
+        # one until 2026-09-08 and so showed a key only for the commands whose
+        # registration happened to carry one, while the menu beside it showed
+        # every key correctly. Two front doors to the same commands must not
+        # disagree about what to press.
+        self._binding_for = binding_for
         self._headings: list[tuple[str, int]] = headings or []
 
         from quill.core.commands import CommandRegistry
@@ -259,11 +340,12 @@ class GoToAnythingDialog:
         self.dialog.SetName(
             "Go to Anything — type to search headings and commands, Enter to go, Escape to close"
         )
-        self.dialog.SetSize((700, 520))
+        self.dialog.SetSize(dip_size(self.dialog, 700, 520))
 
         root = wx.BoxSizer(wx.VERTICAL)
         self.search = wx.SearchCtrl(self.dialog, style=wx.TE_PROCESS_ENTER)
         self.search.SetName("Search headings and commands")
+        set_spoken_name(self.search, "Search headings and commands")
         self.search.ShowSearchButton(True)
         self.search.ShowCancelButton(True)
         self.search.SetDescriptiveText(
@@ -371,6 +453,17 @@ class GoToAnythingDialog:
             label = str(item.get("label", ""))
             self._set_status(f"[{kind}] {label}")
 
+    def _binding(self, command: object) -> str:
+        """This command's keystroke, live from the keymap where there is one."""
+        if self._binding_for is not None:
+            try:
+                resolved = self._binding_for(getattr(command, "id", ""))
+            except Exception:  # noqa: BLE001 - a keymap lookup must not break the list
+                resolved = None
+            if resolved:
+                return str(resolved)
+        return getattr(command, "keybinding", "") or ""
+
     def _refresh_results(self, query: str) -> None:
         q = query.strip()
         heading_only = q.startswith("#")
@@ -387,7 +480,7 @@ class GoToAnythingDialog:
         if not heading_only:
             ranked = rank_commands(self._commands, clean_q, self._usage)
             for cmd in ranked:
-                binding = getattr(cmd, "keybinding", "") or ""
+                binding = self._binding(cmd)
                 label = f"{cmd.title} [{binding}]" if binding else cmd.title
                 results.append({
                     "kind": "command",

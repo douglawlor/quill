@@ -1,11 +1,17 @@
 """Optional in-app ffmpeg download for offline speech (#617 follow-up).
 
 QUILL does not bundle ffmpeg (it is GPL/LGPL). For users who would rather not run
-``winget install Gyan.FFmpeg`` by hand, this downloads an **official Gyan.dev
-Windows build** on an explicit action and extracts ``ffmpeg.exe`` + ``ffprobe.exe``
-into the QUILL-managed tools folder the resolver already searches
-(``<app data>/tools/ffmpeg``). The binaries come straight from the third-party
-builder that ffmpeg.org links to; QUILL never redistributes them.
+``winget install Gyan.FFmpeg`` by hand, this downloads a pinned **Gyan.dev
+"essentials" Windows build** on an explicit action and extracts ``ffmpeg.exe`` +
+``ffprobe.exe`` into the QUILL-managed tools folder the resolver already searches
+(``<app data>/tools/ffmpeg``).
+
+The build is re-hosted on QUILL's own ``assets-v1`` release and pinned by
+SHA-256 -- the same self-hosted, verified model used for the eSpeak-NG (GPL) MSI
+-- so the download does not depend on a third-party host and cannot be swapped
+under us. As GPL/LGPL software, the corresponding source is available upstream
+(ffmpeg.org, and the Gyan.dev build page); the mirrored asset is byte-identical
+to that official build.
 
 Safety mirrors the model-download path: HTTPS-only with a verified TLS context,
 blocked in Safe Mode, on an explicit user action only. Windows-only — on macOS
@@ -16,14 +22,13 @@ from __future__ import annotations
 
 import os
 import shutil
-import ssl
 import sys
 import tempfile
-import urllib.request
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
+from quill.core.error_codes import CodedError
 from quill.core.speech import models
 
 ProgressCallback = Callable[[float, str], None]
@@ -31,12 +36,57 @@ ProgressCallback = Callable[[float, str], None]
 # Official Gyan.dev "essentials" Windows build (the download ffmpeg.org links to).
 # The named URL 303-redirects to the current versioned zip; urllib follows it.
 FFMPEG_DOWNLOAD_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+# Pinned mirror on QUILL's own assets-v1 release. This auto-activates the moment
+# a real 64-hex SHA-256 is filled in below: QUILL then fetches the byte-pinned
+# zip from assets-v1 (SHA-verified, self-hosted, no moving upstream), exactly
+# like the eSpeak-NG and Tesseract installers. Until then FFMPEG_PINNED_SHA256 is
+# empty and QUILL keeps using the moving Gyan.dev URL above (retry/resume/HTTPS
+# via the shared core, but unpinned).
+#
+# To activate (one-time, no code change beyond these three constants):
+#   1. Download the exact Gyan "essentials" zip you want to pin.
+#   2. Upload it to the assets-v1 release; note the asset's filename.
+#   3. Set FFMPEG_PINNED_FILENAME to that name, FFMPEG_PINNED_VERSION to the
+#      ffmpeg version, and FFMPEG_PINNED_SHA256 to the file's SHA-256.
+FFMPEG_PINNED_VERSION = "8.1.2"
+FFMPEG_PINNED_FILENAME = "ffmpeg-8.1.2-essentials_build.zip"
+FFMPEG_PINNED_SHA256 = "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
+_ASSETS_V1_BASE = "https://github.com/Community-Access/quill/releases/download/assets-v1/"
+
 _DOWNLOAD_TIMEOUT_S = 1800.0
 _WANTED = ("ffmpeg.exe", "ffprobe.exe")
 
+#: The files that travel beside every ffmpeg.exe QUILL ships or installs: the
+#: GPLv3 text (the pinned build is configured --enable-gpl --enable-version3)
+#: and the provenance + corresponding-source offer. One copy lives in
+#: ``quill/data/notices/ffmpeg``; every bundle check reads this tuple.
+FFMPEG_NOTICE_FILES = ("LICENSE.GPLv3.txt", "README-SOURCE.txt")
 
-class FFmpegInstallError(Exception):
+
+def _is_real_sha256(value: str) -> bool:
+    """True for a genuine 64-hex SHA-256 (not a blank/placeholder)."""
+    digest = value.strip().lower()
+    return len(digest) == 64 and all(c in "0123456789abcdef" for c in digest)
+
+
+def ffmpeg_download_source() -> tuple[str, str]:
+    """Return ``(url, sha256)`` for the ffmpeg zip download.
+
+    Prefers the pinned assets-v1 mirror once :data:`FFMPEG_PINNED_SHA256` is a
+    real digest (byte-verified, self-hosted). Until the mirror is uploaded it
+    returns the moving Gyan.dev upstream URL with an empty SHA -- unpinned, but
+    still retry/resume/HTTPS via the shared download core.
+    """
+    if FFMPEG_PINNED_FILENAME and _is_real_sha256(FFMPEG_PINNED_SHA256):
+        return _ASSETS_V1_BASE + FFMPEG_PINNED_FILENAME, FFMPEG_PINNED_SHA256
+    return FFMPEG_DOWNLOAD_URL, ""
+
+
+class FFmpegInstallError(CodedError):
     """Raised when the optional ffmpeg download or extraction fails."""
+
+    code = "QUILL-SPEECH-FFMPEG-INSTALL"
 
 
 def ffmpeg_install_supported() -> bool:
@@ -70,20 +120,52 @@ def install_ffmpeg(
         )
     dest = Path(dest_dir) if dest_dir is not None else managed_ffmpeg_dir()
     dest.mkdir(parents=True, exist_ok=True)
+    from quill.core import release_assets
+
     fd, raw = tempfile.mkstemp(prefix="quill_ffmpeg_", suffix=".zip")
     os.close(fd)
     tmp_zip = Path(raw)
     try:
-        _download_zip(FFMPEG_DOWNLOAD_URL, tmp_zip, progress, timeout_seconds)
+        try:
+            # Pinned assets-v1 mirror (SHA-verified) once uploaded; the moving
+            # Gyan.dev upstream (unpinned) until then. Either way it runs through
+            # the shared core: retry/resume/mirror-fallback + HTTPS enforcement.
+            url, sha256 = ffmpeg_download_source()
+            release_assets.download_verified(
+                url,
+                tmp_zip,
+                sha256=sha256,
+                progress=progress,
+                timeout=timeout_seconds,
+                label="Downloading ffmpeg...",
+            )
+        except release_assets.ReleaseAssetError as exc:
+            raise FFmpegInstallError(str(exc)) from exc
         if progress is not None:
             progress(0.95, "Extracting ffmpeg...")
         ffmpeg_path = _extract_ffmpeg_from_zip(tmp_zip, dest)
+        write_license_notices(dest)
     finally:
         tmp_zip.unlink(missing_ok=True)
     _clear_resolver_cache()
     if progress is not None:
         progress(1.0, "Done.")
     return ffmpeg_path
+
+
+def write_license_notices(dest: Path) -> None:
+    """Put FFmpeg's GPL licence and source offer beside the binaries in *dest*.
+
+    The pinned build is GPLv3, and distributing it means shipping its licence
+    and where its source is. The zip's own copies are not extracted (only the
+    two executables are), so the texts come from the package instead -- the
+    same files the standalone apps' builds stage (scripts/StageMediaTools.ps1).
+    """
+    from importlib import resources
+
+    folder = resources.files("quill.data").joinpath("notices", "ffmpeg")
+    for name in FFMPEG_NOTICE_FILES:
+        (Path(dest) / name).write_bytes(folder.joinpath(name).read_bytes())
 
 
 def _clear_resolver_cache() -> None:
@@ -94,42 +176,6 @@ def _clear_resolver_cache() -> None:
         ffmpeg_tools.find_ffprobe.cache_clear()
     except Exception:  # noqa: BLE001 - cache clearing is best-effort
         pass
-
-
-def _download_zip(
-    url: str, target: Path, progress: ProgressCallback | None, timeout_seconds: float
-) -> None:
-    """Stream the ffmpeg zip over verified HTTPS.
-
-    GATE-9 / network-egress: the only outbound call in this module. It runs on an
-    explicit user "download ffmpeg" action, refuses non-HTTPS URLs, and uses a
-    verified TLS context. A progress callback that raises (user cancel) aborts.
-    """
-    if not url.lower().startswith("https://"):
-        raise FFmpegInstallError("ffmpeg download must use a secure (HTTPS) address.")
-    context = ssl.create_default_context()
-    request = urllib.request.Request(url, headers={"User-Agent": "QUILL"})
-    try:
-        with (
-            urllib.request.urlopen(  # noqa: S310 - HTTPS enforced above
-                request, timeout=timeout_seconds, context=context
-            ) as response,
-            target.open("wb") as out,
-        ):
-            total = int(response.headers.get("Content-Length", 0) or 0)
-            read = 0
-            while True:
-                chunk = response.read(1 << 16)
-                if not chunk:
-                    break
-                out.write(chunk)
-                read += len(chunk)
-                if progress is not None and total > 0:
-                    progress(min(read / total, 0.9), "Downloading ffmpeg...")
-    except FFmpegInstallError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - surface a clean message
-        raise FFmpegInstallError(f"Could not download ffmpeg: {exc}") from exc
 
 
 def _extract_ffmpeg_from_zip(zip_path: Path, dest_dir: Path) -> Path:

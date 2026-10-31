@@ -1,7 +1,27 @@
 version: 2
+
+# Dependabot's proxy blocks any package host the configuration has not named,
+# and reports the refusal as `private_source_authentication_failure` -- which
+# reads as "these credentials are wrong" when the truth is "I was not told this
+# host exists". requirements.txt carries an `--extra-index-url` for the
+# llama-cpp-python CPU wheels, so *every* update job consulted that host while
+# resolving, and every update job failed: eight open pull requests whose real
+# problem had nothing to do with the package each was bumping.
+#
+# Declaring it here is the fix. It is a public index and takes no credentials,
+# so there are none to give; `replaces-base: false` keeps PyPI as the primary
+# and this as the extra, which is exactly what the `--extra-index-url` means.
+registries:
+  llama-cpp-python-cpu:
+    type: python-index
+    url: https://abetlen.github.io/llama-cpp-python/whl/cpu
+    replaces-base: false
+
 updates:
   - package-ecosystem: "pip"
     directory: "/"
+    registries:
+      - llama-cpp-python-cpu
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
@@ -10,6 +30,15 @@ updates:
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      # Deliberately pinned, and only a person may move it. The pin tracks the
+      # newest version with a prebuilt CPU **wheel** on the index above, and
+      # Dependabot cannot see that: it reads PyPI, where an sdist always
+      # exists, so it would happily bump to a version that makes pip compile
+      # llama.cpp from source -- which fails or hangs on Windows. The full
+      # reasoning, and the curl that checks for a wheel, are in
+      # requirements.txt beside the pin.
+      - dependency-name: "llama-cpp-python"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -21,3 +50,39 @@ updates:
     labels:
       - "dependencies"
       - "security"
+
+  # uv.lock is the resolved dev/test environment (CLAUDE.md's fast install
+  # path). It was outside every ecosystem above, so its transitive pins were
+  # the only place in the repo Dependabot could see a vulnerability and not
+  # open a pull request -- five alerts (anyio, soupsieve) sat open with no
+  # branch to merge. The "uv" ecosystem reads uv.lock directly. That lock
+  # resolves llama-cpp-python from PyPI, so it must not use the CPU wheel
+  # registry above: its GitHub release redirects receive 401 from Dependabot's
+  # proxy even for unrelated security updates such as PyJWT.
+  #
+  # Security updates only (2026-10-11). With version updates on, pip and uv both
+  # bumped the same pyproject pins and every bump arrived twice (huggingface-hub
+  # as #1581 and #1587). A limit of 0 turns off uv's version updates; its
+  # security updates are not counted against the limit, so the lock-only alerts
+  # this entry exists for still get a pull request.
+  - package-ecosystem: "uv"
+    directory: "/"
+    # Only uv.lock and pyproject.toml. Left to itself the uv updater also read
+    # requirements.txt beside them, met its --extra-index-url for the CPU
+    # wheels, and failed every job with private_source_authentication_failure
+    # (the pypdf security update, 2026-10-23) -- the very host this entry
+    # keeps out of its registries on purpose. requirements.txt is the pip
+    # ecosystem's, which declares that host.
+    exclude-paths:
+      - "requirements*.txt"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+    reviewers:
+      - "Community-Access/maintainers"
+    labels:
+      - "dependencies"
+      - "security"
+    ignore:
+      # See the pip ecosystem above: the pin is a human's to move.
+      - dependency-name: "llama-cpp-python"

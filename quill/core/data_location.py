@@ -95,6 +95,25 @@ def request_data_location_change(mode: str, custom_path: Path | None = None) -> 
     return target
 
 
+def pending_data_location_target() -> Path | None:
+    """The target directory queued by :func:`request_data_location_change`,
+    or None when no move is pending.
+
+    A caller offering an immediate restart (e.g. the setup wizard, mirroring
+    Preferences' existing restart offer) uses this to know whether a real
+    move was queued, since ``request_data_location_change`` applies in place
+    with no marker when the chosen target already matches the current one.
+    """
+    marker = app_data_dir().resolve() / _PENDING_MARKER_NAME
+    document = read_json(marker, None)
+    if not isinstance(document, dict):
+        return None
+    target = document.get("target")
+    if not isinstance(target, str) or not target:
+        return None
+    return Path(target)
+
+
 def apply_pending_data_location_migration() -> None:
     """Apply a pending data-location move recorded by Preferences, if any.
 
@@ -132,6 +151,20 @@ def apply_pending_data_location_migration() -> None:
     custom_path = Path(str(custom_value)) if mode == "custom" and custom_value else None
     storage_mode.save_storage_mode(mode, path=custom_path)
     _write_migration_notice(target, f"Quill's data is now stored at {target}.")
+
+
+def apply_pending_at_launch() -> None:
+    """Both deferred applies, in the order ``quill.__main__.main`` runs them.
+
+    One call for every standalone app's ``main()`` (Radio, Cast, Weather,
+    Studio, ...): the family shares one profile, so a move queued from any
+    app must be applied by whichever app launches next -- before that app
+    reads a single data file. Without this, only a QUILL launch applied the
+    move, and a Radio-only user's queued Data Folder change simply never
+    happened.
+    """
+    apply_pending_data_location_migration()
+    apply_pending_legacy_import()
 
 
 def pop_pending_migration_notice() -> str | None:
@@ -304,6 +337,7 @@ def apply_pending_legacy_import() -> None:
 
 
 __all__ = [
+    "apply_pending_at_launch",
     "apply_pending_data_location_migration",
     "apply_pending_legacy_import",
     "decline_legacy_data_import",

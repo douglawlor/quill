@@ -1,0 +1,759 @@
+"""Build a QuillVille app's *portable* bundle -- the self-contained edition
+that runs from a USB stick with no install and no shared runtime.
+
+One builder, many products (studio / radio / weather). Layout (mirrors the old
+"Lean" bundles, minus the AV-flagged stamped pythonw.exe)::
+
+    <App>/
+        <App>.exe                native C launcher (spawns pythonw.exe -m quill.apps.<x>)
+        <App>.ico
+        python.exe / pythonw.exe genuine, UNMODIFIED CPython embeddable trampolines
+        python314.dll / python3.dll / python314.zip / python314._pth
+        *.pyd, vcruntime*.dll, libssl-3/libcrypto-3/libffi-8/sqlite3 ...
+        Lib/site-packages/       quill dependency closure + the quill source
+        data/                    (studio) offline speech/TTS engines
+        tools/ffmpeg, tools/mpv  (studio/radio) recording + playback binaries
+        tools/deno               (radio) yt-dlp's JS runtime for YouTube
+        docs/
+
+Why this shape, and why NOT a PyInstaller onedir or a stamped pythonw:
+
+* The native launcher needs a real interpreter to spawn. A PyInstaller onedir
+  ships *no* python.exe, so on a machine with no shared runtime the launcher
+  finds nothing and the portable fails. The embeddable distribution ships
+  genuine python.exe / pythonw.exe.
+* pythonw.exe is CPython's own one-line GUI-subsystem trampoline
+  (PC/WinMain.c: ``wWinMain -> Py_Main``). We ship it byte-for-byte. We do NOT
+  rename it to <App>.exe or rcedit-stamp its VERSIONINFO -- that
+  repackaged-interpreter shape is exactly what tripped the malware heuristic
+  (see docs/design/native-launcher-2026-07-24.md). The QUILL identity lives on
+  the tiny, honestly-compiled native launcher instead.
+
+Usage::
+
+    python standalone/studio/scripts/build_portable.py --product studio \
+        --out standalone/studio/dist/QuillAudioStudio \
+        --source-root . --ffmpeg-dir <dir> --mpv-dir <dir> --version 2.0.0
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+import tomllib
+import urllib.request
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+
+# Pinned embeddable CPython -- kept in lockstep with
+# scripts/build_windows_distribution.py::EMBEDDED_PYTHON_* so every QuillVille
+# product ships the identical interpreter.
+EMBEDDED_PYTHON_VERSION = "3.14.8"
+EMBEDDED_PYTHON_URL = (
+    f"https://www.python.org/ftp/python/{EMBEDDED_PYTHON_VERSION}/"
+    f"python-{EMBEDDED_PYTHON_VERSION}-embed-amd64.zip"
+)
+EMBEDDED_PYTHON_SHA256 = "a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310"
+GET_PIP_URL = "https://bootstrap.pypa.io/get-pip.py"
+
+# ``build`` is the CMake scratch tree left by compiling the native pieces in
+# place -- quill/native/optilab/build was 8.5 MB on disk and put 87 files
+# (CMakeFiles, *.tlog, Debug/, VCTargetsPath) into every portable zip. Nothing
+# under any build/ inside quill/ is tracked in git, so none of it is shippable,
+# and those files carried the five longest paths in the archive: dropping them
+# takes the deepest entry from 144 characters to 120, which is real headroom
+# against MAX_PATH when somebody unpacks into an already-deep folder (2026-09-30).
+_DEV_CACHE_IGNORE = shutil.ignore_patterns(
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", "*.pyc", "build"
+)
+
+#: Mirrors quill.io.word_selfcheck.WORD_SUPPORT_MODULES (this script runs under
+#: the build interpreter, before quill is importable from the bundle); a test
+#: holds the two equal. One import per line in the probe, so a failure names it.
+WORD_SUPPORT_MODULES: tuple[str, ...] = (
+    "lxml.etree",
+    "docx",
+    "quill.io.docx_reader",
+    "quill.io.docx_writer",
+    "quill.io.docx_text",
+    "quill.core.docx_open",
+)
+
+# Offline speech/TTS engine trees copied from the local Quill app-data folder
+# into the portable data/ dir (studio only). Each is skipped when absent.
+ENGINE_SUBDIRS = (
+    "speech-engine",  # whisper.cpp (the DEFAULT offline transcription engine)
+    "speech/espeak-ng",  # managed eSpeak-NG installation
+    "speech/piper",  # managed Piper installation
+    "engine-packs",  # kokoro-onnx, mp3-support, mathcat, ... (heavy pruned below)
+    "kokoro-models",  # neural TTS model + voices
+    "piper-models",  # piper voices
+    "speech-models",  # downloaded GGML whisper models
+)
+# Redundant / very heavy on-demand trees dropped so the bundle stays lean:
+# faster-whisper is an alternative ASR to the bundled default (whisper.cpp) and
+# drags ~600 MB; engine-packs/mpv duplicates tools/mpv; _vosk-download is
+# partial-download scratch. Relative to the portable data/ dir.
+ENGINE_PRUNE = (
+    "speech/dectalk",
+    "engine-packs/faster-whisper",
+    "engine-packs/mpv",
+    "engine-packs/_vosk-download",
+    "speech-models/fasterwhisper",
+    "speech-models/faster-whisper-cache",
+)
+
+
+@dataclass(frozen=True)
+class Product:
+    key: str  # build_native_launcher.py product key
+    module: str  # python -m <module>
+    exe: str  # on-disk launcher exe name (no .exe)
+    display: str
+    zip_name: str  # {ver} placeholder
+    dep_groups: tuple[str, ...]
+    stage_engines: bool
+    stage_ffmpeg: bool
+    stage_mpv: bool
+    # No product carries QUILL's old GitHub feedback token or feedback-hub:
+    # every QuillVille app sends feedback to support@community-access.org by
+    # email (2026-09-26), and a credential an app never uses is only a
+    # credential somebody can extract. _copy_quill_source drops the file and
+    # scripts/check_no_credentials.py fails the build if either reappears.
+    # tools/deno: the JavaScript runtime the bundled yt-dlp solves YouTube's
+    # challenges with. Required (the build fails without --deno-dir) for the
+    # apps that play YouTube.
+    stage_deno: bool = False
+    # Owner's rule (2026-09-27): nothing downloads at install or first use. So
+    # this product's PORTABLE launcher is compiled with no runtime URL (a damaged
+    # portable says what is missing instead of offering a download), and the
+    # launcher its installer ships is built separately, with the URL, into
+    # dist/<exe>-installer/ -- the path its .iss copies from.
+    offline_portable_launcher: bool = False
+    # Modules the bundle must import in step 8, beside the app's own. A
+    # dependency group that installs without error can still leave a feature
+    # dead -- a missing native DLL, a namespace pywinrt resolves lazily -- and
+    # the first person to find out would be the one who needed it (2026-10-17).
+    must_import: tuple[str, ...] = ()
+    # Word documents must open and save as Word in this product (2026-10-17):
+    # step 8 imports the Word stack (quill.io.word_selfcheck.WORD_SUPPORT_MODULES,
+    # lxml first) and round-trips a real .docx through the same open and save
+    # path both editors use. python-docx is a base dependency, so every portable
+    # carries it and lxml; this makes a portable that somehow lost either fail
+    # its build instead of quietly opening Word files as text.
+    check_word: bool = False
+
+
+PRODUCTS: dict[str, Product] = {
+    "studio": Product(
+        key="studio",
+        module="quill.apps.studio",
+        exe="QuillAudioStudio",
+        display="QUILL Audio Studio",
+        zip_name="QUILL-Audio-Studio-Portable-Lean-{ver}.zip",
+        dep_groups=("ui", "speech"),
+        stage_engines=True,
+        stage_ffmpeg=True,
+        stage_mpv=True,
+    ),
+    "radio": Product(
+        key="radio",
+        module="quill.apps.radio",
+        exe="QuillRadio",
+        display="Quill Radio",
+        zip_name="Quill-Radio-Portable-{ver}.zip",
+        # "youtube": the installer bundles yt-dlp (quill-radio.spec), so the
+        # portable copy does too -- a first YouTube link must not need a pip
+        # download, which also wrote pip's cache to the host computer.
+        # "windows-media" (2026-09-29): the pywinrt wheels behind the modern
+        # Windows Media engine and the now-playing card. The shared runtime
+        # froze them in from the start, so an INSTALLED Radio had the engine
+        # and its Output Device routing; the portable never listed the group,
+        # so a stick copy silently fell back to the classic control, offered
+        # "Windows Media (classic)" in Preferences and could not change the
+        # sound card (Jeff, from a fresh 3.1.0 portable). Everything ships in
+        # both downloads, or it is not shipped.
+        dep_groups=("ui", "speech", "youtube", "windows-media"),
+        stage_engines=False,  # radio streams/records; no bundled speech engines
+        stage_ffmpeg=True,  # podcast/stream recording
+        stage_mpv=True,  # playback engine
+        stage_deno=True,  # YouTube's JS challenges
+        offline_portable_launcher=True,
+    ),
+    "weather": Product(
+        key="weather",
+        module="quill.apps.weather",
+        exe="QuillWeather",
+        display="Quill Weather",
+        zip_name="Quill-Weather-Portable-{ver}.zip",
+        dep_groups=("ui",),  # small app: no media stack
+        stage_engines=False,
+        stage_ffmpeg=False,
+        stage_mpv=False,
+        offline_portable_launcher=True,
+    ),
+    "inkwell": Product(
+        key="inkwell",
+        module="quill.apps.inkwell",
+        exe="QuillInkwell",
+        display="Quill Inkwell",
+        zip_name="Quill-Inkwell-Portable-{ver}.zip",
+        # The smallest app in the family: a keyboard hook, a matcher, and two
+        # dialogs. No media stack, no engines, nothing to download.
+        dep_groups=("ui",),
+        stage_engines=False,
+        stage_ffmpeg=False,
+        stage_mpv=False,
+    ),
+    "transcribe": Product(
+        key="transcribe",
+        module="quill.apps.transcribe",
+        exe="QuillTranscribe",
+        display="QUILL Transcribe",
+        zip_name="QUILL-Transcribe-Portable-{ver}.zip",
+        # Dictation into other programs, and nothing else: the one engine it
+        # carries is dictation's (live-dictation: sherpa-onnx, numpy,
+        # sounddevice), as QUILL Lite does; the models are staged beside the
+        # launcher by build_release.ps1, not in here.
+        dep_groups=("ui", "live-dictation"),
+        stage_engines=False,
+        stage_ffmpeg=False,
+        stage_mpv=False,
+        offline_portable_launcher=True,
+    ),
+    "converter": Product(
+        key="converter",
+        module="quill.apps.converter",
+        exe="QuillConverter",
+        display="Quill Converter",
+        zip_name="Quill-Converter-Portable-{ver}.zip",
+        # The whole job is FFmpeg conversion, so ffmpeg is staged as a bundled
+        # binary (tools/ffmpeg), and mpv (tools/mpv) is the Chapter Workbench's
+        # player; no speech engines.
+        # Everything else it can use ships inside, so nothing downloads on
+        # first use (1.0.0, 2026-09-27): "youtube" is yt-dlp for Convert from
+        # URL, and "mp3" is mutagen, which carries cover art into formats
+        # FFmpeg drops it from (quill/core/audio/cover_art.py).
+        dep_groups=("ui", "youtube", "mp3"),
+        stage_engines=False,
+        stage_ffmpeg=True,
+        stage_mpv=True,
+        # Convert from URL (videos, playlists, channels): yt-dlp needs a
+        # JavaScript runtime for YouTube's challenges; bundled, never PATH.
+        stage_deno=True,
+    ),
+    "quilllite": Product(
+        key="quilllite",
+        module="quill.apps.lite",
+        exe="QuillLite",
+        display="QUILL Lite",
+        zip_name="QuillLite-Portable-{ver}.zip",
+        # An editor and nothing else: one native control, six small windows and
+        # a settings file. No media stack, no spell checker, nothing to
+        # download. The one engine it carries is dictation's (live-dictation:
+        # sherpa-onnx, numpy, sounddevice); the models are staged beside the
+        # launcher by build_release.ps1, not in here.
+        # "office-text" and "ocr" (2026-10-17): QUILL Lite opens PDFs (Ctrl+O)
+        # and converts documents and scanned pages (File > Import / Convert
+        # Document). The INSTALLED copy has always had the reader -- the shared
+        # runtime carries pdfplumber, pypdf, pypdfium2 and the winrt OCR
+        # packages -- but the portable copy had none of them, so a PDF said
+        # "This copy of QUILL Lite has no PDF reader". Everything ships in both
+        # downloads, or it is not shipped. office-text is pdfplumber (which
+        # brings pdfminer.six and pypdfium2) + pypdf + openpyxl; ocr is the
+        # Windows.Media.Ocr projection. About 21 MB unpacked for the reader and
+        # 3-7 MB for OCR (junk/reference/pdf.md 4.5). Tesseract is not bundled.
+        # "docx" (2026-10-17): python-docx is already a base dependency, named
+        # again so the Word stack QUILL Lite edits with is declared where the
+        # product is, not inherited by accident. lxml arrives with it.
+        dep_groups=("ui", "live-dictation", "office-text", "ocr", "docx"),
+        stage_engines=False,
+        stage_ffmpeg=False,
+        stage_mpv=False,
+        offline_portable_launcher=True,
+        must_import=(
+            "pdfplumber",
+            "pypdf",
+            "pypdfium2",
+            "winrt.windows.media.ocr",
+            "winrt.windows.graphics.imaging",
+            "quill.io.pdf",
+            "quill.io.docconvert",
+            "openpyxl",
+        ),
+        check_word=True,
+    ),
+    "quill": Product(
+        key="quill",
+        module="quill",
+        exe="quill",
+        display="QUILL for All",
+        zip_name="QUILL-for-All-Portable-{ver}.zip",
+        # The full editor: the complete bundled dependency set QUILL ships.
+        # "windows-media" for the same reason as Radio's: QUILL plays podcasts
+        # and casts through the same engines.
+        # "docx" and "office-text" (2026-10-17): Word editing and the Office
+        # readers, the same set QUILL Lite's portable carries -- QUILL Lite may
+        # never be ahead of QUILL.
+        dep_groups=(
+            "ui",
+            "spellcheck",
+            "ocr",
+            "speech",
+            "github",
+            "windows-media",
+            "docx",
+            "office-text",
+        ),
+        # Engines download on demand (QUILL's standard portable); the fully
+        # offline variant is the separate --bundle-offline Offline Edition.
+        stage_engines=False,
+        stage_ffmpeg=True,  # transcription / media
+        stage_mpv=True,  # podcasts / cast playback
+        must_import=("openpyxl", "pdfplumber", "pypdf"),
+        check_word=True,
+    ),
+}
+
+
+def import_check_source(product: Product) -> str:
+    """The step-8 probe: quill, wx, the app, each of ``must_import`` by name, then Word.
+
+    One ``import`` statement per module, so the traceback names the one that
+    failed rather than a line holding seven.
+    """
+    lines = ["import quill, wx", f"import {product.module}"]
+    lines += [f"import {name}" for name in product.must_import]
+    if product.check_word:
+        lines.append("import quill.io.word_selfcheck as word_check")
+        lines += [f"import {name}" for name in WORD_SUPPORT_MODULES]
+        lines.append("word_check.assert_word_round_trip()")
+    lines.append("print('OK', quill.__version__)")
+    return "; ".join(lines)
+
+
+def import_check_command(python_exe: Path, product: Product) -> list[str]:
+    """Run the bundle probe without writing caches into the payload inventory."""
+    return [str(python_exe), "-B", "-c", import_check_source(product)]
+
+
+def _download(url: str, target: Path, expected_sha256: str | None) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    print(f"  downloading {url}")
+    with urllib.request.urlopen(url, timeout=180) as response:  # noqa: S310 - pinned URL
+        data = response.read()
+    if expected_sha256:
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != expected_sha256:
+            raise RuntimeError(
+                f"SHA-256 mismatch for {url}\n  expected: {expected_sha256}\n  got:      {digest}"
+            )
+    target.write_bytes(data)
+
+
+def _runtime_dependencies(root_pyproject: Path, groups: tuple[str, ...]) -> list[str]:
+    """quill's base + the requested optional-group dependency specifiers."""
+    with root_pyproject.open("rb") as handle:
+        data = tomllib.load(handle)
+    project = data.get("project", {})
+    deps: list[str] = [d for d in (project.get("dependencies") or []) if isinstance(d, str)]
+    optional = project.get("optional-dependencies", {}) or {}
+    for group in groups:
+        deps.extend(d for d in (optional.get(group) or []) if isinstance(d, str))
+    return deps
+
+
+def _extract_embeddable(out_dir: Path, cache_dir: Path) -> Path:
+    archive = cache_dir / f"python-{EMBEDDED_PYTHON_VERSION}-embed-amd64.zip"
+    if (
+        not archive.is_file()
+        or hashlib.sha256(archive.read_bytes()).hexdigest() != EMBEDDED_PYTHON_SHA256
+    ):
+        _download(EMBEDDED_PYTHON_URL, archive, EMBEDDED_PYTHON_SHA256)
+    print(f"  extracting embeddable CPython -> {out_dir}")
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(out_dir)
+    if not (out_dir / "python.exe").is_file() or not (out_dir / "pythonw.exe").is_file():
+        raise RuntimeError("Embeddable zip did not contain python.exe / pythonw.exe")
+    return out_dir / "python.exe"
+
+
+def _enable_site_packages(out_dir: Path) -> None:
+    pth_files = list(out_dir.glob("python*._pth"))
+    if not pth_files:
+        raise RuntimeError("Embeddable Python missing its ._pth file")
+    zip_name = next(out_dir.glob("python*.zip")).name
+    pth_files[0].write_text(f"{zip_name}\n.\nLib\\site-packages\nimport site\n", encoding="utf-8")
+
+
+def _pip(python_exe: Path, *args: str) -> None:
+    subprocess.run([str(python_exe), "-m", "pip", *args], check=True)
+
+
+def _bootstrap_pip_and_deps(
+    python_exe: Path, root_pyproject: Path, groups: tuple[str, ...]
+) -> None:
+    get_pip = python_exe.parent / "get-pip.py"
+    _download(GET_PIP_URL, get_pip, expected_sha256=None)
+    print("  bootstrapping pip")
+    subprocess.run([str(python_exe), str(get_pip), "--no-warn-script-location"], check=True)
+    get_pip.unlink(missing_ok=True)
+    _pip(python_exe, "install", "--no-warn-script-location", "--no-compile", "setuptools")
+    deps = _runtime_dependencies(root_pyproject, groups)
+    print(f"  installing {len(deps)} runtime dependencies")
+    _pip(python_exe, "install", "--no-warn-script-location", "--no-compile", *deps)
+    _keep_makepy_cache_in_bundle(python_exe.parent)
+
+
+def _keep_makepy_cache_in_bundle(out_dir: Path) -> None:
+    r"""Give pywin32 a ``win32com\gen_py`` package so makepy writes inside the bundle.
+
+    Without one, pywin32 puts its generated COM wrappers in
+    ``%TEMP%\gen_py\<ver>`` and never cleans them up -- which the screen-reader
+    fallback (accessible_output2's SAPI and JAWS outputs) triggers on the host
+    computer the first time Prism cannot find a live screen reader. A portable
+    copy writes nothing outside itself; an existing ``gen_py`` package is the
+    documented way to keep the cache beside win32com.
+    """
+    win32com = out_dir / "Lib" / "site-packages" / "win32com"
+    if not win32com.is_dir():
+        return
+    gen_py = win32com / "gen_py"
+    gen_py.mkdir(exist_ok=True)
+    (gen_py / "__init__.py").touch()
+
+
+def _copy_quill_source(out_dir: Path, source_root: Path) -> None:
+    site_packages = out_dir / "Lib" / "site-packages"
+    site_packages.mkdir(parents=True, exist_ok=True)
+    if (site_packages / "quill").exists():
+        shutil.rmtree(site_packages / "quill")
+    quill_source = source_root / "quill"
+    if not quill_source.is_dir():
+        raise RuntimeError(f"quill/ package source not found under {source_root}")
+    print("  copying quill source -> Lib/site-packages/quill")
+    shutil.copytree(quill_source, site_packages / "quill", ignore=_DEV_CACHE_IGNORE)
+    # The retired GitHub feedback token (gitignored, so an older build's copy
+    # can sit unseen in the checkout) never ships in any bundle (2026-09-26).
+    (site_packages / "quill" / "_feedback_token.py").unlink(missing_ok=True)
+
+
+def _prune_build_only(out_dir: Path) -> None:
+    site_packages = out_dir / "Lib" / "site-packages"
+    for name in ("setuptools", "pkg_resources", "_distutils_hack", "wheel"):
+        target = site_packages / name
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+    for pat in ("setuptools-*", "wheel-*"):
+        for dist in site_packages.glob(pat):
+            shutil.rmtree(dist, ignore_errors=True)
+    # setuptools' distutils-precedence.pth imports _distutils_hack (just removed)
+    # at every interpreter start -- drop it or every launch prints a traceback.
+    (site_packages / "distutils-precedence.pth").unlink(missing_ok=True)
+
+
+def installer_launcher_dir(out_dir: Path, product: Product) -> Path:
+    """Where the installer's own launcher goes: dist/<exe>-installer/."""
+    return out_dir.parent / f"{product.exe}-installer"
+
+
+def launcher_command(
+    source_root: Path, product: Product, out_dir: Path, *, runtime_download: bool
+) -> list[str]:
+    """The build_native_launcher.py call (pure, so the plumbing is testable)."""
+    command = [
+        sys.executable,
+        str(source_root / "scripts" / "build_native_launcher.py"),
+        "--product",
+        product.key,
+        "--out",
+        str(out_dir),
+    ]
+    if not runtime_download:
+        command.append("--no-runtime-download")
+    return command
+
+
+def _build_native_launcher(
+    out_dir: Path, source_root: Path, product: Product, *, runtime_download: bool = True
+) -> None:
+    print(f"  building native launcher ({product.exe}.exe)")
+    subprocess.run(
+        launcher_command(source_root, product, out_dir, runtime_download=runtime_download),
+        check=True,
+    )
+    if not (out_dir / f"{product.exe}.exe").is_file():
+        raise RuntimeError(
+            f"Native launcher build produced no {product.exe}.exe. Install MSVC 2022 "
+            "Build Tools (C++ workload) + CMake 3.20+; the portable must NOT fall "
+            "back to a stamped pythonw.exe (the AV-flagged pattern)."
+        )
+
+
+def _stage_engines(out_dir: Path, engines_dir: Path) -> list[str]:
+    data_dir = out_dir / "data"
+    data_dir.mkdir(exist_ok=True)
+    staged: list[str] = []
+    prune_names = {Path(p).name.casefold() for p in ENGINE_PRUNE}
+
+    def _ignore(dir_path: str, names: list[str]) -> set[str]:
+        ignored = set(_DEV_CACHE_IGNORE(dir_path, names))
+        ignored |= {n for n in names if n.casefold() in prune_names}
+        return ignored
+
+    for sub in ENGINE_SUBDIRS:
+        src = engines_dir / sub
+        if src.is_dir():
+            print(f"  staging engine tree data/{sub}")
+            shutil.copytree(src, data_dir / sub, dirs_exist_ok=True, ignore=_ignore)
+            staged.append(sub)
+    for rel in ENGINE_PRUNE:
+        target = data_dir / rel
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+    return staged
+
+
+def _write_portable_marker(out_dir: Path, display: str) -> None:
+    data_dir = out_dir / "data"
+    data_dir.mkdir(exist_ok=True)
+    (data_dir / "storage-mode.json").write_text('{"mode": "portable"}', encoding="utf-8")
+    (data_dir / "README.txt").write_text(
+        f"This folder makes {display} portable: your settings and data live here,\n"
+        "right next to the app, so the whole thing travels on a stick with no\n"
+        "install. Delete this folder and the app uses the shared Quill data in your\n"
+        "Windows profile instead.\n",
+        encoding="utf-8",
+    )
+
+
+def _stage_deno(out_dir: Path, deno_dir: Path | None) -> None:
+    """tools/deno/deno.exe + its licence. Required: raises when not supplied."""
+    if deno_dir is None or not (deno_dir / "deno.exe").is_file():
+        raise RuntimeError(
+            "This product bundles deno (YouTube's JS challenges): pass --deno-dir "
+            "build/deps/deno after `python scripts/fetch_build_deps.py --only deno`."
+        )
+    license_file = deno_dir / "DENO-LICENSE.txt"
+    if not license_file.is_file():
+        raise RuntimeError(f"{license_file} is missing -- deno ships with its licence.")
+    dest = out_dir / "tools" / "deno"
+    dest.mkdir(parents=True, exist_ok=True)
+    print("  staging tools/deno/deno.exe")
+    shutil.copy2(deno_dir / "deno.exe", dest / "deno.exe")
+    shutil.copy2(license_file, dest / "DENO-LICENSE.txt")
+
+
+def _stage_tools(
+    out_dir: Path, product: Product, ffmpeg_dir: Path | None, mpv_dir: Path | None
+) -> None:
+    if product.stage_ffmpeg and ffmpeg_dir:
+        dest = out_dir / "tools" / "ffmpeg"
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in ("ffmpeg.exe", "ffprobe.exe"):
+            if (ffmpeg_dir / name).is_file():
+                print(f"  staging tools/ffmpeg/{name}")
+                shutil.copy2(ffmpeg_dir / name, dest / name)
+        # The GPLv3 licence and source offer (quill/data/notices/ffmpeg), the
+        # same pair StageMediaTools.ps1 puts beside the installer's copy. The
+        # old guess at a LICENSE beside the ffmpeg folder never matched the
+        # pinned staging layout, so the portables shipped FFmpeg with neither.
+        notices = Path(__file__).resolve().parents[3] / "quill" / "data" / "notices" / "ffmpeg"
+        found = sorted(notices.glob("*.txt"))
+        if len(found) < 2:
+            raise RuntimeError(f"FFmpeg licence notices not found in {notices}.")
+        for txt in found:
+            shutil.copy2(txt, dest / txt.name)
+    if product.stage_mpv and mpv_dir:
+        dest = out_dir / "tools" / "mpv"
+        dest.mkdir(parents=True, exist_ok=True)
+        if (mpv_dir / "libmpv-2.dll").is_file():
+            print("  staging tools/mpv/libmpv-2.dll")
+            shutil.copy2(mpv_dir / "libmpv-2.dll", dest / "libmpv-2.dll")
+        for txt in mpv_dir.glob("*.txt"):
+            shutil.copy2(txt, dest / txt.name)
+
+
+def _stage_docs(out_dir: Path, product: Product, source_root: Path) -> None:
+    # Main QUILL's docs live at repo docs/; the standalone apps keep their own
+    # under standalone/<key>/docs.
+    if product.key == "quill":
+        docs_src = source_root / "docs"
+        readme = source_root / "README.md"
+    else:
+        docs_src = source_root / "standalone" / product.key / "docs"
+        readme = source_root / "standalone" / product.key / "README.md"
+    if docs_src.is_dir():
+        dest = out_dir / "docs"
+        dest.mkdir(exist_ok=True)
+        for item in docs_src.iterdir():
+            if item.is_file() and item.suffix.lower() in (".md", ".html", ".epub", ".txt"):
+                shutil.copy2(item, dest / item.name)
+    if readme.is_file():
+        shutil.copy2(readme, out_dir / f"README-{product.exe}.md")
+    _stage_notices(out_dir, product, source_root)
+
+
+def _stage_notices(out_dir: Path, product: Product, source_root: Path) -> None:
+    """Put THIRD-PARTY-NOTICES.txt and LICENSE.txt beside the launcher.
+
+    Generated by quill/tools/build_third_party_notices.py; Help > About >
+    Licences and Notices opens the first one. A portable without them is a
+    redistribution without its notices, so a missing file fails the build.
+    """
+    if product.key == "quill":
+        legal = source_root / "docs" / "legal"
+        sources = {
+            "THIRD-PARTY-NOTICES.txt": legal / "THIRD-PARTY-NOTICES-QUILL.txt",
+            "LICENSE.txt": source_root / "LICENSE",
+        }
+    else:
+        folder = source_root / "standalone" / product.key
+        sources = {name: folder / name for name in ("THIRD-PARTY-NOTICES.txt", "LICENSE.txt")}
+    for name, source in sources.items():
+        if not source.is_file():
+            raise RuntimeError(
+                f"{source} is missing -- regenerate: "
+                "python -m quill.tools.build_third_party_notices --write"
+            )
+        shutil.copy2(source, out_dir / name)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
+    parser.add_argument("--product", required=True, choices=list(PRODUCTS))
+    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--source-root", type=Path, default=Path("."))
+    parser.add_argument("--ffmpeg-dir", type=Path, default=None)
+    parser.add_argument("--mpv-dir", type=Path, default=None)
+    parser.add_argument(
+        "--deno-dir",
+        type=Path,
+        default=None,
+        help="Staged deno (fetch_build_deps.py --only deno); required for radio.",
+    )
+    parser.add_argument(
+        "--engines-dir",
+        type=Path,
+        default=Path(os.environ.get("APPDATA", "")) / "Quill",
+        help="Local Quill app-data dir to source offline engine trees from (studio).",
+    )
+    parser.add_argument("--version", default="2.0.0")
+    parser.add_argument("--cache-dir", type=Path, default=None)
+    args = parser.parse_args()
+
+    product = PRODUCTS[args.product]
+    out_dir = args.out.resolve()
+    source_root = args.source_root.resolve()
+    cache_dir = (args.cache_dir or (out_dir.parent / "_build-tools")).resolve()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if out_dir.exists():
+        print(f"Cleaning existing {out_dir}")
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+
+    print(f"[1/8] Embeddable CPython ({product.display})")
+    python_exe = _extract_embeddable(out_dir, cache_dir)
+    _enable_site_packages(out_dir)
+
+    print(f"[2/8] pip + runtime dependencies {product.dep_groups}")
+    _bootstrap_pip_and_deps(python_exe, source_root / "pyproject.toml", product.dep_groups)
+
+    print("[3/8] quill package source")
+    _copy_quill_source(out_dir, source_root)
+    _prune_build_only(out_dir)
+
+    print("[4/8] native launcher")
+    offline = product.offline_portable_launcher
+    _build_native_launcher(out_dir, source_root, product, runtime_download=not offline)
+    if offline:
+        _build_native_launcher(installer_launcher_dir(out_dir, product), source_root, product)
+
+    print("[5/8] offline engines -> data/")
+    if product.stage_engines:
+        staged = _stage_engines(out_dir, args.engines_dir)
+        print(f"      staged: {', '.join(staged) if staged else '(none found)'}")
+    else:
+        print("      (product ships no bundled engines)")
+    _write_portable_marker(out_dir, product.display)
+
+    print("[6/8] tools/ (ffmpeg, mpv, deno)")
+    _stage_tools(out_dir, product, args.ffmpeg_dir, args.mpv_dir)
+    if product.stage_deno:
+        _stage_deno(out_dir, args.deno_dir)
+
+    print("[7/8] docs/")
+    _stage_docs(out_dir, product, source_root)
+
+    print("[8/8] sanity check")
+    if not (out_dir / f"{product.exe}.exe").is_file():
+        raise RuntimeError(f"Bundle missing native {product.exe}.exe launcher")
+    if not (out_dir / "pythonw.exe").is_file():
+        raise RuntimeError("Bundle missing genuine pythonw.exe")
+    check = subprocess.run(
+        import_check_command(out_dir / "python.exe", product),
+        capture_output=True,
+        text=True,
+    )
+    print("      runtime import check:", (check.stdout or check.stderr).strip().splitlines()[-1:])
+    if check.returncode != 0:
+        raise RuntimeError(
+            f"Bundled runtime failed the import check for {product.module} (the app, "
+            "its must_import modules, or -- where check_word is set -- the Word "
+            "open-and-save round trip):\n" + (check.stderr or "")
+        )
+    # Inventory drift gate (P1.2): the source tree-copy sweeps whatever sits in
+    # quill/data on the build machine, exactly the class that put 82 MB of
+    # undeclared payload in the 2026-08-15 runtime installers. A product with a
+    # committed baseline fails the build on drift; one without prints how to
+    # adopt (incremental, per app, like every other ratchet here).
+    manifest = source_root / "standalone" / product.key / "portable-inventory.json"
+    if manifest.is_file():
+        gate = subprocess.run(
+            [
+                sys.executable,
+                str(source_root / "scripts" / "check_runtime_inventory.py"),
+                str(out_dir),
+                "--layout",
+                "portable",
+                "--manifest",
+                str(manifest),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        print("      inventory gate:", (gate.stdout or gate.stderr).strip().splitlines()[-1])
+        if gate.returncode != 0:
+            print(gate.stdout)
+            raise RuntimeError("Portable inventory drift -- see above (rebaseline with --write).")
+    else:
+        print(
+            f"      inventory gate: no baseline at {manifest.name}; adopt with "
+            f"check_runtime_inventory.py {out_dir} --layout portable --manifest ... --write"
+        )
+
+    # No bug-report credential may ship (2026-09-26): fail if a stale
+    # _feedback_token.py or a feedback_hub install reached the bundle.
+    creds = subprocess.run(
+        [sys.executable, str(source_root / "scripts" / "check_no_credentials.py"), str(out_dir)],
+        capture_output=True,
+        text=True,
+    )
+    if creds.returncode != 0:
+        print(creds.stdout, creds.stderr)
+        raise RuntimeError("Retired bug-report credential in the bundle -- see above.")
+    print("      credential gate: clean")
+
+    print(f"\nPortable bundle ready: {out_dir}")
+    print(f"(zip as: {product.zip_name.format(ver=args.version)})")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

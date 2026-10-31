@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>QUILL Tutorials - Tutorial 7: Write math without learning a new
+language</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a><header class="site"><div class="wrap"><nav class="site" aria-label="Primary"><ul><li><a href="/index.html">QUILL home</a></li><li><a href="index.html">All tutorials</a></li><li><a href="/podcast/index.html">The QUILL Cast</a></li><li><a href="/docs/userguide.html">User guide</a></li></ul></nav></div></header>
+<main id="main" tabindex="-1"><div class="wrap">
+<h1 id="tutorial-7-write-math-without-learning-a-new-language">Tutorial
+7: Write math without learning a new language</h1>
+<p><strong>Goal:</strong> put math into a document in a few different
+ways: pick a ready-made formula, type one yourself, and explore one by
+ear. Then check that it looks right, send it to Word as a real equation
+(not a picture), and open it again later, still editable. It takes about
+thirty minutes and there is nothing to install. This is for anyone
+writing algebra, such as homework, lecture notes or a lab report, who
+has never used a "math typing" tool and does not want a lesson in codes
+first.</p>
+<p>You will not need to memorize anything before you start. The fastest
+path needs no typing at all; the next needs only <code>^</code> for a
+power; only the fancier formulas need a couple of extra words.</p>
+<h2 id="1-the-easiest-way-in-pick-a-ready-made-formula">1. The easiest
+way in: pick a ready-made formula</h2>
+<p>QUILL ships ten common algebra and geometry formulas you can insert
+with no typing at all:</p>
+<ol type="1">
+<li>Open a document and type a line of context, like "The quadratic
+formula solves any equation of the form ax squared plus bx plus c equals
+zero:".</li>
+<li><strong>Insert &gt; Snippet Gallery...</strong></li>
+<li>Find <strong>Quadratic Formula</strong> in the list and insert
+it.</li>
+</ol>
+<p>That is it. A correctly formatted equation is now in your document,
+and you did not have to type it. The gallery also has the
+<strong>Pythagorean Theorem</strong>, <strong>Slope-Intercept
+Form</strong>, <strong>Point-Slope Form</strong>, the
+<strong>Slope</strong>, <strong>Distance</strong>, and
+<strong>Midpoint</strong> formulas, <strong>Difference of
+Squares</strong>, and the <strong>Area</strong> and
+<strong>Circumference of a Circle</strong>. If the formula you need is
+one of these ten, you are already done with this tutorial. The rest is
+for formulas the gallery does not have, or for understanding what is now
+in your document.</p>
+<h2 id="2-your-first-equation-from-scratch">2. Your first equation from
+scratch</h2>
+<p>For anything the gallery does not have, typing one yourself is just
+as easy:</p>
+<ol type="1">
+<li>Type a line of context, like "The Pythagorean theorem relates the
+sides of a right triangle:".</li>
+<li>Press <strong>Ctrl+Shift+E</strong> (or <strong>Insert &gt; Insert
+Equation...</strong>).</li>
+<li>A box appears asking for the equation, and it even suggests an
+example right in the prompt (<code>E=mc^2</code>) so you can see the
+expected shape. Type:
+<pre><code>a^2 + b^2 = c^2</code></pre>
+That is all. <code>^</code> just means "to the power of." No codes,
+nothing to look up.</li>
+<li>QUILL asks whether this should sit on its own line
+(<strong>Block</strong>) or flow inside a sentence
+(<strong>Inline</strong>). Since this formula deserves its own line,
+pick <strong>Block</strong>.</li>
+<li>Look at what is now in your document: plain text, wrapped in
+<code>$$ $$</code>. That is just how QUILL marks "this bit is math" so
+it can show it properly later. You can select it and press Ctrl+Shift+E
+again any time you want to change it, the same way you'd reopen any
+dialog.</li>
+</ol>
+<p>Try a second one the same way, inline this time: type "the graph of a
+straight line follows", press Ctrl+Shift+E, type
+<code>y = mx + b</code>, and choose <strong>Inline</strong> so it stays
+in the sentence. Two equations in, and you still haven't typed anything
+you wouldn't type on a calculator.</p>
+<h2 id="3-when-a-formula-needs-a-fraction-or-a-square-root">3. When a
+formula needs a fraction or a square root</h2>
+<p>Some formulas, like the quadratic formula if you type it yourself,
+have a fraction and a square root. For just these two, QUILL needs a
+small hint: put the top of a fraction in <code>\frac{...}{...}</code>
+and a square root in <code>\sqrt{...}</code>. That is all you need to
+learn; everything else stays the same as before.</p>
+<p>Press Ctrl+Shift+E and type:</p>
+<pre><code>x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}</code></pre>
+<p><code>\pm</code> just means "plus or minus". Choose
+<strong>Block</strong>. If you only remember one thing from this
+section, remember this: <code>\frac{top}{bottom}</code> and
+<code>\sqrt{...}</code>. Nothing else about plain equations changes.</p>
+<h2 id="4-a-shortcut-once-youre-comfortable-totally-optional">4. A
+shortcut, once you're comfortable (totally optional)</h2>
+<p>Once the basics feel normal, here's a convenience worth knowing
+about: if you type a few of those backslash words <em>while writing an
+ordinary sentence</em>, not inside the equation box, QUILL turns them
+into the real symbol right away. Type <code>\pi </code> (with a trailing
+space) and it becomes <code>π</code>. Type <code>\ne </code> and it
+becomes <code>≠</code>. You do not have to use this. Everything in
+sections 1 to 3 works without it. It is just a quick way to put one
+symbol into a sentence without opening the equation box. It lives under
+<strong>Preferences &gt; Editing &gt; Insert Automation</strong> if you
+ever want to turn it off. A fuller list is in the reference section at
+the end.</p>
+<h2 id="5-see-it-look-right">5. See it look right</h2>
+<p>Choose <strong>View &gt; Browser Preview...</strong>. Your equations
+show up as real math: the fraction stacked, the square root drawn, and
+<code>^2</code> raised. You do not have to picture what
+<code>$$...$$</code> means; QUILL shows it properly for you every
+time.</p>
+<h2 id="6-explore-a-formulas-structure-by-ear">6. Explore a formula's
+structure by ear</h2>
+<p>Reading a long formula start to finish, in one breath, is hard
+whether you are listening or looking. <strong>Select an
+equation</strong> (or type one fresh) and run <strong>Insert &gt;
+Explore Equation Structure...</strong>, or press
+<strong>Ctrl+Shift+Grave, F</strong>, to step through it one piece at a
+time.</p>
+<p><strong>How it works from the keyboard:</strong></p>
+<ol type="1">
+<li>Select <code>x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}</code> (or any
+equation) and run the command, or press Ctrl+Shift+Grave, F. If nothing
+is selected, a text box asks you to type or paste one. Enter accepts it,
+and Escape cancels.</li>
+<li>QUILL speaks where you are ("Whole equation" the first time, or the
+current piece's name after that), then opens a list of the parts of the
+current piece. For the whole equation above, that is <code>x</code>,
+<code>equals</code>, and the fraction. It is an ordinary Windows list:
+<strong>Up/Down arrows</strong> move through the items, typing a letter
+jumps to the next item starting with it, and the list always ends with
+<strong>Read this part aloud</strong>, then <strong>Back up one
+level</strong> (only once you've descended at least one level), then
+<strong>Done exploring</strong>.</li>
+<li><strong>Enter</strong>, or the <strong>OK</strong> button, activates
+whichever item is highlighted:
+<ul>
+<li>Choosing a numbered piece (like the fraction) <strong>goes into
+it</strong>. QUILL says its name ("Fraction") and the list now shows
+<em>its</em> pieces (<strong>Numerator</strong>,
+<strong>Denominator</strong>).</li>
+<li><strong>Read this part aloud</strong> reads just the piece you are
+on, for example "the square root of b squared minus 4 a c", and then
+brings the list back so you can keep exploring.</li>
+<li><strong>Back up one level</strong> moves to the parent piece and
+reopens the list there.</li>
+<li><strong>Done exploring</strong> closes the explorer and returns you
+to the editor.</li>
+</ul></li>
+<li><strong>Escape</strong>, or the <strong>Cancel</strong> button, at
+any point, <strong>closes the explorer straight away</strong>, just like
+Done exploring. It does not go back one level; use <strong>Back up one
+level</strong> for that.</li>
+</ol>
+<p>Stepping through the parts works as soon as you install QUILL, with
+nothing to download. <strong>Read this part aloud</strong> can sound
+more natural if you install the free MathCAT engine (<strong>Help &gt;
+Download Optional Components... &gt; MathCAT math speech
+engine</strong>, about 3 MB). It is the same math speech NVDA uses.
+Without it, QUILL uses its own simpler reading, which still works.
+Neither one gives you Nemeth or UEB math braille. If you use JAWS, its
+own Math Viewer works on the equation once it is in Word (see the next
+step) and gives you that fuller experience. QUILL's explorer is a quick
+way to find your way around a formula while you are still writing
+it.</p>
+<h2 id="7-hand-it-to-word">7. Hand it to Word</h2>
+<p><strong>File &gt; Export &gt; Word Document...</strong>, then open
+the result in Word (or LibreOffice). Move to the equation. It is a real
+Word equation you can edit, the same kind Word makes itself, not a
+picture. That matters for anyone using a screen reader: a real equation
+is read as math, and a picture of one is not read at all. If you use
+JAWS, this is also the point where its own Math Viewer becomes available
+on the equation.</p>
+<h2 id="8-get-it-back">8. Get it back</h2>
+<p>Reopen that Word file later (<strong>File &gt; Open...</strong>) and
+the equation comes back exactly as you typed it, as plain text you can
+select and change with Ctrl+Shift+E. You can pass a file back and forth
+with a teacher or study partner who uses Word and never lose the
+formula.</p>
+<h2 id="if-something-doesnt-look-right">If something doesn't look
+right</h2>
+<ul>
+<li><strong>The preview still shows literal <code>$$...$$</code> or
+<code>\(...\)</code> text.</strong> Check that both delimiters actually
+surround the formula. A stray character inside the equation (a
+<code>{</code> with no matching <code>}</code> is the most common one)
+can stop it from being recognized as math. Reopen it with Ctrl+Shift+E
+to see and fix the plain LaTeX.</li>
+<li><strong>A fraction or square root shows the raw
+<code>\frac{}{}</code> / <code>\sqrt{}</code> text instead of showing
+properly.</strong> This almost always means a missing closing brace
+<code>}</code>. Check that every <code>{</code> has a matching
+<code>}</code>.</li>
+<li><strong>The equation looks fine in QUILL but not after exporting to
+Word.</strong> Open the exported file in QUILL (File &gt; Open). If the
+formula comes back correctly, it is fine, and the problem is with the
+program you opened it in elsewhere. Try a different one.</li>
+</ul>
+<h2 id="quick-reference">Quick reference</h2>
+<p><strong>The ten gallery formulas</strong> (Insert &gt; Snippet
+Gallery...): Quadratic Formula, Pythagorean Theorem, Slope-Intercept
+Form, Point-Slope Form, Slope Formula, Distance Formula, Midpoint
+Formula, Difference of Squares, Area of a Circle, Circumference of a
+Circle.</p>
+<p><strong>The typed shortcuts, in full.</strong> Type the code plus a
+trailing space or punctuation, anywhere in ordinary prose (not inside
+the equation box), and it becomes the symbol straight away. These come
+from the Word Math AutoCorrect list published by DAISY
+(daisy.org/MSMathCodes), so if you have typed math in Word, you already
+know them. You can turn any of them off, or all of them, in
+<strong>Preferences &gt; Editing &gt; Insert Automation</strong>.</p>
+<p><em>Operators</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\cdot </code></td>
+<td>⋅</td>
+<td><code>\times </code></td>
+<td>×</td>
+</tr>
+<tr>
+<td><code>\div </code></td>
+<td>÷</td>
+<td><code>\pm </code></td>
+<td>±</td>
+</tr>
+<tr>
+<td><code>\mp </code></td>
+<td>∓</td>
+<td><code>\sqrt </code></td>
+<td>√</td>
+</tr>
+<tr>
+<td><code>\cbrt </code></td>
+<td>∛</td>
+<td><code>\qdrt </code></td>
+<td>∜</td>
+</tr>
+<tr>
+<td><code>\infty </code></td>
+<td>∞</td>
+<td><code>\circ </code></td>
+<td>∘</td>
+</tr>
+</tbody>
+</table>
+<p><em>Relations</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\ne </code> / <code>\neq </code></td>
+<td>≠</td>
+<td><code>\le </code> / <code>\leq </code></td>
+<td>≤</td>
+</tr>
+<tr>
+<td><code>\ge </code> / <code>\geq </code></td>
+<td>≥</td>
+<td><code>\approx </code></td>
+<td>≈</td>
+</tr>
+<tr>
+<td><code>\propto </code></td>
+<td>∝</td>
+<td><code>\cong </code></td>
+<td>≅</td>
+</tr>
+<tr>
+<td><code>\sim </code></td>
+<td>∼</td>
+<td><code>\ll </code> / <code>\gg </code></td>
+<td>≪ / ≫</td>
+</tr>
+</tbody>
+</table>
+<p><em>Sets and logic</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\in </code></td>
+<td>∈</td>
+<td><code>\notin </code></td>
+<td>∉</td>
+</tr>
+<tr>
+<td><code>\subset </code></td>
+<td>⊂</td>
+<td><code>\subseteq </code></td>
+<td>⊆</td>
+</tr>
+<tr>
+<td><code>\cup </code> / <code>\cap </code></td>
+<td>∪ / ∩</td>
+<td><code>\rightarrow </code> / <code>\to </code></td>
+<td>→</td>
+</tr>
+<tr>
+<td><code>\leftrightarrow </code></td>
+<td>↔︎</td>
+<td><code>\wedge </code> / <code>\vee </code></td>
+<td>∧ / ∨</td>
+</tr>
+<tr>
+<td><code>\neg </code></td>
+<td>¬</td>
+<td><code>\forall </code> / <code>\exists </code></td>
+<td>∀ / ∃</td>
+</tr>
+<tr>
+<td><code>\emptyset </code></td>
+<td>∅</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><em>Number sets</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\doubleN </code></td>
+<td>ℕ</td>
+<td><code>\doubleZ </code></td>
+<td>ℤ</td>
+</tr>
+<tr>
+<td><code>\doubleQ </code></td>
+<td>ℚ</td>
+<td><code>\doubleR </code></td>
+<td>ℝ</td>
+</tr>
+<tr>
+<td><code>\doubleC </code></td>
+<td>ℂ</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><em>Greek letters</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\alpha </code> / <code>\beta </code></td>
+<td>α / β</td>
+<td><code>\gamma </code> / <code>\delta </code></td>
+<td>γ / δ</td>
+</tr>
+<tr>
+<td><code>\Delta </code></td>
+<td>Δ</td>
+<td><code>\theta </code> / <code>\lambda </code></td>
+<td>θ / λ</td>
+</tr>
+<tr>
+<td><code>\mu </code> / <code>\pi </code></td>
+<td>μ / π</td>
+<td><code>\rho </code> / <code>\Sigma </code></td>
+<td>ρ / Σ</td>
+</tr>
+<tr>
+<td><code>\tau </code> / <code>\phi </code></td>
+<td>τ / ϕ</td>
+<td><code>\chi </code> / <code>\omega </code></td>
+<td>χ / ω</td>
+</tr>
+</tbody>
+</table>
+<p>Capital letters matter: <code>\delta </code> gives lowercase δ and
+<code>\Delta </code> gives uppercase Δ, the same way they're different
+symbols in math itself.</p>
+<p><em>Calculus</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\int </code></td>
+<td>∫</td>
+<td><code>\iint </code> / <code>\iiint </code></td>
+<td>∬ / ∭</td>
+</tr>
+<tr>
+<td><code>\partial </code></td>
+<td>∂</td>
+<td><code>\sum </code></td>
+<td>∑</td>
+</tr>
+<tr>
+<td><code>\prod </code></td>
+<td>∏</td>
+<td><code>\nabla </code></td>
+<td>∇</td>
+</tr>
+<tr>
+<td><code>\prime </code></td>
+<td>′</td>
+<td><code>\pprime </code></td>
+<td>″</td>
+</tr>
+</tbody>
+</table>
+<p><em>Geometry and vectors</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\vec </code></td>
+<td>→</td>
+<td><code>\angle </code></td>
+<td>∠</td>
+</tr>
+<tr>
+<td><code>\perp </code></td>
+<td>⊥</td>
+<td><code>\parallel </code></td>
+<td>∥</td>
+</tr>
+<tr>
+<td><code>\degree </code></td>
+<td>°</td>
+<td><code>\degc </code> / <code>\degf </code></td>
+<td>°C / °F</td>
+</tr>
+</tbody>
+</table>
+<p><em>Miscellaneous</em></p>
+<table>
+<thead>
+<tr>
+<th>Type this</th>
+<th>Get this</th>
+<th>Type this</th>
+<th>Get this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>\therefore </code></td>
+<td>∴</td>
+<td><code>\because </code></td>
+<td>∵</td>
+</tr>
+<tr>
+<td><code>\cdots </code></td>
+<td>⋯</td>
+<td><code>\vdots </code> / <code>\ddots </code></td>
+<td>⋮ / ⋱</td>
+</tr>
+<tr>
+<td><code>\dots </code> / <code>\ldots </code></td>
+<td>…</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="a-routine-to-try">A routine to try</h2>
+<p>Check the <strong>Snippet Gallery</strong> first. It has more than
+you might expect. For anything else, start with equations that only need
+<code>^</code>, <code>/</code>, <code>+</code>, and <code>-</code>;
+reach for <code>\frac{}{}</code> and <code>\sqrt{}</code> only when a
+formula needs them. Use <strong>Explore Equation Structure</strong> when
+a formula is hard to hold in your head all at once. Check
+<strong>Browser Preview</strong> before you submit anything. Export to
+Word only when it actually needs to leave QUILL.</p>
+<p><em>Want an equation explained instead of just typed? Select it and
+ask the AI menu's <strong>Math Tutor</strong>. It explains what each
+part means and tells you the formula's name if it is a well-known one.
+It does not solve anything or change your document.</em></p>
+<p><strong>Next:</strong> <a href="08-github-inside-quill.html">GitHub
+inside QUILL</a>.</p>
+</div></main>
+</body>
+</html>

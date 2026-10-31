@@ -1,0 +1,307 @@
+"""AppShellFrame host-protocol pieces every app mixin relies on.
+
+These cover the pure-logic host methods (no wx.Frame needed): feature
+gating and menu labels.
+"""
+
+from __future__ import annotations
+
+from quill.core.keymap import DEFAULT_KEYMAP
+from quill.ui.app_shell import AppShellFrame
+from tests.wx_session import patch_call_after
+
+
+class _Locks:
+    def __init__(self, locked: set[str]) -> None:
+        self._locked = locked
+
+    def is_locked(self, feature_id: str) -> bool:
+        return feature_id in self._locked
+
+
+class _Features:
+    def __init__(self, enabled: set[str]) -> None:
+        self._enabled = enabled
+
+    def is_enabled(self, feature_id: str) -> bool:
+        return feature_id in self._enabled
+
+
+def _bare_shell() -> AppShellFrame:
+    shell = AppShellFrame.__new__(AppShellFrame)
+    shell.keymap = dict(DEFAULT_KEYMAP)
+    return shell
+
+
+def test_feature_enabled_consults_manager():
+    shell = _bare_shell()
+    shell.features = _Features({"future.spotify"})
+    shell._feature_locks = _Locks(set())
+    assert shell._feature_enabled("future.spotify")
+    assert not shell._feature_enabled("future.something_else")
+
+
+def test_feature_lock_wins_over_unlock():
+    shell = _bare_shell()
+    shell.features = _Features({"future.spotify"})
+    shell._feature_locks = _Locks({"future.spotify"})
+    assert not shell._feature_enabled("future.spotify")
+
+
+def test_menu_label_without_binding_is_bare_title():
+    shell = _bare_shell()
+    shell.keymap = {}
+    assert shell._menu_label("Comm&unity Picks...", "radio.community_picks") == (
+        "Comm&unity Picks..."
+    )
+
+
+def test_menu_label_appends_simple_binding_and_skips_chords():
+    shell = _bare_shell()
+    shell.keymap = {
+        "radio.community_picks": "Ctrl+Alt+0",
+        "radio.suggest_pick": "Ctrl+Shift+Grave, A",
+    }
+    assert shell._menu_label("Comm&unity Picks...", "radio.community_picks") == (
+        "Comm&unity Picks...\tCtrl+Alt+0"
+    )
+    # Chord bindings would misparse as bare accelerators after the tab (#612).
+    assert shell._menu_label("S&uggest a Pick...", "radio.suggest_pick") == "S&uggest a Pick..."
+
+
+class _TaskManagerLikeQuills:
+    """Calls the submitted func exactly the way QuillTaskManager.wrapped does:
+    with cancellation_token / operation_id / progress_callback keyword args.
+    The 1.0.0 standalone apps crashed here ("_fetch() got an unexpected
+    keyword argument 'cancellation_token'") because the closures took no args."""
+
+    def submit(self, _name, func, **_options):
+        return func(
+            cancellation_token=object(),
+            operation_id="test-op",
+            progress_callback=lambda *_a, **_k: None,
+        )
+
+
+class _TaskManagerRoutingCallbacks:
+    """Like ``_TaskManagerLikeQuills``, but also routes the result to
+    on_success/on_failure the way the real QuillTaskManager does -- needed
+    for tests that verify what happens *after* the fetch (silent vs.
+    interactive announcements), not just that the fetch itself is callable."""
+
+    def submit(self, name, func, *, on_success=None, on_failure=None, **_options):
+        try:
+            result = func(
+                cancellation_token=object(),
+                operation_id="test-op",
+                progress_callback=lambda *_a, **_k: None,
+            )
+        except BaseException as exc:  # noqa: BLE001 - mirrors QuillTaskManager's catch-all
+            if on_failure is not None:
+                on_failure(name, exc)
+            return None
+        if on_success is not None:
+            on_success(name, result)
+        return result
+
+
+def test_update_check_fetch_accepts_task_manager_kwargs(monkeypatch):
+    import quill.core.updates as updates
+
+    calls: list[str] = []
+    monkeypatch.setattr(updates, "fetch_releases", lambda url, **_kw: calls.append(url) or [])
+    shell = _bare_shell()
+    shell._announce = lambda _msg: None
+    shell._running_portable_build = lambda: False
+    shell._task_manager = _TaskManagerLikeQuills()
+    # Must not raise TypeError when the task manager injects its kwargs.
+    shell.check_for_app_updates(repo_slug="Community-Access/quill-radio", current_version="1.0.0")
+    assert calls == ["https://api.github.com/repos/Community-Access/quill-radio/releases"]
+
+
+class _DeferredTaskManager:
+    def __init__(self) -> None:
+        self.submitted = None
+
+    def submit(self, name, func, *, on_success=None, on_failure=None, **_options):
+        self.submitted = (name, func, on_success, on_failure)
+        return None
+
+
+def test_update_check_does_not_fetch_inline(monkeypatch):
+    import quill.core.updates as updates
+
+    calls: list[str] = []
+    monkeypatch.setattr(updates, "fetch_releases", lambda *_a, **_kw: calls.append("fetch") or [])
+    shell = _bare_shell()
+    shell._announce = lambda _msg: None
+    shell._running_portable_build = lambda: False
+    manager = _DeferredTaskManager()
+    shell._task_manager = manager
+
+    shell.check_for_app_updates(
+        repo_slug="Community-Access/quill-radio", current_version="1.0.0", silent_no_update=True
+    )
+
+    assert calls == []
+    assert manager.submitted is not None
+    manager.submitted[1](
+        cancellation_token=object(), operation_id="test-op", progress_callback=None
+    )
+    assert calls == ["fetch"]
+
+
+def test_silent_update_check_says_nothing_when_up_to_date(monkeypatch):
+    """The automatic startup check (silent_no_update=True) must not announce
+    "Checking for updates" or "You are up to date" -- only a genuine
+    available update is worth interrupting a launch for."""
+    import quill.core.updates as updates
+
+    patch_call_after(monkeypatch, lambda fn, *a, **k: fn(*a, **k))
+    release = type("R", (), {"prerelease": False, "version": "1.0.0"})()
+    monkeypatch.setattr(updates, "fetch_releases", lambda url, **_kw: [release])
+    announced: list[str] = []
+    shell = _bare_shell()
+    shell._announce = announced.append
+    shell._running_portable_build = lambda: False
+    shell._task_manager = _TaskManagerRoutingCallbacks()
+    shell.check_for_app_updates(
+        repo_slug="Community-Access/quill-radio", current_version="1.0.0", silent_no_update=True
+    )
+    assert announced == []
+
+
+def test_manual_update_check_shows_dialog_when_up_to_date(monkeypatch):
+    """A manual check (Help > Check for Updates) that finds nothing newer
+    must show a real dialog, not just a spoken announcement that's easy to
+    miss over other app noise."""
+    import quill.core.updates as updates
+
+    patch_call_after(monkeypatch, lambda fn, *a, **k: fn(*a, **k))
+    release = type("R", (), {"prerelease": False, "version": "1.0.0"})()
+    monkeypatch.setattr(updates, "fetch_releases", lambda url, **_kw: [release])
+    announced: list[str] = []
+    boxes: list[str] = []
+    shell = _bare_shell()
+    shell._announce = announced.append
+    shell._show_message_box = lambda *a, **k: boxes.append(a[0])
+    shell._running_portable_build = lambda: False
+    shell._task_manager = _TaskManagerRoutingCallbacks()
+    shell.check_for_app_updates(repo_slug="Community-Access/quill-radio", current_version="1.0.0")
+    assert "Checking for updates" in announced
+    assert len(boxes) == 1 and "up to date" in boxes[0]
+
+
+def test_silent_update_check_failure_shows_no_dialog(monkeypatch):
+    import quill.core.updates as updates
+
+    patch_call_after(monkeypatch, lambda fn, *a, **k: fn(*a, **k))
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr(updates, "fetch_releases", _boom)
+    shell = _bare_shell()
+    shell._announce = lambda _msg: None
+    shell._running_portable_build = lambda: False
+    shell._task_manager = _TaskManagerRoutingCallbacks()
+    boxes: list[str] = []
+    shell._show_message_box = lambda *a, **k: boxes.append(a[0])
+    shell.check_for_app_updates(
+        repo_slug="Community-Access/quill-radio", current_version="1.0.0", silent_no_update=True
+    )
+    assert boxes == []
+
+
+def test_manual_update_check_failure_shows_dialog(monkeypatch):
+    import quill.core.updates as updates
+
+    patch_call_after(monkeypatch, lambda fn, *a, **k: fn(*a, **k))
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr(updates, "fetch_releases", _boom)
+    shell = _bare_shell()
+    shell._announce = lambda _msg: None
+    shell._running_portable_build = lambda: False
+    shell._task_manager = _TaskManagerRoutingCallbacks()
+    boxes: list[str] = []
+    shell._show_message_box = lambda *a, **k: boxes.append(a[0])
+    shell.check_for_app_updates(repo_slug="Community-Access/quill-radio", current_version="1.0.0")
+    assert len(boxes) == 1 and "no network" in boxes[0]
+
+
+def test_app_update_check_due_when_never_checked():
+    shell = _bare_shell()
+    assert shell._app_update_check_due("") is True
+
+
+def test_app_update_check_due_false_within_interval():
+    from datetime import UTC, datetime
+
+    shell = _bare_shell()
+    recent = datetime.now(UTC).isoformat()
+    assert shell._app_update_check_due(recent) is False
+
+
+def test_app_update_check_due_true_after_interval():
+    from datetime import UTC, datetime, timedelta
+
+    shell = _bare_shell()
+    old = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+    assert shell._app_update_check_due(old) is True
+
+
+def test_app_update_check_due_true_on_unparseable_timestamp():
+    shell = _bare_shell()
+    assert shell._app_update_check_due("not-a-date") is True
+
+
+def test_open_app_document_opens_html_candidate_directly(tmp_path, monkeypatch):
+    import webbrowser
+
+    html = tmp_path / "userguide.html"
+    html.write_text("<html><body>hi</body></html>", encoding="utf-8")
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda uri: opened.append(uri) or True)
+    shell = _bare_shell()
+    shell._announce = lambda _msg: None
+    shell.open_app_document([html], title="Test Guide", cache_name="app-docs-test")
+    assert opened == [html.as_uri()]
+
+
+def test_open_app_document_renders_markdown_candidate(tmp_path, monkeypatch):
+    import webbrowser
+
+    import quill.core.paths as paths_module
+
+    md = tmp_path / "release-notes-1.0.md"
+    md.write_text("# Release Notes\n\nSomething shipped.", encoding="utf-8")
+    monkeypatch.setattr(paths_module, "app_data_dir", lambda: tmp_path / "appdata")
+    opened: list[str] = []
+    monkeypatch.setattr(webbrowser, "open", lambda uri: opened.append(uri) or True)
+    shell = _bare_shell()
+    shell._announce = lambda _msg: None
+    shell.open_app_document([md], title="Test Notes", cache_name="app-docs-test")
+    assert len(opened) == 1
+    cached = tmp_path / "appdata" / "app-docs-test" / "release-notes-1.0.html"
+    assert cached.is_file()
+    assert opened == [cached.as_uri()]
+
+
+def test_open_app_document_missing_announces_not_found(tmp_path):
+    announced: list[str] = []
+    shell = _bare_shell()
+    shell._announce = announced.append
+    shell.open_app_document([tmp_path / "nope.html"], title="Ghost Doc", cache_name="app-docs-test")
+    assert announced == ["Ghost Doc was not found in this build."]
+
+
+def test_doc_candidates_prefers_html_over_markdown():
+    shell = _bare_shell()
+    candidates = shell._doc_candidates("quill-radio", "userguide")
+    # Dev-mode candidates only (the test process is never frozen): html
+    # before md, from the sibling repo -- see _doc_candidates' docstring.
+    assert candidates[0].name == "userguide.html"
+    assert candidates[1].name == "userguide.md"

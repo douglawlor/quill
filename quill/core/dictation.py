@@ -1,20 +1,24 @@
 """Dictation control for QUILL.
 
-**What this does today, honestly:** on Windows, dictation toggles the operating
-system's built-in dictation panel (the Win+H experience) via
-``launch_windows_dictation``. QUILL does not yet capture or transcribe audio
-itself. The ``engine``/``model``/``language`` fields on :class:`DictationSettings`
-and the ``list_dictation_devices`` helper are forward-looking placeholders from
-the offline speech engine work (issue #617); the controller currently ignores
-them and always drives the OS panel. Keeping this module truthful — rather than
-pretending a local vosk/whisper recognizer is wired up — is deliberate (Speech
-wave S0).
+**What this module is, honestly:** the *legacy* Win+H bridge. On Windows it
+toggles the operating system's built-in dictation panel via
+``launch_windows_dictation``. It predates QUILL's own offline speech stack and
+does not capture or transcribe audio itself; the ``engine``/``model``/``language``
+fields on :class:`DictationSettings` are inert here.
+
+QUILL **does** now have a fully offline recognizer — see
+``quill/core/speech/dictation/`` (the Locked Dictation state machine, Ctrl+F9),
+``quill/core/speech/capture.py`` (microphone capture), and the whisper.cpp /
+Faster-Whisper / Nemotron / Parakeet providers. This Win+H shim is retained only as
+the OS-panel fallback; new work belongs on the ``core/speech`` stack, not here.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+
+from quill.core.error_codes import CodedError
 
 try:  # pragma: no cover - Windows-only runtime hook
     # `launch_windows_dictation` is set to the real Windows shell
@@ -48,8 +52,8 @@ class DictationSettings:
     device_index: int | None = None
 
 
-class DictationUnavailableError(RuntimeError):
-    pass
+class DictationUnavailableError(CodedError):
+    code = "QUILL-DICTATION-UNAVAILABLE"
 
 
 class DictationController:
@@ -91,13 +95,3 @@ class DictationController:
         if on_state_change is not None:
             on_state_change(self._state)
         return transcript
-
-
-def list_dictation_devices() -> list[str]:
-    """Return available microphone device names.
-
-    Placeholder until in-app audio capture lands with the offline speech engine
-    (#617, Speech wave S3). Today dictation uses the OS panel, which manages its
-    own device selection, so this returns an empty list.
-    """
-    return []

@@ -137,6 +137,41 @@ def expand_selection(text: str, start: int, end: int) -> tuple[int, int, str] | 
     return None
 
 
+def shrink_selection(text: str, start: int, end: int) -> tuple[int, int, str] | None:
+    """Return the next-*smaller* structural span inside the current selection.
+
+    The computed inverse of :func:`expand_selection`: it walks the same ladder
+    from the outside in and returns the first level strictly smaller than what
+    is selected now, as ``(new_start, new_end, scope_label)``. ``None`` when the
+    selection is already a single word or is empty -- there is nothing smaller
+    to go to that is still a structure.
+
+    Computed rather than remembered, and that is the point. Undoing an
+    expansion from a stack works only if you arrived by expanding: select a
+    paragraph outright and ask to shrink, and a stack has nothing to say, even
+    though "the line the cursor is on" is an obvious and useful answer. A
+    listener who cannot see the highlight has no way to tell those two
+    situations apart, so "nothing to shrink" reads as a bug rather than as a
+    boundary.
+
+    Anchored on ``start`` so repeated shrinking converges on the beginning of
+    the selection rather than wandering.
+    """
+    length = len(text)
+    start = max(0, min(start, length))
+    end = max(0, min(end, length))
+    if start > end:
+        start, end = end, start
+    if end <= start:
+        return None
+    current = end - start
+    for label, span_fn in reversed(_EXPANSION_LEVELS):
+        span_start, span_end = span_fn(text, start)  # type: ignore[operator]
+        if (span_end - span_start) < current and span_end > span_start:
+            return span_start, span_end, label
+    return None
+
+
 def selection_scope(text: str, start: int, end: int) -> str:
     """Classify the current selection by its structural scope.
 
@@ -163,3 +198,115 @@ def selection_scope(text: str, start: int, end: int) -> str:
     if "\n" in text[start:end]:
         return "lines"
     return "span"
+
+
+#: The scope names a listener should never hear, because they describe the
+#: classifier rather than the document. "Selected span, 4 words" tells nobody
+#: anything; the count already said how much.
+_UNSPOKEN_SCOPES = frozenset({"none", "span", "lines"})
+
+
+def spoken_scope(scope: str) -> str:
+    """*scope* if it is worth saying aloud, otherwise the empty string.
+
+    :func:`describe_selection` has always applied this rule to the sentence it
+    builds, and every other place that put a scope in front of a person had to
+    remember to do the same. Two did not. QUILL Lite's Say Selection read
+    "52039 characters, 9696 words, lines." -- a bare noun with no number in
+    front of it, reported exactly that way -- and QUILL's Selection Actions
+    dialog titled itself "Selection actions (lines, 180 words)", which a screen
+    reader announces on open. One function now, so the next caller cannot leak
+    the classifier either.
+    """
+    return "" if scope in _UNSPOKEN_SCOPES else scope
+
+
+def describe_selection(
+    text: str,
+    start: int,
+    end: int,
+    *,
+    prefix: str = "Selected",
+    scope: str | None = None,
+    with_line_range: bool = False,
+) -> str:
+    """The one sentence both editors say when a selection changes (bad.md L14).
+
+    Scope, then words, and the line range only when asked for -- which is F8
+    completing, the one case where the span is arbitrary and the person has no
+    other way to know how far it reached.
+
+    The two editors had two shapes for one event: QUILL said "Selected
+    paragraph, 41 words" and QUILL Lite said "Selected paragraph, 412
+    characters, 41 words", and F8 completion differed again. Neither was wrong;
+    having two was, because a person who uses both hears the same key report the
+    same thing two ways and has to learn which product they are in before they
+    can parse the answer.
+
+    **Words rather than characters** is QUILL's choice and the right one: a word
+    count is a size somebody can picture, and 412 characters is a number they
+    then have to divide. The character count survives only where it is the
+    actual subject -- Duplicate Selection, the review buffer -- and not as the
+    routine report on a selection.
+
+    *scope* may be passed by a caller that already knows what it selected (Select
+    Paragraph knows); otherwise it is classified from the text, and a scope that
+    only names the classifier is left out rather than spoken.
+    """
+    length = len(text)
+    start = max(0, min(start, length))
+    end = max(0, min(end, length))
+    if end < start:
+        start, end = end, start
+    if end == start:
+        return f"{prefix} nothing"
+    selected = text[start:end]
+    words = len(selected.split())
+    named = scope if scope is not None else selection_scope(text, start, end)
+    parts = [prefix]
+    if named and named not in _UNSPOKEN_SCOPES:
+        parts.append(f"{named},")
+    parts.append(f"{words} {'word' if words == 1 else 'words'}")
+    sentence = " ".join(parts)
+    if not with_line_range:
+        return sentence
+    first = text.count("\n", 0, start) + 1
+    last = text.count("\n", 0, end) + 1
+    if first == last:
+        return f"{sentence}, line {first}"
+    return f"{sentence}, lines {first} to {last}"
+
+
+def changed_span(before: str, after: str) -> tuple[int, int, str]:
+    """The narrowest ``(start, end, replacement)`` turning *before* into *after*.
+
+    Trims the common prefix and the common suffix, so replacing one line in a
+    document rewrites one line. Both editors had a helper that replaced the
+    **whole document** for any change at all, and on a rich surface that is not
+    merely wasteful -- it is destructive:
+
+    Writing over a selection makes the new text adopt the format at the
+    selection's start, so selecting all and writing turns every run in the
+    document into whatever position 0 was. Confirmed live on 2026-09-17
+    (``scripts/probe_rich_edits.py``): a document with one Heading 1 and two
+    body lines came back with ``all_headings()`` reporting **five** headings --
+    every line promoted. bad.md C2/N3 predicted the formatting would be lost;
+    what actually happens is that it *spreads*, which is worse, and which is
+    why the obvious check ("is my heading still there?") answers yes and misses
+    it entirely.
+
+    Returns an empty replacement over an empty span when the two are equal, so
+    a caller can tell "nothing changed" from "changed to nothing" -- the
+    distinction every no-op announcement depends on.
+    """
+    if before == after:
+        return (0, 0, "")
+    limit = min(len(before), len(after))
+    start = 0
+    while start < limit and before[start] == after[start]:
+        start += 1
+    # The suffix must not run back past the prefix in either string.
+    tail = 0
+    while tail < (limit - start) and before[len(before) - 1 - tail] == after[len(after) - 1 - tail]:
+        tail += 1
+    return (start, len(before) - tail, after[start : len(after) - tail])

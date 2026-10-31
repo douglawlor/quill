@@ -752,6 +752,11 @@ def test_wordpress_create_remote_item_with_scheduled_at_sends_future_status_and_
     monkeypatch,
 ) -> None:
     request_details: dict[str, object] = {}
+    # Use a dynamic future time so this never expires: validate_scheduled_publish_time
+    # rejects a `scheduled_at` that is not strictly after "now" (which a hardcoded date
+    # eventually becomes). date_gmt is formatted with the production strftime pattern.
+    future = (datetime.now(UTC) + timedelta(days=7)).replace(microsecond=0)
+    future_gmt = future.strftime("%Y-%m-%dT%H:%M:%S")
 
     def _urlopen(request, **_kwargs):
         request_details["body"] = request.data.decode("utf-8") if request.data else ""
@@ -761,7 +766,7 @@ def test_wordpress_create_remote_item_with_scheduled_at_sends_future_status_and_
             "title": {"rendered": "Future title"},
             "status": "future",
             "modified_gmt": "2026-06-21T18:00:00",
-            "date_gmt": "2026-07-01T15:30:00",
+            "date_gmt": future_gmt,
             "type": "post",
             "content": {"rendered": "<p>Future body</p>"},
         })
@@ -783,19 +788,19 @@ def test_wordpress_create_remote_item_with_scheduled_at_sends_future_status_and_
         title="Future title",
         document_text="<p>Future body</p>",
         authoring_surface="html",
-        scheduled_at=datetime(2026, 7, 1, 15, 30, tzinfo=UTC),
+        scheduled_at=future,
     )
 
     assert ok is True
     assert message == "Created publishing content on example.com."
     assert document is not None
     assert document.status == "future"
-    assert document.scheduled_for == "2026-07-01T15:30:00"
+    assert document.scheduled_for == future_gmt
     assert json.loads(str(request_details["body"])) == {
         "title": "Future title",
         "content": "<p>Future body</p>",
         "status": "future",
-        "date_gmt": "2026-07-01T15:30:00",
+        "date_gmt": future_gmt,
     }
 
 
@@ -803,6 +808,10 @@ def test_wordpress_update_remote_item_with_scheduled_at_sends_future_status_and_
     monkeypatch,
 ) -> None:
     request_details: dict[str, object] = {}
+    # Dynamic future time so this never expires (the scheduler rejects a
+    # non-future time) — the same pattern as the UTC-offset test below.
+    future = (datetime.now(UTC) + timedelta(days=7)).replace(second=0, microsecond=0)
+    expected_date_gmt = future.strftime("%Y-%m-%dT%H:%M:%S")
 
     def _urlopen(request, **_kwargs):
         request_details["body"] = request.data.decode("utf-8") if request.data else ""
@@ -812,7 +821,7 @@ def test_wordpress_update_remote_item_with_scheduled_at_sends_future_status_and_
             "title": {"rendered": "About page"},
             "status": "future",
             "modified_gmt": "2026-06-21T18:00:00",
-            "date_gmt": "2026-07-02T09:00:00",
+            "date_gmt": expected_date_gmt,
             "type": "page",
             "content": {"rendered": "<p>About body</p>"},
         })
@@ -835,23 +844,30 @@ def test_wordpress_update_remote_item_with_scheduled_at_sends_future_status_and_
         title="About page",
         document_text="<p>About body</p>",
         authoring_surface="html",
-        scheduled_at=datetime(2026, 7, 2, 9, 0, tzinfo=UTC),
+        scheduled_at=future,
     )
 
     assert ok is True
     assert document is not None
     assert document.status == "future"
-    assert document.scheduled_for == "2026-07-02T09:00:00"
+    assert document.scheduled_for == expected_date_gmt
     assert json.loads(str(request_details["body"])) == {
         "title": "About page",
         "content": "<p>About body</p>",
         "status": "future",
-        "date_gmt": "2026-07-02T09:00:00",
+        "date_gmt": expected_date_gmt,
     }
 
 
 def test_wordpress_schedule_converts_non_utc_offset_to_utc_date_gmt(monkeypatch) -> None:
     request_details: dict[str, object] = {}
+
+    minus_four = timezone(timedelta(hours=-4))
+    # Dynamic future time in a non-UTC zone so this never expires (the scheduler
+    # rejects a non-future time); expected date_gmt is that instant converted to UTC
+    # with the production strftime pattern.
+    future_local = (datetime.now(minus_four) + timedelta(days=7)).replace(second=0, microsecond=0)
+    future_gmt = future_local.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")
 
     def _urlopen(request, **_kwargs):
         request_details["body"] = request.data.decode("utf-8") if request.data else ""
@@ -861,7 +877,7 @@ def test_wordpress_schedule_converts_non_utc_offset_to_utc_date_gmt(monkeypatch)
             "title": {"rendered": "Future title"},
             "status": "future",
             "modified_gmt": "2026-06-21T18:00:00",
-            "date_gmt": "2026-07-01T19:30:00",
+            "date_gmt": future_gmt,
             "type": "post",
             "content": {"rendered": "<p>Future body</p>"},
         })
@@ -875,7 +891,6 @@ def test_wordpress_schedule_converts_non_utc_offset_to_utc_date_gmt(monkeypatch)
         auth_method=AUTH_METHOD_APP_PASSWORD,
         account_identifier="writer",
     )
-    minus_four = timezone(timedelta(hours=-4))
 
     ok, _message, _document = publishing.create_publishing_remote_item(
         profile,
@@ -884,11 +899,11 @@ def test_wordpress_schedule_converts_non_utc_offset_to_utc_date_gmt(monkeypatch)
         title="Future title",
         document_text="<p>Future body</p>",
         authoring_surface="html",
-        scheduled_at=datetime(2026, 7, 1, 15, 30, tzinfo=minus_four),
+        scheduled_at=future_local,
     )
 
     assert ok is True
-    assert json.loads(str(request_details["body"]))["date_gmt"] == "2026-07-01T19:30:00"
+    assert json.loads(str(request_details["body"]))["date_gmt"] == future_gmt
 
 
 def test_create_publishing_remote_item_rejects_past_scheduled_time(monkeypatch) -> None:

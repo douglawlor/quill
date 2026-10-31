@@ -10,7 +10,8 @@ import threading
 from collections.abc import Callable
 
 from quill.core.ai.spell_check import SpellCorrection, apply_corrections
-from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dialog_contract import apply_modal_ids, dialog_alive, set_accessible_name
+from quill.ui.dpi import dip, dip_size
 
 
 class AISpellCheckDialog:
@@ -45,7 +46,7 @@ class AISpellCheckDialog:
             title=f"AI Spell Check - {n} suggestion{'s' if n != 1 else ''}",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(760, 560))
+        self.dialog.SetSize(dip_size(self.dialog, 760, 560))
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -56,7 +57,7 @@ class AISpellCheckDialog:
         summary = wx.StaticText(
             self.dialog,
             label=f"AI found {n} spelling suggestion{'s' if n != 1 else ''}. "
-            "Review each one below. Accept or skip with Alt+A / Alt+S.",
+            "Review each one below and use the review buttons to accept or skip it.",
         )
         summary.Wrap(700)
         root.Add(summary, 0, wx.ALL, 8)
@@ -67,10 +68,10 @@ class AISpellCheckDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SIMPLE,
         )
         self._list.SetName("Spelling corrections")
-        self._list.InsertColumn(0, "#", width=40)
-        self._list.InsertColumn(1, "Misspelled", width=160)
-        self._list.InsertColumn(2, "Suggestion", width=160)
-        self._list.InsertColumn(3, "Context", width=280)
+        self._list.InsertColumn(0, "#", width=dip(self._list, 40))
+        self._list.InsertColumn(1, "Misspelled", width=dip(self._list, 160))
+        self._list.InsertColumn(2, "Suggestion", width=dip(self._list, 160))
+        self._list.InsertColumn(3, "Context", width=dip(self._list, 280))
         self._populate_list()
         root.Add(self._list, 1, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
@@ -98,7 +99,7 @@ class AISpellCheckDialog:
         self._accept_btn = wx.Button(self.dialog, label="&Accept (Alt+A)")
         self._accept_all_like = wx.Button(self.dialog, label="Accept A&ll Like This")
         self._skip_btn = wx.Button(self.dialog, label="&Skip (Alt+S)")
-        self._skip_all_like = wx.Button(self.dialog, label="Skip Al&l Like This")
+        self._skip_all_like = wx.Button(self.dialog, label="Skip All Like &This")
         for b in (self._accept_btn, self._accept_all_like, self._skip_btn, self._skip_all_like):
             btn1.Add(b, 0, wx.RIGHT, 6)
         root.Add(btn1, 0, wx.LEFT | wx.RIGHT | wx.BOTTOM, 8)
@@ -107,7 +108,7 @@ class AISpellCheckDialog:
         btn2 = wx.BoxSizer(wx.HORIZONTAL)
         self._accept_all_btn = wx.Button(self.dialog, label="Accept All &Remaining")
         self._reject_all_btn = wx.Button(self.dialog, label="Re&ject All")
-        self._apply_close_btn = wx.Button(self.dialog, label="App&ly and Close")
+        self._apply_close_btn = wx.Button(self.dialog, label="Apply and &Close")
         apply_modal_ids(
             self.dialog,
             affirmative_id=self._apply_close_btn.GetId(),
@@ -270,10 +271,14 @@ class AISpellCheckInteractiveDialog:
         api_key: str,
         show_modal_dialog: Callable,
         apply_to_document: Callable[[list[SpellCorrection]], None],
+        *,
+        markdown: bool = False,
     ) -> None:
         import wx
 
         self._wx = wx
+        #: A Markdown document: the model is told to leave its syntax alone.
+        self._markdown = markdown
         self._paragraphs = paragraphs
         self._connection = connection
         self._api_key = api_key
@@ -291,7 +296,7 @@ class AISpellCheckInteractiveDialog:
             title="Interactive Spell Check",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetSize(wx.Size(780, 580))
+        self.dialog.SetSize(dip_size(self.dialog, 780, 580))
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -305,6 +310,7 @@ class AISpellCheckInteractiveDialog:
         )
         root.Add(self._progress_label, 0, wx.ALL, 8)
         self._gauge = wx.Gauge(self.dialog, range=self._total)
+        set_accessible_name(self._gauge, "Spell check progress")
         root.Add(self._gauge, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 8)
 
         # Correction list
@@ -313,10 +319,10 @@ class AISpellCheckInteractiveDialog:
             style=wx.LC_REPORT | wx.LC_SINGLE_SEL | wx.BORDER_SIMPLE,
         )
         self._list.SetName("Paragraph corrections")
-        self._list.InsertColumn(0, "#", width=40)
-        self._list.InsertColumn(1, "Misspelled", width=160)
-        self._list.InsertColumn(2, "Suggestion", width=160)
-        self._list.InsertColumn(3, "Context", width=260)
+        self._list.InsertColumn(0, "#", width=dip(self._list, 40))
+        self._list.InsertColumn(1, "Misspelled", width=dip(self._list, 160))
+        self._list.InsertColumn(2, "Suggestion", width=dip(self._list, 160))
+        self._list.InsertColumn(3, "Context", width=dip(self._list, 260))
         root.Add(self._list, 1, wx.EXPAND | wx.ALL, 8)
 
         # Status
@@ -367,28 +373,45 @@ class AISpellCheckInteractiveDialog:
         para = self._paragraphs[idx]
         label = para[:60].replace("\n", " ")
         wx = self._wx
-        wx.CallAfter(
-            self._progress_label.SetLabel, f"Paragraph {idx + 1} of {self._total}: {label}..."
-        )
-        wx.CallAfter(self._gauge.SetValue, idx)
-        wx.CallAfter(self._status.SetLabel, f"Checking paragraph {idx + 1}...")
-        wx.CallAfter(self._list.DeleteAllItems)
-        wx.CallAfter(self._next_btn.Enable, False)
+        # #1353: every queued callback below touches a widget, so each one goes
+        # through a method that checks the dialog is still there first -- the
+        # user can close this dialog while a paragraph is still in flight.
+        wx.CallAfter(self._begin_paragraph_ui, idx, label)
 
         def _fetch():
             from quill.core.ai.spell_check import SpellCheckError, ai_spell_check
 
             try:
-                corrections = ai_spell_check(para, self._connection, self._api_key)
+                corrections = ai_spell_check(
+                    para, self._connection, self._api_key, markdown=self._markdown
+                )
             except SpellCheckError as exc:
-                wx.CallAfter(self._status.SetLabel, f"Error: {exc}")
+                wx.CallAfter(self._set_status_safely, f"Error: {exc}")
                 corrections = []
             wx.CallAfter(self._on_paragraph_done, idx, corrections)
 
         t = __import__("threading").Thread(target=_fetch, daemon=True)
         t.start()
 
+    def _begin_paragraph_ui(self, idx: int, label: str) -> None:
+        """Reset the dialog's controls for the paragraph now being checked (#1353)."""
+        if not dialog_alive(self.dialog):
+            return
+        self._progress_label.SetLabel(f"Paragraph {idx + 1} of {self._total}: {label}...")
+        self._gauge.SetValue(idx)
+        self._status.SetLabel(f"Checking paragraph {idx + 1}...")
+        self._list.DeleteAllItems()
+        self._next_btn.Enable(False)
+
+    def _set_status_safely(self, message: str) -> None:
+        """Set the status label only while the dialog is still alive (#1353)."""
+        if not dialog_alive(self.dialog):
+            return
+        self._status.SetLabel(message)
+
     def _on_paragraph_done(self, idx: int, corrections: list[SpellCorrection]) -> None:
+        if not dialog_alive(self.dialog):  # #1353
+            return
         self._pending_corrections = corrections
         n = len(corrections)
         if n == 0:

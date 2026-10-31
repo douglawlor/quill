@@ -5,8 +5,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SOURCE = (Path(__file__).resolve().parents[3] / "quill" / "ui" / "main_frame.py").read_text(
-    encoding="utf-8"
+# MainFrame is composed from main_frame.py plus extracted mixin modules
+# (CQ-1); wiring assertions scan the composite source.
+_UI = Path(__file__).resolve().parents[3] / "quill" / "ui"
+SOURCE = "\n".join(
+    (_UI / name).read_text(encoding="utf-8")
+    for name in (
+        "main_frame.py",
+        "main_frame_commands.py",
+        "main_frame_publishing.py",
+        # F-08 moved the crash-recovery loop into its own mixin.
+        "main_frame_crash_recovery.py",
+    )
 )
 
 
@@ -91,7 +101,7 @@ def test_show_about_quill_passes_real_about_info_instance() -> None:
     assert show_fn is not None, "show_about_quill not found"
     body = show_fn.group(0)
     assert "from quill.core.about_info import gather_about_info" in body
-    assert "about_info = gather_about_info()" in body
+    assert "gather_about_info()" in body
     assert "show_about_quill_native(" in body
 
 
@@ -121,8 +131,9 @@ def test_about_dialog_open_handler_calls_show_about_quill() -> None:
     # show_about_quill_native asserting isinstance(about_info, AboutInfo).
     # The handler wired to the Help ▸ About Quill menu must be show_about_quill
     # — the shim that gathers AboutInfo correctly — not a stale pre-#260 path.
-    menu_src = (
-        Path(__file__).resolve().parents[3] / "quill" / "ui" / "main_frame_menu.py"
+    _ui = Path(__file__).resolve().parents[3] / "quill" / "ui"
+    menu_src = (_ui / "main_frame_menu.py").read_text(encoding="utf-8") + (
+        _ui / "main_frame_menu_bindings.py"
     ).read_text(encoding="utf-8")
     assert "_id_about_quill" in menu_src
     assert "show_about_quill" in menu_src
@@ -211,10 +222,14 @@ def test_publishing_send_results_use_explicit_confirmation_formatter() -> None:
 def test_write_document_to_disk_syncs_publishing_linkage_after_save() -> None:
     # The save chokepoint persists/refreshes the durable linkage registry so
     # Compare/Update survive a close-and-reopen cycle (#publishing-linkage).
-    assert (
-        "write_document_as(document, target, plain_text_link_style=link_style)"
-        "  # type: ignore[arg-type]\n        self._sync_publishing_linkage_for_document(document)"
-        in SOURCE
+    start = SOURCE.index("def _write_document_to_disk(")
+    body = SOURCE[start : SOURCE.index("\n    def ", start + 1)]
+    assert "write_document_as(" in body
+    assert "self._sync_publishing_linkage_for_document(document)" in body
+    # The linkage sync must follow the write, so a failed write never records
+    # linkage for a file that was not written.
+    assert body.index("write_document_as(") < body.index(
+        "self._sync_publishing_linkage_for_document(document)"
     )
     assert "def _sync_publishing_linkage_for_document(self, document: Document) -> None:" in SOURCE
 

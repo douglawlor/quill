@@ -1,0 +1,331 @@
+"""Audio playback engines for the QuillVille family.
+
+A tiny engine protocol with three Windows implementations: libmpv
+(:mod:`quill.ui.audio.mpv_engine`, preferred when its DLL is present), the
+modern Windows Media engine (:mod:`quill.ui.audio.winrt_engine`,
+``Windows.Media.Playback.MediaPlayer``, which can be pointed at an output
+device), and the classic ``wx.media.MediaCtrl`` on the Windows Media Player
+backend, which cannot. :func:`create_windows_engine` picks between the two
+Windows ones, so "Windows Media" means the modern engine wherever Windows
+offers it and the classic one only where it does not (2026-09-29). The
+protocol mirrors ChapterForge's libmpv engine so any backend slots in without
+touching the player panel:
+
+- ``load`` begins async loading; ``on_loaded(length_ms)`` fires when ready.
+- ``seek`` is absolute milliseconds and never changes the pause state unless
+  ``resume`` says so.
+- ``on_finished`` fires once when playback reaches the end.
+- All calls happen on the UI thread; callbacks arrive on the UI thread.
+- Transport refusals raise ``OSError``; returning means the backend accepted
+  the request, not that an announcement alone changed the audio.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from typing import Protocol
+
+import wx
+
+_log = logging.getLogger(__name__)
+
+
+class AudioEngine(Protocol):
+    """What the player panel needs from a playback backend.
+
+    ``close`` unloads media and permits a subsequent ``load``. Backends with
+    native resources may additionally expose ``terminate`` for final shutdown.
+    """
+
+    def load(self, path: str) -> bool: ...
+
+    def close(self) -> None: ...
+
+    def play(self) -> None: ...
+
+    def pause(self) -> None: ...
+
+    def stop(self) -> None: ...
+
+    def seek(self, ms: int, *, resume: bool | None = None) -> None: ...
+
+    def position_ms(self) -> int: ...
+
+    def length_ms(self) -> int: ...
+
+    def is_playing(self) -> bool: ...
+
+    def set_volume(self, percent: int) -> None: ...
+
+    def set_rate(self, rate: float) -> None: ...
+
+
+class WxMediaEngine:
+    """The default engine: ``wx.media.MediaCtrl`` hidden inside the player panel.
+
+    The control is created on *parent* (never shown — audio only). MP3 and
+    M4B/M4A both play through the Windows Media Player backend.
+    """
+
+    def __init__(
+        self,
+        parent: wx.Window,
+        *,
+        on_loaded: Callable[[int], None],
+        on_finished: Callable[[], None],
+        on_error: Callable[[str], None],
+    ) -> None:
+        import wx.media
+
+        self._on_loaded = on_loaded
+        self._on_finished = on_finished
+        self._on_error = on_error
+        self._loaded = False
+        self._pending_path = ""
+        self._media = wx.media.MediaCtrl(parent, style=0, szBackend=wx.media.MEDIABACKEND_WMP10)
+        if not self._media.GetHandle():  # pragma: no cover - backend fallback path
+            self._media = wx.media.MediaCtrl(parent)
+        self._media.Hide()
+        parent.Bind(wx.media.EVT_MEDIA_LOADED, self._on_media_loaded, self._media)
+        parent.Bind(wx.media.EVT_MEDIA_FINISHED, self._on_media_finished, self._media)
+
+    # -- engine protocol -------------------------------------------------------
+
+    def load(self, path: str) -> bool:
+        self._loaded = False
+        self._pending_path = path
+        try:
+            if not self._media.Load(path):
+                self._on_error("This file could not be loaded for playback.")
+                return False
+        except Exception:  # noqa: BLE001 - backend quirks must not crash the studio
+            _log.exception("MediaCtrl.Load failed")
+            self._on_error("This file could not be loaded for playback.")
+            return False
+        return True
+
+    def close(self) -> None:
+        try:
+            self._media.Stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._loaded = False
+
+    def play(self) -> None:
+        if not self._loaded or not self._media.Play():
+            raise OSError("Windows Media could not start playback.")
+
+    def pause(self) -> None:
+        if not self._loaded or not self._media.Pause():
+            raise OSError("Windows Media could not pause playback.")
+
+    def stop(self) -> None:
+        if self._loaded:
+            self._media.Pause()
+            self._media.Seek(0)
+
+    def seek(self, ms: int, *, resume: bool | None = None) -> None:
+        if not self._loaded:
+            return
+        was_playing = self.is_playing()
+        self._media.Seek(max(0, int(ms)))
+        should_play = was_playing if resume is None else resume
+        if should_play:
+            self.play()
+        else:
+            self.pause()
+
+    def position_ms(self) -> int:
+        try:
+            return int(self._media.Tell()) if self._loaded else 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def length_ms(self) -> int:
+        try:
+            return int(self._media.Length()) if self._loaded else 0
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def is_playing(self) -> bool:
+        import wx.media
+
+        try:
+            return bool(self._loaded and self._media.GetState() == wx.media.MEDIASTATE_PLAYING)
+        except Exception:  # noqa: BLE001
+            return False
+
+    def set_volume(self, percent: int) -> None:
+        try:
+            self._media.SetVolume(max(0, min(100, int(percent))) / 100.0)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def set_rate(self, rate: float) -> None:
+        """Playback speed (1.0 = normal); the WMP backend preserves pitch."""
+        try:
+            self._media.SetPlaybackRate(max(0.25, min(4.0, float(rate))))
+        except Exception:  # noqa: BLE001
+            pass
+
+    # -- events ---------------------------------------------------------------
+
+    def _on_media_loaded(self, _evt: wx.Event) -> None:
+        self._loaded = True
+        self._media.Pause()
+        self._on_loaded(self.length_ms())
+
+    def _on_media_finished(self, _evt: wx.Event) -> None:
+        self._on_finished()
+
+
+# -- what an engine can do, asked uniformly ---------------------------------
+#
+# Only the modern Windows Media engine can answer these; libmpv and the classic
+# control cannot be asked. So the default when an engine does not know is
+# **yes**, and it matters which way round that goes: disabling a control that
+# would have worked takes a capability away from a listener and tells them it
+# does not exist, which is worse than leaving a rarely-unavailable one enabled.
+# A hard "no" is only ever acted on when the engine actually said no.
+
+
+def engine_can_seek(engine: object) -> bool:
+    """Whether *engine* says the thing playing can be moved through.
+
+    False only when the engine says so -- live radio, typically, which has no
+    position to seek to.
+    """
+    ask = getattr(engine, "can_seek", None)
+    if not callable(ask):
+        return True
+    try:
+        return bool(ask())
+    except Exception:  # noqa: BLE001 - unknown never removes a control
+        return True
+
+
+def engine_can_pause(engine: object) -> bool:
+    """Whether pause is real here rather than a stop wearing its name."""
+    ask = getattr(engine, "can_pause", None)
+    if not callable(ask):
+        return True
+    try:
+        return bool(ask())
+    except Exception:  # noqa: BLE001 - unknown never removes a control
+        return True
+
+
+def engine_buffering_progress(engine: object) -> float:
+    """How full the buffer is, 0.0-1.0. 1.0 when the engine cannot say.
+
+    The buffering callbacks are a boolean pair -- started, ended -- which can
+    say "buffering" for twenty seconds without saying whether anything is
+    happening. This is the number behind it, for the engines that have one.
+    """
+    ask = getattr(engine, "buffering_progress", None)
+    if not callable(ask):
+        return 1.0
+    try:
+        return max(0.0, min(1.0, float(ask())))
+    except Exception:  # noqa: BLE001 - unknown reads as ready
+        return 1.0
+
+
+def windows_engine_routes_devices() -> bool:
+    """Whether the Windows Media engine on this machine can choose a sound card
+    (the modern engine can; the classic wx.media one cannot)."""
+    from quill.ui.audio.winrt_engine import winrt_media_available
+
+    return winrt_media_available()
+
+
+def create_windows_engine(
+    parent: wx.Window,
+    *,
+    on_loaded: Callable[[int], None],
+    on_finished: Callable[[], None],
+    on_error: Callable[[str], None],
+    audio_device: str = "",
+    on_buffering: Callable[[bool], None] | None = None,
+) -> AudioEngine:
+    """The Windows Media engine: modern (routes to *audio_device*, reports
+    buffering) when Windows offers it, else the classic wx.media control, which
+    ignores both. Never raises: the classic control is the floor."""
+    if windows_engine_routes_devices():
+        try:
+            from quill.ui.audio.winrt_engine import WinRtMediaEngine
+
+            return WinRtMediaEngine(
+                parent,
+                on_loaded=on_loaded,
+                on_finished=on_finished,
+                on_error=on_error,
+                audio_device=audio_device,
+                on_buffering=on_buffering,
+            )
+        except Exception:  # noqa: BLE001 - the classic control is the floor
+            _log.exception("Windows Media engine unavailable; using wx.media")
+    return WxMediaEngine(parent, on_loaded=on_loaded, on_finished=on_finished, on_error=on_error)
+
+
+def preferred_backend() -> str:
+    """``"mpv"`` when a libmpv DLL is present, else ``"wx"`` (the default)."""
+    from quill.ui.audio.mpv_engine import find_libmpv
+
+    try:
+        return "mpv" if find_libmpv() is not None else "wx"
+    except Exception:  # noqa: BLE001 - discovery must never block playback
+        return "wx"
+
+
+def create_engine(
+    parent: wx.Window,
+    *,
+    on_loaded: Callable[[int], None],
+    on_finished: Callable[[], None],
+    on_error: Callable[[str], None],
+    audio_device: str = "",
+) -> AudioEngine | None:
+    """The best available engine for this machine, or None with the error spoken.
+
+    libmpv (gapless, exact seeking, wide format coverage) is preferred when its
+    DLL is installed — the on-demand download, a ``QUILL_LIBMPV`` override, or
+    a copy beside the executable. Any mpv failure falls back to the Windows
+    Media engine (:func:`create_windows_engine`: modern where Windows offers
+    it, classic otherwise) so a broken DLL can never take playback away.
+
+    *audio_device* is an output device from
+    :mod:`quill.ui.audio.output_routing` (``""`` = system default). Both
+    engines that can honour it do: libmpv through ``audio-device``, the
+    modern Windows Media engine through its own device property, on the same
+    ``wasapi/{guid}`` names -- so a device chosen in one QuillVille app means
+    the same thing in every other. Only the classic wx.media control ignores
+    it, because it has no device API at all; there the app's route to a
+    device is Windows' own per-app setting (:mod:`quill.ui.media.output_device`).
+    """
+    if preferred_backend() == "mpv":
+        try:
+            from quill.ui.audio.mpv_engine import MpvAudioEngine
+
+            return MpvAudioEngine(
+                parent,
+                on_loaded=on_loaded,
+                on_finished=on_finished,
+                on_error=on_error,
+                audio_device=audio_device,
+            )
+        except Exception:  # noqa: BLE001 - fall back to the zero-dependency backend
+            _log.exception("libmpv found but unusable; falling back to wx.media")
+    try:
+        return create_windows_engine(
+            parent,
+            on_loaded=on_loaded,
+            on_finished=on_finished,
+            on_error=on_error,
+            audio_device=audio_device,
+        )
+    except Exception:  # noqa: BLE001 - no media backend on this machine
+        _log.exception("No audio playback backend available")
+        on_error("Audio playback is not available on this computer.")
+        return None

@@ -1,0 +1,569 @@
+"""libmpv playback engine for internet radio -- the output-device path (#1076).
+
+``RadioPlayerController`` plays through ``WxMediaEngine`` (wx.media / WMP) by
+default, and that backend has no audio-output-device API at all -- it always
+plays to the system default device. This module is the opt-in alternative
+that makes "route the radio to my second sound card" possible: libmpv
+natively supports ``audio-device``, and it is already a first-class optional
+component of the product (the Audio Studio / podcast engine, the Offline
+Edition bundles it under ``{app}/tools/mpv``).
+
+This is the "separately-scoped follow-up" the controller's own docstring
+called for -- **not** a reuse of ``MpvAudioEngine``, whose ``_on_poll`` only
+flips its "loaded" flag once ``duration`` reports a positive value, which a
+live stream never does. Radio needs its own readiness logic:
+
+- **Loaded** = the playback core actually started outputting audio
+  (``core-idle`` goes false). No duration, no seek bar -- a live stream has
+  neither.
+- **Error** = mpv gave up and returned to idle (``idle-active`` goes true
+  before the stream ever started); mpv's own ``network-timeout`` bounds the
+  connect attempt so a dead URL fails in seconds, like the WMP backend does.
+- **Finished** = ``eof-reached`` (with ``keep-open``) or a fall back to idle
+  after playing -- for a live stream both mean the connection dropped, which
+  is exactly what the controller's ``on_finished`` already expects.
+
+The poll-tick decision is a pure function (:func:`next_poll_action`) so the
+state machine is unit-testable without libmpv or a network.
+
+Same contract as the other engines: all calls on the UI thread, callbacks on
+the UI thread via a ``wx.Timer`` poll -- no mpv event thread ever touches
+wx. Unlike ``MpvAudioEngine.close`` (which destroys the handle), ``close``
+here is a soft stop and the handle stays reusable, because the radio
+controller stop/play cycles one engine for the process's lifetime; the
+handle is destroyed when the parent window is.
+
+wx required (UI layer). No new network surface: the engine plays the same
+station/relay URL the wx.media engine would (already inventoried); device
+enumeration is local.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+
+import wx
+
+from quill.core.radio.mpv_devices import (  # noqa: F401 - re-exported for callers
+    SYSTEM_DEFAULT_DEVICE_LABEL,
+    output_device_choices,
+    parse_audio_device_list,
+)
+from quill.ui.audio.mpv_engine import _MpvClient, find_libmpv
+from quill.ui.radio.mpv_video_mixin import VideoOutputMixin
+
+_log = logging.getLogger(__name__)
+
+#: mpv properties to consult for the now-playing title, most authoritative
+#: first. ``media-title`` is mpv's headline title, but some streams -- HLS, and
+#: a few ICY hosts -- leave it as the URL while still exposing the current track
+#: in the parsed ``metadata`` map (``icy-title`` for ICY, ``title`` for HLS
+#: timed metadata / ID3), so those are checked too (#1215).
+_MPV_TITLE_PROPERTIES = ("media-title", "metadata/icy-title", "metadata/title")
+
+
+def _pick_mpv_title(get_str: Callable[[str], str | None], current_url: str) -> str:
+    """First non-empty mpv title property that isn't just the stream URL.
+
+    Pure and wx-free so the property-preference order is unit-testable without
+    a live libmpv handle.
+    """
+    for prop in _MPV_TITLE_PROPERTIES:
+        value = (get_str(prop) or "").strip()
+        if value and value != current_url:
+            return value
+    return ""
+
+
+_POLL_MS = 200
+#: mpv's own bound on a stalled network connect/read; a dead URL errors out
+#: in seconds instead of hanging "connecting..." forever.
+#:
+#: Raised from 15 to 30 for the HLS case (quill-radio, John 2026-08-13). An
+#: iHeart HLS media playlist advertises ``EXT-X-TARGETDURATION:10`` and only
+#: advances every ten seconds, so a segment fetch that waits out one normal
+#: refresh plus ordinary jitter was brushing against a fifteen-second ceiling
+#: and reading as a dead stream. Thirty still errors a genuinely dead URL out
+#: quickly enough to be spoken while somebody is still listening for it.
+_NETWORK_TIMEOUT_SECONDS = 30
+#: ffmpeg-level reconnect, passed through to the demuxer as `stream-lavf-o`.
+#:
+#: Without these a **single** failed read is terminal: mpv reaches EOF, the poll
+#: reports ACTION_FINISHED, and a live station stops. That is the exact shape of
+#: the reported KFI fault -- iHeart serves those stations as HLS with a
+#: three-segment (30-second) window behind a per-listener redirect and a
+#: five-second token, so one missed playlist refresh drains the buffer and the
+#: audio simply runs out twenty to thirty seconds later.
+#:
+#: ``reconnect_streamed`` is the one that matters here: without it ffmpeg
+#: refuses to reconnect a non-seekable stream, which is every live station.
+#: ``reconnect_delay_max`` bounds the retry backoff so a genuinely dead server
+#: still fails rather than retrying forever behind a silent player -- the
+#: controller's own bounded reconnect (``live_reconnect.py``) is the layer that
+#: then speaks.
+_STREAM_LAVF_OPTIONS = (
+    "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=30"
+)
+#: The live-radio DVR buffer's size and home are decided in
+#: ``quill.core.radio.timeshift`` (on disk since 2026-10-15, a listener-chosen
+#: length, capped in bytes); this engine only applies the plan.
+#: Volume Boost headroom: mpv can amplify past 100 (with soft-clipping
+#: protection well above this); the boost feature uses up to 150.
+_VOLUME_MAX = "150"
+
+#: What a poll tick should do next; returned by :func:`next_poll_action`.
+ACTION_NONE = "none"
+ACTION_LOADED = "loaded"
+ACTION_ERROR = "error"
+ACTION_FINISHED = "finished"
+
+
+def next_poll_action(
+    *,
+    loaded: bool,
+    idle_active: bool | None,
+    core_idle: bool | None,
+    eof_reached: bool | None,
+) -> str:
+    """The live-stream poll state machine (pure, unit-tested).
+
+    Before *loaded*: a return to mpv's idle state means the load failed
+    (mpv exhausted its network timeout or rejected the URL); the core
+    leaving ``core-idle`` means audio is actually being output -- the
+    stream is ready. After *loaded*: ``eof-reached`` or a fall back to
+    idle both mean a live stream's connection dropped.
+
+    ``None`` property reads (a query that failed) never drive a transition.
+    """
+    if not loaded:
+        if idle_active is True:
+            return ACTION_ERROR
+        if core_idle is False:
+            return ACTION_LOADED
+        return ACTION_NONE
+    if eof_reached is True or idle_active is True:
+        return ACTION_FINISHED
+    return ACTION_NONE
+
+
+def list_audio_devices() -> list[tuple[str, str]]:
+    """Enumerate output devices via a short-lived libmpv handle.
+
+    ``[]`` when libmpv is not installed or enumeration fails -- callers
+    (the Preferences dropdown) then show only "System default". Local
+    only; never touches the network.
+    """
+    dll_path = find_libmpv()
+    if dll_path is None:
+        return []
+    try:
+        client = _MpvClient(dll_path)
+    except Exception:  # noqa: BLE001 - a broken DLL must not break Preferences
+        _log.exception("libmpv found but unusable for device enumeration")
+        return []
+    try:
+        raw = client.get_str("audio-device-list")
+    except Exception:  # noqa: BLE001
+        _log.exception("audio-device-list query failed")
+        return []
+    finally:
+        try:
+            client.close()
+        except Exception:  # noqa: BLE001
+            pass
+    return parse_audio_device_list(raw or "[]")
+
+
+def mpv_output_device_available() -> bool:
+    """True when the opt-in device-selection path can work on this machine."""
+    try:
+        return find_libmpv() is not None
+    except Exception:  # noqa: BLE001 - discovery must never block playback
+        return False
+
+
+class MpvRadioEngine(VideoOutputMixin):
+    """The libmpv radio engine: live-stream readiness + ``audio-device``.
+
+    Satisfies the parts of the ``AudioEngine`` protocol the radio controller
+    uses (load/close/play/pause/is_playing/set_volume plus the loaded/
+    finished/error callbacks); position/length/seek are best-effort no-ops a
+    live stream has no use for.
+    """
+
+    def __init__(
+        self,
+        parent: wx.Window,
+        *,
+        on_loaded: Callable[[int], None],
+        on_finished: Callable[[], None],
+        on_error: Callable[[str], None],
+        audio_device: str = "",
+        on_buffering: Callable[[bool], None] | None = None,
+        timeshift_minutes: int | None = None,
+    ) -> None:
+        dll_path = find_libmpv()
+        if dll_path is None:
+            raise OSError("libmpv is not installed")
+        self._mpv = _MpvClient(dll_path)
+        self._mpv.set_str("network-timeout", str(_NETWORK_TIMEOUT_SECONDS))
+        # Self-heal a transient read failure instead of ending the stream.
+        self._mpv.set_str("stream-lavf-o", _STREAM_LAVF_OPTIONS)
+        # Identify as Quill Radio (not the default "libmpv") in station logs
+        # (quill-radio #6).
+        from quill.core import http_client
+
+        self._mpv.set_str("user-agent", http_client.user_agent())
+        # The DVR buffer: a seekable demuxer cache large enough to pause a
+        # live show or rewind it (see seek_relative / jump_to_live), on disk
+        # when the listener's time-shift length asks for it.
+        from quill.core.radio.timeshift import TimeshiftSession
+
+        self._timeshift = TimeshiftSession(self._mpv.set_str)
+        self._timeshift.configure(timeshift_minutes)
+        self._mpv.set_str("volume-max", _VOLUME_MAX)
+        self._on_loaded = on_loaded
+        self._on_finished = on_finished
+        self._on_error = on_error
+        #: Fired (UI thread) when a playing stream stalls and mpv pauses
+        #: itself to rebuffer -- the host announces it instead of dead air.
+        self._on_buffering = on_buffering
+        self._loaded = False
+        self._finish_fired = False
+        self._buffering = False
+        self._volume = 100
+        self._current_url = ""
+        #: Whether what is loaded is a *finished* recording rather than a live
+        #: broadcast -- a YouTube video that has ended, for instance. It is set
+        #: by the controller after the source resolves, because that is the
+        #: first moment anyone knows: a YouTube link looks identical either way
+        #: until yt-dlp answers. See :meth:`set_bounded`.
+        self._bounded = False
+        self.set_audio_device(audio_device)
+        self._parent = parent
+        self._parent_id = parent.GetId()
+        self._timer = wx.Timer(parent)
+        parent.Bind(wx.EVT_TIMER, self._on_poll, self._timer)
+        parent.Bind(wx.EVT_WINDOW_DESTROY, self._on_parent_destroyed)
+
+    # -- device -----------------------------------------------------------------
+
+    def set_audio_device(self, name: str) -> None:
+        """Route output to mpv device *name* ("" = system default).
+
+        Runtime-settable: mpv switches a playing stream to the new device
+        without a reload.
+        """
+        status = self._mpv.set_str("audio-device", name.strip() or "auto")
+        if status < 0:  # a refused name; mpv keeps the previous device
+            _log.warning("mpv refused audio-device %r (status %s)", name, status)
+
+    # -- sound ------------------------------------------------------------------
+
+    def set_filter_graph(self, graph: str) -> None:
+        """Apply an ffmpeg filter graph (Sound Enhancements) natively via
+        mpv's ``af`` -- no localhost relay, no second ffmpeg process, and it
+        takes effect live on a playing stream without a reconnect. "" clears
+        all filtering.
+        """
+        self._mpv.set_str("af", f"lavfi=[{graph}]" if graph else "")
+
+    # -- live DVR (pause / rewind within the demuxer cache) ----------------------
+
+    def configure_timeshift(self, minutes: int | None) -> None:
+        """Apply a new time-shift length; it takes effect at the next load."""
+        self._timeshift.configure(minutes)
+
+    def dump_recent_audio(self, seconds: float, target: str) -> bool:
+        """Write the last *seconds* of what is playing to *target* from the cache.
+
+        What song recognition listens to. Read from the buffer that is already
+        playing -- never from a new connection, which on many stations would
+        start with a pre-roll advert instead of the song (xradio2.md 6.1).
+        False when there is nothing to dump or mpv refused.
+        """
+        if not self._loaded:
+            return False
+        position = self._mpv.get_double("time-pos")
+        if position is None:
+            return False
+        start = max(0.0, position - max(1.0, seconds))
+        try:
+            self._mpv.command("dump-cache", f"{start:.3f}", f"{position:.3f}", target)
+        except Exception:  # noqa: BLE001 - a failed dump is "no sample", never a crash
+            _log.exception("mpv dump-cache failed")
+            return False
+        return True
+
+    def behind_live_seconds(self) -> float | None:
+        """How far behind the live edge playback currently is, or None when
+        unknown (not loaded, or the stream exposes no usable timestamps)."""
+        if not self._loaded:
+            return None
+        cache_end = self._mpv.get_double("demuxer-cache-time")
+        position = self._mpv.get_double("time-pos")
+        if cache_end is None or position is None:
+            return None
+        return max(0.0, cache_end - position)
+
+    def seek_relative(self, seconds: float) -> bool:
+        """Jump within the buffered live window (negative = rewind). mpv
+        clamps to what the cache still holds. False when not loaded."""
+        if not self._loaded:
+            return False
+        try:
+            self._mpv.command("seek", f"{seconds:.3f}", "relative")
+        except Exception:  # noqa: BLE001 - a failed seek must not crash playback
+            _log.exception("mpv relative seek failed")
+            return False
+        return True
+
+    def jump_to_live(self) -> bool:
+        """Return to the live edge of the stream. False when not possible
+        (the caller should reconnect instead -- always live)."""
+        if not self._loaded:
+            return False
+        cache_end = self._mpv.get_double("demuxer-cache-time")
+        if cache_end is None:
+            return False
+        try:
+            self._mpv.command("seek", f"{max(0.0, cache_end - 1.0):.3f}", "absolute")
+        except Exception:  # noqa: BLE001
+            _log.exception("mpv jump-to-live seek failed")
+            return False
+        return True
+
+    # -- now playing --------------------------------------------------------------
+
+    def now_playing_title(self) -> str:
+        """The stream's own ICY/HLS title from mpv -- the engine-native fallback
+        when the out-of-band ICY side connection gets nothing (some hosts reject
+        it; HLS has no ICY at all).
+
+        Tries ``media-title`` first, then mpv's parsed ``metadata`` map
+        (``icy-title`` / ``title``): some stations -- notably HLS, and a few ICY
+        hosts that another player still shows a song for -- populate the metadata
+        map while ``media-title`` stays the URL, so reading only ``media-title``
+        missed them (#1215). "" when mpv only knows the URL."""
+        if not self._loaded:
+            return ""
+        return _pick_mpv_title(self._mpv.get_str, self._current_url)
+
+    # -- engine protocol ---------------------------------------------------------
+
+    def load(self, path: str) -> bool:
+        self._loaded = False
+        self._finish_fired = False
+        self._buffering = False
+        self._current_url = path
+        # Every load starts live-shaped. The caller re-declares a bounded
+        # source for this load; without the reset, tuning to an ordinary
+        # station after a YouTube video would leave the station claiming a
+        # timeline it does not have.
+        self._bounded = False
+        try:
+            # Live radio starts playing as soon as it can -- no pause-then-
+            # play handshake (that is the audiobook engine's shape). Volume
+            # is applied before the URL so the first audible sample is
+            # already at the user's level.
+            self._mpv.set_str("volume", str(self._volume))
+            # mpv's speed is a client-wide setting, so a video left at 2x
+            # would otherwise carry that speed into the next live station.
+            self._mpv.set_str("speed", "1.00")
+            self._mpv.set_str("pause", "no")
+            # Per-host Referer (ccMixter answers 403 without one); empty
+            # clears it so one station's header never leaks onto the next.
+            from quill.core.radio.stream_headers import referrer_for
+
+            self._mpv.set_str("referrer", referrer_for(path))
+            # And the same rule for the external audio track. Showing the
+            # picture for a YouTube video sets ``audio-files`` to that video's
+            # separate audio stream (YouTube serves the two apart) -- and
+            # ``audio-files`` is a client-wide OPTION, not a property of the
+            # loaded file, so it survived every later load. mpv then attached
+            # the previous video's audio to the new one and selected it, which
+            # is why playing a second saved video played the first one's sound
+            # ("I added a second video and it always seems to play the one
+            # played before it", 2026-08-23) -- and why, hours later when
+            # YouTube's addresses expire, it would have played nothing at all.
+            # Cleared here rather than when the picture is hidden: hiding the
+            # picture must not silence a video whose audio IS the external
+            # track. Same reasoning, and same line, as the referrer above.
+            self._mpv.set_str("audio-files", "")
+            # The time-shift folder is (re)made before every load: another
+            # copy's start-up sweep may have removed it while it sat empty.
+            self._timeshift.prepare()
+            self._mpv.command("loadfile", path, "replace")
+        except Exception:  # noqa: BLE001 - a bad URL must not crash the app
+            _log.exception("mpv loadfile failed")
+            self._on_error("That stream could not be opened.")
+            return False
+        self._timer.Start(_POLL_MS)
+        return True
+
+    def close(self) -> None:
+        """Soft stop: back to idle, handle kept for the next ``load``."""
+        try:
+            self._timer.Stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._loaded = False
+        try:
+            self._mpv.command("stop")
+        except Exception:  # noqa: BLE001 - never block a stop
+            _log.exception("mpv stop failed")
+
+    def terminate(self) -> None:
+        """Hard teardown: stop and destroy libmpv (idempotent).
+
+        ``close`` is a deliberate soft stop that keeps the libmpv handle for the
+        next ``load``. On the real exit path that is not enough -- if the
+        window-destroy event is delayed, missed, or the frame is never destroyed
+        (a vetoed/minimize path), libmpv keeps the audio playing after the app is
+        gone (#1195). This releases the instance directly so shutdown is
+        deterministic; ``_MpvClient.close`` nulls its handle, so calling this
+        more than once is safe.
+        """
+        try:
+            self._timer.Stop()
+        except Exception:  # noqa: BLE001
+            pass
+        self._loaded = False
+        try:
+            self._mpv.close()
+        except Exception:  # noqa: BLE001 - never block app close
+            _log.exception("mpv terminate failed")
+        # With mpv gone nothing holds the buffer file, so it can go too.
+        self._timeshift.close()
+
+    def play(self) -> None:
+        if self._loaded:
+            self._mpv.set_str("pause", "no")
+
+    def pause(self) -> None:
+        if self._loaded:
+            self._mpv.set_str("pause", "yes")
+
+    def stop(self) -> None:
+        self.close()
+
+    # -- bounded sources (a finished video, not a broadcast) --------------------
+
+    def set_bounded(self, bounded: bool) -> None:
+        """Declare whether the loaded source has a fixed length.
+
+        This is the whole of the "YouTube can seek now" change, and it is a
+        setter rather than a second engine class for one reason: *when* the
+        answer is known. The engine has to be chosen before playback starts,
+        but whether a YouTube link is a finished video or a live broadcast is
+        only known after yt-dlp resolves it -- so the engine learns what it is
+        holding a moment after it is built, instead of the play path being
+        restructured to decide later.
+
+        Live remains the default and remains untouched: every call below
+        returns to its old no-op behaviour whenever this is False, which is
+        what an ordinary radio station always is.
+        """
+        self._bounded = bool(bounded)
+
+    def is_bounded(self) -> bool:
+        """Whether the loaded source has a timeline to seek along."""
+        return self._bounded and self._loaded
+
+    def seek(self, ms: int, *, resume: bool | None = None) -> None:
+        """Jump to an absolute position. A live stream has no timeline, so
+        for a broadcast this stays the no-op it has always been."""
+        if not self._loaded or not self._bounded:
+            return
+        was_playing = self.is_playing()
+        try:
+            self._mpv.command("seek", f"{max(0, int(ms)) / 1000.0:.3f}", "absolute+exact")
+        except Exception:  # noqa: BLE001 - a failed seek must not crash playback
+            _log.exception("mpv absolute seek failed")
+            return
+        should_play = was_playing if resume is None else resume
+        self._mpv.set_str("pause", "no" if should_play else "yes")
+
+    def position_ms(self) -> int:
+        if not self._loaded:
+            return 0
+        value = self._mpv.get_double("time-pos")
+        return int(value * 1000) if value is not None and value > 0 else 0
+
+    def length_ms(self) -> int:
+        """The source's length, or 0 for a live stream (which has none).
+
+        Read from mpv rather than from the resolver's metadata so the number
+        describes what is actually loaded and playing.
+        """
+        if not self._loaded or not self._bounded:
+            return 0
+        value = self._mpv.get_double("duration")
+        return int(value * 1000) if value is not None and value > 0 else 0
+
+    def is_playing(self) -> bool:
+        if not self._loaded:
+            return False
+        return self._mpv.get_flag("pause") is False
+
+    def set_volume(self, percent: int) -> None:
+        # Up to 150, not 100: Volume Boost amplifies quiet streams past
+        # unity (volume-max=150 was set at init; mpv soft-clips safely).
+        self._volume = max(0, min(150, int(percent)))
+        self._mpv.set_str("volume", str(self._volume))
+
+    def set_rate(self, rate: float) -> None:
+        """Playback speed, for a finished video. Live radio plays at
+        broadcast speed, so this stays a no-op for a broadcast."""
+        if not self._bounded:
+            return
+        self._mpv.set_str("speed", f"{max(0.25, min(4.0, float(rate))):.2f}")
+
+    # -- polling -----------------------------------------------------------------
+
+    def _on_poll(self, _evt: wx.TimerEvent) -> None:
+        try:
+            action = next_poll_action(
+                loaded=self._loaded,
+                idle_active=self._mpv.get_flag("idle-active"),
+                core_idle=self._mpv.get_flag("core-idle"),
+                eof_reached=self._mpv.get_flag("eof-reached"),
+            )
+            if action == ACTION_LOADED:
+                self._loaded = True
+                self._on_loaded(0)
+            elif action == ACTION_ERROR:
+                self._timer.Stop()
+                self._on_error("That stream could not be opened.")
+            elif action == ACTION_FINISHED and not self._finish_fired:
+                self._finish_fired = True
+                self._timer.Stop()
+                self._on_finished()
+            elif action == ACTION_NONE and self._loaded:
+                # Stall detection: mpv pauses itself to rebuffer when the
+                # network hiccups; say so once per stall instead of dead air.
+                stalled = self._mpv.get_flag("paused-for-cache") is True
+                # Both edges, not just the leading one. The start of a stall is
+                # what gets announced; the *end* is what lets the playback state
+                # stop claiming a stalled stream is playing, and reporting only
+                # the start left it stuck in BUFFERING until the next real
+                # transition.
+                if stalled is not self._buffering and self._on_buffering is not None:
+                    self._on_buffering(stalled)
+                self._buffering = stalled
+        except Exception:  # noqa: BLE001 - polling must never take the app down
+            _log.exception("mpv radio poll failed")
+            self._timer.Stop()
+
+    def _on_parent_destroyed(self, evt: wx.WindowDestroyEvent) -> None:
+        evt.Skip()
+        # EVT_WINDOW_DESTROY fires for the frame *and every child* window, so a
+        # child's destruction must not tear down libmpv early (#1195). Only act
+        # when the frame we bound to is the one being destroyed. terminate() is
+        # idempotent, so this is safe even if shutdown() already ran.
+        from quill.ui.surface_lifetime import destroy_event_matches
+
+        if not destroy_event_matches(evt, self._parent, self._parent_id):
+            return
+        self.terminate()

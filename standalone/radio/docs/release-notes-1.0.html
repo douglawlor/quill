@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Quill Radio 1.0</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="quill-radio-10">Quill Radio 1.0</h1>
+<p>Welcome to Quill Radio, the internet radio from QUILL in a window of
+its own. It opens on your favorites, plays with one key, and tells you
+what it is doing as it goes.</p>
+<p>Quill Radio has its own menu bar, tray icon and app icon, and it goes
+further than the radio inside QUILL ever did. The two share the same
+radio and the same saved favorites and settings, so anything new arrives
+in both at once.</p>
+<p>These notes cover 1.0 and the updates up to 1.1.0, newest first. The
+more reliable recordings that were once promised here came in Quill
+Radio 2.0, which has its own notes.</p>
+<h2 id="the-updates-after-10">The updates after 1.0</h2>
+<h3 id="whats-new-in-110">What’s new in 1.1.0</h3>
+<h4 id="nearly-every-station-now-plays">Nearly every station now
+plays</h4>
+<p>Quill Radio 1.1.0 comes with a second, newer player that many media
+players use. Quill Radio uses it for you, so there is nothing to set up.
+With it, Quill Radio plays nearly every kind of station you will meet,
+including the Ogg, Opus and streaming formats that Windows Media cannot
+play. Many community, independent and international stations that used
+to be “found it, but it will not play” now just play.</p>
+<p>The older Windows Media player is still there. In Preferences
+(Ctrl+comma), set Playback engine to “Windows Media (classic)” and Quill
+Radio plays exactly as it did before. If either player cannot open a
+station, Quill Radio quietly tries the other one before telling you
+about a problem.</p>
+<h4 id="pause-live-radio-and-rewind-it">Pause live radio, and rewind
+it</h4>
+<p>Quill Radio now keeps the last part of a live station, about 45
+minutes for most. Pause for the doorbell and carry on where you left
+off. Missed a sentence? <strong>Rewind 30 Seconds</strong>
+(Ctrl+Shift+Left). Catch up with <strong>Forward 30 Seconds</strong>
+(Ctrl+Shift+Right), or go straight to <strong>Back to Live</strong>
+(Ctrl+Shift+L). Every move tells you how far behind live you are.</p>
+<h4 id="better-sound">Better sound</h4>
+<ul>
+<li><strong>A second sound card for the radio.</strong> Preferences has
+<strong>Radio output device</strong>. Send the radio to a USB headset
+and keep your screen reader on the main speakers. If you unplug the
+headset, your choice is remembered, and if the device cannot be used,
+the radio plays through the default one and tells you.</li>
+<li><strong>Volume Boost</strong> (Ctrl+Shift+B) makes a quiet station
+up to 50 percent louder than full volume.</li>
+<li><strong>Combine channels into mono</strong>, in Sound Enhancements,
+helps if you hear with one ear or use one earbud, so a voice on the
+other side is never lost.</li>
+<li><strong>Night mode</strong> lifts the quiet parts so you can listen
+late without reaching for the volume. There are two new presets,
+<strong>Small Speakers</strong> and <strong>Late Night</strong>.</li>
+<li>With the new player, every change in Sound Enhancements takes effect
+straight away, mid-song.</li>
+</ul>
+<h4 id="hearing-what-is-playing">Hearing what is playing</h4>
+<ul>
+<li><strong>What’s Playing</strong> (Ctrl+T) has an answer on far more
+stations.</li>
+<li><strong>It says it the way you would.</strong> Some stations send a
+jumble of codes instead of a title. Now Quill Radio finds the title and
+artist in it and says “Now playing: YOUR SONG by Elton John.” In
+Preferences, <strong>What’s Playing announcement</strong> lets you
+choose the wording, for example the artist first. Leave it blank for the
+usual wording.</li>
+<li><strong>“Buffering…” instead of silence.</strong> When the internet
+hiccups, Quill Radio tells you what is happening while it waits.</li>
+</ul>
+<h4 id="finding-stations-that-would-not-play">Finding stations that
+would not play</h4>
+<ul>
+<li><strong>Stations that used to fail now fix themselves.</strong> It
+started with Magic 104.1 in Oklahoma City: listed in the directory, but
+nothing played, because the real stream was hidden behind a player on
+the station’s website. Now, when a station will not play, Quill Radio
+looks for the real stream itself, including on the station’s own website
+if you leave that on in Preferences. If it finds one, it plays it and
+remembers it. If it finds several, it sends you to Find Streams to
+choose.</li>
+<li><strong>Find Streams reaches stations behind a Play button.</strong>
+Thousands of stations put their “Listen Live” on a player whose stream
+is not written on the page. Find Streams now recognises that player and
+finds the real stream, offering both versions when a station has two. It
+never hands you a wrong one.</li>
+<li><strong>The whole dial, not just the first 50.</strong> Browse
+Stations shows up to 200 results at once, most listened first, and
+<strong>More Stations</strong> loads the next page with your cursor on
+the first new one.</li>
+</ul>
+<h4 id="smaller-things">Smaller things</h4>
+<ul>
+<li><strong>Alt+F4 can tuck the radio away.</strong> A new Preferences
+checkbox, <strong>Alt+F4 minimizes to the system tray</strong>, keeps
+the music playing in the tray. It is off at first.</li>
+<li><strong>Record the station exactly as sent.</strong> Recording
+Settings has a new format, <strong>Raw stream</strong>, which saves
+exactly what the station sent with nothing changed. It is the best
+starting point if you edit your own recordings. This came straight from
+a listener’s request.</li>
+<li><strong>Volume keys work in Browse Stations</strong>, from anywhere
+in the window, and say the new level.</li>
+</ul>
+<h3 id="whats-new-in-102">What’s new in 1.0.2</h3>
+<ul>
+<li><strong>Volume keys work</strong> in the Favorites list, where you
+land when the app opens.</li>
+<li><strong>Volume stays where you put it.</strong> A favorite always
+comes back at the volume you left it.</li>
+<li><strong>A real three-band equalizer.</strong> Sound Enhancements has
+Bass, Mid and Treble sliders, each with a proper name your screen reader
+says. The old presets, Flat, Bass Boost, Voice Clarity and Podcast, set
+all three at once.</li>
+<li><strong>Sound Enhancements remembered for each station</strong>, so
+a jazz station and a talk station can sound different. <strong>Reset to
+Default</strong> puts one station back, and Preferences can reset them
+all.</li>
+<li><strong>Exit or Minimize to Tray, your choice.</strong> Closing
+while something plays asks what you want, with a “Don’t ask me again”
+box. Preferences has a matching <strong>When closing the window</strong>
+setting.</li>
+<li><strong>Check for Updates shows a real window</strong> when you are
+up to date, and Quill Radio checks once a day when it starts, silently
+unless there is something new.</li>
+<li><strong>Quieter by default.</strong> Windows no longer say “Entered”
+and “Exited” unless you turn on <strong>Announce dialog
+transitions</strong> in Preferences.</li>
+<li><strong>The documents are on the Help menu.</strong> User Guide,
+Release Notes and Product Requirements open in your browser.</li>
+<li><strong>Sound Enhancements</strong> arrived, with an equalizer and
+<strong>Even Out Volume</strong>, which lifts quiet parts and tames loud
+ones. Recording Settings can apply them to recordings too.</li>
+<li><strong>SomaFM joins the search</strong>, in the same results.</li>
+<li><strong>Preferences</strong> (Ctrl+comma) is new, starting with
+Resume Last Station on Launch and the daily update check.</li>
+<li><strong>OK means OK.</strong> Recording Settings, the Wake-Up Timer
+and Add Station say OK instead of Save, like other Windows windows.</li>
+</ul>
+<h2 id="what-10-brought">What 1.0 brought</h2>
+<ul>
+<li><strong>Your folders, on the front page.</strong> The main window is
+your favorites, in the folders you make, with everything you can do one
+Shift+F10 away. <strong>New Folder</strong> (Ctrl+Shift+E) makes a
+folder right where you are.</li>
+<li><strong>Favorites first.</strong> The app opens on your favorites,
+and Enter plays. <strong>Play Last Station</strong> (Ctrl+L) brings back
+what you had on, and <strong>Resume Last Station on Launch</strong>
+means opening the app is all you ever do. <strong>Recently
+Played</strong> keeps your last fifteen stations close.</li>
+<li><strong>A real Favorites Manager.</strong> Folders inside folders,
+search across names, countries and tags, Move Up and Move Down, and Mark
+and Move for long hops. Rename a station to what you call it, and rename
+folders with F2. Deleting a folder keeps its stations.</li>
+<li><strong>What’s Playing.</strong> Ctrl+T says the song or show, and
+you can have new titles read as they change.</li>
+<li><strong>Recording, grown up.</strong> Record what you are hearing,
+record a different station while you listen to something else, or
+schedule shows once, daily or weekly, picking from your favorites. The
+<strong>Recordings</strong> list shows what is recording now, what is
+recorded and what is scheduled. Recordings ride out short drops in the
+connection.</li>
+<li><strong>Wake up with the radio.</strong> The sleep timer has a twin:
+choose a favorite and a time, once or every day. Quill Radio needs to be
+running, and the tray counts.</li>
+<li><strong>Never two things at once.</strong> Starting anything stops
+whatever else was playing, in every app in the family.</li>
+<li><strong>Each favorite remembers its own volume.</strong></li>
+<li><strong>Your keyboard’s media keys</strong> control the radio from
+anywhere, even from the tray.</li>
+<li><strong>The Command Palette</strong> (Ctrl+Shift+P) finds any
+command by name.</li>
+<li><strong>One set of favorites and settings</strong>, shared with
+QUILL and QUILL Cast. Set it up once and have it everywhere.</li>
+<li><strong>An installer and a portable copy.</strong> The portable copy
+keeps your whole radio on a USB stick. Everything it needs is included,
+and Check for Updates offers the right download for your copy.</li>
+<li><strong>Reporting a problem from the Help menu</strong>, with no
+account needed.</li>
+<li><strong>Spoken feedback everywhere</strong>, through JAWS, NVDA or
+Narrator, without taking your focus.</li>
+</ul>
+<h3 id="what-quill-radio-is-not">What Quill Radio is not</h3>
+<p>It is not QUILL with some menus taken away. It is just the radio.
+QUILL’s editor, AI, transcription, braille and speech tools are not
+installed at all.</p>
+<h3 id="good-to-know">Good to know</h3>
+<ul>
+<li>Quill Radio runs on Windows 10 or 11, on ordinary 64-bit computers
+and on ARM computers through Windows’ own emulation. You do not need to
+install anything else.</li>
+<li>At the time, releases were not yet signed, so Windows SmartScreen
+could warn you the first time. Choosing More info, then Run anyway,
+started it.</li>
+</ul>
+<h2 id="where-to-learn-more">Where to learn more</h2>
+<p>The user guide, <strong>Help &gt; User Guide</strong> (Ctrl+F1),
+covers today’s Quill Radio, starting with Chapter 2, Your first half
+hour.</p>
+<p><strong>Help &gt; Tutorials</strong> (Ctrl+Alt+F1) starts with the
+lessons in Your first hour, beginning with Play your first station and
+Keep a station, and find it tomorrow.</p>
+<p>If you get stuck, choose <strong>Help &gt; Get Help from
+Support</strong> (Ctrl+Alt+F2), or write to <a
+href="mailto:support@community-access.org">support@community-access.org</a>.
+A person at Community Access reads every message.</p>
+</main>
+</body>
+</html>

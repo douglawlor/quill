@@ -23,6 +23,7 @@ from quill.devtools import history as _history
 from quill.devtools.console_window import ConsoleWindow
 from quill.devtools.python_console import PythonConsole
 from quill.devtools.ts_console import TypeScriptConsole, TypeScriptConsoleError
+from quill.ui.editor_surface import surface_kind
 
 _CONSENT_TEXT = (
     "Developer Console\n\n"
@@ -45,7 +46,7 @@ class DevToolsMixin:
 
     def _dt_python_console(self) -> PythonConsole:
         if not hasattr(self, "_dev_python_console"):
-            self._dev_python_console = PythonConsole(self._dt_make_namespace())
+            self._dev_python_console = PythonConsole(self._dt_make_namespace(), settings_host=self)
         return self._dev_python_console
 
     def _dt_ts_console(self) -> TypeScriptConsole:
@@ -261,11 +262,9 @@ class DevToolsMixin:
 
         if os.environ.get("QUILL_SAFE_MODE") == "1":
             self._set_status("Developer Console is disabled in Safe Mode.")
-            self._announce("Developer Console is disabled in Safe Mode.")
             return
         if not getattr(self.settings, "console_enabled", True):
             self._set_status("Developer Console is disabled in settings.")
-            self._announce("Developer Console is disabled in settings.")
             return
         if not self._dt_consent_check():
             return
@@ -295,11 +294,9 @@ class DevToolsMixin:
 
         if os.environ.get("QUILL_SAFE_MODE") == "1":
             self._set_status("Developer Console is disabled in Safe Mode.")
-            self._announce("Developer Console is disabled in Safe Mode.")
             return
         if not getattr(self.settings, "console_enabled", True):
             self._set_status("Developer Console is disabled in settings.")
-            self._announce("Developer Console is disabled in settings.")
             return
         if not self._dt_consent_check():
             return
@@ -319,6 +316,9 @@ class DevToolsMixin:
         """Tools > Advanced > Developer Console > Copy Diagnostic Summary"""
         api = QuillScriptAPI(self)
         summary = api.support.diagnostic_summary()
+        editor_summary = self._editor_surface_diagnostic_summary()
+        if editor_summary:
+            summary = f"{summary}\n\n{editor_summary}"
         wx = self._wx
         if wx.TheClipboard.Open():
             try:
@@ -329,10 +329,89 @@ class DevToolsMixin:
         else:
             self._announce("Could not open clipboard.")
 
+    def report_editor_surface(self) -> None:
+        """Speak the editor surface and braille state in one keystroke.
+
+        The spoken sibling of Copy Diagnostic Summary: a braille or speech bug
+        report from someone who cannot screenshot becomes actionable when they
+        can say exactly which surface, class, emulation state and braille
+        bridge were live. Content-free -- nothing from the document is spoken.
+        """
+        parts: list[str] = [f"Editor surface {surface_kind(self.editor)}"]
+        wrapper = getattr(self.editor, "quill_richedit", None)
+        if wrapper is not None:
+            try:
+                from quill.ui.richedit_rtf_surface import (
+                    _SES_EMULATESYSEDIT,
+                    _window_class_name,
+                )
+
+                class_name = _window_class_name(wrapper.hwnd()) or "unknown"
+                emulation = "on" if wrapper.edit_style() & _SES_EMULATESYSEDIT else "off"
+                parts.append(f"Native class {class_name}")
+                parts.append(f"System edit emulation {emulation}")
+            except Exception:  # noqa: BLE001 - a diagnostic must degrade, never raise
+                parts.append("Native surface details unavailable")
+        settings = getattr(self, "settings", None)
+        if settings is not None:
+            fix = "on" if getattr(settings, "braille_editor_system_edit_fix", False) else "off"
+            border = "hidden" if getattr(settings, "braille_editor_hide_border", False) else "shown"
+            parts.append(f"Braille system edit fix {fix}")
+            parts.append(f"Editor border {border}")
+        engine = getattr(self, "_announcement_engine", None)
+        diagnostics = getattr(engine, "diagnostics_environment", None)
+        if callable(diagnostics):
+            try:
+                env = diagnostics()
+                backend = str(env.get("announcement_backend_name", "") or "none")
+                if env.get("announcement_braille_active"):
+                    braille_state = "active"
+                elif not env.get("announcement_braille_enabled", True):
+                    braille_state = "disabled in settings"
+                elif not env.get("announcement_braille_supported"):
+                    braille_state = "no display bridge"
+                else:
+                    braille_state = "inactive"
+                parts.append(f"Braille output {braille_state}")
+                parts.append(f"Announcement backend {backend}")
+            except Exception:  # noqa: BLE001 - a diagnostic must degrade, never raise
+                parts.append("Braille bridge state unavailable")
+        message = ". ".join(parts) + "."
+        self._announce(message)
+        self._set_status(message)
+
+    def open_braille_ab(self) -> None:
+        """Braille A/B: two editors that differ only by the system edit fix.
+
+        The spoken report above says what the *current* editor is; this answers
+        the question that report cannot -- whether the flag is worth having.
+        ``SES_EMULATESYSEDIT`` is set-once, so comparing used to mean restarting
+        QUILL between readings. Body in :mod:`quill.ui.braille_ab_window`.
+        """
+        from quill.ui.braille_ab_window import open_braille_ab
+
+        open_braille_ab(self)
+
+    def _editor_surface_diagnostic_summary(self) -> str:
+        try:
+            diagnostic_summary = getattr(self.editor, "accessibility_diagnostic_summary", None)
+            if callable(diagnostic_summary):
+                return str(diagnostic_summary())
+            return "\n".join([
+                "Editor surface diagnostics",
+                f"Surface: {surface_kind(self.editor)}",
+                "Document content included: no",
+            ])
+        except Exception as error:
+            return "\n".join([
+                "Editor surface diagnostics",
+                f"Surface diagnostics failed: {error.__class__.__name__}",
+                "Document content included: no",
+            ])
+
     def restart_typescript_worker(self) -> None:
         if not hasattr(self, "_dev_console_window"):
             self._set_status("Open the TypeScript console first, then restart the worker.")
-            self._announce("Open the TypeScript console first, then restart the worker.")
             return
         self._dt_ts_console()  # ensure created before thread starts
         threading.Thread(  # GATE-40-OK: TS worker restart.

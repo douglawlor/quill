@@ -10,6 +10,8 @@ from quill.io.pandoc import (
     PandocUnavailableError,
     convert_document_with_pandoc,
 )
+from quill.ui.dialog_contract import set_accessible_name
+from quill.ui.spoken_name import set_spoken_name
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -235,10 +237,13 @@ class WordDocumentSurface:
             self._preview_page,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2,
         )
+        set_accessible_name(self.preview, "Word view preview")
         self.text_ctrl = wx.TextCtrl(
             self._text_page,
             style=wx.TE_MULTILINE | wx.TE_RICH2 | wx.TE_NOHIDESEL,
         )
+        set_accessible_name(self.text_ctrl, "Word document as text")
+        set_spoken_name(self.text_ctrl, "Word document as text")
 
         preview_sizer = wx.BoxSizer(wx.VERTICAL)
         preview_sizer.Add(self.preview, 1, wx.EXPAND)
@@ -311,12 +316,23 @@ class WordDocumentSurface:
         return self.text_ctrl.GetSelection()
 
     def SetSelection(self, start: int, end: int) -> None:
+        # Find/replace and any programmatic selection operate on text_ctrl, but
+        # the structure-view (preview) page is shown by default. Without
+        # switching to the text page first, Find would select in the hidden
+        # text control while the visible preview never moved -- the match looked
+        # like it was never found (#1182). Surface the text editor so the
+        # selection is visible, mirroring Replace/Paste/Cut below.
+        self._ensure_text_mode()
         self.text_ctrl.SetSelection(start, end)
 
     def GetInsertionPoint(self) -> int:
         return self.text_ctrl.GetInsertionPoint()
 
     def SetInsertionPoint(self, position: int) -> None:
+        # See SetSelection: keep the cursor move visible by switching to the
+        # text page, so Find Next in the structure view actually advances the
+        # caret the user can see (#1182).
+        self._ensure_text_mode()
         self.text_ctrl.SetInsertionPoint(position)
 
     def Replace(self, start: int, end: int, value: str) -> None:

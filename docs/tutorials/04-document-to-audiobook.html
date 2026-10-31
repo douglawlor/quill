@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Tutorial 4: From document to published audiobook, with voices,
+Read Aloud and the Audio Studio</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1
+id="tutorial-4-from-document-to-published-audiobook-with-voices-read-aloud-and-the-audio-studio">Tutorial
+4: From document to published audiobook, with voices, Read Aloud and the
+Audio Studio</h1>
+<p><strong>Goal:</strong> hear your document in the voice you want. Then
+use the Audio Studio to turn a folder of documents into an audiobook
+with chapters, or join a folder of recordings into one book, fix its
+chapters by ear, and publish it. Last, make a DAISY book for accessible
+book players.</p>
+<p>You can do all of this from the keyboard, QUILL tells you what is
+happening at each step, and nothing changes until you have checked
+it.</p>
+<h2 id="1-pick-a-voice">1. Pick a voice</h2>
+<p><strong>Tools &gt; Speech &gt; Speech and Dictation…</strong> opens
+the speech settings. You can choose from old and new voices:</p>
+<ul>
+<li><strong>SAPI 5</strong>: the Windows voices you already have.
+Nothing to download.</li>
+<li><strong>eSpeak NG</strong> and <strong>DECtalk</strong>: the classic
+voices, which you can download when you want them (yes, Perfect Paul is
+there).</li>
+<li><strong>Kokoro</strong>: natural-sounding voices that run on your
+own computer (about a 114 MB download, once; no account needed). The
+QUILL Cast podcast is narrated by two of these.</li>
+<li><strong>ElevenLabs</strong> (optional): a paid online voice, if you
+have an account. QUILL asks you before it sends anything.</li>
+<li><strong>Read in Browser</strong> (experimental, Settings &gt;
+Experimental): reads your document in a web page using your browser’s
+voices, including Edge’s online natural voices. QUILL tells you when a
+voice works online, because then your text is sent to the company that
+makes the voice.</li>
+</ul>
+<p>Every download shows its progress and is checked to make sure it
+arrived safely.</p>
+<h2 id="2-read-aloud">2. Read aloud</h2>
+<p>Select text (or just place the caret) and use <strong>Tools &gt;
+Reading &amp; Dictation &gt; Read Aloud</strong>. Press a key to stop.
+Try the same paragraph with two or three voices and keep the one you
+like best.</p>
+<p>To fine-tune how a passage is read, the <strong>SSML Builder</strong>
+lets you add emphasis, pauses and changes in pitch and speed using
+ordinary controls, without typing any tags. It works with SAPI 5 and
+eSpeak NG.</p>
+<p>To make a quick audio file, open the palette and choose
+<code>Generate Speech Audio</code>. It turns the current document into
+audio in the background. WAV always works; with the
+<strong>ffmpeg</strong> helper installed (Help &gt; Download Optional
+Components), you also get <strong>MP3, M4A, M4B, OGG, Opus,
+FLAC</strong>.</p>
+<h2 id="3-open-the-audio-studio-and-choose-what-to-do">3. Open the Audio
+Studio and choose what to do</h2>
+<p>For anything bigger than one file, <strong>Tools &gt; Speech &gt;
+Audio Studio…</strong> is the place to go (it is also in the command
+palette, and on <code>Ctrl+Shift+Grave, Y</code>). The first page asks
+what you want to do:</p>
+<ul>
+<li><strong>Narrate documents</strong>: QUILL reads your files aloud
+into audio.</li>
+<li><strong>Combine audio files</strong>: you have already recorded, and
+QUILL builds the book.</li>
+<li><strong>Edit an existing audiobook</strong>: open an MP3 or M4B that
+has chapters and change them.</li>
+</ul>
+<p>The wizard remembers what you chose last time and starts there. Every
+page is announced (“Step 2 of 7: What should I read?”),
+<strong>Back</strong> and <strong>Next</strong> move between steps, and
+<strong>Skip to summary</strong> jumps to the end when a saved project
+already fills in every page, so doing it again takes three
+keystrokes.</p>
+<h2 id="4-narrate-documents">4. Narrate documents</h2>
+<p>Point <strong>What should I read?</strong> at a folder of documents
+(Word, Markdown, HTML, text). You can choose which files to include and
+whether to look in subfolders. <strong>Count documents</strong> tells
+you how many it found.</p>
+<p>On <strong>Who should read it?</strong>:</p>
+<ul>
+<li>Pick the engine and voice, and use <strong>Preview voice</strong> to
+hear it first.</li>
+<li><strong>Round-robin voices</strong> takes turns through a list of
+voices you choose: article 1 gets voice 1, article 2 gets voice 2, and
+so on.</li>
+<li><strong>Voice casting</strong> goes further: add a rule like
+<code>*interview* =</code> your guest voice, or <code>#1 =</code> your
+narrator, and every matching chapter is read by that voice. First
+matching rule wins; everything else takes turns as above. This is handy
+for fiction with a lot of dialogue.</li>
+</ul>
+<p>On the output step, two boxes are worth knowing about:</p>
+<ul>
+<li><strong>Audition</strong> converts only the first document, so you
+can check the voice and pace in a few minutes before a long run.</li>
+<li><strong>Reuse unchanged audio from the last run</strong> (on by
+default) saves you time. If you edit one chapter and run it again, only
+that chapter is read again; the rest say “Reused … (unchanged since last
+run)”. You can draft with a fast voice, then switch to your favourite
+voice for the final version and everything is rebuilt for you.</li>
+</ul>
+<p>On the book page, type a half-remembered title and press <strong>Look
+up book details</strong>. QUILL looks it up in Open Library and
+MusicBrainz (free, and QUILL asks before it goes online the first time),
+fills in the author, genre and year from the match you pick, and offers
+to download the cover as <code>cover.jpg</code>. Check the spoken
+credits if you want the book to introduce itself.</p>
+<p>Read the summary. If you like, choose <strong>Save a job
+file</strong> to keep all your choices in a <code>.quilljob</code> file
+you can load next time (or edit in Notepad). Then press
+<strong>Start</strong>. QUILL tells you how it is going, file by file.
+You can cancel at any time, or tuck the progress into the status
+bar.</p>
+<h2 id="5-combine-a-folder-of-recordings">5. Combine a folder of
+recordings</h2>
+<p>Recorded a memoir chapter per session? Choose <strong>Combine audio
+files</strong> and point it at the folder. Each file becomes a chapter
+named after the file, and you always get to check the chapter list
+before they are joined. You can rename, reorder or remove chapters, or
+bring in titles from a CSV file or Audacity labels. You get an M4B or
+MP3 with chapters, and you can also trim silence, add fades, change the
+speed, or match the ACX loudness rules.</p>
+<p>Two extras for bigger jobs: <strong>Library mode</strong> builds
+every subfolder as its own audiobook, named after its folder, without
+you having to watch; and the <strong>watch action</strong> (“Build
+audiobook from the folder”) rebuilds a watched folder’s master
+automatically whenever new recordings land.</p>
+<h2 id="6-the-chapter-workbench">6. The Chapter Workbench</h2>
+<p>Open any MP3 or M4B with chapters. A long recording with no chapters
+opens as one big chapter, ready for you to split up.</p>
+<p>It has a built-in player: Play and Pause, Previous and Next chapter,
+Rewind and Forward, a position slider that reads out the time in plain
+words, a speed control that does not change the pitch, and <strong>Where
+am I?</strong> to hear where you are. The player remembers where you
+stopped in every book. (Want gapless audio and exact seeking? Download
+the <strong>mpv player engine</strong> from <strong>Help &gt; Download
+Optional Components</strong> and QUILL uses it automatically. Without
+it, QUILL uses its built-in player.)</p>
+<p>To fix chapters by ear:</p>
+<ol type="1">
+<li>Play until you hear where a boundary belongs.</li>
+<li>Choose <strong>Split at playhead</strong> to start a new chapter
+there.</li>
+<li><strong>Set start to playhead</strong> retimes an existing boundary;
+<strong>Merge into previous</strong> joins a chapter to the one before
+it, and <strong>Restore original</strong> undoes your changes.</li>
+</ol>
+<p>Two helpers make suggestions, and you decide whether to keep them.
+<strong>Propose chapters from silences…</strong> listens for pauses and
+suggests where chapters could start. <strong>Propose AI titles…</strong>
+writes out the first minute of each chapter <em>on your own
+computer</em>, sends only that text to the AI you have set up, and
+suggests a short title for each chapter. You can keep, rename, or choose
+<strong>Restore original</strong>. <strong>Check against ACX</strong>
+tells you in plain words whether the loudness meets Audible’s rules.</p>
+<p>An MP3 is saved <strong>in place</strong>: only the chapter
+information changes, not the sound. An M4B is saved as a new file, with
+no loss of quality.</p>
+<p>The Workbench player also has a <strong>Mute</strong> button. The
+separate <strong>Audio Studio</strong> app goes further: your media keys
+work, each book remembers its own volume, there is a sleep timer, and
+the next book starts by itself when one finishes. Your library there is
+a tree (Favorites, In Progress, Recently Played, Inbox, plus your own
+folders), and it can pick up the last book where you left off.</p>
+<h2 id="7-publish-it">7. Publish it</h2>
+<p>The Workbench’s <strong>Publish…</strong> button gives you these
+choices, and nothing is sent anywhere until you say so:</p>
+<ul>
+<li><strong>Podcast feed</strong>: writes a podcast feed file
+(<code>.rss</code>) next to the book, without going online, with
+chapters that podcast apps can read.</li>
+<li><strong>Folder feed (all episodes)</strong>: run a whole show from
+one folder. Each finished file becomes an episode with its own
+description, date, length and chapters. One button rebuilds the feed
+after each new episode; another writes an accessible
+<code>show-notes.html</code> page beside it.</li>
+<li><strong>SFTP upload</strong>: sends the book and its files to your
+own web server, safely. Your password is kept in Windows Credential
+Manager. QUILL tells you the percent as it goes, and
+<strong>Cancel</strong> stops it.</li>
+<li><strong>Auphonic</strong>: makes your audio sound professional,
+using your own Auphonic account. <strong>Check account and load
+presets</strong> tells you how many credits you have and lists your
+presets. Then QUILL uploads the book, waits, and saves the results next
+to it. Your Auphonic key is stored safely, and you can manage it in
+<strong>AI &gt; AI Hub &gt; Services</strong>.</li>
+</ul>
+<p>Build the episode, update the feed, and upload both. You can run your
+whole show from QUILL.</p>
+<h2 id="8-daisy-talking-books">8. DAISY talking books</h2>
+<p><strong>File &gt; Export &gt; DAISY Talking Book</strong> writes a
+DAISY 2.02 text-only talking book, the format used by accessible book
+players and libraries. Your headings become the way readers move around
+the book, so make sure your headings are in good order first (GLOW can
+check them for you: <a
+href="06-make-it-accessible-with-glow.md">tutorial 6</a>).</p>
+<h2 id="9-round-trip-audio-in">9. Round trip: audio in</h2>
+<p>It works the other way too. <code>Ctrl+F9</code> lets you dictate
+without going online, and <strong>transcription</strong> turns a
+recording into a document on your own computer. Give a transcript to the
+<strong>Listening Companion</strong> and it can write meeting minutes, a
+to-do list or a summary for you to check. To hear more, QUILL Cast
+episode 21 covers Read Aloud and voices, and episode 33 covers the Audio
+Studio.</p>
+<p><strong>Next:</strong> <a href="05-start-a-vault.md">Start an
+Accessible Vault</a>.</p>
+</main>
+</body>
+</html>

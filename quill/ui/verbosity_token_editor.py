@@ -3,10 +3,19 @@
 Edits the announcement template for one verb. A Simple / Advanced view switch
 (a ``wx.RadioBox`` per the §5 locked decision, not a notebook) shares one
 template field. Validation and preview run against the verb's own token list via
-the pure core (:mod:`quill.core.verbosity.parser`): ``Ctrl+T`` validates and
-speaks the summary, ``Ctrl+Shift+P`` previews, and Save is disabled while
-blocking errors exist. A11Y-4 hardened: label-then-control, mnemonics,
-``apply_modal_ids``, no icon-only buttons.
+the pure core (:mod:`quill.core.verbosity.parser`): ``Shift+F5`` validates and
+speaks the summary, ``F5`` previews, and Save is disabled while blocking
+errors exist.
+
+Those two keys used to be ``Ctrl+T`` and ``Ctrl+Shift+P``, which are
+``window.new_document_tab`` and ``app.command_palette`` in the global keymap.
+A modal dialog hid the conflict -- neither app key reaches one -- but a
+dialog that repurposes an app-wide chord is a trap the moment those chords
+become window-wide, which is exactly what Quill Radio's transport keyboard
+now does (2026-08-19). ``F5`` and ``Shift+F5`` are claimed by nothing.
+
+A11Y-4 hardened: label-then-control, mnemonics, ``apply_modal_ids``, no
+icon-only buttons.
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ from quill.core.verbosity.parser import render_template, validate
 from quill.core.verbosity.preview import BUILTIN_SCENARIOS
 from quill.core.verbosity.verbs import VerbSpec
 from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dpi import dip_size
 
 __all__ = ["VerbosityTokenEditorDialog"]
 
@@ -43,7 +53,7 @@ class VerbosityTokenEditorDialog:
             title=f"Edit announcement — {verb.human_name}",
             style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER,
         )
-        self.dialog.SetMinSize(wx.Size(560, 420))
+        self.dialog.SetMinSize(dip_size(self.dialog, 560, 420))
         root = wx.BoxSizer(wx.VERTICAL)
 
         self._view = wx.RadioBox(
@@ -59,15 +69,15 @@ class VerbosityTokenEditorDialog:
         self._template = wx.TextCtrl(self.dialog, value=template, style=wx.TE_MULTILINE)
         self._template.SetName("Announcement template")
         self._template.SetHint("e.g. Line {line} of {total}")
-        self._template.SetMinSize(wx.Size(-1, 70))
+        self._template.SetMinSize(dip_size(self._template, -1, 70))
         root.Add(self._template, 1, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 4)
 
-        root.Add(wx.StaticText(self.dialog, label="Available &tokens:"), 0, wx.LEFT | wx.TOP, 8)
+        root.Add(wx.StaticText(self.dialog, label="Avai&lable tokens:"), 0, wx.LEFT | wx.TOP, 8)
         self._tokens = wx.ListBox(self.dialog, style=wx.LB_SINGLE)
         self._tokens.SetName("Available tokens")
         for spec in verb.supported_tokens:
             self._tokens.Append(f"{{{spec.name}}} — {spec.description}")
-        self._tokens.SetMinSize(wx.Size(-1, 90))
+        self._tokens.SetMinSize(dip_size(self._tokens, -1, 90))
         root.Add(self._tokens, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 4)
 
         root.Add(wx.StaticText(self.dialog, label="&Review:"), 0, wx.LEFT | wx.TOP, 8)
@@ -75,15 +85,15 @@ class VerbosityTokenEditorDialog:
             self.dialog, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP
         )
         self._review.SetName("Validation and preview")
-        self._review.SetMinSize(wx.Size(-1, 80))
+        self._review.SetMinSize(dip_size(self._review, -1, 80))
         root.Add(self._review, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 4)
 
         btns = wx.BoxSizer(wx.HORIZONTAL)
-        self._validate_btn = wx.Button(self.dialog, label="&Validate (Ctrl+T)")
-        self._preview_btn = wx.Button(self.dialog, label="&Preview (Ctrl+Shift+P)")
+        self._validate_btn = wx.Button(self.dialog, label="&Validate (Shift+F5)")
+        self._preview_btn = wx.Button(self.dialog, label="&Preview (F5)")
         self._speak_btn = wx.Button(self.dialog, label="&Speak Current Template")
         self._insert_btn = wx.Button(self.dialog, label="&Insert Token")
-        self._save_btn = wx.Button(self.dialog, id=wx.ID_SAVE, label="Sa&ve")
+        self._save_btn = wx.Button(self.dialog, id=wx.ID_SAVE, label="S&ave")
         cancel_btn = wx.Button(self.dialog, id=wx.ID_CANCEL, label="Cancel")
         for b in (self._validate_btn, self._preview_btn, self._speak_btn, self._insert_btn):
             btns.Add(b, 0, wx.RIGHT, 6)
@@ -165,11 +175,9 @@ class VerbosityTokenEditorDialog:
 
     def _on_char_hook(self, event: object) -> None:
         key = event.GetKeyCode()
-        ctrl = event.ControlDown()
-        shift = event.ShiftDown()
-        if ctrl and not shift and key == ord("T"):
+        if key == wx.WXK_F5 and event.ShiftDown():
             self._on_validate()
-        elif ctrl and shift and key == ord("P"):
+        elif key == wx.WXK_F5 and not event.ShiftDown():
             self._on_preview()
         else:
             event.Skip()

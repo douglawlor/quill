@@ -1,0 +1,201 @@
+"""GATE-LITE-HELP: F1 help must ship with every QUILL Lite surface and control.
+
+The eighth app to join the family's F1 program, and the same shape as the seven
+before it. :mod:`quill.core.lite_surface_help` is QUILL Lite's catalogue of window
+purposes and this is its gate, so a new QUILL Lite window cannot ship without
+saying what it is for and a new control cannot ship without either help or a
+deliberate, reviewed classification.
+
+Configuration only: the scanner, the snapshot rules and the CLI all live in
+:mod:`quill.tools.help_audit`. What is QUILL Lite's own is here -- the modules it
+scans, the catalogue that judges the titles, the snapshot path, and the
+exemptions.
+
+Regenerate with::
+
+    python -m quill.tools.lite_help_audit --write
+
+and review the diff: every ``missing`` you commit is a failing build.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from quill.tools.help_audit import (
+    REPO_ROOT,
+    ControlSite,
+    TitleViolation,
+    build_snapshot,
+    resolve_paths,
+    run_cli,
+    scan_paths,
+)
+from quill.tools.help_audit import (
+    STATUSES as STATUSES,
+)
+from quill.tools.help_audit import (
+    write_snapshot as _write_snapshot,
+)
+
+SNAPSHOT_PATH = REPO_ROOT / "tests" / "unit" / "ui" / "fixtures" / "lite_help_inventory.json"
+
+#: QUILL Lite has no ``quill/ui`` subpackage: its modules sit together under
+#: ``quill/apps`` (the app, the window, its commands, its dialogs), which is
+#: what ``lite*.py`` picks up -- including any module a future split adds.
+#:
+#: The one exception is a dialog that has been *shared* rather than split: the
+#: Spelling Announcements window moved to ``quill/ui`` so QUILL could open it on
+#: the same chord (bad.md P1.14), and moving it out of this glob silently
+#: dropped twelve authored help sentences from the audit and from the generated
+#: reference. A surface no gate can see is one that rots, so the glob follows
+#: the surface. Keep this in step with ``build_help_reference.APPS``.
+_SCAN_DIRS: tuple[str, ...] = ()
+_SCAN_GLOBS: tuple[str, ...] = (
+    "quill/apps/lite*.py",
+    "quill/ui/spelling_voice_dialog.py",
+    # The hosted-AI windows went the same way as the Spelling Announcements
+    # one, and for the stronger reason: QUILL now opens them too (they are its
+    # *default* AI), so they could not stay in a QuillLite-only module without
+    # breaking the rule that QUILL Lite is never ahead of QUILL. They stay in
+    # this glob because QUILL Lite is still a caller, and a surface no gate can
+    # see is one that rots -- QUILL's own help audit covers them as well, which
+    # is correct: two callers, two gates, one set of sentences.
+    "quill/ui/hosted_ai*.py",
+    # The same again for the two shared surfaces QUILL Lite reaches from its
+    # Preferences and its dictation commands: the "make QUILL Lite my text
+    # editor" group and the Windows dictation settings windows. QUILL opens
+    # both as well; neither had a gate until 2026-10-04, when the Spanish
+    # dictation setting and the text-editor group arrived in them.
+    "quill/ui/text_editor_prefs.py",
+    "quill/ui/text_editor_commands.py",
+    "quill/ui/windows_dictation_*.py",
+    # The shared dictation windows QUILL Lite opens (lists, more settings, models).
+    "quill/ui/dictation_lists_dialog.py",
+    "quill/ui/dictation_more_dialog.py",
+    "quill/ui/dictation_models_dialog.py",
+    # Speech Providers (D-31), opened from Dictation Settings in every editor.
+    "quill/ui/speech_providers_dialog.py",
+    # Transcribe a Recording, the same window in both editors (2026-10-05).
+    "quill/ui/dictation_transcribe_dialog.py",
+    # Review Dictation, the same window in both editors and QUILL Transcribe (D-2).
+    "quill/ui/dictation_review_frame.py",
+    # File > Recent Documents, the same window in both editors (2026-10-04).
+    "quill/ui/recent_documents_dialog.py",
+    # QUILL's word-level review and Prompt Library, reached from the free AI
+    # in both editors since 2026-10-15 (quill/ui/hosted_ai_answers.py).
+    "quill/ui/ai_diff_review_dialog.py",
+    "quill/ui/prompt_library_dialog.py",
+    "quill/ui/prompt_edit_dialog.py",
+    # AutoCorrect Entries, the same window in both editors (2026-10-16).
+    "quill/ui/autocorrect_entries_dialog.py",
+)
+
+#: Surface constructions whose titles the scan cannot resolve, with the reason
+#: they are fine. Keyed ``<module>::<qualname>``.
+TITLE_EXEMPT: dict[str, str] = {
+    "quill/apps/lite_check.py::run_check": (
+        "The --check diagnostic's frame is built, measured and destroyed without "
+        "a MainLoop; no listener ever reaches it, so it has no purpose to author. "
+        "Its title is the app name, single-sourced from quill.core.lite."
+    ),
+    "quill/apps/lite_dialogs.py::choose_from_rows": (
+        "One generic list window with six callers, each passing a literal the "
+        "catalogue answers: 'Headings', 'Bookmarks', 'Copy Tray', 'Clip Library', "
+        "'Spelling Suggestions' and 'Marks'. The alternative is six copies of a "
+        "list dialog, which is six places for the Enter-key handling to be got "
+        "wrong in."
+    ),
+    "quill/apps/lite_dialogs.py::show_text_window": (
+        "The title is the caller's, and both callers pass a literal that the "
+        "catalogue answers: 'Keyboard shortcuts' and 'About QUILL Lite'."
+    ),
+    "quill/apps/lite_dialogs.py::choose_searchable": (
+        "One filtered-list window with two callers, each passing a literal the "
+        "catalogue answers: 'Insert Markdown Tag' and 'Insert HTML Tag'. Exactly "
+        "the argument choose_from_rows makes: the alternative is two copies of a "
+        "search-and-choose dialog, which is two places to get the "
+        "Enter-moves-to-the-list handling wrong in."
+    ),
+    "quill/ui/hosted_ai_dialogs.py::ask_ai_privacy_agreement": (
+        "The title is quill.core.ai.gateway_privacy.AGREEMENT_TITLE, not a "
+        "literal, and deliberately: the window is titled by the same module "
+        "that owns the agreement's text and its version number, so a change to "
+        "what is being agreed to cannot leave the window announcing the old "
+        "thing. The catalogue answers that constant's current value."
+    ),
+    "quill/ui/hosted_ai_result.py::AiResultFrame.__init__": (
+        "Titled from quill.core.ai.writing_tools.ACTION_TITLES (or 'AI Result'), "
+        "and the catalogue builds its result-window entries from that same "
+        "table, so every title it can carry has a purpose."
+    ),
+    "quill/ui/prompt_edit_dialog.py::PromptEditDialog.__init__": (
+        "One of two literals chosen by whether a prompt is being written or "
+        "changed -- 'New Prompt' or 'Edit Prompt' -- and the catalogue answers "
+        "both."
+    ),
+    "quill/ui/ai_diff_review_dialog.py::DiffReviewDialog.__init__": (
+        "The title is the caller's. The free AI's Review Changes passes the "
+        "literal 'Review AI Changes', which the catalogue answers; QUILL's own "
+        "callers pass 'Review AI Changes' or an agent's title, and answer F1 "
+        "from QUILL's topics."
+    ),
+    "quill/apps/lite_dialogs_entry.py::ask_text": (
+        "One labelled-box window whose three callers pass literals the catalogue "
+        "answers: 'Insert HTML Tag' for the attribute box, and 'Insert Link' and "
+        "'Insert Image' for the address. It exists instead of wx.TextEntryDialog "
+        "precisely because that one's prompt is not a StaticText immediately "
+        "before the field, so the field's accessible name on wxMSW is whatever a "
+        "reader can scrape -- which is nothing."
+    ),
+}
+
+
+def scan() -> tuple[list[ControlSite], list[TitleViolation]]:
+    """Every helpable-control site in QUILL Lite, and every unknown title."""
+    from quill.core import lite_surface_help
+
+    return scan_paths(
+        resolve_paths(_SCAN_DIRS, _SCAN_GLOBS),
+        is_known_title=lite_surface_help.is_known_title,
+        title_exempt=TITLE_EXEMPT,
+        catalogue="quill/core/lite_surface_help.py",
+    )
+
+
+def load_snapshot(path: Path = SNAPSHOT_PATH) -> dict[str, str]:
+    from quill.tools.help_audit import load_snapshot as _load
+
+    return _load(path)
+
+
+def write_snapshot(snapshot: dict[str, str], path: Path = SNAPSHOT_PATH) -> None:
+    _write_snapshot(snapshot, path)
+
+
+def main(argv: list[str] | None = None) -> int:
+    return run_cli(
+        argv,
+        description=__doc__.splitlines()[0],
+        module_name="quill.tools.lite_help_audit",
+        snapshot_path=SNAPSHOT_PATH,
+        scan=scan,
+    )
+
+
+__all__ = [
+    "SNAPSHOT_PATH",
+    "STATUSES",
+    "TITLE_EXEMPT",
+    "ControlSite",
+    "TitleViolation",
+    "build_snapshot",
+    "load_snapshot",
+    "main",
+    "scan",
+    "write_snapshot",
+]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

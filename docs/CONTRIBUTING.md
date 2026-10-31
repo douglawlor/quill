@@ -1,0 +1,301 @@
+# Contributing to QUILL
+
+Thank you for helping improve QUILL.
+
+QUILL is a screen-reader-first Windows writing environment. Contributions should
+preserve that core direction: practical keyboard workflows, stable editing,
+accessible defaults, and clear user control.
+
+## Before you start
+
+1. Read the product expectations and full architecture in `docs/QUILL-PRD.md`
+   (the single source of truth), and the architecture overview below.
+2. Review project conduct rules in `CODE_OF_CONDUCT.md`.
+3. Check existing issues and pull requests before starting overlapping work.
+4. Review project decision process in `GOVERNANCE.md`.
+5. Read the [accessibility contributor expectations](ACCESSIBILITY.md#contributor-expectations)
+   in `ACCESSIBILITY.md`. They apply to every pull request.
+
+## Accessibility expectations
+
+Accessibility is the reason QUILL exists, so every contribution follows the
+[contributor expectations in ACCESSIBILITY.md](ACCESSIBILITY.md#contributor-expectations):
+the checks the build runs, the interface requirements (keyboard access, visible
+labels created before their controls, announcements only of what the screen
+reader cannot know, braille parity, F1 help), the documentation rules, and the
+accessibility review a new dependency needs. The pull request template carries
+the same list as a checklist; check each item that applies and mark the rest
+N/A.
+
+- **Test what you change.** Run `pytest tests/accessibility -q` and
+  `python -m quill.tools.platform_report`. For an interface change, do a
+  keyboard-only pass and a screen reader spot check, using the procedures in
+  [accessibility-testing.md](accessibility-testing.md), and say in the pull
+  request which screen reader and version you used.
+- **Report a barrier** with the
+  [accessibility issue form](https://github.com/Community-Access/quill/issues/new?template=accessibility.yml),
+  from inside any app with Help > Get Help from Support..., or by email as
+  described in [ACCESSIBILITY.md](ACCESSIBILITY.md#reporting-accessibility-issues)
+  if GitHub is a barrier for you.
+- **Find accessibility work.** Issues that suit a first contribution are
+  labelled `accessibility` and `good first issue`; issues where we need
+  experienced help are labelled `accessibility` and `help wanted`, and say what
+  experience would help.
+
+## Ways to take part
+
+Everything here can be done asynchronously and in text: issues and pull
+requests, GitHub Discussions for questions and ideas, and email to
+support@community-access.org. No meetings or calls are required. Testing with
+assistive technology, reproducing reports, reviewing documentation and
+translating are all contributions. If a tool or process we use is a barrier
+for you, or you need an accommodation, email the accessibility owner named in
+[ACCESSIBILITY.md](ACCESSIBILITY.md#ownership-and-maintenance) privately; you
+do not need to explain why. See
+[Taking part](ACCESSIBILITY.md#taking-part) for the full detail.
+
+## Architecture overview
+
+QUILL is a layered desktop application with strict boundaries that exist to
+preserve accessibility behavior and testability. The canonical, detailed
+specification lives in `docs/QUILL-PRD.md`; this section is the short version
+contributors need day to day.
+
+### Layers
+
+- **`quill/core`** — pure domain logic: documents, command registry, settings,
+  keymap, recent files, history, metrics, and storage primitives. No `wx`
+  imports and no direct UI ownership; strict-typed and gated in CI.
+- **`quill/io`** — format readers/writers and detection. The contract is
+  `read(path) -> Document`, optional `write(doc, path)`, optional `outline(doc)`;
+  also strict-typed.
+- **`quill/ui`** — wxPython shell, editor surface, menus, status bar, dialogs,
+  and command palette. UI composes `core` + `io` and owns widget lifecycle
+  (gradual typing).
+- **`quill/platform/windows`** — Windows-specific bridges (screen-reader
+  announcements, DPAPI secrets, shell integration, single-instance, TTS).
+- **`quill/plugins`** — plugin-facing API surfaces and manifest model.
+- **`quill/tools`** — internal CLIs and gates (a11y audit, diagnostics,
+  characterization and registry checks).
+
+### Primary flow
+
+A user action enters through `quill/ui/main_frame.py` (`MainFrame`), dispatches
+to `core.commands.CommandRegistry`, reads/writes a `core.document.Document`,
+persists through `io` or `core.storage`, and surfaces the outcome through status
+updates and `platform.windows.sr_announce.announce`.
+
+### Boundary and runtime rules
+
+- `core` and `io` never import `wx`; keep `wx` confined to `quill/ui` and
+  `quill/platform/windows`.
+- `ui` does not perform raw persistence; it calls `core` helpers (settings,
+  keymap, recent) and `io` for document I/O.
+- Persistent writes are atomic via `core.storage.write_json_atomic`
+  (temp file + `os.replace`), with schema validation and `.bak`/recovery.
+- The single UI thread owns all widgets; background I/O and heavier compute run
+  off-thread, network/AI runs async behind explicit consent, and all cross-thread
+  UI updates marshal through `wx.CallAfter`/`wx.CallLater`.
+- `core.events.CancelToken` is the shared cancellation primitive; long-running
+  tasks accept and check it at safe boundaries.
+- No silent network calls: every cloud/AI action is explicit, per-action opt-in
+  with visible progress and outcome.
+
+## Development setup
+
+1. Install Python 3.14.
+2. Install dependencies:
+   - `pip install -e ".[ui,dev]"`
+3. Run QUILL locally:
+   - `python -m quill`
+   - Or use a run-from-source launcher, which syncs dependencies and opens
+     Quill in one step: `run-from-source.bat` (Windows),
+     `run-from-source.sh` (any shell), and `run-from-source.command`
+     (macOS — double-click in Finder, which runs `.command` files in Terminal
+     the way `.sh` files will not; #923). On macOS the first run may be blocked
+     by Gatekeeper quarantine; right-click and choose **Open** once to trust it.
+
+## Making changes
+
+1. Create a feature branch from `main`.
+2. Keep changes focused and small enough to review.
+   - **Error-specificity review rule:** a new user-visible error must name the
+     specific condition ("The [APIKey] section is missing from Access.ini",
+     not "could not read the file") and, where a next action exists, say it
+     (a menu path, a setting, a command). Coded errors get their what-to-do
+     sentence from `USER_HINTS` in `quill/core/error_codes.py` (or a class
+     `user_hint`); surfaces display exceptions through `user_facing_message`.
+     A blind user cannot open the failing file to see what went wrong — the
+     message must carry the whole diagnosis and the next step.
+3. Follow the current module boundaries:
+   - `quill/core`: no `wx` imports
+   - `quill/ui`: UI behavior and dialogs
+   - `quill/io`: format readers/writers
+   - `quill/platform/windows`: Windows-specific integration
+4. Prefer existing helpers and patterns over introducing parallel paths.
+5. Keep user-facing text clear and accessibility-friendly.
+
+## Quality checks
+
+Run these before opening a pull request:
+
+- Lint: `ruff check .`
+- Format check: `ruff format --check .`
+- Scoped strict type-check: `mypy quill\core quill\io`
+- Tests: `pytest tests/unit/ tests/stability/ -q --ignore=tests/unit/core/test_net_tls.py --ignore=tests/unit/core/test_thesaurus.py`
+- Docs artifact parity (if docs changed): `python scripts/check_docs_artifacts.py`
+
+Type-checking is intentionally **scoped to `quill\core` and `quill\io`**. These
+layers are strict-typed and gated in CI. Do not run an unscoped whole-tree
+`mypy` scan: `quill\ui` is excluded (gradual typing) in `pyproject.toml`, so a
+whole-tree run is both slower and noisier without adding signal. Always use the
+scoped command above.
+
+### Optional: install pre-commit hooks
+
+To catch formatting, lint, and undefined-name problems on changed files before
+they reach CI, install the hooks once:
+
+```powershell
+pip install pre-commit
+pre-commit install
+```
+
+The hooks run `ruff format`, `ruff check`, and an undefined-name check on the
+files you are committing. Commits that fail are blocked locally.
+
+If your change updates `docs/*.md`, regenerate matching artifacts:
+
+- `pandoc docs\\<name>.md -f gfm -t html5 -s -o docs\\<name>.html`
+- `pandoc docs\\<name>.md -f gfm -t epub3 -o docs\\<name>.epub`
+
+## Pull request expectations
+
+A strong PR includes:
+
+1. A clear summary of what changed and why.
+2. The accessibility checklist from the pull request template, with each
+   applicable item checked and the screen reader and version you tested with.
+3. Notes on risk or migration impact, if any.
+4. Evidence of the checks you ran.
+
+Please avoid mixing unrelated refactors with feature or bug-fix work.
+
+## Contributing a Quillin
+
+Quillins are small, sandboxed extensions that add commands, snippets, menus, and
+hotkeys to QUILL. Contributing one has its own dedicated path:
+
+- **Tutorial** — [`docs/quillins.md`](docs/quillins.md): a
+  hands-on, build-it-from-scratch walkthrough (Layer 1 snippet → Layer 2
+  handler → lint → test → submit).
+- **Submission guide** — [`docs/quillins.md`](docs/quillins.md):
+  the process, directory layout, review criteria, and acceptance checklist.
+- **Author Covenant** — [`docs/quillins.md`](docs/quillins.md):
+  the code of conduct for Quillin *code* (accessibility, capability honesty, no
+  silent network, security). Every submission attests to it.
+- **Self-lint** — `python -m quill.tools.quillin_lint <dir> --strict` must be
+  green; the `Quillin Verify` CI gate runs it on every submission.
+- **Start a submission** — open the **Quillin submission** issue (it scaffolds
+  the `manifest.json`), then open a PR with the **Quillin submission** PR
+  template.
+
+## Acknowledgments and Attribution
+
+Quill is built on open-source foundations and integrates best practices from the accessibility community:
+
+- **AccessibleApps** — Christopher Toth and contributors (https://github.com/accessibleapps/) contribute several libraries that are essential to Quill's accessibility and cross-platform reliability:
+  - `app_updater` (MIT) — cross-platform incremental update delivery and automatic installer bootstrapper. Vendored at `quill/_vendor/autoupdate/`.
+  - `smart_list` (MIT) — accessible, model-based list view for large outlines and datasets.
+  - `accessible_output2` (MIT) — optional fallback for speech and braille output when Prism is unavailable.
+  - `html_to_text` (MIT) — converts HTML from clipboard pastes to clean, structured plain text. Used in `quill/ui/html_paste_cleaner.py`.
+  - `app_elements`, `platform_utils`, `keyboard_handler` — small cross-platform utilities for dialogs, clipboard, and hotkeys.
+
+  Full license text is reproduced in `docs/legal/THIRD_PARTY_NOTICES.md`.
+
+- **liblouis 3.38.0** (https://github.com/liblouis/liblouis, LGPL-2.1-or-later) — open-source braille translation and back-translation library that powers the QUILL Braille Pack. Provides UEB Grade 1 and Grade 2, Standard American English, and dozens of international language tables through its `lou_translate` runtime. The Braille Pack is an optional installer component; liblouis is only present when it is selected. Full license text is shipped alongside the pack as `COPYING` and `COPYING.LESSER`.
+
+- **Prism** (NVIDIA) — modern screen-reader backend for announcements and accessibility bridging.
+
+Contributors who integrate third-party libraries from AccessibleApps or other open-source projects should document the license, purpose, and API contract in the relevant module docstring, and update this section when adding a new external dependency.
+
+## Reporting bugs and proposing features
+
+- For product/support issues, users can use in-app `Help -> Get Help from Support...`, which reaches support@community-access.org rather than this public repository.
+- For repository work, open a GitHub issue with:
+  - expected behavior
+  - actual behavior
+  - reproduction steps
+  - environment details
+- Accessibility barriers have their own form and an email route; see
+  [Reporting accessibility issues](ACCESSIBILITY.md#reporting-accessibility-issues).
+- Use the most specific issue template available (accessibility, AI, intake,
+  snippets, dictation, performance, Quillin submission, or general bug/feature).
+- Use GitHub Discussions for Q&A and early design exploration.
+
+## Security issues
+
+Do not open public issues for vulnerabilities. Follow `SECURITY.md` for private
+reporting.
+
+Before opening a PR, quickly sanity-check security posture:
+
+1. No secrets or credentials in code, tests, fixtures, or docs.
+2. No user document content added to logs/diagnostics paths.
+3. New network calls are explicit and user-controlled.
+4. New file/command paths are validated and not shell-interpolated.
+
+## Translation contributions
+
+Localization contributors should follow:
+
+- `docs/translating.md`
+
+## Contributors
+
+The following people have contributed code, tests, accessibility feedback, or
+documentation to QUILL. Thank you.
+
+We add a name here, or credit someone in release notes, only with their
+consent and in the form they choose (a name, a GitHub handle, or no credit),
+and we describe the work, never the person's disability or assistive
+technology. See [Recognition](ACCESSIBILITY.md#recognition). Accessibility
+reports and fixes from before that rule started, on 29 October 2026, are
+credited by GitHub account in
+[Earlier accessibility contributions](ACCESSIBILITY.md#earlier-accessibility-contributions).
+
+- Taylor Arndt ([@taylorarndt](https://github.com/taylorarndt))
+- Michael Doise ([@mikedoise](https://github.com/mikedoise))
+- Doug Langley ([@douglangley](https://github.com/douglangley))
+- Becky K ([@BeckyK102125](https://github.com/BeckyK102125))
+- Kelly Ford ([@kellylford](https://github.com/kellylford)) — Vision Prompt Library (#195, #248): 12 IDT-evaluated image description styles, pre-describe picker, retry-in-dialog, VisionPromptManagerDialog, and AI Hub integration; HEIC/HEIF image support (#164, #165). Kelly is also the author of the [Image Description Toolkit](https://github.com/kellylford/Image-Description-Toolkit), a set of experimental tools for accessible image interaction that informed the prompt styles shipped here. His other accessibility-first projects include [QuickMail](https://github.com/kellylford/QuickMail) (accessible IMAP client), [RSSQuick](https://github.com/kellylford/rssquick) (accessible WPF RSS reader), and [ChatViewer](https://github.com/kellylford/ChatViewer) (GitHub Copilot Chat viewer).
+
+## Release process
+
+Releases are cut from `main`. Hotfixes may use short-lived `release/x.y.z` branches when needed.
+
+Before tagging a release:
+
+1. `ruff check .`
+2. `pytest -q`
+3. `python scripts/check_docs_artifacts.py`
+4. Windows packaging workflow readiness (`.github/workflows/windows-release.yml`)
+
+Documentation follows the per-app rule (see `standalone/README.md`): a change to a companion app (Radio, Cast, Weather, Converter, Audio Studio, Beacon, Social) is documented in that app's own `standalone/<app>/CHANGELOG.md` and `docs/` files; a change to QUILL proper is documented in the repo-root files below; a shared change (announcement service, QuillVille menu, tray hotkeys, updater, dialog conventions) is documented in QUILL's files and mirrored into every affected app's changelog, so an app's user can learn everything about their app from that app's own docs.
+
+Release notes are prepared in a release notes file with the version as a part of its naming convention ('release0.7.0.md'). The file is then converted to epub and html file formats for distribution by Pandoc. `CHANGELOG.md` carries the same content in abbreviated form. All three files should be
+updated and committed before tagging.
+
+Versioning follows semantic intent for user-visible behavior:
+- **Patch**: bug fixes and low-risk changes
+- **Minor**: additive features and workflow improvements
+- **Major**: breaking changes or large platform shifts
+
+`main` is branch-protected with required checks and pull-request reviews. Admin bypass remains
+enabled for emergency direct commits; these must be followed by a post-merge explanation and
+follow-up remediation if needed.
+
+## License
+
+By contributing, you agree that your contributions are licensed under the
+repository's MIT license.

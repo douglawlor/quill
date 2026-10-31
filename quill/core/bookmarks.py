@@ -15,13 +15,16 @@ per editor or shared across editors.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from quill.core.bookmark_anchor import BookmarkAnchor
 from quill.core.paths import app_data_dir
 from quill.core.storage import read_json, write_json_atomic
 
 DEFAULT_VAULT_FILENAME = "bookmarks.json"
+DOCUMENT_MEMORY_FILENAME = "document_memory.json"
 
 
 @dataclass(slots=True)
@@ -104,6 +107,179 @@ class BookmarkVault:
         return self.bookmarks.get(name)
 
 
+@dataclass(slots=True)
+class DocumentMemory:
+    """Per-document bookmarks and last-cursor-position, persisted across sessions.
+
+    Unlike :class:`BookmarkVault` (a single flat name->position map), this keys
+    everything by the document's normalized absolute path, so each file remembers
+    its own named jump points and where the cursor last was. Untitled documents
+    (no path) get ``key_for() is None`` and are simply never persisted — the caller
+    keeps those in memory for the session only.
+
+    On-disk shape (``app_data_dir()/document_memory.json``)::
+
+        {"<doc-key>": {"bookmarks": {"intro": 0, ...},
+                       "numbered": [{"number": 1, "position": 0, "label": "..."}],
+                       "last_position": 1234}}
+
+    Forgiving load (missing/malformed -> empty), atomic save via core.storage.
+
+    ``numbered`` is the second kind of bookmark
+    (:class:`~quill.core.numbered_bookmarks.BookmarkSet` -- nine slots addressed
+    by digit) and is stored alongside the named ones rather than in a store of
+    its own. QUILL Lite is its first user, and the ``path`` argument is what lets
+    it be: QUILL Lite keeps its own file under ``%LOCALAPPDATA%\\QuillLite`` and
+    shares no data with QUILL (its PRD 5.3, "not a thin client"), so what the
+    two products share here is the *format and the code*, never the file.
+    Absent from older files and written only when non-empty.
+    """
+
+    path: Path = field(default_factory=lambda: app_data_dir() / DOCUMENT_MEMORY_FILENAME)
+    documents: dict[str, dict] = field(default_factory=dict)
+
+    @staticmethod
+    def key_for(doc_path: object) -> str | None:
+        """Normalized key for a document path, or None for an unsaved document."""
+        if not doc_path:
+            return None
+        try:
+            return os.path.normcase(os.path.abspath(str(doc_path)))
+        except (OSError, ValueError):
+            return None
+
+    @classmethod
+    def load(cls, path: Path | None = None) -> DocumentMemory:
+        target = path if path is not None else app_data_dir() / DOCUMENT_MEMORY_FILENAME
+        try:
+            raw = read_json(target, default={})
+        except (OSError, ValueError):
+            raw = {}
+        documents: dict[str, dict] = {}
+        if isinstance(raw, dict):
+            for key, entry in raw.items():
+                if not isinstance(key, str) or not isinstance(entry, dict):
+                    continue
+                marks: dict[str, int] = {}
+                for name, pos in (entry.get("bookmarks") or {}).items():
+                    if isinstance(name, str) and isinstance(pos, int) and name.strip():
+                        marks[name.strip()] = max(0, pos)
+                last = entry.get("last_position")
+                clean: dict[str, object] = {"bookmarks": marks}
+                # Numbered bookmarks are validated on the way back out by
+                # BookmarkSet.from_records, so the raw list is kept as-is here
+                # rather than checked twice in two places that could disagree.
+                numbered = entry.get("numbered")
+                if isinstance(numbered, list):
+                    clean["numbered"] = numbered
+                if isinstance(last, int):
+                    clean["last_position"] = max(0, last)
+                # Optional edit-surviving anchors, keyed by the same bookmark
+                # names. Backward-compatible: absent in older files, and the int
+                # `bookmarks` map above remains the fallback position.
+                raw_anchors = entry.get("anchors")
+                if isinstance(raw_anchors, dict):
+                    anchors: dict[str, dict] = {}
+                    for name, adict in raw_anchors.items():
+                        if (
+                            isinstance(name, str)
+                            and name.strip()
+                            and BookmarkAnchor.from_dict(adict) is not None
+                        ):
+                            anchors[name.strip()] = adict
+                    if anchors:
+                        clean["anchors"] = anchors
+                documents[key] = clean
+        return cls(path=target, documents=documents)
+
+    def save(self) -> None:
+        ordered = {key: self.documents[key] for key in sorted(self.documents)}
+        write_json_atomic(self.path, ordered)
+
+    def _entry(self, key: str) -> dict:
+        return self.documents.setdefault(key, {"bookmarks": {}})
+
+    def bookmarks_for(self, key: str | None) -> dict[str, int]:
+        if not key:
+            return {}
+        return dict(self.documents.get(key, {}).get("bookmarks", {}))
+
+    def set_bookmarks(self, key: str | None, bookmarks: dict[str, int]) -> None:
+        if not key:
+            return
+        self._entry(key)["bookmarks"] = {n: max(0, int(p)) for n, p in bookmarks.items()}
+        self.save()
+
+    def numbered_for(self, key: str | None) -> list:
+        """This document's numbered bookmarks, as records, or ``[]``.
+
+        Records rather than a ``BookmarkSet`` so this module keeps no import of
+        :mod:`quill.core.numbered_bookmarks`: the caller owns the model, this
+        owns the file. :meth:`BookmarkSet.from_records` turns them back.
+        """
+        if not key:
+            return []
+        raw = self.documents.get(key, {}).get("numbered", [])
+        return list(raw) if isinstance(raw, list) else []
+
+    def set_numbered(self, key: str | None, records: list) -> None:
+        """Store this document's numbered bookmarks, or forget them when empty.
+
+        Forgotten rather than written as ``[]``, and the document's whole row is
+        dropped if nothing else is left in it. Otherwise the store grows one row
+        for every file ever opened -- most of them recording that the user did
+        nothing -- and eventually somebody has to be told how to clean it out.
+        """
+        if not key:
+            return
+        if not records and key not in self.documents:
+            return  # nothing to remember and nothing remembered; write no row
+        entry = self._entry(key)
+        if records:
+            entry["numbered"] = list(records)
+        else:
+            entry.pop("numbered", None)
+            empty = (
+                not entry.get("bookmarks")
+                and not entry.get("anchors")
+                and "last_position" not in entry
+            )
+            if empty:
+                self.documents.pop(key, None)
+        self.save()
+
+    def anchors_for(self, key: str | None) -> dict[str, BookmarkAnchor]:
+        """Return this document's edit-surviving bookmark anchors by name."""
+        if not key:
+            return {}
+        raw = self.documents.get(key, {}).get("anchors", {})
+        out: dict[str, BookmarkAnchor] = {}
+        if isinstance(raw, dict):
+            for name, adict in raw.items():
+                anchor = BookmarkAnchor.from_dict(adict)
+                if isinstance(name, str) and anchor is not None:
+                    out[name] = anchor
+        return out
+
+    def set_anchors(self, key: str | None, anchors: dict[str, BookmarkAnchor]) -> None:
+        if not key:
+            return
+        self._entry(key)["anchors"] = {name: a.to_dict() for name, a in anchors.items()}
+        self.save()
+
+    def last_position(self, key: str | None) -> int | None:
+        if not key:
+            return None
+        value = self.documents.get(key, {}).get("last_position")
+        return value if isinstance(value, int) else None
+
+    def set_last_position(self, key: str | None, position: int) -> None:
+        if not key:
+            return
+        self._entry(key)["last_position"] = max(0, int(position))
+        self.save()
+
+
 def set_bookmark(bookmarks: dict[str, int], name: str, position: int) -> dict[str, int]:
     normalized_name = name.strip()
     if not normalized_name:
@@ -119,3 +295,13 @@ def bookmark_names(bookmarks: dict[str, int]) -> list[str]:
 
 def bookmark_position(bookmarks: dict[str, int], name: str) -> int | None:
     return bookmarks.get(name)
+
+
+def quick_slot_name(slot: int) -> str:
+    """Reserved bookmark name for numbered quick-bookmark slot 0-9.
+
+    Quick bookmarks are not a parallel storage system -- they are named
+    bookmarks with a generated, centralized name, so they get persistence,
+    save/load, and crash-safety for free from the existing bookmark store.
+    """
+    return f"Quick {slot}"

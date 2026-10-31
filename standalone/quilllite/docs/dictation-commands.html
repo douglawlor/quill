@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Dictation commands</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="dictation-commands">Dictation commands</h1>
+<p>Everything QUILL Lite and QUILL’s Live Dictation understand,
+generated from the table the program itself reads – so this list and the
+program cannot disagree. In either program, say <strong>what can I
+say</strong> while dictating to open the same list.</p>
+<h2 id="how-the-commands-work">How the commands work</h2>
+<ul>
+<li>Punctuation and layout words can go anywhere in a phrase: “dear Sam
+comma new paragraph thank you for the letter”.</li>
+<li>Commands only work as a whole phrase, said on their own after a
+pause. “Delete that line of text” in a sentence is just words.</li>
+<li>With “Just write what I say” switched on in Dictation Settings,
+commands are written as words too; punctuation, layout and the stop
+phrase still work.</li>
+<li>Say “literal” before any of these to write the word instead:
+“literal comma” writes comma.</li>
+<li>Moonshine, Whisper, every downloaded model, OpenAI and the speech
+providers add punctuation by themselves; saying it yourself always wins.
+With Windows speech recognition, say all of it.</li>
+<li>Some commands take words after them: select the cat, paste clip
+three, insert snippet sign off. They work only at the start of a
+phrase.</li>
+<li>The Markdown line marks – “bullet”, “numbered item”, “block quote”
+and “heading one” to “heading six” – count only at the start of a
+phrase, so “the heading two lines down” stays words.</li>
+<li>A snippet with blanks asks for each one by name: say the answer, or
+for a choice say one of the options or choose and its number. Say skip
+to leave one empty, scratch that to go back one, or cancel to type
+nothing. Then the whole snippet goes in as one phrase, and scratch that
+takes all of it back.</li>
+</ul>
+<h2 id="the-command-word">The command word</h2>
+<ul>
+<li>Say “QUILL” first to give a command instead of dictating: “QUILL
+scratch that”. It counts only as the first word after a pause, so “I
+told QUILL about it” is written as words.</li>
+<li>Every command in this list works after the command word. If what
+follows it is not a command, nothing is typed: you hear “Not a command”,
+and “QUILL type that” writes it after all.</li>
+<li>Say “literal QUILL” to write the word itself.</li>
+<li>With “Commands only after the command word” switched on in More
+Dictation Settings (it is on in QUILL Transcribe), a command said on its
+own is written as words, except the stop phrase.</li>
+<li>Speak a Command (F11 in QUILL and QUILL Lite, and in QUILL
+Transcribe the Command Key you choose) does the same without the word:
+the next thing you say is a command. Press it twice for command
+mode.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Say, after the command word</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“type that” or “write that”</td>
+<td>Writes the words that were just refused as not a command, once.</td>
+</tr>
+<tr>
+<td>“command mode”</td>
+<td>Everything you say is a command, with no command word, until you say
+dictation mode or stop giving commands for a few seconds. You hear a
+falling tone when it ends.</td>
+</tr>
+<tr>
+<td>“dictation mode”</td>
+<td>Leaves command mode at once: what you say is written again.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="review-before-inserting">Review before inserting</h2>
+<ul>
+<li>Say “QUILL review that” to take the last phrase back out and hold it
+in Review Dictation (Shift+F4), where you can read it, edit it, ask the
+AI to change it and insert it once. Nothing is written until you insert
+it.</li>
+<li>While the review is open, what you say is written into it. Say the
+command word first to give an instruction instead, or turn on Talk About
+It in the window.</li>
+<li>Changing words with AI needs AI help switched on and your ChatGPT
+subscription or your own AI key. With AI off, the review still lets you
+edit and insert.</li>
+<li>“QUILL polish that” asks the AI to fix punctuation, capitals and
+small slips and keep your words. It works only after you turn on Allow
+polishing my dictation with AI in More Dictation Settings, and nothing
+is sent until you agree.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Say, after the command word</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“review that” or “review it”</td>
+<td>Takes the last phrase back out, or the words held while paused, and
+opens it in Review Dictation to read, change and insert. With AI off,
+the words stay where they were written.</td>
+</tr>
+<tr>
+<td>“make it shorter” or “more formal” or “fix the grammar only”</td>
+<td>While reviewing: asks the AI to change the words. Anything else said
+after the command word while reviewing is an instruction too. You hear
+what changed.</td>
+</tr>
+<tr>
+<td>“what changed”</td>
+<td>While reviewing: says again what the last change did.</td>
+</tr>
+<tr>
+<td>“read it back” or “read it”</td>
+<td>While reviewing: reads the whole text.</td>
+</tr>
+<tr>
+<td>“undo that change” or “undo the change”</td>
+<td>While reviewing: takes back the last change.</td>
+</tr>
+<tr>
+<td>“back to what i said”</td>
+<td>While reviewing: puts back the words exactly as you said them.</td>
+</tr>
+<tr>
+<td>“polish that” or “polish it”</td>
+<td>Asks the AI to fix punctuation, capitals and small slips in the
+words, keeping your words; opens the last phrase in Review Dictation
+first. Only when Allow polishing my dictation with AI is on, and only
+after you agree to send. You hear what changed; nothing is inserted
+until you insert it.</td>
+</tr>
+<tr>
+<td>“insert it”</td>
+<td>While reviewing: writes the text where it was going, once.</td>
+</tr>
+<tr>
+<td>“discard it”</td>
+<td>While reviewing: throws the text away; nothing is written.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="profiles-and-formatting">Profiles and formatting</h2>
+<ul>
+<li>A profile is the kind of writing dictation is for: Standard, Email,
+Document, Markdown, Chat, Coding, Verbatim. Standard is your Dictation
+Settings as they are, and is where everybody starts.</li>
+<li>Choose one in More Dictation Settings in QUILL and QUILL Lite, or in
+QUILL Transcribe’s Dictation menu (Dictation Profile, Ctrl+Shift+F) or
+tray menu. Or say its name after the command word: “QUILL email
+mode”.</li>
+<li>A profile sets the pause, whether filler words are removed and
+whether punctuation is added, and how headings, bold and italic are
+written.</li>
+<li>Markdown and Coding write “heading two” as two number signs, and
+“bold that” as two asterisks either side. Document and Email use the
+editor’s own Heading and Bold in a document that holds formatting;
+anywhere else they type nothing for them and say why. Chat and Verbatim
+write plain text.</li>
+<li>Lock Profile stops a spoken profile name switching profiles; you can
+still choose one by hand. Nothing ever switches profiles on its
+own.</li>
+</ul>
+<h2 id="correcting-yourself-as-you-talk">Correcting yourself as you
+talk</h2>
+<ul>
+<li>With Fix it when I correct myself turned on in Dictation Settings,
+saying “no”, “I mean”, “no I mean”, “sorry” or “scratch that word”
+between two days, months, numbers or names from My Words writes only the
+second: “Thursday, no, Friday” writes Friday. Anything else is written
+as said.</li>
+<li>When you correct the same word the same way twice, with “correct
+that” and “choose”, or in QUILL’s own documents with “correct” and the
+word, dictation offers to remember it: “Add a correction: Ann becomes
+Anne?” In QUILL and QUILL Lite a window asks. Where no window can be
+shown the question is spoken: say “QUILL yes” to add it or “QUILL no”
+within 30 seconds. Nothing is added without a yes.</li>
+</ul>
+<h2 id="punctuation">Punctuation</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>period</td>
+<td><code>.</code></td>
+</tr>
+<tr>
+<td>full stop</td>
+<td><code>.</code></td>
+</tr>
+<tr>
+<td>comma</td>
+<td><code>,</code></td>
+</tr>
+<tr>
+<td>question mark</td>
+<td><code>?</code></td>
+</tr>
+<tr>
+<td>exclamation point</td>
+<td><code>!</code></td>
+</tr>
+<tr>
+<td>exclamation mark</td>
+<td><code>!</code></td>
+</tr>
+<tr>
+<td>colon</td>
+<td><code>:</code></td>
+</tr>
+<tr>
+<td>semicolon</td>
+<td><code>;</code></td>
+</tr>
+<tr>
+<td>ellipsis</td>
+<td><code>...</code></td>
+</tr>
+<tr>
+<td>open quote</td>
+<td>the quotation mark “</td>
+</tr>
+<tr>
+<td>begin quote</td>
+<td>the quotation mark “</td>
+</tr>
+<tr>
+<td>close quote</td>
+<td>the quotation mark “</td>
+</tr>
+<tr>
+<td>end quote</td>
+<td>the quotation mark “</td>
+</tr>
+<tr>
+<td>open single quote</td>
+<td><code>'</code></td>
+</tr>
+<tr>
+<td>close single quote</td>
+<td><code>'</code></td>
+</tr>
+<tr>
+<td>apostrophe</td>
+<td><code>'</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="brackets">Brackets</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>open parenthesis</td>
+<td><code>(</code></td>
+</tr>
+<tr>
+<td>open paren</td>
+<td><code>(</code></td>
+</tr>
+<tr>
+<td>left parenthesis</td>
+<td><code>(</code></td>
+</tr>
+<tr>
+<td>close parenthesis</td>
+<td><code>)</code></td>
+</tr>
+<tr>
+<td>close paren</td>
+<td><code>)</code></td>
+</tr>
+<tr>
+<td>right parenthesis</td>
+<td><code>)</code></td>
+</tr>
+<tr>
+<td>open bracket</td>
+<td><code>[</code></td>
+</tr>
+<tr>
+<td>left bracket</td>
+<td><code>[</code></td>
+</tr>
+<tr>
+<td>close bracket</td>
+<td><code>]</code></td>
+</tr>
+<tr>
+<td>right bracket</td>
+<td><code>]</code></td>
+</tr>
+<tr>
+<td>open brace</td>
+<td><code>{</code></td>
+</tr>
+<tr>
+<td>close brace</td>
+<td><code>}</code></td>
+</tr>
+<tr>
+<td>open angle bracket</td>
+<td><code>&lt;</code></td>
+</tr>
+<tr>
+<td>close angle bracket</td>
+<td><code>&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="dashes-and-joining">Dashes and joining</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>hyphen</td>
+<td><code>-</code></td>
+</tr>
+<tr>
+<td>dash</td>
+<td>a dash, written as em dash, no spaces (word—word)</td>
+</tr>
+<tr>
+<td>slash</td>
+<td><code>/</code></td>
+</tr>
+<tr>
+<td>forward slash</td>
+<td><code>/</code></td>
+</tr>
+<tr>
+<td>backslash</td>
+<td><code>\</code></td>
+</tr>
+<tr>
+<td>underscore</td>
+<td><code>_</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="symbols">Symbols</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>at sign</td>
+<td><code>@</code></td>
+</tr>
+<tr>
+<td>hash sign</td>
+<td><code>#</code></td>
+</tr>
+<tr>
+<td>number sign</td>
+<td><code>#</code></td>
+</tr>
+<tr>
+<td>dollar sign</td>
+<td><code>$</code></td>
+</tr>
+<tr>
+<td>percent sign</td>
+<td><code>%</code></td>
+</tr>
+<tr>
+<td>ampersand</td>
+<td><code>&amp;</code></td>
+</tr>
+<tr>
+<td>asterisk</td>
+<td><code>*</code></td>
+</tr>
+<tr>
+<td>plus sign</td>
+<td><code>+</code></td>
+</tr>
+<tr>
+<td>minus sign</td>
+<td><code>-</code></td>
+</tr>
+<tr>
+<td>equals sign</td>
+<td><code>=</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="lines-and-layout">Lines and layout</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>new line</td>
+<td>a line break</td>
+</tr>
+<tr>
+<td>newline</td>
+<td>a line break</td>
+</tr>
+<tr>
+<td>new paragraph</td>
+<td>a blank line (new paragraph)</td>
+</tr>
+<tr>
+<td>tab key</td>
+<td>a tab</td>
+</tr>
+<tr>
+<td>press tab</td>
+<td>a tab</td>
+</tr>
+<tr>
+<td>tab</td>
+<td>a tab</td>
+</tr>
+</tbody>
+</table>
+<h2 id="markdown-and-code">Markdown and code</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>backtick</td>
+<td><code>`</code></td>
+</tr>
+<tr>
+<td>back quote</td>
+<td><code>`</code></td>
+</tr>
+<tr>
+<td>triple backtick</td>
+<td>a code fence (three backticks) on a line of its own</td>
+</tr>
+<tr>
+<td>code fence</td>
+<td>a code fence (three backticks) on a line of its own</td>
+</tr>
+<tr>
+<td>tilde</td>
+<td><code>~</code></td>
+</tr>
+<tr>
+<td>vertical bar</td>
+<td>`</td>
+</tr>
+<tr>
+<td>pipe symbol</td>
+<td>`</td>
+</tr>
+<tr>
+<td>caret</td>
+<td><code>^</code></td>
+</tr>
+<tr>
+<td>greater than sign</td>
+<td><code>&gt;</code></td>
+</tr>
+<tr>
+<td>less than sign</td>
+<td><code>&lt;</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="starting-a-line-say-these-first">Starting a line (say these
+first)</h2>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>bullet</td>
+<td><code>- </code></td>
+</tr>
+<tr>
+<td>list item</td>
+<td><code>- </code></td>
+</tr>
+<tr>
+<td>numbered item</td>
+<td><code>1. </code></td>
+</tr>
+<tr>
+<td>block quote</td>
+<td><code>&gt; </code></td>
+</tr>
+<tr>
+<td>heading one</td>
+<td><code># </code></td>
+</tr>
+<tr>
+<td>heading 1</td>
+<td><code># </code></td>
+</tr>
+<tr>
+<td>heading two</td>
+<td><code>## </code></td>
+</tr>
+<tr>
+<td>heading 2</td>
+<td><code>## </code></td>
+</tr>
+<tr>
+<td>heading three</td>
+<td><code>### </code></td>
+</tr>
+<tr>
+<td>heading 3</td>
+<td><code>### </code></td>
+</tr>
+<tr>
+<td>heading four</td>
+<td><code>#### </code></td>
+</tr>
+<tr>
+<td>heading 4</td>
+<td><code>#### </code></td>
+</tr>
+<tr>
+<td>heading five</td>
+<td><code>##### </code></td>
+</tr>
+<tr>
+<td>heading 5</td>
+<td><code>##### </code></td>
+</tr>
+<tr>
+<td>heading six</td>
+<td><code>###### </code></td>
+</tr>
+<tr>
+<td>heading 6</td>
+<td><code>###### </code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-correcting">Commands: correcting</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“scratch that” or “delete that”</td>
+<td>Removes the phrase you dictated last. Say it again to remove the one
+before. A phrase you have typed into since is left alone.</td>
+</tr>
+<tr>
+<td>“undo that” or “undo” or “undo last”</td>
+<td>The same as pressing Ctrl+Z.</td>
+</tr>
+<tr>
+<td>“select that”</td>
+<td>Selects the phrase you dictated last, so you can change or format it
+with the keyboard. The next phrase you say replaces it.</td>
+</tr>
+<tr>
+<td>“capitalize that” or “cap that”</td>
+<td>Gives every word of the last phrase a capital: meeting notes becomes
+Meeting Notes.</td>
+</tr>
+<tr>
+<td>“all caps that” or “uppercase that”</td>
+<td>Puts the last phrase in capitals.</td>
+</tr>
+<tr>
+<td>“no caps that” or “lowercase that”</td>
+<td>Puts the last phrase in small letters.</td>
+</tr>
+<tr>
+<td>“delete word” or “delete last word”</td>
+<td>Deletes the word just before the cursor.</td>
+</tr>
+<tr>
+<td>“delete sentence” or “delete last sentence”</td>
+<td>Deletes from the start of the sentence the cursor is in up to the
+cursor.</td>
+</tr>
+<tr>
+<td>“delete previous paragraph” or “delete last paragraph”</td>
+<td>Deletes the paragraph just before the cursor, from its start up to
+the cursor. In another program, only words dictation typed there.</td>
+</tr>
+<tr>
+<td>“read that” or “repeat that”</td>
+<td>Reads aloud again everything the last phrase, snippet, clip or
+review put in. In another program, only what dictation itself typed can
+be read.</td>
+</tr>
+<tr>
+<td>“read last sentence” or “read the last sentence”</td>
+<td>Reads the sentence just before the cursor, with its punctuation
+said.</td>
+</tr>
+<tr>
+<td>“read last paragraph” or “read the last paragraph” or “read this
+paragraph”</td>
+<td>Reads the paragraph the cursor is in.</td>
+</tr>
+<tr>
+<td>“read selection” or “read the selection”</td>
+<td>Reads what is selected.</td>
+</tr>
+<tr>
+<td>“correct that”</td>
+<td>Reads the other things the speech engine thought you said, numbered.
+Windows speech recognition offers its own; with Moonshine, Whisper or a
+downloaded model, the other built-in engine listens to the last phrase
+again and its answer is choice 2. Then say choose and a number.</td>
+</tr>
+<tr>
+<td>“choose one” or “choose 1”</td>
+<td>After correct that, puts the first of the other guesses in place of
+the last phrase.</td>
+</tr>
+<tr>
+<td>“choose two” or “choose 2”</td>
+<td>The same, with the second guess.</td>
+</tr>
+<tr>
+<td>“choose three” or “choose 3”</td>
+<td>The same, with the third guess.</td>
+</tr>
+<tr>
+<td>“spell that”</td>
+<td>Selects the phrase you dictated last and listens for it spelled out.
+Say the letters and they replace it. The fix for a name the engine keeps
+getting wrong.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-moving-the-cursor">Commands: moving the cursor</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“go to beginning of line” or “go to start of line”</td>
+<td>Moves the cursor to the start of the line.</td>
+</tr>
+<tr>
+<td>“go to end of line”</td>
+<td>Moves the cursor to the end of the line.</td>
+</tr>
+<tr>
+<td>“go to top” or “go to start of document” or “go to beginning of
+document”</td>
+<td>Moves the cursor to the start of the document.</td>
+</tr>
+<tr>
+<td>“go to bottom” or “go to end of document”</td>
+<td>Moves the cursor to the end of the document.</td>
+</tr>
+<tr>
+<td>“go to start of paragraph” or “go to beginning of paragraph”</td>
+<td>Moves the cursor to the start of the paragraph.</td>
+</tr>
+<tr>
+<td>“go to end of paragraph”</td>
+<td>Moves the cursor to the end of the paragraph.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-dictation-itself">Commands: dictation itself</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“start spelling” or “spell mode” or “spelling mode”</td>
+<td>Starts spelling mode: every phrase is read as letters until you say
+stop spelling. See Spelling below.</td>
+</tr>
+<tr>
+<td>“stop spelling” or “end spelling” or “spelling off”</td>
+<td>Leaves spelling mode.</td>
+</tr>
+<tr>
+<td>“what can i say” or “show commands” or “dictation commands”</td>
+<td>Opens this list.</td>
+</tr>
+<tr>
+<td>“stop dictation” or “stop dictating” or “stop listening”</td>
+<td>Stops dictation. With a wake phrase set, dictation goes back to
+waiting for it.</td>
+</tr>
+<tr>
+<td>“switch to spanish” or “spanish dictation”</td>
+<td>Dictate in Spanish from now on, the same as Switch Dictation
+Language. In Spanish, cambiar a inglés or dictado en inglés comes
+back.</td>
+</tr>
+<tr>
+<td>“switch to english” or “english dictation”</td>
+<td>Dictate in English from now on.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-selecting">Commands: selecting</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“select sentence” or “select this sentence”</td>
+<td>Selects the sentence the cursor is in.</td>
+</tr>
+<tr>
+<td>“select line” or “select this line”</td>
+<td>Selects the line the cursor is on.</td>
+</tr>
+<tr>
+<td>“select paragraph” or “select this paragraph”</td>
+<td>Selects the paragraph the cursor is in.</td>
+</tr>
+<tr>
+<td>“select again” or “select next”</td>
+<td>After select, go to or correct with words, moves on to the next
+place those words appear.</td>
+</tr>
+<tr>
+<td>“select previous”</td>
+<td>The same, going back to the place before.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-capitals-and-spacing">Commands: capitals and
+spacing</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“caps on” or “capitals on”</td>
+<td>Every word you say starts with a capital until you say caps off.
+Handy for titles and names.</td>
+</tr>
+<tr>
+<td>“caps off” or “capitals off”</td>
+<td>Words go back to ordinary capitals.</td>
+</tr>
+<tr>
+<td>“all caps on”</td>
+<td>Everything you say is written in capitals until you say all caps
+off.</td>
+</tr>
+<tr>
+<td>“all caps off”</td>
+<td>Back to ordinary capitals.</td>
+</tr>
+<tr>
+<td>“no space on”</td>
+<td>Words are written joined together with no spaces until you say no
+space off. Handy for web addresses and file names.</td>
+</tr>
+<tr>
+<td>“no space off”</td>
+<td>Spaces between words come back.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-clips-snippets-and-copying">Commands: clips, snippets
+and copying</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“copy all” or “copy everything” or “copy document”</td>
+<td>Copies the whole document, the same as Copy All on the Edit menu.
+Nothing is selected.</td>
+</tr>
+<tr>
+<td>“copy that”</td>
+<td>Copies the phrase you dictated last.</td>
+</tr>
+<tr>
+<td>“show clips” or “open copy tray” or “show copy tray”</td>
+<td>Opens the Copy Tray, where you choose a slot to paste.</td>
+</tr>
+<tr>
+<td>“show snippets”</td>
+<td>Opens the list of snippets to choose from.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-profiles-and-formatting">Commands: profiles and
+formatting</h2>
+<table>
+<thead>
+<tr>
+<th>Say, on its own</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“bold that”</td>
+<td>Makes the selection, or the phrase you dictated last, bold: QUILL’s
+own Bold in a document that holds formatting, two asterisks either side
+in the Markdown and Coding profiles.</td>
+</tr>
+<tr>
+<td>“italic that” or “italicize that”</td>
+<td>Makes the selection, or the phrase you dictated last, italic, the
+same way.</td>
+</tr>
+<tr>
+<td>“standard mode” or “standard profile”</td>
+<td>Switches to the Standard profile, unless Lock Profile is on.</td>
+</tr>
+<tr>
+<td>“email mode” or “email profile”</td>
+<td>Switches to the Email profile, unless Lock Profile is on.</td>
+</tr>
+<tr>
+<td>“document mode” or “document profile”</td>
+<td>Switches to the Document profile, unless Lock Profile is on.</td>
+</tr>
+<tr>
+<td>“markdown mode” or “markdown profile”</td>
+<td>Switches to the Markdown profile, unless Lock Profile is on.</td>
+</tr>
+<tr>
+<td>“chat mode” or “chat profile”</td>
+<td>Switches to the Chat profile, unless Lock Profile is on.</td>
+</tr>
+<tr>
+<td>“coding mode” or “coding profile”</td>
+<td>Switches to the Coding profile, unless Lock Profile is on.</td>
+</tr>
+<tr>
+<td>“verbatim mode” or “verbatim profile”</td>
+<td>Switches to the Verbatim profile, unless Lock Profile is on.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-with-words-after-them-selecting">Commands with words
+after them: selecting</h2>
+<table>
+<thead>
+<tr>
+<th>Say, at the start of a phrase</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“select …” (words in your document)</td>
+<td>Selects those words, looking first just before the cursor and then
+after it. Say select, the first words, through, and the last words to
+select everything between them. What you say next replaces the
+selection. If the words are not there, what you said is written as text
+instead.</td>
+</tr>
+<tr>
+<td>“go to …” or “go before …” (words in your document)</td>
+<td>Puts the cursor just before those words.</td>
+</tr>
+<tr>
+<td>“go after …” (words in your document)</td>
+<td>Puts the cursor just after those words.</td>
+</tr>
+<tr>
+<td>“correct …” (words in your document)</td>
+<td>Selects those words so that what you say next replaces them.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-with-words-after-them-correcting">Commands with words
+after them: correcting</h2>
+<table>
+<thead>
+<tr>
+<th>Say, at the start of a phrase</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“replace …” (words in your document, then with, then the new
+words)</td>
+<td>Replaces those words with the new ones: replace Tuesday with
+Wednesday. QUILL looks just before the cursor first, then after it; in
+another program, only in the phrase you dictated last. If the words are
+not there, what you said is written as text, as with select; after the
+command word, nothing is written.</td>
+</tr>
+<tr>
+<td>“change that to …” (the new words)</td>
+<td>Puts the new words in place of the phrase you dictated last: change
+that to see you on Friday. What it said before stays in Recent Phrases,
+marked before correction.</td>
+</tr>
+<tr>
+<td>“spell …” (letters)</td>
+<td>Spells one word without going into spelling mode: spell bravo alpha
+delta writes bad.</td>
+</tr>
+</tbody>
+</table>
+<h2
+id="commands-with-words-after-them-clips-snippets-and-copying">Commands
+with words after them: clips, snippets and copying</h2>
+<table>
+<thead>
+<tr>
+<th>Say, at the start of a phrase</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“paste clip …” or “paste slot …” (a number from one to twelve)</td>
+<td>Pastes that slot of the Copy Tray.</td>
+</tr>
+<tr>
+<td>“insert snippet …” (a snippet’s name)</td>
+<td>Puts in the snippet with that name. If more than one matches, you
+hear how many and the snippet list opens.</td>
+</tr>
+<tr>
+<td>“insert abbreviation …” or “expand abbreviation …” (an
+abbreviation)</td>
+<td>Writes what that abbreviation expands to, as if you had typed
+it.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="commands-with-words-after-them-dictation-itself">Commands with
+words after them: dictation itself</h2>
+<table>
+<thead>
+<tr>
+<th>Say, at the start of a phrase</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“dictation context …” (the name of a saved context)</td>
+<td>Uses that saved context for this document, as if you had chosen it
+in Dictation Context for This Document.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="spelling">Spelling</h2>
+<ul>
+<li>Say “start spelling”, then letters. Everything you say is written as
+letters until you say “stop spelling”.</li>
+<li>Say “capital” before a letter for a capital, and “space” for a
+space. Say “all caps” for capitals until “no caps” or the end of the
+phrase.</li>
+<li>Punctuation works while spelling, with no spaces, and each phrase
+joins the letters before it, so you can pause: “jay dot sierra mike
+india tango hotel”, then “at sign echo x-ray dot charlie oscar” writes
+<a href="mailto:j.smith@ex.co">j.smith@ex.co</a>. “Dot” is a full stop
+only here. A whole word that is not a letter is left out.</li>
+<li>Say “spell” and the letters to spell one word without starting
+spelling mode, and “spell that” to spell the last phrase over
+again.</li>
+<li>Letter names work (“bee”, “see”), and the phonetic alphabet is
+clearer: alpha, bravo, charlie, delta, echo, foxtrot, golf, hotel,
+india, juliet, kilo, lima, mike, november, oscar, papa, quebec, romeo,
+sierra, tango, uniform, victor, whiskey, x-ray, yankee, zulu.</li>
+<li>Numbers are written as digits: zero, one, two, three, four, five,
+six, seven, eight, nine.</li>
+</ul>
+<h2 id="worked-examples">Worked examples</h2>
+<p>Each of these works the same in QUILL and QUILL Lite. What you get is
+what the automated acceptance tests check.</p>
+<table>
+<thead>
+<tr>
+<th>You have</th>
+<th>You say</th>
+<th>You get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Meet me on Friday.</td>
+<td>“go to Friday”, then “next”</td>
+<td>Meet me on next Friday. The cursor goes in front of the words, and
+what you say next is written there.</td>
+</tr>
+<tr>
+<td>Meet me on Friday.</td>
+<td>“go after meet me”, then “at noon”</td>
+<td>Meet me at noon on Friday.</td>
+</tr>
+<tr>
+<td>The cat sat. The cat ran. The cat slept. (cursor at the end)</td>
+<td>“select the cat”, then “select previous” twice, then “select
+again”</td>
+<td>The third The cat is selected first, because the nearest match
+before the cursor wins; then the second, then the first; then the second
+again. At the ends you hear “None before that.” or “No more.”</td>
+</tr>
+<tr>
+<td>Dear Sam, the meeting moved to Tuesday at ten.</td>
+<td>“select the meeting through Tuesday”</td>
+<td>the meeting moved to Tuesday is selected. The next phrase you say
+replaces it.</td>
+</tr>
+<tr>
+<td>I met Ann today.</td>
+<td>“correct Ann”, then “Anne”</td>
+<td>I met Anne today.</td>
+</tr>
+<tr>
+<td>Any document</td>
+<td>“copy all”</td>
+<td>The whole document is on the clipboard. Nothing is selected and the
+cursor does not move, so the next word you say cannot replace
+everything.</td>
+</tr>
+<tr>
+<td>Kept. (typed by you)</td>
+<td>“first phrase period”, “second phrase period”, then “scratch that”
+twice</td>
+<td>Kept. Each scratch that takes out one dictated phrase, newest first.
+Your own typing is never taken; a phrase you have typed into since is
+left alone.</td>
+</tr>
+<tr>
+<td>Copy Tray slots 1 to 12 filled</td>
+<td>“paste clip one” up to “paste clip twelve”, or “paste slot 12”</td>
+<td>That slot’s text goes in as one phrase, so scratch that takes all of
+it back. An empty slot is said (“Slot 4 is empty.”); “paste clip
+thirteen” asks for a slot number.</td>
+</tr>
+<tr>
+<td>A snippet named sign off</td>
+<td>“insert snippet sign off”</td>
+<td>The snippet’s text. A name said as separate words finds a joined
+name too (“sig off” finds sigoff). When two names match, you hear how
+many and nothing is typed.</td>
+</tr>
+<tr>
+<td>An abbreviation named home address</td>
+<td>“insert abbreviation home address”</td>
+<td>What the abbreviation expands to.</td>
+</tr>
+<tr>
+<td>Anywhere</td>
+<td>“caps on”, “the old man and the sea”, “caps off”</td>
+<td>The Old Man And The Sea. All caps on and all caps off work the same
+way for capitals throughout. Every mode ends when dictation stops.</td>
+</tr>
+<tr>
+<td>meeting notes (just dictated)</td>
+<td>“capitalize that”, then “all caps that”, then “no caps that”</td>
+<td>Meeting Notes, then MEETING NOTES, then meeting notes.</td>
+</tr>
+<tr>
+<td>Write to</td>
+<td>“start spelling”, “jay dot sierra mike india tango hotel”, “at sign
+echo x-ray dot charlie oscar”, “stop spelling”</td>
+<td>Write to <code>j.smith@ex.co</code>. While spelling, each phrase
+joins the letters before it with no space, so you can pause as often as
+you like; say “space” for a space. A whole word such as smith is not a
+letter and is left out.</td>
+</tr>
+<tr>
+<td>An empty line</td>
+<td>“heading one shopping”, “bullet milk”, “numbered item call the
+bank”, “block quote be kind”</td>
+<td><code># Shopping</code>, then <code>- Milk</code>,
+<code>1. Call the bank</code> and <code>&gt; Be kind</code>, each on its
+own line.</td>
+</tr>
+<tr>
+<td>See</td>
+<td>“open bracket the guide close bracket”, then “open paren page close
+paren”</td>
+<td><code>See [the guide](page)</code>: a Markdown link, with no space
+between the bracket and the parenthesis.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>How accurately and how quickly each engine hears you has not been
+measured yet. Those numbers wait on the dictation benchmarks; nothing in
+this guide is a claim about them.</li>
+<li>Commands that take words after them (select, go to, go after,
+correct, paste clip, insert snippet) work only at the start of a
+phrase.</li>
+<li>Words you ask for are looked for in the document’s text. When they
+are not there, what you said is written as words and you hear “Not
+found, written as text.” Scratch that takes it out.</li>
+<li>An asterisk and an underscore join the words either side of them
+(<code>two*three</code>, <code>snake_case</code>). For Markdown bold,
+use “bold that” with the Markdown profile.</li>
+<li>In another program (QUILL Transcribe, and Quill Inkwell’s Dictate
+Anywhere) dictation can only type: dictating, punctuation, scratch that,
+the modes, spelling, paste clip, insert snippet and insert abbreviation
+work. Anything that has to read or select that program’s text is refused
+with the same sentence: select, go to, go after, select again, select
+sentence, line or paragraph, copy all, copy that, show clips, show
+snippets, spell that, and read last sentence or read selection.</li>
+<li>In another program, a snippet or abbreviation that puts the cursor
+in the middle leaves it at the end instead, because moving it back would
+mean reading that program’s text.</li>
+</ul>
+<h2 id="starting-and-stopping-by-voice">Starting and stopping by
+voice</h2>
+<ul>
+<li>With the wake phrase switched on in Dictation Settings, say “Quill
+dictate” to start dictation without touching the keyboard. Anything you
+say after it in the same breath is written.</li>
+<li>Say “stop dictation” on its own, after a pause, to stop dictation.
+“Stop dictation” always works too. With the wake phrase on, stopping
+goes back to waiting for the wake phrase.</li>
+<li>You choose both phrases in Dictation Settings; each needs at least
+two words.</li>
+</ul>
+<h2 id="spanish-punctuation">Spanish punctuation</h2>
+<p>With the dictation language set to Spanish, these words write
+punctuation only while automatic punctuation is off (or with Windows
+speech recognition): coma and punto are everyday words too. Commands are
+the English ones above.</p>
+<table>
+<thead>
+<tr>
+<th>Say</th>
+<th>Writes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“punto” or “punto y seguido” or “punto final”</td>
+<td>.</td>
+</tr>
+<tr>
+<td>“punto y aparte”</td>
+<td>. and a new paragraph</td>
+</tr>
+<tr>
+<td>“coma”</td>
+<td>,</td>
+</tr>
+<tr>
+<td>“punto y coma”</td>
+<td>;</td>
+</tr>
+<tr>
+<td>“dos puntos”</td>
+<td>:</td>
+</tr>
+<tr>
+<td>“puntos suspensivos”</td>
+<td>…</td>
+</tr>
+<tr>
+<td>“abrir interrogación” or “abre interrogación” or “signo de
+interrogación abierto” or “abrir signo de interrogación”</td>
+<td>¿</td>
+</tr>
+<tr>
+<td>“cerrar interrogación” or “cierra interrogación” or “signo de
+interrogación cerrado” or “cerrar signo de interrogación” or “signo de
+interrogación”</td>
+<td>?</td>
+</tr>
+<tr>
+<td>“abrir exclamación” or “abre exclamación” or “signo de exclamación
+abierto” or “abrir signo de exclamación”</td>
+<td>¡</td>
+</tr>
+<tr>
+<td>“cerrar exclamación” or “cierra exclamación” or “signo de
+exclamación cerrado” or “cerrar signo de exclamación” or “signo de
+exclamación”</td>
+<td>!</td>
+</tr>
+<tr>
+<td>“abrir paréntesis” or “abre paréntesis”</td>
+<td>(</td>
+</tr>
+<tr>
+<td>“cerrar paréntesis” or “cierra paréntesis”</td>
+<td>)</td>
+</tr>
+<tr>
+<td>“abrir comillas” or “abre comillas”</td>
+<td>the quotation mark “</td>
+</tr>
+<tr>
+<td>“cerrar comillas” or “cierra comillas”</td>
+<td>the quotation mark “</td>
+</tr>
+<tr>
+<td>“guion” or “guión”</td>
+<td>-</td>
+</tr>
+<tr>
+<td>“guion largo” or “guión largo”</td>
+<td>a dash, in the style chosen for dash</td>
+</tr>
+<tr>
+<td>“arroba”</td>
+<td>@</td>
+</tr>
+<tr>
+<td>“nueva línea” or “nuevo renglón”</td>
+<td>a line break</td>
+</tr>
+<tr>
+<td>“nuevo párrafo”</td>
+<td>a blank line (new paragraph)</td>
+</tr>
+<tr>
+<td>“tabulador”</td>
+<td>a tab</td>
+</tr>
+</tbody>
+</table>
+</main>
+</body>
+</html>

@@ -38,6 +38,8 @@ from quill.core.lists import (
     validate_before_commit,
 )
 from quill.core.lists.render import DefinitionProfileError, render_definition_with_choice
+from quill.ui.dialog_contract import set_accessible_name
+from quill.ui.dpi import dip_size
 
 _TYPE_CHOICES: list[tuple[str, ListType]] = [
     ("Bulleted", ListType.BULLET),
@@ -111,11 +113,13 @@ class ListStudioDialog:
         top = wx.BoxSizer(wx.HORIZONTAL)
         top.Add(wx.StaticText(dlg, label="List &type:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 6)
         self._type_choice = wx.Choice(dlg, choices=[label for label, _t in _TYPE_CHOICES])
+        set_accessible_name(self._type_choice, "List type")
         self._type_choice.SetSelection(self._type_index())
         self._type_choice.Bind(wx.EVT_CHOICE, self._on_type_changed)
         top.Add(self._type_choice, 0, wx.RIGHT, 18)
         top.Add(wx.StaticText(dlg, label="&Format:"), 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 6)
         self._format_choice = wx.Choice(dlg, choices=["Markdown", "HTML"])
+        set_accessible_name(self._format_choice, "Format")
         self._format_choice.SetSelection(0 if self._format == "markdown" else 1)
         self._format_choice.Bind(wx.EVT_CHOICE, self._on_format_changed)
         top.Add(self._format_choice, 0)
@@ -127,6 +131,7 @@ class ListStudioDialog:
         self._outline_label = wx.StaticText(dlg, label="&Items:")
         left.Add(self._outline_label, 0, wx.BOTTOM, 4)
         self._outline = wx.ListBox(dlg, style=wx.LB_SINGLE)
+        set_accessible_name(self._outline, "Items")
         self._outline.Bind(wx.EVT_LISTBOX, self._on_outline_select)
         left.Add(self._outline, 1, wx.EXPAND | wx.BOTTOM, 6)
         left.Add(self._build_outline_buttons(dlg), 0, wx.EXPAND)
@@ -143,8 +148,11 @@ class ListStudioDialog:
             10,
         )
         self._preview = wx.TextCtrl(
-            dlg, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_DONTWRAP, size=(-1, 120)
+            dlg,
+            style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_DONTWRAP,
+            size=dip_size(dlg, -1, 120),
         )
+        set_accessible_name(self._preview, "Generated source, read-only")
         outer.Add(self._preview, 0, wx.EXPAND | wx.ALL, 10)
 
         # The OK/Cancel button sizer and apply_modal_ids are added by the caller
@@ -157,7 +165,7 @@ class ListStudioDialog:
     def finalize(self) -> None:
         """Lay out the dialog and load initial content (after the caller adds buttons)."""
         self.dialog.SetSizerAndFit(self._outer_sizer)
-        self.dialog.SetSize((760, 620))
+        self.dialog.SetSize(dip_size(self.dialog, 760, 620))
         self._sync_type_visibility()
         self._reload_outline(select=0)
 
@@ -183,7 +191,7 @@ class ListStudioDialog:
         nest_row = wx.BoxSizer(wx.HORIZONTAL)
         self._btn_indent = wx.Button(dlg, label="&Indent")
         self._btn_outdent = wx.Button(dlg, label="&Outdent")
-        self._btn_add_child = wx.Button(dlg, label="Add chil&d")
+        self._btn_add_child = wx.Button(dlg, label="Add &child")
         self._btn_indent.Bind(wx.EVT_BUTTON, lambda _e: self._on_indent())
         self._btn_outdent.Bind(wx.EVT_BUTTON, lambda _e: self._on_outdent())
         self._btn_add_child.Bind(wx.EVT_BUTTON, lambda _e: self._on_add_child())
@@ -214,6 +222,7 @@ class ListStudioDialog:
         self._item_label = wx.StaticText(dlg, label="Item te&xt:")
         panel.Add(self._item_label, 0, wx.BOTTOM, 4)
         self._item_text = wx.TextCtrl(dlg, style=wx.TE_MULTILINE)
+        set_accessible_name(self._item_text, "Item text")
         self._item_text.Bind(wx.EVT_TEXT, self._on_item_text)
         panel.Add(self._item_text, 1, wx.EXPAND | wx.BOTTOM, 6)
         self._checked_box = wx.CheckBox(dlg, label="Tas&k is complete")
@@ -225,6 +234,7 @@ class ListStudioDialog:
         self._term_label = wx.StaticText(dlg, label="Te&rms (one per line):")
         panel.Add(self._term_label, 0, wx.BOTTOM, 4)
         self._term_text = wx.TextCtrl(dlg, style=wx.TE_MULTILINE)
+        set_accessible_name(self._term_text, "Terms, one per line")
         self._term_text.Bind(wx.EVT_TEXT, self._on_term_text)
         panel.Add(self._term_text, 1, wx.EXPAND | wx.BOTTOM, 6)
         self._def_label = wx.StaticText(
@@ -232,6 +242,7 @@ class ListStudioDialog:
         )
         panel.Add(self._def_label, 0, wx.BOTTOM, 4)
         self._def_text = wx.TextCtrl(dlg, style=wx.TE_MULTILINE)
+        set_accessible_name(self._def_text, "Definition or description")
         self._def_text.Bind(wx.EVT_TEXT, self._on_def_text)
         panel.Add(self._def_text, 1, wx.EXPAND)
         return panel

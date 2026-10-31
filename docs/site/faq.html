@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FAQ - QUILL</title>
-  <meta name="description" content="Frequently asked questions about QUILL 0.8.0 Beta 1: accessibility, privacy, AI, the Quillin extension platform, security, and contributing.">
+  <meta name="description" content="Plain answers to the questions people ask most about QUILL and the other Quill apps: getting started, downloads, screen readers, writing, files, speech, privacy, AI, Quillins and how to get help.">
   <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -21,8 +21,11 @@
             <details class="nav-dropdown">
               <summary>Download</summary>
               <ul>
-                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.8.0-beta.1/Quill-for-All-Setup-0.8.0.Beta.1.exe">System Installer</a></li>
-                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.8.0-beta.1/Quill-Portable-v0.8.0-beta.1.zip">Portable ZIP</a></li>
+                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-for-All-Setup-0.9.0.Beta.2.exe">Windows: System Installer (online)</a></li>
+                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-for-All-Setup-Offline-0.9.0.Beta.2.exe">Windows: System Installer (offline)</a></li>
+                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-Portable-v0.9.0-beta.2.zip">Windows: Portable ZIP (online)</a></li>
+                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-Portable-Offline-0.9.0-beta.2.zip">Windows: Portable ZIP (offline)</a></li>
+                <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill.dmg">macOS: Disk Image (.dmg)</a></li>
               </ul>
             </details>
           </li>
@@ -34,471 +37,990 @@
     </div>
   </header>
 
-  <main id="main" class="prose faq">
+  <main id="main" tabindex="-1" class="prose faq">
     <div class="wrap">
       <h1>Frequently asked questions</h1>
       <p class="lede">
-        Answers about what QUILL is, the 0.8.0 Beta 1 release, accessibility, privacy, AI,
-        the Quillin extension platform, and how to get involved.
-        Can't find it here? The <a href="/docs.html">documentation</a> goes deeper.
+        Here are the questions people ask us most, with short, plain answers. Each question
+        is a heading, so you can jump through them with your screen reader's heading keys.
+        Press Enter on a question to open its answer.
+        If your question is not here, the <a href="/docs.html">documentation</a> goes deeper,
+        and the <a href="/podcast/index.html">QUILL Cast audio course</a> teaches QUILL by ear.
       </p>
 
       <nav class="toc" aria-label="FAQ sections">
         <ul>
           <li><a href="#about">About QUILL</a></li>
-          <li><a href="#beta">The 0.8.0 Beta 1 release</a></li>
+          <li><a href="#start">Getting started and learning</a></li>
+          <li><a href="#family">The other Quill apps</a></li>
+          <li><a href="#beta">Downloads, updates and the road to 1.0</a></li>
           <li><a href="#accessibility">Accessibility</a></li>
-          <li><a href="#using">Using QUILL</a></li>
-          <li><a href="#privacy">Privacy &amp; data</a></li>
+          <li><a href="#writing">Writing and formatting</a></li>
+          <li><a href="#formats">Documents and file formats</a></li>
+          <li><a href="#voice">Speech and voice</a></li>
+          <li><a href="#organize">Vault, Story Studio and GLOW</a></li>
+          <li><a href="#privacy">Privacy and your data</a></li>
           <li><a href="#ai">AI features</a></li>
-          <li><a href="#quillins">Quillins (extensions)</a></li>
-          <li><a href="#authoring">Authoring &amp; submitting Quillins</a></li>
+          <li><a href="#quillins">Quillins and the Hub</a></li>
+          <li><a href="#authoring">Writing and sharing your own Quillins</a></li>
           <li><a href="#security">Security</a></li>
-          <li><a href="#contributing">Contributing</a></li>
+          <li><a href="#contributing">Helping out and community</a></li>
         </ul>
       </nav>
 
       <h2 id="about">About QUILL</h2>
 
       <details>
-        <summary>What is QUILL?</summary>
+        <summary><h3>What is QUILL?</h3></summary>
         <p>
-          QUILL is a screen-reader-first writing environment for Windows. It is designed so
-          that people who use assistive technology are first-class users, not an afterthought:
-          every action announces a clear outcome, everything works from the keyboard, and nothing
-          reaches the network without your explicit say-so.
+          QUILL is a writing program for Windows and macOS, made first for people who use
+          screen readers. Everything works from the keyboard. When you do something, QUILL
+          tells you how it turned out. And it never goes online unless you say so.
         </p>
       </details>
       <details>
-        <summary>What does the name stand for?</summary>
+        <summary><h3>What does the name stand for?</h3></summary>
         <p>
-          QUILL is <strong>Q</strong>uality, <strong>U</strong>sable,
-          <strong>I</strong>nclusive, <strong>L</strong>ightweight,
-          <strong>L</strong>iterate - the values the whole project is built around.
+          QUILL stands for <strong>Q</strong>uality, <strong>U</strong>sable,
+          <strong>I</strong>nclusive, <strong>L</strong>ightweight and
+          <strong>L</strong>iterate. Those five words are what we try to live up to.
         </p>
       </details>
       <details>
-        <summary>Who is QUILL for?</summary>
+        <summary><h3>Who is QUILL for?</h3></summary>
         <p>
-          Anyone who writes, with a particular focus on blind users, screen-reader and
-          keyboard-only users, accessibility professionals, researchers, developers, and
-          students. If you have found mainstream editors noisy, inconsistent, or hard to
-          navigate with assistive technology, QUILL is built for you.
+          Anyone who writes. We think most about people who are blind, people who use a
+          screen reader or only a keyboard, and students, researchers, developers and
+          accessibility professionals. If other editors have felt noisy or hard to find
+          your way around, QUILL was made with you in mind.
         </p>
       </details>
       <details>
-        <summary>What platforms does it run on?</summary>
+        <summary><h3>What do I need to run it?</h3></summary>
         <p>
-          QUILL ships for Windows 10 or later (64-bit), integrating with NVDA, JAWS, and
-          Narrator. The core logic is platform-agnostic, but the screen-reader bridges
-          are platform-specific; a macOS build is planned but not yet available.
+          On Windows, you need Windows 10 or later, 64-bit. QUILL works with NVDA, JAWS and
+          Narrator. On a Mac, you need macOS 12 or later. You do not need to install anything
+          else first. Some larger extras, like extra voices, document converters and braille
+          tables, are offered when you first reach for them, so the first install stays small.
         </p>
       </details>
       <details>
-        <summary>Is it free and open source?</summary>
+        <summary><h3>Is it free?</h3></summary>
         <p>
-          Yes. QUILL is open source under the MIT license. Contributions are welcome -
-          see the <a href="/docs/contributing.html">contribution guidelines</a>.
+          Yes. QUILL is free and open source under the MIT license, and every feature is
+          free for everyone. If you would like to donate, you can, and supporters are thanked
+          by name as Golden Quills in the About dialog. You never have to.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Who makes QUILL?</h3></summary>
+        <p>
+          A small team at Community Access, and a lot of the people who use it. Testers'
+          reports decide what we fix next. Fixes people send in ship with their name in the
+          release notes. Several things on this site started as a suggestion on a mailing
+          list.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Who are QUILLBert and QUILLBee?</h3></summary>
+        <p>
+          They're the two characters you'll meet around this site. QUILLBert is the curious
+          QUILLVille porcupine: he finds things, tries things, and points you at something
+          worth a look. QUILLBee is the guide, with the tips, the shortcuts and the details
+          worth knowing. QUILLBert discovers, QUILLBee explains. Whenever one of them speaks,
+          the name comes first, so your screen reader tells you who it is. Jeff introduces
+          them properly on the <a href="/meet-quillbert-and-quillbee.html">Meet QUILLBert
+          and QUILLBee</a> page.
         </p>
       </details>
 
-      <h2 id="beta">The 0.8.0 Beta 1 release</h2>
+      <h2 id="start">Getting started and learning</h2>
 
       <details>
-        <summary>Where do I download QUILL 0.8.0 Beta 1?</summary>
+        <summary><h3>I'm brand new. Where do I start?</h3></summary>
         <p>
-          Two options are available. The Windows installer and portable ZIP require Windows 10
-          or later, 64-bit. Both include an embedded Python runtime:
+          Start whichever way suits you. You do not need all of these.
         </p>
         <ul>
-          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.8.0-beta.1/Quill-for-All-Setup-0.8.0.Beta.1.exe">Windows system installer</a> - approximately 240&nbsp;MB, installs to Program Files and adds QUILL to your Start menu.</li>
-          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.8.0-beta.1/Quill-Portable-v0.8.0-beta.1.zip">Windows portable ZIP</a> - extract to any folder and run from there, no installation required.</li>
+          <li><strong>If you like to read at your own pace:</strong>
+            <a href="/docs/quill-step-by-step.html">QUILL, Step by Step</a> is a manual
+            written to be read aloud. It has seventeen short chapters, one skill each, with
+            a chance to practice. You can also
+            <a href="/docs/quill-step-by-step.epub">download QUILL, Step by Step as an EPUB</a>
+            and read it in ElevenReader, Voice Dream or any reading app.</li>
+          <li><strong>If you like to listen:</strong> the
+            <a href="/podcast/index.html">QUILL Cast audio course</a> is free. It starts at
+            the installer and goes on from there, with a little homework after each
+            episode.</li>
+          <li><strong>If you like to learn by doing:</strong> the
+            <a href="/tutorials/index.html">hands-on tutorials</a> begin with your first
+            hour in QUILL.</li>
+          <li><strong>If you want to look something up:</strong> the
+            <a href="/docs/userguide.html">user guide</a> covers everything.</li>
         </ul>
-        <p>All assets are also listed on the <a href="https://github.com/Community-Access/quill/releases/tag/v0.8.0-beta.1">GitHub releases page</a>.</p>
-      </details>
-      <details>
-        <summary>What is in 0.8.0 Beta 1?</summary>
         <p>
-          Meet-you-where-you-are profiles, Insert Automation, the Quillin platform, the AI
-          writing toolkit (Anthropic, OpenAI, Google Gemini, OpenRouter, Ollama, custom),
-          Braille Mode with the optional QUILL Braille Pack, Compare Mode, code-aware editing,
-          sound notifications and indentation tones, text encoding tools, Pandoc import/export
-          and batch conversion, citation insertion, the Snippet Gallery, the Dynamic Keyboard
-          Reference, and the EdSharp port. Plus major accessibility and startup fixes. The
-          <a href="/docs/release0.8.0-beta1.html">release notes</a> cover every section in detail.
+          Inside QUILL, a short setup wizard runs the first time you open it, and F1 explains
+          any command.
         </p>
       </details>
       <details>
-        <summary>What does "beta" mean for daily use?</summary>
+        <summary><h3>What happens the first time I open QUILL?</h3></summary>
         <p>
-          The foundation is complete and the beta is already capable enough for serious daily work.
-          Some workflows are more polished than others. Some integrations depend on optional local
-          tools. Behavior in certain areas will continue to be refined based on real-world use.
-          The <a href="/docs/release0.8.0-beta1.html">release notes</a> explain what the team is most
-          interested in feedback on.
+          A short setup wizard walks you through a few choices. If you would rather skip it,
+          press Cancel and QUILL starts with sensible settings. The voices that come with
+          Windows work straight away. Anything bigger is offered only when you first need it.
         </p>
       </details>
       <details>
-        <summary>How do I give feedback?</summary>
+        <summary><h3>Is QUILL hard to learn?</h3></summary>
         <p>
-          Use <strong>Help, Report a Bug</strong> from inside QUILL. This is the best path because
-          it includes the details the team needs to reproduce and understand issues. Use it for
-          bugs, accessibility issues, confusing workflows, feature requests, screen-reader behavior
-          reports, and general feedback.
+          The basics will feel familiar. The menus are where you expect them, and Ctrl+S
+          saves. You can keep QUILL small while you learn: choose the Essential or Writer
+          profile, and move up to Developer, Accessibility Professional or Full QUILL when
+          you are ready. If you cannot remember where a command lives, press Ctrl+Shift+P and
+          type part of its name. Every command has its own F1 help.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I make QUILL talk less, or more?</h3></summary>
+        <p>
+          Yes, both. Verbosity settings decide how much QUILL says. You can swap spoken
+          messages for sounds, or turn them off. QUILL does not announce dialogs opening and
+          closing by default, because your screen reader already does that.
+        </p>
+      </details>
+
+      <h2 id="family">The other Quill apps</h2>
+
+      <details>
+        <summary><h3>Are there other Quill apps besides the editor?</h3></summary>
+        <p>
+          Yes. They are separate, free Windows apps, made the same way as QUILL: keyboard
+          first, and built for screen readers. You can use any of them on its own.
+        </p>
+        <ul>
+          <li><a href="/radio.html">Quill Radio</a> plays internet radio, and much more.</li>
+          <li>QUILL Cast is a podcast player. Every episode reads as a whole sentence, so
+            one arrow press tells you what it is and whether you have heard it.</li>
+          <li><a href="/quilllite.html">QUILL Lite</a> is a simple text editor. If you know
+            Notepad or WordPad, almost every key you know works.</li>
+          <li><a href="/converter.html">Quill Converter</a> changes audio and video files
+            from one format into another, on your own computer.</li>
+          <li><a href="/dictation.html#transcribe-app">QUILL Transcribe</a> types what you
+            say into the program you are using: an email, a web form, a document. It is
+            released on 1 November 2026, and there is no download until then.</li>
+        </ul>
+        <p>
+          Not sure whether you want QUILL or QUILL Lite? The
+          <a href="/compare.html">comparison page</a> helps you choose.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Do I need QUILL to use them?</h3></summary>
+        <p>
+          No. Each app installs and runs by itself. If you do have more than one, Quill
+          Radio, QUILL Cast and QUILL share your favorites, history and settings, so you
+          do not have to set things up twice.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Should I choose the installer or the portable copy?</h3></summary>
+        <p>
+          When an app offers both, most people should choose the installer. It gives the app a Start menu entry and
+          an uninstaller. The portable copy is a ZIP file you unpack into any folder, even a
+          USB stick, and run from there. Choose it if you cannot install software on the
+          computer you are using.
+        </p>
+      </details>
+      <details>
+        <summary><h3>How do I get help with one of these apps?</h3></summary>
+        <p>
+          Press F1 anywhere in the app to hear what the window is for and what the focused
+          control does. Each app also has its own user guide. And you can always write to
+          <a href="mailto:support@community-access.org">support@community-access.org</a>.
+          A person reads every message.
+        </p>
+      </details>
+
+      <h2 id="beta">Downloads, updates and the road to 1.0</h2>
+
+      <details>
+        <summary><h3>Where do I download QUILL?</h3></summary>
+        <p>
+          The current release is QUILL 0.9.0 Beta 2. Pick one of the links below. If you are
+          not sure, choose the first one.
+        </p>
+        <p>
+          QUILL 1.0 is not released yet, so there is no 1.0 download to look for. The user
+          guide is written for 1.0, which is why it sometimes mentions things the beta
+          does not have yet. When 1.0 is ready, it will be on this page, and QUILL's Check
+          for Updates will tell you.
+        </p>
+        <ul>
+          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-for-All-Setup-0.9.0.Beta.2.exe">Windows installer (online)</a>. Most people want this one. It adds QUILL to your Start menu and fetches extras the first time you use them.</li>
+          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-for-All-Setup-Offline-0.9.0.Beta.2.exe">Windows installer (offline)</a>. A bigger download with every extra included. Good for slow or restricted internet.</li>
+          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-Portable-v0.9.0-beta.2.zip">Windows portable ZIP (online)</a>. Unpack it into any folder and run it. Nothing to install. Fetches extras the first time you use them.</li>
+          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill-Portable-Offline-0.9.0-beta.2.zip">Windows portable ZIP (offline)</a>. The portable copy with every extra included.</li>
+          <li><a href="https://github.com/Community-Access/quill/releases/download/v0.9.0-beta.2/Quill.dmg">Mac disk image</a>. Open it and drag QUILL to your Applications folder.</li>
+        </ul>
+      </details>
+      <details>
+        <summary><h3>What is 0.9.0?</h3></summary>
+        <p>
+          0.9.0 is the last beta before QUILL 1.0. Everything we planned for 1.0 is already
+          in it, including the optional AI tools, the Accessible Vault, Story Studio, GLOW,
+          Hey QUILL voice control, reading scanned documents, restore points, Read Aloud in
+          many languages, Table Studio and the Quillin Hub. You can read more in the
+          <a href="/docs/release1.0.0.html">1.0.0 release notes</a>.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What does "feature freeze" mean for me?</h3></summary>
+        <p>
+          It means nothing new is being added between 0.9.0 and 1.0. Every change is a bug
+          fix or a smoother edge, and most of them come from your reports. QUILL 1.0 will
+          do the same things as 0.9.0, with fewer surprises.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Is a beta safe for my everyday writing?</h3></summary>
+        <p>
+          QUILL is well tested, but you may still find rough edges, and your reports help us
+          smooth them. To keep your words safe, QUILL saves automatically, keeps backups and
+          restore points, and offers to recover your work after a crash.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What are safety advisories?</h3></summary>
+        <p>
+          If people report that a feature is misbehaving badly, we can switch off just that
+          one feature until the fix is ready. QUILL tells you out loud which feature was
+          switched off and why. An advisory can only turn something off, never on, and it is
+          lifted the same way once the fix ships. If you want the final say, setting
+          <code>QUILL_IGNORE_FEATURE_LOCKS=1</code> on your computer overrides it.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Does QUILL check for updates?</h3></summary>
+        <p>
+          Yes, each time it starts, unless you turn that off in Preferences. The check sends
+          nothing about you or your documents. It is also how safety advisories reach you,
+          which is why it starts out on. Safe Mode always skips it, and downloaded updates are
+          checked to make sure they are genuine.
+        </p>
+      </details>
+      <details>
+        <summary><h3>How do I tell you about a problem or an idea?</h3></summary>
+        <p>
+          In QUILL, choose Report a Bug from the Help menu and QUILL prepares the report for
+          you. You can also open an issue on
+          <a href="https://github.com/Community-Access/quill/issues">GitHub</a>, or email
+          <a href="mailto:support@community-access.org">support@community-access.org</a>.
+          We treat accessibility problems as bugs, not as wishes. Right now, before 1.0,
+          your reports matter more than anything else.
         </p>
       </details>
 
       <h2 id="accessibility">Accessibility</h2>
 
       <details>
-        <summary>Which screen readers are supported?</summary>
+        <summary><h3>Which screen readers work with QUILL?</h3></summary>
         <p>
-          NVDA, JAWS, and Narrator, with parity as a goal: an action should
-          announce the same meaningful outcome regardless of which screen reader
-          you use.
+          NVDA, JAWS and Narrator on Windows. We aim for each one to work equally well. If
+          something only works well in one of them, we do not count it as finished. QUILL
+          notices which screen reader you are running and speaks through it.
         </p>
       </details>
       <details>
-        <summary>What does "spoken-first" actually mean?</summary>
+        <summary><h3>What does "QUILL tells you how it turned out" mean?</h3></summary>
         <p>
-          Every command reports its result as text the screen reader speaks - for
-          example, "Wrapped 3 words in bold" or "Nothing selected." A command that
-          succeeds silently is treated as a bug, not a feature.
+          When you run a command, you hear the result. For example: "Wrapped 3 words in
+          bold", "Nothing selected" or "Saved." If a command ever does something without
+          telling you, we treat that as a bug.
         </p>
       </details>
       <details>
-        <summary>Can I use QUILL with the keyboard only?</summary>
+        <summary><h3>What if I miss something QUILL said?</h3></summary>
         <p>
-          Yes - everything is reachable and operable from the keyboard. Dialogs have
-          explicit default actions, predictable focus, and no keyboard traps. The command
-          palette gives keyboard access to every command in the application.
+          Press Alt+Shift+E to open the Spoken Echo. It keeps the last twenty things QUILL
+          said, in a list you can arrow through, read again and copy. Pressing an
+          information command twice quickly also opens the Echo, instead of repeating it.
         </p>
       </details>
       <details>
-        <summary>Does QUILL help with selection, which can be tricky with a screen reader?</summary>
+        <summary><h3>Can I use QUILL with just the keyboard?</h3></summary>
         <p>
-          Yes. QUILL includes structured selection tools designed around screen-reader use.
-          You can start a selection, extend it, complete it, return to the start, reselect
-          previous text, and expand or shrink selections by word, sentence, line, paragraph,
-          or block. Selection is deliberate and reviewable, not dependent on visual feedback.
+          Yes. Every feature works without a mouse, and focus never gets stuck in a dialog.
+          If you want to change a key, the Keymap Editor tells you which command already
+          uses it before you take it, and it can repair broken keys with one press.
         </p>
       </details>
       <details>
-        <summary>Does it respect high contrast and reduced motion?</summary>
+        <summary><h3>Selecting text is hard with a screen reader. Can QUILL help?</h3></summary>
         <p>
-          Yes. QUILL uses stock, accessible controls and honors your system settings,
-          including high-contrast themes. This documentation site also respects
-          <code>prefers-color-scheme</code> and <code>prefers-reduced-motion</code>.
+          Yes. You can start a selection, then grow it by word, sentence, line, paragraph or
+          block, and hear what you have. You never need to see the highlight.
         </p>
       </details>
       <details>
-        <summary>I found an accessibility problem. What do I do?</summary>
+        <summary><h3>Does QUILL work with a braille display?</h3></summary>
         <p>
-          Please report it - accessibility issues are a priority. Use <strong>Help, Report
-          a Bug</strong> from inside the app. Details are in the
-          <a href="/docs/contributing.html">contribution guidelines</a>.
-        </p>
-      </details>
-
-      <h2 id="using">Using QUILL</h2>
-
-      <details>
-        <summary>How do I get started?</summary>
-        <p>
-          Download QUILL using the
-          <a href="https://github.com/Community-Access/quill/releases/download/v0.8.0-beta.1/Quill-for-All-Setup-0.8.0.Beta.1.exe">system installer</a>
-          (installs to Program Files, adds QUILL to your Start menu) or the
-          <a href="https://github.com/Community-Access/quill/releases/download/v0.8.0-beta.1/Quill-Portable-v0.8.0-beta.1.zip">portable ZIP</a>
-          (extract and run from any folder, no installation required). Then open the
-          <a href="/docs/userguide.html">user guide</a> for writing, navigation, the command palette, and settings.
+          Yes. Your screen reader drives the display, and QUILL keeps its messages short so
+          they read well in braille. QUILL can also make braille: it translates and embosses
+          through liblouis, edits BRF files without changing a byte you did not touch, and
+          checks your page layout against what your embosser can do.
         </p>
       </details>
       <details>
-        <summary>What are feature profiles?</summary>
+        <summary><h3>Does it work with high contrast and reduced motion?</h3></summary>
         <p>
-          Profiles let you shape the editor around your needs. The available profiles are
-          Essential, Writer, Developer and Power Text, Accessibility Professional, and Full QUILL.
-          Choose a simpler profile for a clean writing experience, or enable a more complete
-          profile for automation, scripting, AI, remote files, and extension support.
+          Yes. QUILL follows your system theme, or you can choose light or dark. Each has
+          strong contrast, color is never the only way something is shown, and there is very
+          little movement on screen.
         </p>
       </details>
       <details>
-        <summary>What file formats can QUILL open and save?</summary>
+        <summary><h3>Can QUILL speak my language?</h3></summary>
         <p>
-          QUILL is plain-text-first and supports plain text, Markdown, HTML, CSV, Word documents,
-          EPUB, PowerPoint, spreadsheets, and PDF through its document intake system. OCR-assisted
-          paths, Pandoc integration, and document intake reporting are available. The
-          <a href="/docs/userguide.html">user guide</a> lists supported formats and how
-          import and export behave.
+          The menus and dialogs can be translated, and the first community translation is
+          already here: <strong>Italian</strong>, by Elena Brescacin. To switch, go to Tools,
+          then Writing and Language, then Change Display Language. Read Aloud can read your
+          documents in many languages (see the speech section below), and spelling
+          dictionaries for more languages are offered when you need them. Would you like to
+          translate QUILL into your language? The translation chapter of the user guide shows
+          you how.
         </p>
       </details>
       <details>
-        <summary>What are Notebooks?</summary>
+        <summary><h3>I found an accessibility problem. What should I do?</h3></summary>
         <p>
-          Notebooks support long-form projects by organizing a folder of files into a single working
-          environment with entries, headings, bookmarks, sticky notes, snapshots, and optional writing
-          goals. For multi-document projects, Notebooks turn QUILL into a dependable workspace, not
-          just a file editor.
-        </p>
-      </details>
-      <details>
-        <summary>What are abbreviations?</summary>
-        <p>
-          Abbreviations let you define short triggers that expand automatically into longer text -
-          common phrases, signatures, accessibility review notes, code patterns, documentation
-          structures, or any text you type repeatedly. Expansion can be turned on or off and
-          managed from within QUILL. For screen-reader users and keyboard-first writers,
-          abbreviations reduce typing effort and improve consistency.
-        </p>
-      </details>
-      <details>
-        <summary>Does QUILL support remote file storage?</summary>
-        <p>
-          Yes, optionally. QUILL can open and save files via FTP, SFTP, WebDAV, S3, HTTPS, and
-          GitHub. These features are off by default and never run silently in the background.
-          Enable only the remote file features you need.
-        </p>
-      </details>
-      <details>
-        <summary>Where does QUILL store my settings and data?</summary>
-        <p>
-          Under your Windows app-data folder (<code>%APPDATA%\Quill</code>), in
-          schema-validated JSON stores written atomically with recovery backups,
-          so a crash or power loss will not corrupt your configuration.
-        </p>
-      </details>
-      <details>
-        <summary>Is my work safe if the app crashes?</summary>
-        <p>
-          QUILL uses atomic writes (write-to-temp then replace) and keeps recovery copies of
-          its stores. Autosave runs in the background. The goal is that you never lose
-          configuration or work to an unexpected shutdown.
+          Please report it like any other bug. Tell us which screen reader you use, what you
+          heard, and what you expected to hear. Often the fix ships with your name on it.
         </p>
       </details>
 
-      <h2 id="privacy">Privacy &amp; data</h2>
+      <h2 id="writing">Writing and formatting</h2>
 
       <details>
-        <summary>Does QUILL phone home or collect telemetry?</summary>
+        <summary><h3>Can I use bold, fonts and colors without seeing a lot of markup?</h3></summary>
         <p>
-          No. There is no background telemetry, analytics, or tracking. The
-          <a href="/docs/privacy.html">privacy document</a> describes exactly what
-          is and is not collected.
+          Yes. Your text stays clean while you write, and the formatting is kept out of the
+          way. Use the Format menu for bold, italic, underline, fonts, sizes, colors,
+          highlights, alignment, spacing and styles. To check what is applied, choose
+          Describe Formatting at Cursor, and you will hear something like "Arial, 14 point,
+          centered, bold."
         </p>
       </details>
       <details>
-        <summary>Does my document content ever leave my device?</summary>
+        <summary><h3>Is there something like WordPerfect's Reveal Codes?</h3></summary>
         <p>
-          Not without your explicit, per-action consent. QUILL's "no silent network calls"
-          rule means any feature that would send data shows visible progress and announces
-          the outcome, and you opt in each time.
+          Yes, built for screen readers. Press Alt+F3 to open a pane that shows your
+          document as codes and text, such as [Bold On], [Font: Arial], [Center] and [Hard
+          Return]. You can arrow from code to code, and jump from a [Bold On] to its
+          matching [Bold Off] to hear how far the bold reaches.
         </p>
       </details>
       <details>
-        <summary>How are secrets like API keys stored?</summary>
+        <summary><h3>What are Illuminations?</h3></summary>
         <p>
-          Secrets are stored in the Windows Credential Manager where available, with a
-          DPAPI-encrypted fallback. Document content is never written to logs or diagnostics.
+          A plain .txt file cannot hold fonts or colors. So QUILL can save them in a small
+          companion file, called an Illumination, next to your text file. Open the .txt in
+          QUILL and your formatting comes back. Open it anywhere else and it is just plain
+          text. If another program changes the text, QUILL notices and opens it plain, so old
+          formatting never lands in the wrong place.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I get back an earlier version of my document?</h3></summary>
+        <p>
+          Yes. Each time you save, QUILL quietly keeps a copy. Choose File, then Restore
+          Previous Version, and you will hear a list like "Today at 4:12 PM, 2,341 words."
+          Restoring keeps a copy of what you have now first, so you can change your mind. Or
+          open the old version in a new tab instead. Older copies are thinned out over time,
+          but your five newest saves are always kept.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What are abbreviations, snippets and smart triggers?</h3></summary>
+        <p>
+          They save you typing. An abbreviation turns a few letters into longer text as you
+          type. A snippet is a bit of text with blanks to fill in, choices, dates and a place
+          for the cursor to land. A smart trigger such as <code>=todo(10)</code> makes
+          something for you when you press Enter on that line. Macros record a series of
+          commands and play them back. You hear each one happen, and you can undo it.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What is the Copy Tray?</h3></summary>
+        <p>
+          Twelve extra clipboards that you can name and pin. Paste from any slot with a key.
+          Press it twice quickly to hear what is in the slot before you paste. Copy to Next
+          Empty Slot skips the ones you have pinned. The slots are still there after you
+          restart, and you can reach them from the system tray too.
+        </p>
+      </details>
+      <details>
+        <summary><h3>How good is find and replace?</h3></summary>
+        <p>
+          You can search for plain words, wildcards or regular expressions, and QUILL
+          remembers your past searches. Before a big Replace All, you can review every change
+          first. The Regex Helper explains a pattern in plain words. Compare Mode lets you
+          step through the differences between your document and another file, or the
+          clipboard.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can QUILL work with tables?</h3></summary>
+        <p>
+          Yes. Table Studio gives you a grid you move around with the arrow keys. When you
+          move across a row, you hear each column's heading. Press F2 to edit a cell, and
+          Alt with an arrow key to move a row or column. Start a table from nothing, or open
+          a CSV or TSV file. Then put it in your document as a Markdown or HTML table with
+          proper headings, or save it back as CSV.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What are Notebooks and Sticky Notes?</h3></summary>
+        <p>
+          A Notebook gathers a folder of files into one place to work, with bookmarks,
+          snapshots and writing goals if you want them. Sticky Notes let you jot down a
+          passing thought without leaving your document. Inline notes attach a comment to
+          the exact words it is about, and stay with those words as you edit.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What are the classic power tools?</h3></summary>
+        <p>
+          They come from the WordPerfect tradition. Repeat Next Command runs a command as
+          many times as you ask. Restore Deleted Text brings back any of your last three
+          deletions, separately from Undo. Describe Character at Cursor tells you exactly
+          which character is under the cursor, even invisible ones. You can also make a
+          document read-only so a stray key cannot change it.
+        </p>
+      </details>
+
+      <h2 id="formats">Documents and file formats</h2>
+
+      <details>
+        <summary><h3>What kinds of files can QUILL open?</h3></summary>
+        <p>
+          Plain text, Markdown, HTML, Word (.docx and the older .doc), RTF, EPUB, PDF,
+          PowerPoint, Excel, Apple Pages, OpenDocument, CSV and TSV, Jupyter notebooks, JSON,
+          YAML, TOML, XML, SQLite and braille files (.brf, .brl and .pef). When a file is
+          hard to read in, QUILL tells you honestly how well it went. You can also open a web
+          page straight into a tab with Open from URL.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Does Save As really convert my file?</h3></summary>
+        <p>
+          Yes. Save as Word, for example, and your headings become real Word headings, each
+          line becomes a paragraph, and your formatting comes with it. QUILL then tells you
+          what happened: "Saved as report.docx, Word format. You are still editing QUILL
+          text; each save converts it to Word." QUILL will never overwrite a PDF, EPUB or
+          spreadsheet you opened with plain text. It explains, and helps you save somewhere
+          safe instead.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Someone sent me a scanned PDF. Can QUILL read it?</h3></summary>
+        <p>
+          Yes, that is what document rescue is for. When a PDF looks scanned, QUILL asks if
+          you would like it read. It then reads the page images on your own computer, for
+          free, with the Tesseract engine. That is a one-time download. Lines it is unsure
+          about are marked so you can check them. Only if nothing on your computer can read a
+          document does QUILL offer an online service, using your own key, and it asks you
+          before every single upload.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can QUILL make braille and DAISY books?</h3></summary>
+        <p>
+          Yes. QUILL translates and embosses braille with liblouis. The braille tables are a
+          small download the first time you need them. Braille Repair checks your page
+          layout against your embosser. And one export makes a DAISY 2.02 talking book,
+          the kind a Victor Reader Stream or Plextalk can play, with your headings as places
+          to jump to.
+        </p>
+      </details>
+      <details>
+        <summary><h3>How do I convert lots of files at once?</h3></summary>
+        <p>
+          Use the batch conversion wizard. Pick a folder and a ready-made choice such as
+          Clean Word Document, Accessible HTML Page, EPUB Book, Print PDF or Plain Text for
+          Screen Readers. QUILL converts in the background with Pandoc, which it fetches the
+          first time, and tells you when it is done.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I open and save files on a server?</h3></summary>
+        <p>
+          Yes, if you want to. QUILL can open and save over FTP, SFTP, WebDAV, S3 and HTTPS.
+          It can browse a GitHub repository, and it can edit a file over SSH, sending it back
+          each time you save and keeping a backup. All of this is off until you turn it on.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I publish from QUILL?</h3></summary>
+        <p>
+          You can post to Mastodon, with a spelling check before you post if you like. An
+          early WordPress connection lets you browse your site, but it cannot post yet. We
+          will turn that on once we trust it. You can also export your work as Word, EPUB,
+          DAISY, an audiobook, or a small accessible website made from a vault.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Where does QUILL keep my settings?</h3></summary>
+        <p>
+          In your Windows or Mac user profile, or in the QUILL folder itself if you use the
+          portable copy. Settings are saved in a way that a crash cannot leave half-written.
+          Passwords and keys go in your system's own secure store, never in a file.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Is my work safe if QUILL crashes?</h3></summary>
+        <p>
+          Yes. QUILL saves as you go, at the interval you choose, and offers to recover your
+          work the next time you open it. It keeps a backup every time you save, remembers
+          your undo history between sessions, and keeps restore points for older versions.
+          Even if the power goes off in the middle of a save, the file you already had is
+          left alone.
+        </p>
+      </details>
+
+      <h2 id="voice">Speech and voice</h2>
+
+      <details>
+        <summary><h3>Which voices can read my documents aloud?</h3></summary>
+        <p>
+          Any Windows voice you have, in any language. Kokoro voices that run on your own
+          computer, in English, Spanish, French, Hindi, Italian and Brazilian Portuguese.
+          Piper voices, one click to download. eSpeak NG, which speaks a great many
+          languages. The classic DECtalk. Online voices such as ElevenLabs, with your own
+          key. And, as an experiment, the voices in your web browser. Read Aloud, audiobook
+          export and batch speech all use the voice that matches your document's language.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What is Hey QUILL?</h3></summary>
+        <p>
+          Hey QUILL lets you control QUILL by voice, and it all runs on your computer. You
+          can hold a key and say a command, such as "save file" or "next heading". You can
+          have a back-and-forth, where QUILL waits for you to stop speaking. You can turn on
+          a wake word, and the status bar always shows when the microphone is listening.
+          And you can ask Ask Quill a question out loud, then press Send yourself. Short
+          sounds tell you what state it is in.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Could a misheard voice command damage my work?</h3></summary>
+        <p>
+          No. Voice can only run commands that are safe. Closing without saving, sending,
+          publishing and deleting are simply not things it can do. Voice is off until you
+          turn it on, it stays off in Safe Mode, and saying "cancel" always works.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I dictate into QUILL?</h3></summary>
+        <p>
+          Yes. Press Ctrl+F11, talk, and pause. Each time you pause, what you said is
+          typed and read back to you. Everything it needs is already inside the program, so
+          there is nothing to download. QUILL also has Locked Dictation (Ctrl+F9), which
+          records a passage and types it out afterwards. No recording is kept, and nothing
+          you say leaves your computer unless you choose OpenAI or a cloud speech service
+          with your own account. Larger speech models for better accuracy are an optional
+          download.
+          <a href="/dictation.html">The complete dictation guide</a> has every key, every
+          spoken command and every setting.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What is the Listening Companion?</h3></summary>
+        <p>
+          It turns recordings into documents. First QUILL types out what was said in an
+          audio or video file, and can translate it or note who is speaking. Then pick what
+          you want from it: Meeting Minutes, Action Items, Executive Summary, Study Notes,
+          Q&amp;A, a Follow-Up Email, Key Quotes, a Decisions Log, or a clean draft. You can
+          make your own choices too, and you can have a folder handle new recordings as they
+          arrive.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can QUILL make audiobooks?</h3></summary>
+        <p>
+          Yes. Open the <strong>Audio Studio</strong> from Tools, then Speech, then Audio
+          Studio. It walks you through one of three jobs. You can turn a folder of documents
+          into an audiobook with chapters, as M4B or MP3. You can join a folder of recordings
+          into one book, with each file as a chapter, and check it before they are joined. Or
+          you can open an audiobook you already have in the Chapter Workbench. Audiobooks can
+          also be translated into about 37 languages, with a voice to match. If you change
+          one chapter, only that chapter is made again.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I fix the chapters in a finished audiobook?</h3></summary>
+        <p>
+          Yes. The Chapter Workbench opens any MP3 or M4B, with or without chapters. Play to
+          where a chapter should start and press <strong>Split at playhead</strong>. You can
+          also move, join, rename or put back chapters. <strong>Propose AI titles</strong>
+          listens to the start of each chapter on your computer and asks your AI for a short
+          title. You review each one before it is used.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can QUILL publish a podcast?</h3></summary>
+        <p>
+          Yes. The Chapter Workbench can write the podcast feed for you, without going
+          online. It can turn a whole folder into a show, with a description for each
+          episode and an accessible show notes page. It can upload your show to your own
+          server over SFTP, telling you how it is going. Or it can send your audio to your
+          own Auphonic account to be polished. QUILL asks before anything goes online, and
+          your passwords stay in Windows Credential Manager.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Will speech and AI work on my old laptop?</h3></summary>
+        <p>
+          We work hard to make sure they do. QUILL only loads a model when you need it and
+          puts it away when you stop. On a computer with little memory, QUILL keeps just one
+          small model loaded at a time, and tells you once that it is doing so. You do not
+          need a special graphics card.
+        </p>
+      </details>
+
+      <h2 id="organize">Vault, Story Studio and GLOW</h2>
+
+      <details>
+        <summary><h3>What is the Accessible Vault?</h3></summary>
+        <p>
+          A way to link your notes together, by ear. A vault is just a folder of Markdown
+          notes. Type [[Note Title]] to link to another note, and follow the link with a
+          key. Ask "what links here?" to hear every note that mentions this one, each read in
+          its sentence. You can also group notes by tags, search them all, and jump to any
+          note by typing part of its name. Your notes stay plain text files that belong to
+          you.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can the Vault do templates, daily notes and sync?</h3></summary>
+        <p>
+          Yes. Templates can fill in the date and title, ask you questions out loud, and put
+          the cursor where you want it. Open Today's Note gives you a daily journal, and you
+          can step to the day before or after. Export Vault as Website makes a small
+          accessible website with your links working. Sync Vault keeps your vault in step
+          with your own Git server, and if two changes clash it tells you instead of
+          overwriting anything.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What is Story Studio?</h3></summary>
+        <p>
+          A place to organize a whole book. It lists your parts, chapters and scenes from
+          the headings in your Markdown files, alongside Characters, Places, Plot threads,
+          Research and Brainstorm. Each character has a small form to fill in, saved right
+          in their file. When you are ready, Compile Manuscript joins it all into one
+          document you can export any way you like. Your project is an ordinary folder of
+          text files, so nothing is locked away.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What is GLOW?</h3></summary>
+        <p>
+          GLOW helps you check a document for accessibility problems and fix them. It works
+          on your own document, or on a Word, PowerPoint, Excel, PDF or EPUB file. Each
+          problem it finds tells you what is wrong, how serious it is, and what to do about
+          it in plain words. You review every fix before it is made, and fixes to a file are
+          saved as a new copy, so your original is never touched. GLOW runs on your
+          computer, and asks before using anything online.
+        </p>
+      </details>
+
+      <h2 id="privacy">Privacy and your data</h2>
+
+      <details>
+        <summary><h3>Does QUILL collect information about me?</h3></summary>
+        <p>
+          No. There is no tracking and no usage reporting. The only thing QUILL does online
+          on its own is check for updates when it starts, and that check sends nothing about
+          you or your documents. You can turn it off.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Does my writing ever leave my computer?</h3></summary>
+        <p>
+          Only when you send it yourself. That might be an AI request you approved, a scanned
+          page you agreed to upload, an online voice you chose, or a post you published.
+          QUILL never goes online behind your back, and we test every release to make sure
+          of it.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Where are my passwords and API keys kept?</h3></summary>
+        <p>
+          In your computer's own secure store: Windows Credential Manager, or the Keychain
+          on a Mac. They are never kept in a settings file. If QUILL ever makes a crash
+          report, passwords and personal folder names are removed from it first.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I use QUILL with no internet at all?</h3></summary>
+        <p>
+          Yes. Writing, speech, dictation, reading scanned pages, braille and AI models on
+          your own computer all work without the internet. Anything that needs to go online
+          is an extra you choose to turn on.
         </p>
       </details>
 
       <h2 id="ai">AI features</h2>
 
       <details>
-        <summary>Does QUILL use AI, and is it always on?</summary>
+        <summary><h3>Does QUILL use AI? Is it always on?</h3></summary>
         <p>
-          AI features are optional and explicitly opt-in. Turn AI off and AI features are hidden
-          entirely - nothing AI-related runs silently. Turn it on and every networked AI
-          action is a deliberate, per-action choice with visible progress. See
-          <a href="/docs/responsible-ai-use.html">responsible AI use</a>.
+          AI is optional, and it is off until you turn it on. While it is off, the AI
+          features are hidden and nothing AI-related runs. When it is on, you choose each
+          time you send something, and you can follow its progress. You can read more about
+          <a href="/docs/responsible-ai-use.html">how we use AI responsibly</a>.
         </p>
       </details>
       <details>
-        <summary>What is Ask Quill?</summary>
+        <summary><h3>Do I have to pay for QUILL's AI?</h3></summary>
         <p>
-          Ask Quill is the conversational AI surface inside the editor. You can ask for help
-          writing, editing, summarizing, restructuring, or working with selected text. When an
-          AI operation would change your document, QUILL uses a review-first model: the proposed
-          change is shown to you and must be approved before it is applied. There are no silent
-          edits.
+          No. The setup wizard offers the free choices first. For the most privacy, run a
+          model on your own computer: no account, no internet, and nothing leaves your
+          computer. For better answers, get a free OpenRouter key, and QUILL picks a good
+          free model for you. Free models are labelled "Free" in the list. Free online models
+          can be slow, and anything private is best kept on your own computer.
         </p>
       </details>
       <details>
-        <summary>Which AI providers does QUILL support?</summary>
+        <summary><h3>What is Ask Quill?</h3></summary>
         <p>
-          Local model workflows, Ollama, Ollama Cloud, OpenAI, Claude, OpenRouter, Google
-          Gemini, and custom OpenAI-compatible endpoints. You can use a local model so that
-          nothing leaves your machine at all.
+          A conversation with an AI that can see the document you are working on. Ask it to
+          help you write, edit, summarize or reorganize. If it wants to change your
+          document, it shows you the change first, and you accept or reject it. If you
+          accept, one Undo takes it all back. It never changes your text without asking.
         </p>
       </details>
       <details>
-        <summary>Will an AI feature send my text somewhere without asking?</summary>
+        <summary><h3>Which AI services can I use?</h3></summary>
         <p>
-          No. The same "no silent network" rule applies: an AI action that needs to send your
-          text asks first, shows what is happening, and announces the result. You are always
-          in control.
+          Models on your own computer through Ollama, plus OpenAI, Claude, Google Gemini,
+          OpenRouter, and other services that work like OpenAI. Each one that needs a key has
+          a Get API Key button that opens the right sign-up page. You pick models from a
+          list, so you never have to remember their names.
         </p>
       </details>
       <details>
-        <summary>Can I use QUILL completely offline?</summary>
+        <summary><h3>Can I use a subscription I already pay for?</h3></summary>
         <p>
-          Yes. The core writing experience is fully local. Networked features are opt-in extras,
-          not requirements. Use a local AI model and nothing reaches the network at all.
-        </p>
-      </details>
-
-      <h2 id="quillins">Quillins (extensions)</h2>
-
-      <details>
-        <summary>What is a Quillin?</summary>
-        <p>
-          A Quillin is a small, sandboxed extension that adds commands, snippets, menus, and
-          hotkeys to QUILL. It is described by a <code>manifest.json</code> and comes in two
-          layers: declarative snippets (no code) and Python or Node.js handlers (real logic,
-          isolated in a subprocess).
+          If you have GitHub Copilot, yes. Choose the Copilot engine, and QUILL reads you a
+          short code to enter in your browser. No API key needed. The Claude Agent and OpenAI
+          Agents engines need an Anthropic or OpenAI <em>API key</em>. A ChatGPT or Claude
+          chat subscription does not include an API key, so it cannot run those engines.
+          Whichever engine you use, you approve every change to your document.
         </p>
       </details>
       <details>
-        <summary>Are Quillins safe to run?</summary>
+        <summary><h3>What is the AI Library?</h3></summary>
         <p>
-          Quillins run under a default-deny capability model: a Quillin can only do what it
-          declares, and sensitive capabilities (filesystem and network) additionally pass a
-          per-action consent gate at runtime. Python and Node.js handlers run out-of-process
-          in a sandbox. A crash in a Quillin cannot affect your editor or your document.
+          One place for your Prompts, Skills and Agents. A prompt you use often can grow
+          into a Skill with several steps, and a Skill can grow into an Agent. They all use
+          the AI connection you set up once, and you can share them on the Quillin Hub.
         </p>
       </details>
       <details>
-        <summary>What's the difference between bundled and third-party Quillins?</summary>
+        <summary><h3>Will an AI feature send my text somewhere without asking?</h3></summary>
         <p>
-          Bundled Quillins ship with QUILL as trusted, reviewed first-party features and are
-          enabled by default. Third-party Quillins run through the same sandbox but are
-          disabled by default. You review, enable, disable, reload, or remove them through
-          the Quillins Manager.
-        </p>
-      </details>
-      <details>
-        <summary>Can a Quillin access my files or the internet?</summary>
-        <p>
-          Only if it declares the matching capability <em>and</em> you approve each use at
-          runtime. There is no way for a Quillin to silently read files or reach the network.
-        </p>
-      </details>
-      <details>
-        <summary>How do I manage installed Quillins?</summary>
-        <p>
-          Through the Quillins Manager (Tools menu), an accessible dialog that lists installed
-          Quillins, shows each one's manifest and granted capabilities, and lets you enable,
-          disable, reload, or remove any of them.
+          No. Before any AI feature sends your text, it asks you. It tells you while it
+          works and tells you when it is done. If you use a model on your own computer,
+          nothing goes online at all.
         </p>
       </details>
 
-      <h2 id="authoring">Authoring &amp; submitting Quillins</h2>
+      <h2 id="quillins">Quillins and the Hub</h2>
 
       <details>
-        <summary>How do I write my own Quillin?</summary>
+        <summary><h3>What is a Quillin?</h3></summary>
         <p>
-          Start with the <a href="/docs/quillins.html">tutorial</a>, which builds one from
-          scratch. The <a href="/docs/quillins.html">authoring reference</a> covers the
-          manifest schema, capability catalogue, and the Python and Node.js APIs in full.
-          For a snippet-only Quillin, the <a href="/quillin-wizard.html">Snippet Wizard</a>
-          builds the manifest interactively without any coding.
+          A Quillin is a small add-on that gives QUILL new commands, snippets, menus or keys.
+          There are two kinds. Some are just snippets of text, with no code at all. Others
+          run a little Python or Node.js program, kept apart from QUILL itself. Each Quillin
+          has a <code>manifest.json</code> file that says what it does.
         </p>
       </details>
       <details>
-        <summary>Do I need to write code?</summary>
+        <summary><h3>Are Quillins safe?</h3></summary>
         <p>
-          Not necessarily. Layer 1 Quillins are pure declarative snippets - text with
-          placeholders like <code>${selection}</code>, <code>${date}</code>,
-          <code>${word_at_cursor}</code>, and <code>${uuid}</code> - with no code and
-          no capabilities. That covers many common needs.
+          A Quillin can only do what it says it needs. If it wants to read your files or go
+          online, QUILL asks you each time. Quillins with code run separately from QUILL, so
+          if one crashes, your document is fine.
         </p>
       </details>
       <details>
-        <summary>Can I write a Quillin in Node.js?</summary>
+        <summary><h3>What is the Quillin Hub?</h3></summary>
         <p>
-          Yes. Layer 2 Quillins support both Python and Node.js handlers. Your handler runs
-          out-of-process in a sandboxed subprocess under the same capability and consent model
-          as Python handlers.
+          <!-- Quillin Hub link removed until hub.quillforall.org is live; it returns when HUB_IS_LIVE in quill/ui/quillin_hub_submit.py becomes True. -->
+          The community store for QUILL, which is not open yet.
+          It has Quillins, AI agents and skill packs, sound packs, keyboard packs, verbosity
+          packs and pronunciation dictionaries. Everything is checked before it is published
+          and signed so you know where it came from. The Hub and QUILL's Quillin Manager both
+          tell you whether an item is signed. Until the Hub opens, Submit to Quillin Hub still
+          checks your work on your own computer, so it is ready on the day the Hub opens.
         </p>
       </details>
       <details>
-        <summary>How do I check my Quillin before submitting?</summary>
+        <summary><h3>What is the difference between built-in and add-on Quillins?</h3></summary>
         <p>
-          Run the submission linter:
-          <code>python -m quill.tools.quillin_lint &lt;dir&gt; --strict</code>. It validates
-          your manifest against the published JSON Schema, runs the contract validator the app
-          enforces, and checks submission structure and capability hygiene. A clean
-          <code>--strict</code> run is the bar.
+          Built-in Quillins come with QUILL. We have reviewed them, and they are on from the
+          start. Quillins from other people follow the same safety rules but start out off.
+          Use the Quillins Manager to look at them, turn them on or off, reload them or
+          remove them. It also tells you whether each one is signed.
         </p>
       </details>
       <details>
-        <summary>How do I submit a Quillin?</summary>
+        <summary><h3>Can a Quillin get at my files or the internet?</h3></summary>
         <p>
-          Open the <em>Quillin submission</em> issue (it scaffolds the manifest JSON for you),
-          then open a pull request with the Quillin submission template. The full process and
-          review criteria are in the <a href="/docs/quillins.html">submission guide</a>.
+          Only if it says it needs to, <em>and</em> you say yes each time. A Quillin cannot
+          quietly read your files or go online.
+        </p>
+      </details>
+
+      <h2 id="authoring">Writing and sharing your own Quillins</h2>
+
+      <details>
+        <summary><h3>How do I make my own Quillin?</h3></summary>
+        <p>
+          Start with the <a href="/docs/quillins.html">Quillin tutorial</a>, which builds one
+          with you from the beginning. The reference that goes with it covers everything
+          else. If you only want snippets, the <a href="/quillin-wizard.html">Snippet
+          Wizard</a> asks you questions and builds the Quillin for you, with no coding.
         </p>
       </details>
       <details>
-        <summary>What are the rules my Quillin has to follow?</summary>
+        <summary><h3>Do I need to know how to code?</h3></summary>
         <p>
-          The <a href="/docs/quillins.html">Quillin Author Covenant</a>: announce every
-          outcome, be keyboard-complete, declare the minimum capabilities, no silent network
-          or telemetry, readable source (no obfuscation or sandbox-escape), and clear
-          licensing. Every submission attests to it.
+          Not for a snippet Quillin. A snippet is text with blanks QUILL fills in for you,
+          such as <code>${selection}</code>, <code>${date}</code>,
+          <code>${word_at_cursor}</code> and <code>${uuid}</code>. That is enough for a lot
+          of everyday jobs.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Can I write a Quillin in Node.js?</h3></summary>
+        <p>
+          Yes. Quillins with code can use Python or Node.js. Both follow the same safety
+          rules and ask for permission the same way.
+        </p>
+      </details>
+      <details>
+        <summary><h3>How do I check my Quillin before I share it?</h3></summary>
+        <p>
+          In QUILL, choose Tools, then Quillins, then Submit to Quillin Hub. QUILL checks
+          your Quillin on your own computer and reads you the result before anything is sent.
+          If you prefer the command line, run
+          <code>python -m quill.tools.quillin_lint &lt;dir&gt; --strict</code>, which does the
+          same check.
+        </p>
+      </details>
+      <details>
+        <summary><h3>How do I share it on the Hub?</h3></summary>
+        <p>
+          In QUILL, choose Tools, then Quillins, then Submit to Quillin Hub. Pick your
+          manifest file. The Hub is not open yet, so for now QUILL checks your file and tells
+          you it is ready. Once the Hub opens and your file passes the check, the Hub reviews it. When it is published,
+          it is signed, and people will hear "Signed by" with your name.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What rules does my Quillin have to follow?</h3></summary>
+        <p>
+          The Quillin Author Covenant asks you to: tell people how each action turned out;
+          make everything work from the keyboard; ask only for the permissions you need;
+          never go online or collect data quietly; keep your code readable; and license it
+          clearly. You agree to it when you submit.
         </p>
       </details>
 
       <h2 id="security">Security</h2>
 
       <details>
-        <summary>How do I report a security vulnerability?</summary>
+        <summary><h3>How do I report a security problem?</h3></summary>
         <p>
-          Do not open a public issue. Follow the private reporting process in the
+          Please do not post it publicly. Follow the private steps in our
           <a href="/docs/security.html">security policy</a>.
         </p>
       </details>
       <details>
-        <summary>How does QUILL keep extensions from doing harm?</summary>
+        <summary><h3>How does QUILL stop an add-on from doing harm?</h3></summary>
         <p>
-          Capabilities are default-deny, filesystem and network access are consent-gated per
-          action, Python and Node.js handlers run out-of-process in a sandbox, and every
-          dialog and network egress point is reviewed by automated gates in CI.
+          A Quillin starts with no permissions at all. It must ask you before it reads your
+          files or goes online, every time. Quillins with code run separately from QUILL,
+          with strict limits on what they can use. Everything on the Hub is signed and
+          checked, and we test every release for anything that goes online without asking.
+        </p>
+      </details>
+      <details>
+        <summary><h3>What is Safe Mode?</h3></summary>
+        <p>
+          Safe Mode starts QUILL with all the optional parts switched off: no AI, no watch
+          folders, no Quillins and no update check. If QUILL is acting strangely, it is a
+          good first thing to try. To use it, start QUILL with <code>--safe-mode</code>.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Are downloads and updates checked?</h3></summary>
+        <p>
+          Yes. Updates, installers, extras and the GLOW engine are all checked to make sure
+          they are genuine and complete. If an install fails, it is undone. Safety advisories
+          are signed the same way, so nobody can switch off your features with a fake one.
         </p>
       </details>
 
-      <h2 id="contributing">Contributing</h2>
+      <h2 id="contributing">Helping out and community</h2>
 
       <details>
-        <summary>How can I contribute?</summary>
+        <summary><h3>How can I help?</h3></summary>
         <p>
-          Code, documentation, accessibility testing, and Quillins are all welcome. Start with
-          the <a href="/docs/contributing.html">contribution guidelines</a> for setup,
-          architecture boundaries, and quality checks.
+          There are lots of ways: code, documentation, accessibility testing, Quillins, sound
+          packs, keyboard packs, and honest bug reports. Right now, before 1.0, testing and
+          telling us what you find helps the most. The
+          <a href="/docs/contributing.html">contribution guidelines</a> show you where to
+          start.
         </p>
       </details>
       <details>
-        <summary>What are the project's architectural rules?</summary>
+        <summary><h3>Do your reports really change anything?</h3></summary>
         <p>
-          The core and I/O layers never import the UI toolkit, persistence is atomic and
-          schema-validated, the UI thread owns all widgets, and there are no silent network
-          calls. The <a href="/docs/contributing.html">contribution guidelines</a> and the
-          product requirements document spell these out.
+          Yes. One tester's eight-line report about saving led us to rebuild how QUILL saves.
+          A suggestion on a mailing list changed the front page of this website. People who
+          send fixes see their name in the release notes. If something bothers you, please
+          tell us.
         </p>
       </details>
       <details>
-        <summary>How is the project governed?</summary>
+        <summary><h3>I am a developer. What are the ground rules for the code?</h3></summary>
         <p>
-          See the <a href="/docs/governance.html">governance document</a> for how decisions
-          are made and the <a href="/docs/maintainers.html">maintainers</a> list for who
-          stewards the project.
+          A few: the core of QUILL never depends on the screen code, settings are always
+          saved safely, only the main thread touches the screen, and nothing goes online
+          without asking. The <a href="/docs/contributing.html">contribution guidelines</a>
+          and the product requirements document explain them.
         </p>
       </details>
       <details>
-        <summary>Where do I ask questions?</summary>
+        <summary><h3>Who makes the decisions?</h3></summary>
         <p>
-          Use GitHub Discussions for Q&amp;A and early design exploration, and the issue
-          templates for specific bugs or proposals.
+          The <a href="/docs/governance.html">governance document</a> explains how decisions
+          are made, and the <a href="/docs/maintainers.html">maintainers</a> list says who
+          looks after the project.
+        </p>
+      </details>
+      <details>
+        <summary><h3>Where can I ask a question?</h3></summary>
+        <p>
+          Ask in GitHub Discussions, or use the issue templates for a bug or an idea. You can
+          also write to
+          <a href="mailto:support@community-access.org">support@community-access.org</a>.
+          We read the community mailing lists too.
         </p>
       </details>
     </div>
@@ -507,23 +1029,37 @@
   <footer class="site">
     <div class="wrap">
       <p class="note">
-        <strong style="color:var(--accent)">QUILL</strong> -
-        Quality, Usable, Inclusive, Lightweight, Literate.
+        <strong class="quill" style="color:var(--accent)">QUILL</strong> -
+        Quality, Usable, Inclusive, Lightweight, Literate. A screen-reader-first
+        writing environment for Windows and macOS, built by the community that
+        depends on it.
       </p>
       <nav aria-label="Documentation">
-        <h4>Start here</h4>
+        <h2>Documentation</h2>
         <ul>
-          <li><a href="/docs/release0.8.0-beta1.html">0.8.0 Beta 1 release notes</a></li>
-          <li><a href="/docs.html">All documentation</a></li>
           <li><a href="/docs/userguide.html">User guide</a></li>
+          <li><a href="/docs/quill-step-by-step.html">QUILL, Step by Step</a></li>
+          <li><a href="/docs/release0.9.0-beta1.html">0.9.0 announcement</a></li>
           <li><a href="/docs/quillins.html">Quillin tutorial</a></li>
+          <li><a href="/docs.html">All documentation</a></li>
         </ul>
       </nav>
       <nav aria-label="Project">
-        <h4>Project</h4>
+        <h2>Project</h2>
         <ul>
-          <li><a href="https://github.com/Community-Access/quill/releases/tag/v0.8.0-beta.1">Download 0.8.0 Beta 1</a></li>
-          <li><a href="https://hub.quillforall.org">Quillin Hub</a></li>
+          <li><a href="https://github.com/Community-Access/quill/releases">Releases</a></li>
+          <!-- Quillin Hub link removed until hub.quillforall.org is live; it returns when HUB_IS_LIVE in quill/ui/quillin_hub_submit.py becomes True. -->
+          <li><a href="/docs/contributing.html">Contributing</a></li>
+          <li><a href="/docs/governance.html">Governance</a></li>
+          <li><a href="mailto:support@community-access.org">Email QUILL support</a></li>
+        </ul>
+      </nav>
+      <nav aria-label="Privacy and security">
+        <h2>Privacy &amp; security</h2>
+        <ul>
+          <li><a href="/docs/privacy.html">Privacy</a></li>
+          <li><a href="/docs/security.html">Security</a></li>
+          <li><a href="/docs/responsible-ai-use.html">Responsible AI use</a></li>
         </ul>
       </nav>
     </div>

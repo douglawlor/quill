@@ -29,6 +29,8 @@ import wx
 
 from quill.core.help import HelpRenderer, HelpTopic
 from quill.ui.dialog_contract import apply_modal_ids
+from quill.ui.dpi import dip_size
+from quill.ui.spoken_name import set_spoken_name
 
 _log = logging.getLogger(__name__)
 
@@ -170,7 +172,7 @@ class ContextHelpDialog(wx.Dialog):
         self._user_guide_opener = user_guide_opener
         self._ctrl_topic = ctrl_topic
         self._body_text = self._build_ui(dialog_topic, ctrl_topic)
-        self.SetMinSize((440, 220))
+        self.SetMinSize(dip_size(self, 440, 220))
         self.Fit()
         self.CentreOnParent()
         apply_modal_ids(self, affirmative_id=wx.ID_OK, escape_id=wx.ID_OK)
@@ -190,7 +192,8 @@ class ContextHelpDialog(wx.Dialog):
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH2 | wx.TE_AUTO_URL,
             name="help_body",
         )
-        body_text.SetMinSize((-1, 120))
+        set_spoken_name(body_text, "Help text")
+        body_text.SetMinSize(dip_size(body_text, -1, 120))
         sizer.Add(body_text, proportion=1, flag=wx.EXPAND | wx.ALL, border=12)
 
         btn_sizer = wx.StdDialogButtonSizer()
@@ -216,6 +219,28 @@ class ContextHelpDialog(wx.Dialog):
             self._user_guide_opener(self._ctrl_topic.user_guide_section)
 
 
+def quill_window_purpose(title: str) -> str:
+    """QUILL's F1 opening paragraph for a window it shares with its siblings.
+
+    QUILL's own dialogs answer F1 from ``topics.json``; the windows it opens
+    from shared modules -- Release Channel, the hosted AI, Windows dictation,
+    Spelling Announcements -- take their paragraph from the catalogue that
+    already gates them, so QUILL does not keep a second copy to drift. Anything
+    else answers ``""`` and falls back to the generic paragraph, as before.
+    """
+    from quill.core import lite_surface_help
+    from quill.core.updater.profiles import PROFILES
+    from quill.core.updater.wording import window_titles
+
+    stripped = title.strip()
+    channel = window_titles(PROFILES["quill"].display_name).get(stripped)
+    if channel:
+        return channel
+    if stripped in lite_surface_help.SHARED_WITH_QUILL:
+        return lite_surface_help.purpose_for_title(stripped)
+    return ""
+
+
 class ContextHelpMixin:
     """Mixin for MainFrame and dialogs that want F1 context help.
 
@@ -238,12 +263,48 @@ class ContextHelpMixin:
     def _init_context_help(self) -> None:
         self._last_focused_ctrl: wx.Window | None = None
         self._help_frame.Bind(wx.EVT_CHILD_FOCUS, self._on_child_focus_for_help)
+        # Family-wide F1 (2026-08-23): install the wx help provider --
+        # SetHelpText silently stores NOTHING without one (measured), so every
+        # help text ever written here was dead -- and register the shared
+        # generic handler the dialog contract binds on every dialog it shows.
+        # QUILL's own topic-based F1 keeps the main frame (bound above via the
+        # menu path) and any dialog marked ``_quill_owns_f1`` (the Preferences
+        # hub, the Command Palette); everything else gains F1 for free.
+        from quill.ui import app_context_help
+
+        app_context_help.activate(quill_window_purpose)
 
     def _on_child_focus_for_help(self, event: wx.ChildFocusEvent) -> None:
         win = event.GetWindow()
         if win is not None and not isinstance(win, (wx.Panel, wx.StaticBox)):
             self._last_focused_ctrl = win
         event.Skip()
+
+    def _with_live_keystrokes(self, topic: HelpTopic) -> HelpTopic:
+        """*topic* with the key it is bound to *now*, when it names a command.
+
+        ``topics.json`` records the default key (a test keeps it equal to
+        ``DEFAULT_KEYMAP``), but a person who rebinds a command must hear the
+        key they chose, the same one the menu shows. Topics that are not
+        commands keep their authored keystrokes.
+        """
+        commands = getattr(self, "commands", None)
+        get = getattr(commands, "get", None)
+        if not topic.id or not callable(get):
+            return topic
+        try:
+            if get(topic.id) is None:
+                return topic
+            binding = commands.keybinding_for(topic.id)  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001 - help must never fail over a key label
+            return topic
+        from dataclasses import replace
+
+        from quill.core.keymap_format import format_binding_for_display
+
+        prefix = getattr(getattr(self, "settings", None), "quill_key_binding", None)
+        live = [format_binding_for_display(binding, prefix=prefix)] if binding else []
+        return replace(topic, keystrokes=live)
 
     def show_control_help(self, user_guide_opener: Callable[..., None] | None = None) -> None:
         """Show the F1 context-help dialog for the currently focused control.
@@ -254,6 +315,7 @@ class ContextHelpMixin:
         """
         ctrl = wx.Window.FindFocus() or self._last_focused_ctrl  # type: ignore[attr-defined]
         dialog_topic, ctrl_topic = describe_focused(ctrl)
+        ctrl_topic = self._with_live_keystrokes(ctrl_topic)
         dlg = ContextHelpDialog(
             self._help_frame,
             dialog_topic=dialog_topic,
@@ -278,6 +340,7 @@ class ContextHelpMixin:
         """
         renderer = _get_renderer()
         ctrl_topic = renderer.get(topic_id) or renderer.get_or_missing(topic_id)
+        ctrl_topic = self._with_live_keystrokes(ctrl_topic)
         dlg = ContextHelpDialog(
             self._help_frame,
             dialog_topic=None,

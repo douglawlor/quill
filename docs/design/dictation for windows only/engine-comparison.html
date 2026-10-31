@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.12" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Dictation engine comparison</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    html {
+      color: #1a1a1a;
+      color: light-dark(#1a1a1a, #fdfdfd);
+      background-color: #fdfdfd;
+      background-color: light-dark(#fdfdfd, #1a1a1a);
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        color-scheme: light only;
+      }
+      html, body, pre, code {
+        background-color: transparent;
+      }
+      body, a, a:visited, blockquote {
+        color: black;
+      }
+      pre, code {
+        padding: 0;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a, a:visited {
+      color: inherit;
+    }
+    img {
+      max-width: 100%;
+    }
+    svg {
+      height: auto;
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid;
+      border-color: #e6e6e6;
+      border-color: light-dark(#e6e6e6, #4c4c4c);
+      color: #606060;
+      color: light-dark(#606060, #b6b6b6);
+    }
+    code {
+      white-space: pre-wrap;
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      border: none;
+      border-top: 1px solid currentColor;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid currentColor;
+      border-bottom: 1px solid currentColor;
+    }
+    th {
+      border-top: 1px solid currentColor;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <style>
+    /* Accessible skip link: off-screen until it receives keyboard focus. */
+    .skip-link {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      background: #ffffff;
+      color: #1a1a1a;
+      padding: 0.5em 1em;
+      border: 2px solid #1a1a1a;
+      z-index: 1000;
+    }
+    .skip-link:focus { left: 0; }
+    /* The skip link above targets main, and a focusable main needs a ring for
+       the sighted keyboard user. These pages load no external stylesheet, so it
+       has to be inline; the colour is the site theme's --focus, hardcoded
+       because there is no token here. :focus-visible, not :focus -- tabindex="-1"
+       makes main the click-focus target for every paragraph inside it, so
+       :focus would box the whole page on any ordinary click. The offset is inset
+       because main is full-bleed and an outset ring gets clipped into two
+       vertical lines. */
+    main[tabindex="-1"]:focus-visible {
+      outline: 3px solid #b8540a;
+      outline-offset: -3px;
+    }
+    /* WCAG AA overrides (>= 4.5:1 on the light code background) for the
+       low-contrast default syntax-highlight token colors. */
+    code span.al, code span.er { color: #c00000; }
+    code span.an, code span.co, code span.cv { color: #5a5a5a; }
+    code span.ss { color: #8a3a5a; }
+    /* Pandoc's own styles.html partial, injected near the top of this template,
+       ships `table { display: block; overflow-x: auto; }`. display: block takes
+       the table role out of the accessibility tree in Blink and Gecko, and the
+       row and cell roles go with it, so every rendered table reads as a flat run
+       of words -- 62 of them in QUILL Lite's user guide alone, all of them
+       keyboard reference tables, on a site whose readers are overwhelmingly
+       screen-reader users. Restoring display: table is not a preference.
+
+       The scroll affordance it was there for is given up rather than moved,
+       because Pandoc emits a bare table with no wrapper element to hang overflow
+       on -- the wrapper pattern compare.html uses is not available here. So the
+       exchange is a certain and total loss of table semantics against a possible
+       sideways page scroll on the widest tables, and the cells are taught to
+       break so that stays possible rather than likely.
+
+       This override also covers the governance pages built by
+       .github/workflows/github-pages.yml, which installs Pandoc from apt at a
+       version nobody pins -- whatever styles.html that ships, this wins. */
+    table {
+      display: table;
+      overflow-x: visible;
+    }
+    table th,
+    table td {
+      overflow-wrap: break-word;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+<main id="main-content" tabindex="-1">
+<h1 id="dictation-engine-comparison">Dictation engine comparison</h1>
+<p>Why QUILL Lite 1.1’s dictation uses Moonshine by default, with
+Whisper and Windows speech recognition as the alternatives. Measured
+2026-09-25.</p>
+<h2 id="what-was-required">What was required</h2>
+<ul>
+<li>Runs on the CPU of a low-end Windows 10 machine, faster than real
+time.</li>
+<li>Punctuates and capitalises by itself.</li>
+<li>Ships inside QUILL Lite: nothing downloaded at install or at first
+use.</li>
+<li>Offline, and able to listen on the microphone the user chooses.</li>
+</ul>
+<h2 id="the-test">The test</h2>
+<p>Ten everyday sentences, spoken without saying any punctuation, run
+through each candidate. Word errors are counted on lower-cased words;
+punctuation is scored as how many of the reference marks each engine
+placed correctly by itself, and how many of the marks it wrote were
+right. Speed is seconds of computing per second of speech on one CPU
+thread (under 1 keeps up).</p>
+<p>The first run used Windows’ own synthesised voice reading the
+sentences. It is the easiest possible input, so it understates every
+engine’s errors – and the Windows recogniser, at 9% here, was reported
+as poor on a real voice. A run on recordings of a real voice replaces
+these numbers when it is done; the tool is <code>dictbench.py</code>,
+kept with the recordings rather than in the repository.</p>
+<table>
+<thead>
+<tr>
+<th>Engine</th>
+<th>Word errors</th>
+<th>Punctuation (found / right)</th>
+<th>Speed, 1 thread</th>
+<th>Size shipped</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows speech (SAPI)</td>
+<td>9%</td>
+<td>0% / 0%</td>
+<td>0.09</td>
+<td>0</td>
+</tr>
+<tr>
+<td>Vosk small</td>
+<td>4%</td>
+<td>0% / 0%</td>
+<td>0.32</td>
+<td>~45 MB</td>
+</tr>
+<tr>
+<td>Vosk small + punctuation model</td>
+<td>4%</td>
+<td>7% / 10%</td>
+<td>0.33</td>
+<td>~52 MB</td>
+</tr>
+<tr>
+<td><strong>Moonshine tiny</strong></td>
+<td><strong>2%</strong></td>
+<td><strong>93% / 87%</strong></td>
+<td><strong>0.04</strong></td>
+<td><strong>~124 MB</strong></td>
+</tr>
+<tr>
+<td>Moonshine base</td>
+<td>2%</td>
+<td>50% / 88%</td>
+<td>0.06</td>
+<td>~287 MB</td>
+</tr>
+<tr>
+<td><strong>Whisper tiny.en</strong></td>
+<td><strong>3%</strong></td>
+<td><strong>86% / 86%</strong></td>
+<td><strong>0.15</strong></td>
+<td><strong>~104 MB</strong></td>
+</tr>
+<tr>
+<td>Whisper base.en</td>
+<td>2%</td>
+<td>93% / 87%</td>
+<td>0.28</td>
+<td>~161 MB</td>
+</tr>
+<tr>
+<td>Parakeet 3</td>
+<td>2%</td>
+<td>93% / 87%</td>
+<td>0.21</td>
+<td>~670 MB</td>
+</tr>
+</tbody>
+</table>
+<h2 id="the-decision">The decision</h2>
+<ul>
+<li><strong>Moonshine tiny is the default.</strong> Best accuracy and
+punctuation in the field, and by far the fastest – a twenty-fifth of
+real time on one thread, which is what makes it safe on the weakest
+machines QUILL Lite supports.</li>
+<li><strong>Whisper tiny.en is the alternative</strong>, for a voice or
+microphone Moonshine handles badly. Base was measurably no better here
+and 55% larger.</li>
+<li><strong>Windows speech recognition stays</strong> as the engine that
+needs nothing, for a machine where the models cannot run.</li>
+<li>Vosk does not punctuate, and the add-on punctuation model barely
+helped. Parakeet 3 is excellent and five times the size – right for an
+optional download in QUILL, wrong for a small editor that ships
+everything.</li>
+</ul>
+<p>Both chosen models run through sherpa-onnx (Apache 2.0), which
+bundles its own ONNX runtime, so neither brings PyTorch. Together they
+add about 230 MB to the QUILL Lite installer, placed beside the launcher
+rather than in the shared QuillVille runtime so no sibling app pays for
+them.</p>
+<h2 id="a-fix-the-test-found">A fix the test found</h2>
+<p>Voice detection trims each phrase tight to the speech, and Moonshine
+sizes its answer from the audio’s length, so “three o’clock” came back
+as “3 o’”. Padding each phrase with a fifth of a second of silence
+before and half a second after fixed it
+(<code>quill/core/windows_dictation/local_recognizer.py</code>).</p>
+<h2 id="optional-downloads-2026-10-05">Optional downloads
+(2026-10-05)</h2>
+<p>The bundled engines above stay the default and stay inside every
+installer. Since 2026-10-05 Dictation Settings also offers optional,
+larger models to download on request, the same local models VS Code
+offers (Nemotron 3.5 ASR Streaming, Parakeet Unified, Parakeet TDT v3,
+Whisper small and base) plus the rest of the Whisper family and
+Moonshine base. The plan of record, the full catalogue and every
+measurement are in
+<code>docs/design/2026-10-05-dictation-plan-and-status.md</code>,
+section 6.</p>
+<p><strong>Is downloading them from the source on the user’s request
+fine? Yes.</strong> NVIDIA’s OpenMDW-1.1 (Nemotron) grants permission
+“to deal in the Model Materials without restriction”; its conditions
+(include the licence, keep the notices) apply only to whoever
+distributes the model, and it restricts nothing about outputs. QUILL
+does not distribute: the person’s own computer downloads the files from
+Hugging Face after a question that names the licence and links to it (<a
+href="https://openmdw.ai/license/1-1/">https://openmdw.ai/license/1-1/</a>).
+The same reasoning covers the NVIDIA Open Model License (Parakeet
+Unified), CC BY 4.0 (Parakeet TDT v3) and MIT (Whisper, Distil-Whisper,
+English Moonshine). If a model is ever mirrored on QUILL’s own release
+assets or bundled, its licence copy and notices must go with it.</p>
+<p><strong>The runtime stays sherpa-onnx</strong>, for the downloads as
+for the bundled engines. Against whisper.cpp v1.9.1 (the build QUILL
+already fetches for file transcription), on the same ten sentences, one
+thread, CPU only:</p>
+<table>
+<thead>
+<tr>
+<th>Whisper</th>
+<th>sherpa-onnx int8 (seconds of computing per second of speech)</th>
+<th>whisper.cpp q5</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>base</td>
+<td>0.30</td>
+<td>1.64</td>
+</tr>
+<tr>
+<td>small</td>
+<td>1.12</td>
+<td>4.87</td>
+</tr>
+<tr>
+<td>medium</td>
+<td>3.67</td>
+<td>18.5</td>
+</tr>
+<tr>
+<td>large-v3-turbo</td>
+<td>3.60</td>
+<td>25.1</td>
+</tr>
+</tbody>
+</table>
+<p>whisper.cpp loaded faster and used about half the memory, but it was
+four to seven times slower per thread, and in QUILL it is a command-line
+program that would reload the model for every phrase. Every engine,
+bundled or downloaded, runs on the CPU only.</p>
+</main>
+</body>
+</html>

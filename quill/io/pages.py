@@ -3,12 +3,13 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import threading
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from quill.core.document import Document
-from quill.io.markitdown_bridge import convert_with_markitdown
+from quill.core.safe_archive import check_zip_safety
 
 # Pages paragraph style names → Markdown heading prefix
 _STYLE_HEADING_PREFIX: dict[str, str] = {
@@ -27,9 +28,22 @@ def read_pages_document(path: Path) -> Document:
     """Import an Apple Pages document and extract text with heading structure.
 
     Uses Route A (pure Python IWA parsing) when available, falls back to Route B
-    (LibreOffice + MarkItDown) for higher fidelity. If neither is available,
+    (LibreOffice, then the DOCX reader) for higher fidelity. If neither is available,
     returns a graceful error message.
     """
+    # Refuse a decompression bomb before either route expands the bundle: a
+    # .pages file is a ZIP, and both the IWA parser (which reads each .iwa member
+    # fully into memory) and the LibreOffice route would otherwise expand a
+    # crafted archive. check_zip_safety bounds the declared total size and the
+    # per-entry compression ratio, raising DecompressionBombError on a bomb. A
+    # non-ZIP or unreadable file falls through to the readers below, which report
+    # it gracefully.
+    try:
+        with zipfile.ZipFile(path) as bundle:
+            check_zip_safety(bundle)
+    except (zipfile.BadZipFile, OSError):
+        pass
+
     try:
         return _read_pages_via_iwa(path)
     except Exception:  # noqa: BLE001 - fall through to the LibreOffice route
@@ -45,8 +59,8 @@ def read_pages_document(path: Path) -> Document:
             f"(Pages import not available for {path.name}.)\n\n"
             "To import Pages documents, either:\n"
             "1. Install keynote-parser: pip install keynote-parser\n"
-            "2. Or install LibreOffice and MarkItDown: "
-            "pip install markitdown[docx,pptx,xlsx,xls,pdf]\n"
+            "2. Or install LibreOffice, and open Help > Download Optional "
+            'Components and download "PDF and Office text extraction"\n'
         ),
         path=path,
         modified=False,
@@ -74,9 +88,19 @@ class _UnknownIWAMessage:
         return {"_pbtype": f"UNKNOWN.Type{self._type_id}"}
 
 
-def _patched_id_name_map() -> dict[int, Any]:
-    """Return a wrapper around keynote-parser's ID_NAME_MAP that never raises KeyError."""
-    import keynote_parser.codec as _codec
+def _patched_id_name_map(original: dict[int, Any]) -> dict[int, Any]:
+    """A wrapper around keynote-parser's ID_NAME_MAP that never raises KeyError.
+
+    Takes the map it is wrapping rather than re-importing the module to find it:
+    the caller has already resolved that module, and importing it a second time
+    is a second chance to get a *different* object -- which is exactly what
+    happens when two documents open at once and one of them is running under a
+    patched ``sys.modules``.
+
+    Only used against keynote-parser releases that still have that map; 1.14 and
+    later handle an unknown archive type themselves, and
+    :func:`_read_pages_via_iwa` skips this entirely there.
+    """
 
     class _FallbackMap(dict):
         def __missing__(self, type_id: int) -> type:
@@ -89,7 +113,7 @@ def _patched_id_name_map() -> dict[int, Any]:
 
             return _Factory
 
-    return _FallbackMap(_codec.ID_NAME_MAP)
+    return _FallbackMap(original)
 
 
 def _parse_iwa_bundle(path: Path, zip_file_reader: Callable[..., Any]) -> dict[str, list[dict]]:
@@ -133,13 +157,22 @@ def _read_pages_via_iwa(path: Path) -> Document:
     if _ID_NAME_MAP_LOCK is None:
         _ID_NAME_MAP_LOCK = threading.Lock()
         _codec._quill_id_name_map_lock = _ID_NAME_MAP_LOCK  # type: ignore[attr-defined]
+    # keynote-parser 1.14 and later handle an unknown archive type themselves
+    # (``UnknownArchive`` / ``UnknownArchiveWarning``) and no longer expose
+    # ``ID_NAME_MAP`` at all. Patching it unconditionally raised AttributeError
+    # on every .pages file opened against a current install -- the fallback that
+    # existed to stop a crash had become the crash. So the patch is applied only
+    # where there is something to patch, and the newer library is left to do the
+    # job it now does better.
     with _ID_NAME_MAP_LOCK:
-        _original_map = _codec.ID_NAME_MAP
-        _codec.ID_NAME_MAP = _patched_id_name_map()
+        _original_map = getattr(_codec, "ID_NAME_MAP", None)
+        if _original_map is not None:
+            _codec.ID_NAME_MAP = _patched_id_name_map(_original_map)
         try:
             archives_by_id = _parse_iwa_bundle(path, zip_file_reader)
         finally:
-            _codec.ID_NAME_MAP = _original_map
+            if _original_map is not None:
+                _codec.ID_NAME_MAP = _original_map
 
     if not archives_by_id:
         raise ValueError("No IWA archives found in Pages file")
@@ -270,18 +303,31 @@ def _para_style_at(para_style: dict[int, str], char_pos: int) -> str:
 
 
 def _read_pages_via_libreoffice(path: Path) -> Document:
-    """Route B: Convert .pages to DOCX via LibreOffice, then MarkItDown.
+    """Route B: Convert .pages to DOCX via LibreOffice, then read the DOCX.
 
-    Requires LibreOffice (soffice) and the markitdown Python package.
+    Requires LibreOffice (soffice). The DOCX is read by
+    :func:`quill.io.office_text.read_office_text_preferring_own` -- QUILL's own
+    Word reader first, MarkItDown only when it fails (2026-10-16), so this
+    route no longer needs, or waits for, the markitdown package.
     """
+    from quill.core.external_tools import libreoffice_executable
+
+    soffice = libreoffice_executable()
+    if soffice is None:
+        raise ImportError(
+            "LibreOffice (soffice) was not found. On macOS install it from "
+            "libreoffice.org or with `brew install --cask libreoffice`."
+        )
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        docx_path = tmpdir_path / "converted.docx"
+        # LibreOffice names its output after the input (report.pages ->
+        # report.docx); this looked for "converted.docx", which it never writes.
+        docx_path = tmpdir_path / f"{path.stem}.docx"
 
         try:
             subprocess.run(
                 [
-                    "soffice",
+                    soffice,
                     "--headless",
                     "--convert-to",
                     "docx",
@@ -302,7 +348,13 @@ def _read_pages_via_libreoffice(path: Path) -> Document:
         if not docx_path.exists():
             raise RuntimeError("LibreOffice did not produce a DOCX file")
 
-        text = convert_with_markitdown(docx_path)
+        from quill.io.office_text import OfficeReadError, read_office_text_preferring_own
+
+        try:
+            found = read_office_text_preferring_own(docx_path)
+        except OfficeReadError as exc:
+            raise RuntimeError(exc.sentence) from exc
+        text = found.text
 
         return Document(
             text=text.strip() + "\n",
@@ -312,7 +364,7 @@ def _read_pages_via_libreoffice(path: Path) -> Document:
             line_ending="\n",
             source_metadata={
                 "source_kind": "pages",
-                "engine": "libreoffice + markitdown",
+                "engine": f"libreoffice + {found.engine}",
                 "quality_score": 85,
             },
         )

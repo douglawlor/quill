@@ -1,0 +1,943 @@
+"""Browse Stations -- one unified tree of every internet-radio source.
+
+A dedicated, search-free browse experience (its counterpart, Search Stations,
+keeps the old field-based dialog). The whole window is a single ``wx.TreeCtrl``
+whose top-level branches are the sources: Favorites first for a quick jump, then
+Popular / Trending / Recently Changed, the geographic and language axes, Weather,
+the accessibility services (ACB, NFB, Radio Reading Services), TuneIn,
+iHeart, Networks, the catalogs, and Apple Podcasts.
+
+**This module no longer knows what any of those are.** It knows that a node is a
+folder you can open or a leaf you can play, and it hands every id back to
+:mod:`quill.core.radio.browse_sources`, which is wx-free and unit-tested without
+a UI. Adding a source is one entry in ``ROOT_SOURCES`` and one handler there --
+not a new node-kind string plus edits in six places in this file, which is what
+the tenth source would have cost under the old shape.
+
+A "Find in this folder" box above the tree searches from the highlighted folder
+downward only (bounded), routed to that branch's own search engine where it has
+one; Escape drops the results and puts the cursor back on the folder. Internet
+sources load lazily on first open, off the UI thread, while Favorites is built
+instantly from local data. Enter (or the Play button) plays the highlighted
+station -- the Play button reads "Stop" while that station is the one playing. A
+rich Shift+F10 / right-click context menu offers Play/Stop, Add/Remove Favorite
+(and "Add all stations to Favorites" on a folder), Copy stream link, and Open
+website. Playback is the shared ``RadioPlayerController`` passed in, so closing
+the window never stops the stream.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import replace
+from typing import Any
+
+from quill.core.radio import browse_sources, transport_commands
+from quill.core.radio.browse_nodes import BrowseNode
+from quill.core.radio.favorites import RadioFavoritesStore
+from quill.core.radio.models import RadioStation
+from quill.ui.dialog_contract import (
+    announce_surface_exit,
+    apply_modal_ids,
+    bind_close_button,
+    dialog_alive,
+)
+from quill.ui.dpi import dip_size
+from quill.ui.radio import browse_feedback, browse_keys, browse_position, transport_keys
+from quill.ui.radio.browse_marks import row_text
+from quill.ui.radio.volume_row import add_volume_slider
+from quill.ui.spoken_name import set_spoken_name
+from quill.ui.surface_lifetime import surface_tasks
+
+#: Item data for the "Loading..." child that makes a node look expandable.
+_PLACEHOLDER = {"kind": "placeholder"}
+
+
+class BrowseTreeDialog:
+    """Browse every station source in one lazily-loaded tree."""
+
+    def __init__(
+        self,
+        parent: object,
+        *,
+        controller: object,
+        favorites_store: RadioFavoritesStore,
+        task_manager: object,
+        safe_mode: bool,
+        announce_cb: Callable[[str], None] | None = None,
+        on_favorites_changed: Callable[[], None] | None = None,
+        on_report_bad_station: Callable[[Any], None] | None = None,
+        show_details: bool = True,
+        windows: object | None = None,
+        download_host: object | None = None,
+        visible_sources: object | None = None,
+        on_visible_sources_changed: Callable[[tuple[str, ...]], None] | None = None,
+        catalog: object | None = None,
+        on_offline_catalog: object | None = None,
+        embed_in: object | None = None,
+    ) -> None:
+        import wx
+
+        self._wx = wx
+        self._controller = controller
+        self._favorites = favorites_store
+        # Every task this window starts is tied to its lifetime (qc.md F-02).
+        self._task_manager = surface_tasks(task_manager, lambda: getattr(self, "_surface", None))
+        self._safe_mode = safe_mode
+        # Downloads are queued on the app shell, not on this window: the queue
+        # must be the one View > Downloads watches and the one that survives
+        # this window closing. A dialog-local queue here meant a download
+        # started from the tree was invisible to the monitor and unstoppable
+        # from the menu -- two views of "the queue" that were never the same
+        # queue. Falls back to self so a bare dialog (tests) still works.
+        self._download_host = download_host or self
+        #: Which root branches to build. The listener's own choice (Station >
+        #: Choose Browse Sources...), under the rule search follows: a branch
+        #: that is off is not in the tree at all, so it is never opened and
+        #: therefore never contacted. ``None`` means never set -> the defaults.
+        self._visible_sources = visible_sources
+        #: Persists a Hide This Source / Reset Sources to Default change made
+        #: from the tree's own context menu (browse_tree_menu).
+        self._on_visible_sources_changed = on_visible_sources_changed
+        #: The local station catalog (CatalogStore) or None. Handed straight
+        #: to browse(); this window never queries it -- the one-chokepoint rule.
+        self._catalog = catalog
+        self._on_offline_catalog = on_offline_catalog
+        self._announce = announce_cb or (lambda _m: None)
+        self._on_favorites_changed = on_favorites_changed or (lambda: None)
+        self._on_report_bad_station = on_report_bad_station
+        self._menu_id_refs: list[object] = []
+        self._find_active = False
+        self._find_return_node: Any = None
+        # When a WindowManager is supplied (standalone Radio), this surface is a
+        # modeless wx.Frame carrying the persistent menu bar + &Window menu, with
+        # its controls on an inner panel for keyboard traversal; otherwise
+        # (embedded QUILL) it stays a modal wx.Dialog, unchanged.
+        self._windows = windows
+        #: Hosted in the main window, not a window at all: see main_view_host.
+        self._embedded = embed_in is not None
+        self._modeless = windows is not None and not self._embedded
+        if self._embedded:
+            self._surface = embed_in
+            self._win = self._surface.GetTopLevelParent()
+        elif self._modeless:
+            # No parent, on purpose: an owned frame floats glued above its
+            # owner, so Browse read as an overlay on the main window rather
+            # than a window of its own (reported 2026-08-23). A top-level peer
+            # stands in the taskbar and the Alt+Tab order like any real window;
+            # Ctrl+Tab and the &Window menu still tie the family together.
+            self._win = wx.Frame(None, title="Browse Stations", style=wx.DEFAULT_FRAME_STYLE)
+            self._surface = wx.Panel(self._win, style=wx.TAB_TRAVERSAL)
+            self._build_surface_menu_bar()
+            self._win.Bind(wx.EVT_CLOSE, self._on_close)
+        else:
+            self._win = wx.Dialog(
+                parent, title="Browse Stations", style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER
+            )
+            self._surface = self._win
+        self.dialog = self._win  # back-compat alias for callers that reference it
+        # Ctrl+F jumps to the Find box. On the panel when embedded, never the
+        # frame: the main window's own Ctrl+F is Search Stations.
+        (self._surface if self._embedded else self._win).Bind(wx.EVT_CHAR_HOOK, self._on_char_hook)
+        if not self._embedded:
+            self._win.SetMinSize(dip_size(self._win, 560, 460))
+        root = wx.BoxSizer(wx.VERTICAL)
+
+        # Above the tree, and one control rather than three: see
+        # browse_feedback for why the Find and Clear buttons went away.
+        find_row = wx.BoxSizer(wx.HORIZONTAL)
+        find_row.Add(
+            wx.StaticText(self._surface, label="Find &in this folder:"),
+            0,
+            wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
+            6,
+        )
+        self._find_ctrl = wx.TextCtrl(self._surface, style=wx.TE_PROCESS_ENTER)
+        self._find_ctrl.SetName(
+            "Find in the highlighted folder and everything below it. "
+            "Enter searches; Escape clears the search and returns to the folder"
+        )
+        find_row.Add(self._find_ctrl, 1, wx.EXPAND)
+        root.Add(find_row, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.TOP, 10)
+
+        root.Add(
+            wx.StaticText(self._surface, label="S&tations (expand a source to browse it):"),
+            0,
+            wx.LEFT | wx.TOP,
+            10,
+        )
+        self._tree = wx.TreeCtrl(
+            self._surface,
+            style=wx.TR_HAS_BUTTONS | wx.TR_LINES_AT_ROOT | wx.TR_HIDE_ROOT | wx.BORDER_SIMPLE,
+        )
+        self._tree.SetName(
+            "Station sources; expand one to browse its stations, Enter plays, "
+            "Shift+F10 opens all actions"
+        )
+        root.Add(self._tree, 1, wx.EXPAND | wx.ALL, 10)
+        # Tab order: the Find box sits immediately before the tree, so
+        # Shift+Tab from the stations lands on it and Tab comes straight back.
+        self._find_ctrl.MoveBeforeInTabOrder(self._tree)
+
+        self._details = wx.TextCtrl(
+            self._surface, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP
+        )
+        self._details.SetName("Details of the highlighted station")
+        set_spoken_name(self._details, "Details of the highlighted station")
+        root.Add(self._details, 0, wx.EXPAND | wx.LEFT | wx.RIGHT, 10)
+        if not show_details:
+            root.Hide(self._details)  # View > Show Station Details (honored per surface)
+
+        volume_row = wx.BoxSizer(wx.HORIZONTAL)
+        self._volume_slider = add_volume_slider(
+            self._surface, volume_row, label="Radio vol&ume:", name="Internet Radio volume"
+        )
+        self._mute_btn = wx.ToggleButton(self._surface, label="&Mute")
+        self._mute_btn.SetHelpText(
+            "Silences the radio without stopping it; press again to unmute. "
+            "The same Mute as the main window and Ctrl+M."
+        )
+        volume_row.Add(self._mute_btn, 0)
+        root.Add(volume_row, 0, wx.EXPAND | wx.ALL, 10)
+
+        btn_row = wx.BoxSizer(wx.HORIZONTAL)
+        # No transport button here. This window used to carry a Play/Stop that
+        # mirrored the main window's, which read as a second player and could
+        # disagree with the real one ("it shows radio stopped and pressing that
+        # button simply shows a dialog", 2026-08-18). Enter and the context
+        # menu still play the highlighted row; the *player* is one window, and
+        # this is the way to it. Volume stays above, because turning the sound
+        # down is the one thing nobody should have to change windows for.
+        self._player_btn = wx.Button(self._surface, label="&Go to Player")
+        go_to_player = transport_commands.command(transport_commands.GO_TO_PLAYER)
+        self._player_btn.SetName(
+            f"Go to the player window ({go_to_player.key})" if go_to_player else "Go to the player"
+        )
+        self._favorite_btn = wx.Button(self._surface, label="Add t&o Favorites")
+        self._favorite_btn.SetHelpText(
+            "Saves the highlighted station to your favorites -- or removes it "
+            "when it is already there; the label says which."
+        )
+        self._favorite_btn.Enable(False)
+        # Re&fresh: as the main view, Alt+R is the Record menu and wins.
+        self._refresh_btn = wx.Button(self._surface, label="Re&fresh")
+        self._refresh_btn.SetName("Reload the highlighted source from the internet")
+        btn_row.Add(self._player_btn, 0, wx.RIGHT, 6)
+        btn_row.Add(self._favorite_btn, 0, wx.RIGHT, 6)
+        btn_row.Add(self._refresh_btn, 0, wx.RIGHT, 6)
+        btn_row.AddStretchSpacer()
+        if not self._modeless and not self._embedded:
+            # Only the modal dialog carries a Close button. A real window
+            # closes the way windows close -- Alt+F4/Ctrl+F4, Ctrl+W, Escape --
+            # and a Close button on one reads as a control that must do
+            # something more (reported 2026-08-23).
+            close_btn = wx.Button(self._surface, wx.ID_CANCEL, "Close")
+            # A dialog answers ID_CANCEL for free, but wire it through the one
+            # seam anyway so both shapes stay honest.
+            bind_close_button(self._win, close_btn, modeless=False)
+            close_btn.SetName("Close (playback continues)")
+            btn_row.Add(close_btn)
+        root.Add(btn_row, 0, wx.EXPAND | wx.ALL, 10)
+
+        self._surface.SetSizer(root)
+        if self._modeless:
+            outer = wx.BoxSizer(wx.VERTICAL)
+            outer.Add(self._surface, 1, wx.EXPAND)
+            self._win.SetSizer(outer)
+
+        self._tree.Bind(wx.EVT_TREE_ITEM_EXPANDING, self._on_expanding)
+        self._tree.Bind(wx.EVT_TREE_ITEM_ACTIVATED, self._on_activated)
+        self._tree.Bind(wx.EVT_TREE_SEL_CHANGED, self._on_selected)
+        # Right-click, Shift+F10 and the Applications key -- see target_node.
+        for context_event in (wx.EVT_TREE_ITEM_MENU, wx.EVT_CONTEXT_MENU):
+            self._tree.Bind(context_event, self._on_context_menu)
+        self._player_btn.Bind(
+            wx.EVT_BUTTON,
+            lambda _e: transport_keys.perform(self, transport_commands.GO_TO_PLAYER),
+        )
+        self._favorite_btn.Bind(wx.EVT_BUTTON, lambda _e: self._toggle_favorite())
+        self._refresh_btn.Bind(wx.EVT_BUTTON, lambda _e: self._refresh_selected())
+        self._volume_slider.Bind(wx.EVT_SLIDER, self._on_volume_slider)
+        self._mute_btn.Bind(wx.EVT_TOGGLEBUTTON, self._on_mute)
+        self._find_ctrl.Bind(wx.EVT_TEXT_ENTER, self._on_find)
+        from quill.ui.search_reset import bind_empty_query_reset
+
+        bind_empty_query_reset(self._find_ctrl, self._clear_find)  # erase == Clear
+        # Tabbing in selects what is there: type to replace the last search,
+        # one Backspace to wipe it.
+        self._find_ctrl.Bind(wx.EVT_SET_FOCUS, lambda e: browse_feedback.on_find_focus(self, e))
+
+        state = getattr(self._controller, "state", None)
+        if state is not None:
+            self._volume_slider.SetValue(state.volume_percent)
+            self._mute_btn.SetValue(state.muted)
+
+        # The whole transport, on this window's own accelerator table: speed,
+        # skip, chapters and play/pause were menu items on the main frame, so
+        # standing here half the player did not exist (2026-08-18). The window
+        # manager's Ctrl+Tab / Ctrl+1..9 rows ride in the same table, which
+        # replaces the last. Embedded: on the page, never the main frame's table.
+        transport_keys.install(
+            self._surface if self._embedded else self._win,
+            self,
+            wx=wx,
+            extra_entries=self._windows.accelerator_entries() if self._modeless else (),
+        )
+
+        self._populate_sources()
+        # One-shot background warm-up of the cached directories, so the first
+        # search answers from a warm cache -- see browse_warmup for the rules
+        # (once per run, enabled sources only, never in Safe Mode).
+        from quill.ui.radio import browse_warmup
+
+        browse_warmup.warm(self)
+
+    # -- lifecycle --------------------------------------------------------------
+
+    def _build_surface_menu_bar(self) -> None:
+        """A small menu bar for the modeless frame: a &Close item plus the shared
+        &Window menu, so Alt always lands on a real menu and Ctrl+Tab / Ctrl+1..9
+        reach every open radio window."""
+        wx = self._wx
+        menu_bar = wx.MenuBar()
+        surface_menu = wx.Menu()
+        close_id = wx.NewIdRef()
+        surface_menu.Append(close_id, "&Close\tCtrl+W")
+        self._win.Bind(wx.EVT_MENU, lambda _e: self._win.Close(), id=close_id)
+        menu_bar.Append(surface_menu, "&Browse")
+        # The app's own Station commands, so Alt+S means here what it means in
+        # the main window (reported 2026-08-26). Browse Stations itself is
+        # skipped -- it is this window -- and so is Search Stations, whose
+        # Ctrl+F belongs to the Find box a Shift+Tab away.
+        from quill.ui.radio import surface_app_menu
+
+        self._menu_id_refs.extend(
+            surface_app_menu.install(
+                win=self._win,
+                host=getattr(self, "_download_host", None),
+                menu_bar=menu_bar,
+                wx=wx,
+                skip=("open_browse_stations", "open_internet_radio"),
+            )
+        )
+        self._windows.install(self._win, menu_bar)
+        self._win.SetMenuBar(menu_bar)
+        self._menu_id_refs.append(close_id)
+
+    def focus_default_control(self) -> None:
+        """Put keyboard focus where this surface expects it: the tree."""
+        try:
+            self._tree.SetFocus()
+        except Exception:  # noqa: BLE001 - focus is best-effort
+            pass
+
+    def _on_char_hook(self, event: object) -> None:
+        """Ctrl+F, Delete, Escape, Ctrl+F4 -- see :mod:`quill.ui.radio.browse_keys`."""
+        if not browse_keys.handle(self, event):
+            event.Skip()
+
+    def _on_close(self, event: object) -> None:
+        previous = self._windows.previous_key(self._win)
+        self._windows.unregister(self._win)
+        announce_surface_exit("Browse Stations", self._announce)
+        self._on_favorites_changed()
+        event.Skip()
+        self._win.Destroy()
+        if previous:
+            self._windows.activate(previous)
+
+    def show(self, *, initial_source: str | None = None) -> None:
+        if initial_source is not None:
+            self._expand_source(initial_source)
+        if self._embedded:
+            return  # already on screen: it is part of the main window
+        if self._modeless:
+            from quill.ui.dialog_contract import show_modeless_surface
+
+            self._windows.register(self._win, "Browse Stations")
+            show_modeless_surface(self._win, "Browse Stations", announce=self._announce)
+            return
+        self._win.CentreOnParent()
+        apply_modal_ids(self._win, cancel_id=self._wx.ID_CANCEL)
+        from quill.ui.dialog_contract import show_modal_dialog
+
+        try:
+            show_modal_dialog(self._win, "Browse Stations", announce=self._announce)
+        finally:
+            self._win.Destroy()
+
+    # -- tree population --------------------------------------------------------
+
+    def _populate_sources(self) -> None:
+        from quill.ui.radio import browse_actions
+
+        tree = self._tree
+        root = tree.AddRoot("Sources")
+        browse_actions.add_search_row(tree, root)  # Search All Sources..., always first
+        roots = browse_sources.visible_roots(self._visible_sources)
+        for node_id, label in roots:
+            node = tree.AppendItem(root, label)
+            tree.SetItemData(node, {"node_id": node_id, "label": label, "loaded": False})
+            tree.SetItemData(tree.AppendItem(node, "Loading..."), dict(_PLACEHOLDER))
+            if node_id == "favorites":
+                self._favorites_root = node  # kept so an add/remove can refresh it live
+        if not roots:
+            # Every branch hidden is a legal choice, but an empty window with no
+            # explanation reads as a broken one. One row that says the way back.
+            empty = tree.AppendItem(
+                root, "All sources are hidden. Choose Browse Sources from the menu to show some."
+            )
+            tree.SetItemData(empty, dict(_PLACEHOLDER))
+        browse_position.restore_selection(tree, root)  # browse position memory
+
+    def apply_visible_sources(self, updated: object) -> bool:
+        """Adopt a source selection made *outside* this window, and rebuild.
+
+        Reported 2026-08-26: sources switched on in **Choose Browse Sources**
+        did not appear until the app was restarted. The roots are built once,
+        from what was handed in at construction, and the only path that rebuilt
+        them was this window's own Hide This Source -- so a change made from the
+        menu wrote the setting, saved it, and left the open tree showing the
+        list it had been born with. Two surfaces, one setting, and no way for
+        the second to hear about the first.
+
+        Returns ``False`` when this window has already gone, so the app shell
+        can hold a stale reference and simply ask.
+        """
+        tree = self._tree
+        try:
+            if tree is None or not tree:
+                return False
+        except RuntimeError:  # the wx object is being torn down
+            return False
+        self._visible_sources = updated
+        self._rebuild_sources()
+        return True
+
+    def _rebuild_sources(self) -> None:
+        """Rebuild the root list after a visibility change made from the
+        context menu (Hide This Source / Reset Sources to Default)."""
+        self._tree.DeleteAllItems()
+        self._populate_sources()
+
+    def _fetch_children(self, node_id: str) -> list[BrowseNode]:
+        """Off-thread fetch for one node. All the knowledge lives in core."""
+        return browse_sources.browse(
+            node_id,
+            safe_mode=self._safe_mode,
+            favorites=self._favorites,
+            # getattr: tests build this dialog with __new__ and no __init__.
+            catalog=getattr(self, "_catalog", None),
+        )
+
+    # -- find in this folder (quill/ui/radio/browse_find.py, GATE-11) -----------
+
+    def _placeholder(self) -> dict:
+        """The not-yet-loaded marker, for the find module to rebuild rows with."""
+        return dict(_PLACEHOLDER)
+
+    def _is_folder_data(self, data: dict | None) -> bool:
+        """True when *data* describes something openable rather than playable."""
+        return (
+            bool(data)
+            and bool(data.get("node_id"))
+            and data.get("station") is None
+            and not data.get("resolve_lazily")
+            and not data.get("is_action")
+        )
+
+    def _on_find(self, _event: Any = None) -> None:
+        from quill.ui.radio import browse_find
+
+        browse_find.on_find(self)
+
+    def _clear_find(self, _event: Any = None) -> None:
+        from quill.ui.radio import browse_find
+
+        browse_find.clear_find(self)
+
+    # -- building rows ----------------------------------------------------------
+
+    def _leaf_data(self, child: BrowseNode) -> dict:
+        """Item data for a playable row -- a station now, or one to resolve."""
+        return {
+            "node_id": child.node_id,
+            "label": child.label,
+            "station": child.station,
+            "resolve_lazily": child.resolve_lazily,
+            "note": child.note,
+        }
+
+    def _add_children(
+        self,
+        node: Any,
+        children: list[BrowseNode],
+        *,
+        failed: bool = False,
+        empty_text: str = "",
+        reason: str = "",
+    ) -> None:
+        """Turn one node's children into tree rows.
+
+        Two cases, and only two. Everything a source wants to say about a row --
+        how many children it has, that it opens in a browser, that it must be
+        resolved before it can play -- rides along on the BrowseNode instead of
+        needing a branch here.
+        """
+        browse_feedback.stop_slow_load_notice(self)
+        if not self._tree:  # dialog closed while children were being fetched
+            return
+        tree = self._tree
+        if not node.IsOk():
+            return
+        tree.DeleteChildren(node)  # clear the "Loading..." placeholder
+        if not children:
+            # A branch that came back empty because it could not be reached is
+            # worth trying again, so it is not marked as loaded. One that is
+            # genuinely empty is left alone -- re-fetching an empty folder on
+            # every expand would be a network request for a known answer.
+            # A *reason* (no key entered, a key refused) is also worth retrying:
+            # the listener is about to fix it and come back.
+            unreachable = failed or browse_sources.last_error_was_network()
+            if unreachable or reason:
+                from quill.ui.radio import browse_refresh
+
+                browse_refresh.forget_load(self, node)
+            # ...and it keeps ONE row saying which of the two it was, which is
+            # also what keeps the folder expandable (see browse_feedback).
+            says = browse_feedback.empty_row_text(
+                unreachable=unreachable,
+                override=empty_text or (reason if not failed else ""),
+                note=browse_sources.repeat_failure_note(
+                    str((self._node_data(node) or {}).get("node_id", ""))
+                ),
+            )
+            tree.SetItemData(tree.AppendItem(node, says), dict(_PLACEHOLDER))
+        browse_feedback.fill_rows(self, node, children)  # frozen, no per-row speech
+        # Counted from what the SOURCE returned, not from the rows on screen:
+        # an empty folder now carries one explanatory row, and counting that
+        # would announce "1 item" for a folder holding nothing.
+        count = len(children)
+        said = reason if (reason and not count and not failed) else ""
+        self._announce(said or self._children_summary(node, count, failed=failed))
+        from quill.ui.radio import browse_prefetch
+
+        # Read one level ahead: the first few child folders fetch now, so
+        # walking downward stays ahead of the listener.
+        browse_prefetch.read_ahead(
+            self, [c.node_id for c in children if c.is_folder and not c.is_action]
+        )
+        # #1188: leave the cursor on the just-expanded node -- do NOT jump it
+        # into the station list. One exception: a pending reveal, where the
+        # cursor following the just-edited row IS the feature (browse_reveal).
+        from quill.ui.radio import browse_reveal
+
+        browse_reveal.on_children_added(self, node)
+
+    _row_label = row_text  # one row's text, with "(marked)" when it is marked
+
+    def _row_data(self, child: BrowseNode) -> dict:
+        if child.is_folder or child.is_action:
+            return {
+                "node_id": child.node_id,
+                "label": child.label,
+                "loaded": False,
+                "is_action": child.is_action,
+                "child_count": child.child_count,
+            }
+        return self._leaf_data(child)
+
+    def _children_summary(self, node: Any, count: int, *, failed: bool = False) -> str:
+        """What to say after expanding.
+
+        An empty branch must distinguish "there is nothing here" from "this
+        source could not be reached": reading the second as the first is how a
+        listener concludes a working source is broken, or the reverse. When the
+        fetch is *known* to have failed on the network the message says so
+        plainly, with the way back; the hedged wording is kept for sources that
+        swallow their own errors and return nothing.
+        """
+        if count:
+            return f"{count} item{'' if count == 1 else 's'}."
+        data = self._node_data(node) or {}
+        label = data.get("label", "this folder")
+        node_id = str(data.get("node_id", ""))
+        if self._safe_mode and browse_sources.needs_network(node_id):
+            return f"{label} is disabled in Safe Mode."
+        if failed:
+            if getattr(self, "_catalog", None) is not None and callable(
+                getattr(self, "_on_offline_catalog", None)
+            ):
+                # The once-per-session offline sentence (catalog UX, 6.5): the
+                # app being quietly fine without the internet is the feature.
+                self._on_offline_catalog()
+            return f"{label} could not be reached. Close and reopen it to try again."
+        if browse_sources.needs_network(node_id):
+            return f"Nothing in {label}. It may be empty, or the source could not be reached."
+        return f"Nothing in {label}."
+
+    def _add_favorites(self, node: Any, *, select: bool = True) -> None:
+        """Build the local Favorites branch.
+
+        Favorites is the one source built from local data, so it never waits on
+        a fetch; it still goes through the same ``browse_sources`` handler as
+        everything else, so its rows are ordinary rows. ``select=False`` rebuilds
+        without moving the selection, for the live refresh after a favorite is
+        added or removed, so focus stays where the listener is.
+        """
+        if not node.IsOk():
+            return
+        children = self._fetch_children("favorites")
+        # Favorites says its own thing when empty -- "add stations from any
+        # source below" is advice the generic row cannot give.
+        self._add_children(
+            node, children, empty_text="No favorites yet -- add stations from any source below."
+        )
+        if not select:
+            return
+        first, _cookie = self._tree.GetFirstChild(node)
+        if first.IsOk():
+            self._tree.SelectItem(first)
+
+    def _refresh_favorites_branch(self) -> None:
+        """Rebuild the Favorites branch in place after a favorite is added or
+        removed, so the change shows immediately while the window is open. A
+        no-op until the branch has been expanded once, and it never moves the
+        selection."""
+        node = getattr(self, "_favorites_root", None)
+        if node is None:
+            return
+        data = self._node_data(node)
+        if not data or not data.get("loaded"):
+            return
+        self._add_favorites(node, select=False)
+
+    # -- events -----------------------------------------------------------------
+
+    def _node_data(self, node: Any) -> dict | None:
+        if node is None or not node.IsOk():
+            return None
+        data = self._tree.GetItemData(node)
+        return data if isinstance(data, dict) else None
+
+    def _selected_data(self) -> dict | None:
+        try:
+            return self._node_data(self._tree.GetSelection())
+        except RuntimeError:
+            return None  # the tree is being torn down (a SEL_CHANGED during close)
+
+    def _is_playable(self, data: dict | None) -> bool:
+        """True when activating this row should play something."""
+        return bool(data) and (data.get("station") is not None or bool(data.get("resolve_lazily")))
+
+    def _on_expanding(self, event: Any) -> None:
+        node = event.GetItem()
+        data = self._node_data(node)
+        if not self._is_folder_data(data) or data is None:
+            return
+        if data.get("loaded"):
+            return
+        data["loaded"] = True
+        node_id = str(data["node_id"])
+        if node_id == "favorites":
+            self._add_favorites(node)  # local, instant, no task manager
+            return
+        from quill.ui.radio import browse_prefetch
+
+        ready = browse_prefetch.take(self, node_id)
+        if ready is not None:
+            self._add_children(node, ready)  # prefetched while you arrowed here
+            return
+        if self._safe_mode and browse_sources.needs_network(node_id):
+            self._details.ChangeValue("Browsing this source is disabled in Safe Mode.")
+        label = self._tree.GetItemText(node).split("  (")[0]
+        self._announce(f"Loading {label}...")
+        browse_feedback.start_slow_load_notice(self, label)
+
+        def _work(**_kwargs: Any) -> tuple[list[BrowseNode], bool, str]:
+            children = self._fetch_children(node_id)
+            # Asked on the SAME thread that browsed: the failure record is kept
+            # per thread, so reading it later from the UI-thread callback would
+            # read the UI thread's own, always-empty slot -- and a branch that
+            # failed on the network would be marked loaded and never retried.
+            return (children, *browse_feedback.empty_verdict(children))
+
+        def _ok(_op: str, raw: object) -> None:
+            # Already on the UI thread (call_ui_safely marshals + guards this);
+            # call directly rather than scheduling a second unguarded CallAfter.
+            children, net_failed, reason = (*raw, "")[:3] if isinstance(raw, tuple) else ([], 0, "")
+            self._add_children(
+                node,
+                children if isinstance(children, list) else [],
+                failed=bool(net_failed),
+                reason=str(reason or ""),
+            )
+
+        def _failed(_op: str, error: BaseException) -> None:
+            """Clear the placeholder and say so.
+
+            Without this the branch keeps its "Loading..." row for the rest of
+            the session and says nothing -- a tree that is permanently about to
+            finish, which is the most misleading state it could be left in.
+            ``browse()`` swallows a source's own errors, so reaching here means
+            something unexpected, and the honest response is to let it be tried
+            again.
+            """
+            from quill.ui.radio import browse_refresh
+
+            browse_refresh.forget_load(self, node)
+            self._add_children(node, [], failed=True)
+
+        self._task_manager.submit("radio-browse-tree", _work, on_success=_ok, on_failure=_failed)
+
+    def _on_activated(self, event: Any) -> None:
+        data = self._node_data(event.GetItem())
+        if self._is_playable(data):
+            self._play_selected()
+            return
+        if data is not None and data.get("is_action"):
+            # A row that acts rather than opens -- "Add a Server...". What it
+            # does lives in browse_actions, so this window never learns a
+            # source-specific behaviour. See quill/ui/radio/browse_actions.py.
+            from quill.ui.radio import browse_actions
+
+            browse_actions.perform(self, str(data.get("node_id", "")))
+            return
+        event.Skip()  # a source/folder toggles open
+
+    def _reload_source_branch(self, node_id: str) -> None:
+        """Re-fetch one top-level source by id, after an action changed what it
+        contains. See :mod:`quill.ui.radio.browse_refresh`."""
+        from quill.ui.radio import browse_refresh
+
+        browse_refresh.reload_source_branch(self, node_id)
+
+    def _on_selected(self, _event: Any) -> None:
+        # Closing the window emits a last selection change *after* wx has
+        # destroyed the tree, so every exit with Browse open printed three
+        # copies of "RuntimeError: wrapped C/C++ object of type TreeCtrl has
+        # been deleted" (seen 2026-08-24 on a launch whose startup window is
+        # Browse). Nothing to remember about a tree that is gone -- and the
+        # position was already written on the selection before this one.
+        if not dialog_alive(self._tree):
+            return
+        browse_position.remember(self._tree, self._tree.GetSelection())
+        data = self._selected_data()
+        from quill.ui.radio import browse_details, browse_prefetch
+
+        # Landing on a collapsed folder starts its fetch now, so the expand
+        # that usually follows opens instantly instead of loading.
+        browse_prefetch.note_selected(self, data)
+        browse_details.describe_selection(self, data)
+
+    # -- play / favorite --------------------------------------------------------
+
+    def _play_selected(self) -> None:
+        data = self._selected_data()
+        if data is None:
+            return
+        station = data.get("station")
+        if station is None:
+            if data.get("resolve_lazily"):
+                self._resolve_then(data, self._play_station)
+            return
+        self._play_station(station)
+
+    def _play_station(self, station: RadioStation) -> None:
+        if self._is_playing(station):
+            self._controller.stop()
+            self._announce("Radio stopped.")
+        else:
+            self._controller.play_station(station)
+            self._announce(f"Playing {station.display_name}.")
+
+    def _resolve_then(self, data: dict, then: Callable[[RadioStation], None]) -> None:
+        """Resolve a lazy leaf off-thread, then hand the station to *then*.
+
+        One path for both Play and Add to Favorites, and for every source that
+        needs it -- TuneIn today, anything else tomorrow -- instead of the two
+        near-identical TuneIn-specific methods this replaces.
+        """
+        label = str(data.get("label", ""))
+        node_id = str(data.get("node_id", ""))
+        self._details.ChangeValue(f"Resolving {label}...")
+
+        def _work(**_kwargs: Any) -> RadioStation | None:
+            return browse_sources.resolve(node_id, safe_mode=self._safe_mode)
+
+        def _ok(_op: str, resolved: object) -> None:
+            # Already on the UI thread (call_ui_safely marshals + guards this).
+            if not self._tree:  # window closed while the stream was resolving
+                return
+            if not isinstance(resolved, RadioStation) or not resolved.stream_url:
+                self._announce(f"Could not play {label}.")
+                return
+            # The source resolves a URL; the row already knew the name, so it
+            # supplies one when the resolver did not (TuneIn returns none).
+            then(replace(resolved, name=resolved.name or label))
+
+        self._task_manager.submit("radio-browse-resolve", _work, on_success=_ok, on_failure=None)
+
+    def _is_playing(self, station: RadioStation) -> bool:
+        from quill.ui.radio.playback_state import ACTIVE_STATES
+
+        state = self._controller.state
+        return (
+            state.station is not None
+            and state.station.stream_url == station.stream_url
+            and state.state in ACTIVE_STATES
+        )
+
+    def _update_favorite_label(self, station: RadioStation) -> None:
+        saved = self._favorites.contains(station)
+        self._favorite_btn.SetLabel("Remove from &Favorites" if saved else "Add to &Favorites")
+
+    def _add_favorite_station(self, station: RadioStation) -> None:
+        if self._favorites.contains(station):
+            # 11.6: go to the one you have. Saying "already in your Favorites"
+            # and leaving the cursor where it was answers the wrong question --
+            # somebody adds a station twice because they could not find it.
+            from quill.core import duplicate_add
+            from quill.ui.radio import browse_reveal
+
+            moved = browse_reveal.reveal_favorite(self, station.display_name)
+            self._announce(duplicate_add.already_have("station", station.display_name, moved=moved))
+            return
+        self._favorites.add(station)
+        self._announce(f"Added {station.display_name} to Favorites.")
+        self._on_favorites_changed()
+        self._refresh_favorites_branch()
+
+    def _toggle_favorite(self) -> None:
+        data = self._selected_data()
+        if data is None or not self._is_playable(data):
+            self._announce("Select a station to add it to Favorites.")
+            return
+        station = data.get("station")
+        if station is None:
+            self._resolve_then(data, self._add_favorite_station)
+            return
+        if self._favorites.contains(station):
+            self._favorites.remove(station.station_uuid or station.stream_url)
+            self._announce(f"Removed {station.display_name} from Favorites.")
+        else:
+            self._favorites.add(station)
+            self._announce(f"Added {station.display_name} to Favorites.")
+        self._update_favorite_label(station)
+        self._on_favorites_changed()
+        self._refresh_favorites_branch()
+
+    def _loaded_stations_under(self, node: Any) -> list[Any]:
+        """The stations already loaded under *node*, in tree order.
+
+        Only what is loaded, deliberately -- exactly like Add All to Favorites.
+        A folder nobody has opened has no children to read, and fetching them to
+        decide whether a context menu should carry an item would make opening a
+        menu a network request.
+        """
+        tree = self._tree
+        rows: list[Any] = []
+        if not node.IsOk():
+            return rows
+        child, cookie = tree.GetFirstChild(node)
+        while child.IsOk():
+            data = self._node_data(child)
+            station = data.get("station") if data else None
+            if station is not None:
+                rows.append(station)
+            child, cookie = tree.GetNextChild(node, cookie)
+        return rows
+
+    def _favorite_folder(self, node: Any) -> None:
+        """Add every loaded station under a folder to Favorites in one go.
+
+        Only the stations already loaded into the tree are added; if the folder
+        has not been opened yet, ask the listener to open it first, so a huge
+        genre is not fetched-and-favorited blind.
+        """
+        tree = self._tree
+        if not node.IsOk():
+            return
+        added = 0
+        loaded_any = False
+        child, cookie = tree.GetFirstChild(node)
+        while child.IsOk():
+            data = self._node_data(child)
+            station = data.get("station") if data else None
+            if station is not None:
+                loaded_any = True
+                if not self._favorites.contains(station):
+                    self._favorites.add(station)
+                    added += 1
+            child, cookie = tree.GetNextChild(node, cookie)
+        if not loaded_any:
+            self._announce("Open the folder first to load its stations, then try again.")
+            return
+        if added:
+            self._on_favorites_changed()
+            self._refresh_favorites_branch()
+        self._announce(
+            f"Added {added} station{'' if added == 1 else 's'} to Favorites."
+            if added
+            else "Those stations are already in Favorites."
+        )
+
+    def _refresh_selected(self) -> None:
+        """Re-fetch the highlighted node's source (or its parent source).
+        See :mod:`quill.ui.radio.browse_refresh`."""
+        from quill.ui.radio import browse_refresh
+
+        browse_refresh.refresh_selected(self)
+
+    def _on_context_menu(self, event: Any) -> None:
+        """The row's menu, for right-click and keyboard alike (browse_tree_menu)."""
+        from quill.ui.radio import browse_tree_menu
+
+        browse_tree_menu.show_for_event(self, event)
+
+    def _copy_text(self, text: str) -> None:
+        wx = self._wx
+        if text and wx.TheClipboard.Open():
+            try:
+                wx.TheClipboard.SetData(wx.TextDataObject(text))
+            finally:
+                wx.TheClipboard.Close()
+            self._announce("Stream link copied.")
+
+    def _open_url(self, url: str) -> None:
+        import webbrowser
+
+        if url and webbrowser.open(url):
+            self._announce("Opened the station's website.")
+
+    # -- volume -----------------------------------------------------------------
+
+    def _on_volume_slider(self, _event: Any) -> None:
+        self._controller.set_volume(self._volume_slider.GetValue())
+        self._mute_btn.SetValue(False)
+
+    def _on_mute(self, _event: Any) -> None:
+        self._controller.toggle_mute()
+        state = getattr(self._controller, "state", None)
+        if state is not None:
+            self._mute_btn.SetValue(state.muted)
+
+    # -- open straight to a source (from a menu) --------------------------------
+
+    def _expand_source(self, source: str) -> None:
+        """Land on one top-level branch, by its label or its id.
+
+        Both accepted because callers know different things: a menu item knows
+        the label it shows, code knows the stable id -- and matching on the id
+        keeps a caller working when a label is reworded.
+        """
+        tree = self._tree
+        root = tree.GetRootItem()
+        child, cookie = tree.GetFirstChild(root)
+        while child.IsOk():
+            data = self._node_data(child) or {}
+            if tree.GetItemText(child) == source or data.get("node_id") == source:
+                tree.SelectItem(child)
+                tree.Expand(child)
+                return
+            child, cookie = tree.GetNextChild(root, cookie)

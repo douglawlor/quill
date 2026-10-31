@@ -11,8 +11,10 @@ into unrelated test failures. No ``wx`` imports.
 
 The backend is the Microsoft pywinrt ``winrt-*`` namespace packages, which
 ship wheels for current CPython (including 3.13). They replace the legacy
-``winsdk`` monolith, whose wheels stopped at cp312; the projected API
-(class and async-method names) is identical, so only the import roots differ.
+``winsdk`` monolith, whose wheels stopped at cp312. PyWinRT 4 retains the OCR
+types and async methods used below, while unifying generated overload aliases
+for overloaded APIs; Windows Media device enumeration was updated for that
+change.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from __future__ import annotations
 from pathlib import Path
 
 try:
+    import winrt.windows.storage.streams  # noqa: F401 - registers WinRT stream projections
     from winrt.windows.globalization import Language  # type: ignore[import-not-found]
     from winrt.windows.graphics.imaging import (  # type: ignore[import-not-found]
         BitmapDecoder,
@@ -38,6 +41,16 @@ except ImportError:
 from quill.io.ocr import OcrLine
 
 
+def winrt_ocr_importable() -> bool:
+    """Whether the ``winrt`` OCR packages imported, so recognition can be tried.
+
+    This module always imports now (the packages are imported inside a
+    ``try``), so "the module imported" stopped meaning "OCR is here". Callers
+    that decide whether to offer OCR ask this instead.
+    """
+    return _WINRT_AVAILABLE
+
+
 def recognize_with_windows_ocr(
     path: Path, language: str | None
 ) -> tuple[str, list[OcrLine]]:  # pragma: no cover - requires Windows + winrt
@@ -54,7 +67,7 @@ def recognize_with_windows_ocr(
         raise OcrUnavailableError(
             "The Windows OCR (winrt) packages are not installed. Install them with: "
             "pip install winrt-Windows.Media.Ocr winrt-Windows.Graphics.Imaging "
-            "winrt-Windows.Globalization winrt-Windows.Storage"
+            "winrt-Windows.Globalization winrt-Windows.Storage winrt-Windows.Storage.Streams"
         )
 
     import asyncio
@@ -75,11 +88,22 @@ def recognize_with_windows_ocr(
                 "No Windows OCR language pack is installed for the requested language."
             )
         ocr_result = await engine.recognize_async(bitmap)
-        lines = [OcrLine(text=line.text, confidence=-1.0) for line in ocr_result.lines]
+        lines = []
+        for line in ocr_result.lines:
+            rectangles = [word.bounding_rect for word in line.words]
+            bounds = None
+            if rectangles:
+                bounds = (
+                    int(min(rect.x for rect in rectangles)),
+                    int(min(rect.y for rect in rectangles)),
+                    int(max(rect.x + rect.width for rect in rectangles) + 0.999),
+                    int(max(rect.y + rect.height for rect in rectangles) + 0.999),
+                )
+            lines.append(OcrLine(text=line.text, confidence=-1.0, bounds=bounds))
         joined = "\n".join(line.text for line in lines)
         return joined, lines
 
     return asyncio.run(_run())
 
 
-__all__ = ["recognize_with_windows_ocr"]
+__all__ = ["recognize_with_windows_ocr", "winrt_ocr_importable"]
