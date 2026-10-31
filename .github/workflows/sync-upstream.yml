@@ -28,12 +28,25 @@ jobs:
         run: |
           mkdir -p /tmp/fork-workflows
           cp -r .github/workflows/* /tmp/fork-workflows/ 2>/dev/null || true
+          ls /tmp/fork-workflows/ > /tmp/fork-workflows/list.txt 2>/dev/null || true
 
       - name: Merge upstream/main (no commit)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git merge upstream/main --no-commit --no-edit
+
+      - name: Remove new upstream workflow files
+        run: |
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -e "$f" ] || continue
+            basename=$(basename "$f")
+            if ! grep -q "^$basename$" /tmp/fork-workflows/list.txt 2>/dev/null; then
+              echo "Removing upstream-only workflow: $f"
+              git rm --cached "$f" 2>/dev/null || true
+              rm -f "$f"
+            fi
+          done
 
       - name: Restore fork workflows
         run: |
