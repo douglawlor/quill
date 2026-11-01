@@ -800,7 +800,7 @@ Check **Include the camera picture** to record your camera as well. Choose the c
 
 **Check camera framing...** (Ctrl+Alt+Shift+C, or the button in this window) opens the camera and tells you, as you move, whether your face is in view: "No face in view", "Face in view, centred", or which way to go, such as "move a little to your left", "move back from the camera" or "tilt the camera down or sit up taller". Directions are from your side of the camera. If they send you the wrong way, your camera gives a mirror image: check **The camera gives a mirror image**. Face detection is the one built into Windows and runs on this computer. Nothing is recorded, saved or sent anywhere while you check.
 
-With **Tell me when my face leaves the camera view** checked, Studio says so during the recording, and again when you are back. If your screen reader's speech is being recorded, Studio adds a marker instead of speaking, so the announcement does not end up in the video.
+With **Tell me when my face leaves the camera view** checked, Studio says so during the recording, and again when you are back. A camera takes a moment to send its first picture, and its first pictures can be dark, so Studio says nothing about your face until the camera has been sending pictures for about a second and a half. If your screen reader's speech is being recorded, Studio adds a marker instead of speaking, so the announcement does not end up in the video.
 
 If the face detector stops answering, Studio starts a fresh one. After three failures in a row it says "Face detection stopped answering, so framing advice has stopped": close the camera check and open it again, or restart the computer if it keeps happening.
 
@@ -848,7 +848,9 @@ An hour-long demonstration is a big investment. Before you start one:
 
 ### While you record
 
-Studio hides itself, keeps its own windows out of the picture, puts "Recording" at the front of its title, and shows a small **Recording status** window that does not take focus. Focus stays in the program you are demonstrating.
+Studio hides itself, keeps its own windows out of the picture, puts "Recording" at the front of its title, and shows a small **Recording status** window that does not take focus. Focus stays in the program you are demonstrating. You hear "Recording started"; stopping says "Recording stopped" before Studio saves and checks the file.
+
+When you start, pause, mark, mute or stop from a menu or the tray icon's menu, Studio waits until the menu has closed and your screen reader has said where focus went, then speaks. The sentence is not cut off, and the status bar shows it at once.
 
 | Action | In Studio | Notes |
 |---|---|---|
@@ -1106,7 +1108,7 @@ You need a server: one you run, or one from a streaming host. Your host gives yo
 
 ### A saved copy
 
-**Save a copy of the show on this computer** keeps a FLAC copy in **Folder for the saved copy**, even through a dropped connection. It is off by default: you decide each time, and the check reminds you when no copy is being saved.
+**Save a copy of the show on this computer** keeps a FLAC copy in **Folder for the saved copy**, even through a dropped connection or a slow one. The copy has its own writer, so a slow upload can hold up only the stream, never the copy. It is off by default: you decide each time, and the check reminds you when no copy is being saved.
 
 ### Check, test and go live
 
@@ -1118,15 +1120,19 @@ When nothing says Stop, press Enter or **Go live**. While live, the computer is 
 
 ### While you are live
 
-The **Live broadcast** window, which does not take focus, shows the **Status**: how long you have been live, whether you are connected, and how many times the stream has reconnected.
+The **Live broadcast** window, which does not take focus, shows the **Status**: how long you have been live, whether you are on air, and how many times the stream has reconnected. When there are any, it also shows short gaps in a source, delay trims, and seconds the stream lost to a slow connection.
+
+Studio says "On air" only once the server has taken 2 seconds of your sound, not when the connection opens, because a connection that carries nothing is not a broadcast. Until then the status says Connecting. If the server stops taking sound later, Studio says so once and the status says Off air.
 
 - **Now playing** and **Update the title** change the title listeners see, such as the name of the current segment.
 - **Mute everything public** (Ctrl+Alt+Shift+Z) gives listeners silence at once without disconnecting. Press it again to bring the sound back. Use it for a cough, a phone call, or anything you do not want broadcast.
-- **Stop broadcasting** (Ctrl+Alt+Shift+E) ends the show.
+- **Stop broadcasting** (Ctrl+Alt+Shift+E) ends the show. You hear "Broadcast ended", and "A copy was saved" when one was; the saved copy's full path is in the status bar rather than read aloud.
 
 Both keys work while Studio has focus. Give them system-wide keys in **Capture > Capture global hotkeys...** so they work from any program; Mute everything public is the one to have under your fingers.
 
-If the connection drops, Studio says so once and keeps trying: after 2 seconds, then waiting twice as long each time up to 30 seconds, for up to 10 tries. The saved copy keeps recording throughout. If it cannot reconnect, it says so and stops the stream; the saved copy continues until you stop.
+If the connection drops, Studio says so once and keeps trying: after 2 seconds, then waiting twice as long each time up to 30 seconds, for up to 10 tries. "The stream is back on air" is said only once sound is reaching the server again. If the server refuses your user name or password, on any try, Studio stops trying and says why. The saved copy keeps recording throughout.
+
+If the connection is too slow for the quality, listeners fall behind first. Studio says once when they are 5 seconds behind. After about 30 seconds behind, the stream starts losing sound, and Studio says that once too. The saved copy is not affected. Choose a lower quality. If it cannot reconnect, it says so and stops the stream; the saved copy continues until you stop.
 
 ### Worked example: a weekly talk show
 

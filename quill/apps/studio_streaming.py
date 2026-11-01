@@ -223,7 +223,7 @@ class StudioStreamingMixin:
             archive_path=archive,
             studio_pid=os.getpid(),
         )
-        self._announce("Going live.")
+        self._announce_settled("Going live.")
 
         def work(**_kwargs):
             stream.start()
@@ -240,7 +240,8 @@ class StudioStreamingMixin:
                 stop=self.stop_broadcast,
             )
             self._live_status.ShowWithoutActivating()
-            self._announce("On air.")
+            # "On air." comes from the stream itself, once the server has taken
+            # two seconds of audio (BCAST-027): a connection alone is not a show.
 
         def failed(_task, error):
             self._release_demo_microphone(lock)
@@ -252,8 +253,10 @@ class StudioStreamingMixin:
         )
 
     def _stream_event(self, text: str, failure: bool) -> None:
+        from quill.platform.windows.live_stream_air import BACK_ON_AIR, ON_AIR
+
         self._set_status_quiet(text)
-        if failure or not getattr(self, "_live", None):
+        if failure or text in (ON_AIR, BACK_ON_AIR) or not getattr(self, "_live", None):
             self._announce(text)
 
     def _update_stream_title(self, title: str) -> None:
@@ -281,7 +284,9 @@ class StudioStreamingMixin:
         status = getattr(self, "_live_status", None)
         if status:
             status.set_muted(muted)
-        self._announce("Everything public is muted." if muted else "Public sound is back on.")
+        self._announce_settled(
+            "Everything public is muted." if muted else "Public sound is back on."
+        )
 
     def stop_broadcast(self) -> None:
         stream = getattr(self, "_live", None)
@@ -300,8 +305,12 @@ class StudioStreamingMixin:
         def done(_task, _result):
             self._release_demo_microphone(lock)
             self._demo_quiet_stop()
-            saved = f" The saved copy is at {stream.archive_path}." if stream.archive_path else ""
-            self._announce("The broadcast has ended." + saved)
+            # UX-013: state first, and the path only in the status bar.
+            archive = stream.archive_path
+            self._announce_settled(
+                "Broadcast ended." + (" A copy was saved." if archive else ""),
+                status=f"Broadcast ended. Saved copy: {archive}" if archive else "",
+            )
 
         self._task_manager.submit(
             "Stop broadcasting",
